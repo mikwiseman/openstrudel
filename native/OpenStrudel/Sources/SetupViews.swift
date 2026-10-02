@@ -178,7 +178,14 @@ struct ServerSetupView: View {
                     SetupActionLabel(title: "Открыть команду", icon: "arrow.right")
                 }.buttonStyle(.glassProminent).controlSize(.large).disabled(connecting)
             }
-        case .signingIn, .creating, .waitingForServer:
+        case .signingIn:
+            #if os(macOS)
+            if let url = cloud.authorizationURL {
+                Link("Открыть вход в браузере", destination: url)
+                    .buttonStyle(.glass).controlSize(.large)
+            }
+            #endif
+        case .creating, .waitingForServer:
             EmptyView()
         }
     }

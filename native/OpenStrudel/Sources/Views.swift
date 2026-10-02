@@ -369,14 +369,17 @@ private struct ConversationView: View {
                         EmptyChat()
                             .frame(maxWidth: .infinity, minHeight: 430)
                     } else {
-                        LazyVStack(alignment: .leading, spacing: 16) {
+                        // The transcript is paged. Eager layout avoids a SwiftUI
+                        // lazy-layout loop when queued rows replace each other
+                        // above the iPad keyboard.
+                        VStack(alignment: .leading, spacing: 16) {
                             if client.messages.count >= client.historyLimit {
                                 Button("Ранее") { Task { await client.loadEarlierMessages() } }
                                     .font(.caption).buttonStyle(.plain).foregroundStyle(AppTheme.secondaryText)
                                     .frame(maxWidth: .infinity)
                             }
                             ForEach(Array(client.messages.enumerated()), id: \.element.id) { index, message in
-                                // Keep one stable lazy-layout node per message,
+                                // Keep one stable layout node per message,
                                 // including its optional day heading.
                                 VStack(alignment: .leading, spacing: 16) {
                                     if let day = newDay(at: index) { DayDivider(date: day) }
@@ -413,17 +416,11 @@ private struct ConversationView: View {
                 }
                 .scrollIndicators(.hidden)
                 .defaultScrollAnchor(.bottom, for: .initialOffset)
+                .defaultScrollAnchor(followsLatest ? .bottom : nil, for: .sizeChanges)
                 #if os(macOS)
                 .mask(EdgeFade())
                 #endif
                 .scrollDismissesKeyboard(.interactively)
-                .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { oldHeight, newHeight in
-                    // Images finish loading after the messages arrive. Keep the
-                    // latest reply visible without pulling someone out of history.
-                    if followsLatest && newHeight > oldHeight + 1 {
-                        scrollToBottom(proxy, animated: false)
-                    }
-                }
                 .onScrollPhaseChange { oldPhase, phase, context in
                     if phase == .tracking || phase == .interacting {
                         userIsScrolling = true

@@ -45,14 +45,41 @@ import Testing
         await Task.detached { newCompletion(expected, nil) }.value
         #expect(try await second.value == expected)
     }
+
+    @Test func externalBrowserCompletionWinsOverSessionCancellation() async throws {
+        var sessions: [ControlledWebSession] = []
+        let login = DigitalOceanWebLogin { url, completion in
+            let session = ControlledWebSession(url: url, completion: completion)
+            sessions.append(session)
+            return session
+        }
+        let destination = URL(string: "https://cloud.digitalocean.com/")!
+        let expected = URL(string: "openstrudel://oauth/digitalocean?code=external&state=test")!
+        let result = Task { try await login.open(destination) }
+        while sessions.isEmpty { await Task.yield() }
+        login.complete(expected)
+        #expect(try await result.value == expected)
+        #expect(sessions[0].canceled)
+        let completion = sessions[0].reply
+        await Task.detached {
+            completion(nil, ASWebAuthenticationSessionError(.canceledLogin))
+        }.value
+
+        let next = Task { try await login.open(destination) }
+        while sessions.count < 2 { await Task.yield() }
+        login.cancel()
+        do { _ = try await next.value; Issue.record("Canceled login returned a URL") }
+        catch { #expect(error is CancellationError) }
+    }
 }
 
 private final class ControlledWebSession: ASWebAuthenticationSession {
     let reply: DigitalOceanWebLogin.Completion
+    var canceled = false
     init(url: URL, completion: @escaping DigitalOceanWebLogin.Completion) {
         reply = completion
         super.init(url: url, callbackURLScheme: "openstrudel", completionHandler: completion)
     }
     override func start() -> Bool { true }
-    override func cancel() {}
+    override func cancel() { canceled = true }
 }

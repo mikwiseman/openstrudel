@@ -196,6 +196,7 @@ struct DigitalOceanSavedState: Codable {
     @Published private(set) var quote: Quote?
     @Published private(set) var connection: HomeConnection?
     @Published private(set) var message: String?
+    @Published private(set) var authorizationURL: URL?
 
     private let store: any DigitalOceanCredentialStore
     private let session: URLSession
@@ -270,6 +271,15 @@ struct DigitalOceanSavedState: Codable {
     }
     func cancel() { operation?.cancel(); browser.cancel() }
 
+    func acceptBrowserCallback(_ url: URL) {
+        guard phase == .signingIn, let pending = state.pendingOAuth,
+              Date().timeIntervalSince(pending.startedAt) < 900 else { return }
+        do { _ = try DigitalOceanOAuth.code(from: url, state: pending.state) }
+        catch DigitalOceanFailure.signIn { /* A provider denial with a valid state. */ }
+        catch { return }
+        browser.complete(url)
+    }
+
     private func perform(_ work: @escaping @MainActor () async throws -> Void) async {
         guard operation == nil else { return }
         let task = Task { @MainActor in
@@ -322,6 +332,8 @@ struct DigitalOceanSavedState: Codable {
             .init(name: "scope", value: DigitalOceanOAuth.scopes), .init(name: "state", value: pending.state),
             .init(name: "code_challenge", value: DigitalOceanOAuth.challenge(pending.verifier)),
             .init(name: "code_challenge_method", value: "S256"), .init(name: "prompt", value: "select_account")]
+        authorizationURL = authorize.url!
+        defer { authorizationURL = nil }
         let callback = try await browser.open(authorize.url!)
         guard Date().timeIntervalSince(pending.startedAt) < 900 else { throw DigitalOceanFailure.signIn }
         let code = try DigitalOceanOAuth.code(from: callback, state: pending.state)
@@ -648,6 +660,12 @@ final class DigitalOceanHomeTrust: NSObject, URLSessionDelegate, URLSessionTaskD
         } onCancel: { Task { @MainActor in self.cancel(id) } }
     }
     func cancel() { if let id = sessionID { cancel(id) } }
+    func complete(_ url: URL) {
+        guard let id = sessionID else { return }
+        let previous = session
+        finish(.success(url), for: id)
+        previous?.cancel()
+    }
     private func cancel(_ id: UUID) {
         guard sessionID == id else { return }
         session?.cancel(); finish(.failure(CancellationError()), for: id)

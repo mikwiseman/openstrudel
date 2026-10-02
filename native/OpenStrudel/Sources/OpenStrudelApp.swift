@@ -13,8 +13,12 @@ struct OpenStrudelApp: App {
                 .environmentObject(client)
                 .tint(AppTheme.accent)
                 .onOpenURL { url in
-                    // ASWebAuthenticationSession owns OAuth callbacks; these are not pairing links.
-                    guard !(url.scheme == "openstrudel" && url.host == "oauth" && url.path == "/digitalocean") else { return }
+                    if url.scheme == "openstrudel" && url.host == "oauth" && url.path == "/digitalocean" {
+                        #if os(macOS)
+                        DigitalOceanCloud.shared.acceptBrowserCallback(url)
+                        #endif
+                        return
+                    }
                     client.preparePairing(url)
                 }
         }
