@@ -50,6 +50,7 @@ final class ReleaseScenariosUITests: XCTestCase {
         app.buttons["Чаты"].tap()
         let editor = app.buttons["Редактор"]
         XCTAssertTrue(editor.waitForExistence(timeout: 10))
+        try reveal(editor, in: app)
         capture("employee-list", app)
         // A row must work in the blank area as well as on its text.
         editor.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)).tap()
@@ -58,6 +59,7 @@ final class ReleaseScenariosUITests: XCTestCase {
         app.buttons["Настройки бота"].tap()
         XCTAssertTrue(app.textViews["Описание сотрудника"].waitForExistence(timeout: 10))
         capture("employee-settings", app)
+        try reveal(app.buttons["Сервисы"], in: app)
         app.buttons["Сервисы"].tap()
         XCTAssertTrue(app.staticTexts["Документы"].waitForExistence(timeout: 10), app.debugDescription)
         capture("services", app)
@@ -67,7 +69,8 @@ final class ReleaseScenariosUITests: XCTestCase {
         XCTAssertTrue(app.images["Подключено"].waitForExistence(timeout: 10), app.debugDescription)
         capture("service-connected", app)
         app.buttons["Закрыть"].tap()
-        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Telegram")).firstMatch.tap()
+        let telegram = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Telegram")).firstMatch
+        try reveal(telegram, in: app); telegram.tap()
         XCTAssertTrue(app.staticTexts["Личный чат"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Рабочая группа"].exists)
         capture("employee-telegram", app)
@@ -75,6 +78,7 @@ final class ReleaseScenariosUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Чат связан"].firstMatch.waitForExistence(timeout: 10))
         try done(app)
         let name = app.textFields["Имя сотрудника"]
+        try reveal(name, in: app)
         name.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
         name.typeText(" QA")
         try done(app)
@@ -122,7 +126,9 @@ final class ReleaseScenariosUITests: XCTestCase {
     }
 
     @MainActor private func reveal(_ element: XCUIElement, in app: XCUIApplication) throws {
-        let scroller = app.scrollViews.allElementsBoundByIndex.last(where: \.isHittable) ?? app
+        let scrollable = app.scrollViews.allElementsBoundByIndex
+            + app.collectionViews.allElementsBoundByIndex + app.tables.allElementsBoundByIndex
+        let scroller = scrollable.last(where: \.isHittable) ?? app
         for _ in 0..<16 where !element.isHittable {
             if element.frame.midY < scroller.frame.midY { scroller.swipeDown() }
             else { scroller.swipeUp() }
