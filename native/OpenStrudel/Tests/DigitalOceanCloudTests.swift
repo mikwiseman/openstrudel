@@ -201,8 +201,10 @@ struct DigitalOceanCloudTests {
     @MainActor @Test func ownerTokenNeverGoesToProviderOrCloudInit() async throws {
         let store = DigitalOceanMemoryStore()
         try store.save(JSONEncoder().encode(try initialState()))
+        let observations = DigitalOceanObservations()
         let session = mockSession { request in
             if request.httpMethod == "POST", request.url?.path == "/v2/droplets" {
+                await MainActor.run { observations.creates += 1 }
                 let state = try await MainActor.run { try JSONDecoder().decode(DigitalOceanSavedState.self, from: #require(store.data)) }
                 let installation = try #require(state.installation)
                 let body = try Self.body(request)
@@ -210,6 +212,14 @@ struct DigitalOceanCloudTests {
                 #expect(!text.contains(installation.ownerToken))
                 #expect(!text.contains("provider-access-token"))
                 let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+                let userData = try #require(payload["user_data"] as? String)
+                let encoded = try #require(userData.components(separatedBy: "\n")
+                    .first(where: { $0.contains("content: ") })?.components(separatedBy: "content: ").last)
+                let bootstrap = try #require(Data(base64Encoded: encoded))
+                let secrets = try #require(JSONSerialization.jsonObject(with: bootstrap) as? [String: String])
+                #expect(secrets["ownerTokenHash"] == SHA256.hash(data: Data(installation.ownerToken.utf8)).map { String(format: "%02x", $0) }.joined())
+                #expect(!String(decoding: bootstrap, as: UTF8.self).contains(installation.ownerToken))
+                #expect(!String(decoding: bootstrap, as: UTF8.self).contains("provider-access-token"))
                 #expect(payload["backups"] as? Bool == false)
                 #expect(payload["monitoring"] as? Bool == false)
                 #expect(payload["ssh_keys"] == nil)
@@ -221,7 +231,10 @@ struct DigitalOceanCloudTests {
         }
         let cloud = DigitalOceanCloud(store: store, session: session, pollingAttempts: 1)
         await cloud.resume()
+        #expect(cloud.phase == .readyToCreate)
         await cloud.confirmCreate()
+        #expect(observations.creates == 1)
+        #expect(cloud.phase == .failed)
     }
 
     @MainActor private func initialState() throws -> DigitalOceanSavedState {

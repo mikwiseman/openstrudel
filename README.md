@@ -2,9 +2,17 @@
 
 OpenStrudel is a minimal personal AI Home: a Grok Bots style set of named employees with Codex underneath. One Home can be reached from the native Mac app, iOS app, Telegram, or the optional browser fallback.
 
-This repository contains the current development source. DigitalOcean onboarding is still being validated; this snapshot is not a new production release. Local credentials, chat histories and personal migration scripts are excluded.
+This repository contains the public source. Local credentials, chat histories and personal migration scripts are excluded. Downloads and current iOS availability are listed at [waiwai.is/openstrudel](https://waiwai.is/openstrudel).
 
 The product has three concepts: one Home process, named employees, and conversations. Codex owns the work and its thread history. OpenStrudel keeps channel bindings, messages and delivery receipts, employee instructions, connection state and the clock for recurring requests. There is no task dashboard or second agent loop.
+
+## Choose where Home runs
+
+The native Mac app can run Home on your Mac. For access away from the Mac or while it is asleep, choose cloud setup in the Mac or iPhone app. DigitalOcean is the only integrated cloud provider. Sign in to your own DigitalOcean account, review the current price and confirm before a server is created. You pay DigitalOcean directly; OpenStrudel adds no hosting charge.
+
+The cloud plan uses 2 vCPU and 4 GB RAM in Frankfurt, with Amsterdam as the same-plan fallback. Installation retries are bounded and reuse the same server and data volume. If setup is interrupted, reopen the app to check the existing installation rather than create another one. The app checks the server's generated identity before sending the owner credential.
+
+Cloud management remains available from the connection screen when Home is offline. To stop hosting charges, delete the server in DigitalOcean after saving any data you need. Closing the app or powering off the server does not end billing.
 
 ## Run locally
 

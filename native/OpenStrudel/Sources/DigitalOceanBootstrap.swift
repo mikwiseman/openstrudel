@@ -55,7 +55,7 @@ enum DigitalOceanBootstrap {
             encoding: b64
             content: \(installer.base64EncodedString())
         runcmd:
-          - [bash, /var/lib/openstrudel-cloud/install.sh]
+          - [bash, /var/lib/openstrudel-cloud/install.sh, --install-service]
         """ + "\n"
     }
 }

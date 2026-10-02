@@ -50,6 +50,7 @@ final class MobilePairingUITests: XCTestCase {
         guard let fixture = ProcessInfo.processInfo.environment["OPENSTRUDEL_PAIRING_FIXTURE"] else {
             throw XCTSkip("Start tests/fixtures/mobile-pairing.ts on an isolated simulator first.")
         }
+        let initial = try await read(fixture + "/state")
         let app = XCUIApplication()
         app.launch()
         // Only a disposable simulator may use this fixture. Keep real connections untouched.
@@ -99,8 +100,8 @@ final class MobilePairingUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 35), app.debugDescription)
         XCTAssertTrue(app.staticTexts["Подключение проверено."].waitForExistence(timeout: 10))
         let state = try await read(fixture + "/state")
-        XCTAssertEqual(state["connections"] as? Int, 1)
-        XCTAssertGreaterThan(state["unavailableResponses"] as? Int ?? 0, 0)
+        XCTAssertEqual(state["connections"] as? Int, (initial["connections"] as? Int ?? 0) + 1)
+        XCTAssertGreaterThan(state["unavailableResponses"] as? Int ?? 0, initial["unavailableResponses"] as? Int ?? 0)
         capture("05-recovered", app)
         app.terminate(); app.launch()
         XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 20), app.debugDescription)

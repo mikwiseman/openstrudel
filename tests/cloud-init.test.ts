@@ -22,6 +22,65 @@ function shell(code: string, root: string, args: string[] = []) {
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe("DigitalOcean cloud-init", () => {
+  function retryInstaller(root: string, action: string) {
+    // The retry tests isolate the durable attempt budget from the host's lock
+    // utility and package manager. The real bootstrap/replay has separate tests.
+    writeFileSync(join(root, "install.sh"), `#!/usr/bin/env bash
+set -eu
+cd "$(dirname "$0")"
+attempt=$(cat attempts)
+printf '%s\\n' "$attempt" >> runs
+cp -n bootstrap.json volume.json 2>/dev/null || true
+cmp bootstrap.json volume.json
+${action}
+`);
+  }
+  const attempt = (root: string) => shell("flock() { :; }; run_attempt", root);
+
+  it("resumes a transient failure in a fresh process with the same identity and volume", () => {
+    const root = fixture();
+    const original = readFileSync(join(root, "bootstrap.json"));
+    retryInstaller(root, '[[ "$attempt" -gt 1 ]]');
+    expect(attempt(root).status).toBe(1);
+    expect(attempt(root).status).toBe(0);
+    expect(attempt(root).status).toBe(0);
+    expect(readFileSync(join(root, "runs"), "utf8")).toBe("1\n2\n");
+    expect(readFileSync(join(root, "attempts"), "utf8")).toBe("2\n");
+    expect(readFileSync(join(root, "volume.json"))).toEqual(original);
+  });
+
+  it("counts an abruptly interrupted attempt before resuming it", () => {
+    const root = fixture();
+    retryInstaller(root, 'if [[ "$attempt" == 1 ]]; then kill -KILL "$PPID"; exit 0; fi');
+    expect(attempt(root).signal).toBe("SIGKILL");
+    expect(readFileSync(join(root, "attempts"), "utf8")).toBe("1\n");
+    expect(attempt(root).status).toBe(0);
+    expect(readFileSync(join(root, "runs"), "utf8")).toBe("1\n2\n");
+  });
+
+  it("stops after five failed attempts across restarts and preserves the volume", () => {
+    const root = fixture();
+    retryInstaller(root, "exit 42");
+    expect(Array.from({ length: 7 }, () => attempt(root).status)).toEqual([1, 1, 1, 1, 78, 78, 78]);
+    expect(readFileSync(join(root, "runs"), "utf8")).toBe("1\n2\n3\n4\n5\n");
+    expect(readFileSync(join(root, "volume.json"))).toEqual(readFileSync(join(root, "bootstrap.json")));
+    const unit = shell("installer_unit", root).stdout;
+    expect(unit).toContain("Restart=on-failure");
+    expect(unit).toContain("RestartPreventExitStatus=78");
+    expect(unit).toContain("RestartSec=60");
+    expect(unit).toContain("TimeoutStartSec=2h");
+    expect(unit).toContain("After=network-online.target cloud-final.service");
+    expect(unit).toContain("WantedBy=multi-user.target");
+  });
+
+  it("does not reset an invalid durable attempt budget", () => {
+    const root = fixture();
+    retryInstaller(root, "exit 0");
+    writeFileSync(join(root, "attempts"), "invalid\n");
+    expect(attempt(root).status).toBe(78);
+    expect(readFileSync(join(root, "attempts"), "utf8")).toBe("invalid\n");
+  });
+
   it("blocks metadata in forwarded container traffic before Docker, idempotently and fail closed", () => {
     const root = fixture(); const bin = join(root, "bin"); mkdirSync(bin);
     const fake = join(bin, "iptables");
@@ -57,6 +116,7 @@ describe("DigitalOcean cloud-init", () => {
     expect(result.invalidRejected).toBe(true);
     expect(Buffer.byteLength(result.userData)).toBeLessThan(65_536);
     expect(result.userData.startsWith("#cloud-config\n")).toBe(true);
+    expect(result.userData).toContain("[bash, /var/lib/openstrudel-cloud/install.sh, --install-service]");
     const contents = [...result.userData.matchAll(/content: ([A-Za-z0-9+/=]+)/g)].map(match => Buffer.from(match[1], "base64"));
     expect(contents).toHaveLength(3);
     const boot = JSON.parse(contents[0]!.toString("utf8"));

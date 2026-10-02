@@ -8,9 +8,11 @@
 
 /* Begin PBXBuildFile section */
 		066029DEC026A68A1379F314 /* MobilePairingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8AC19EC197C2FC60EBEB3D /* MobilePairingTests.swift */; };
+		1109A0AEE1C8475E2E3181A3 /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = B9A7842329C25226D34D8B1C /* cloud-init.sh */; };
 		1B7D1573EF6D0D4B9743DC03 /* MobileConnectionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41969DD182FE17F98BBEEE17 /* MobileConnectionViews.swift */; };
 		2D09788DED8F1C5EDE458BE2 /* iPhoneSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1132C0F7932A6440305D150A /* iPhoneSmokeTests.swift */; };
 		38670454174D5126BB5A84D1 /* ChatMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3D241925EF81E938247C15 /* ChatMedia.swift */; };
+		396D0DCDA42F07B7B6AD8CDA /* ReleaseScenariosUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 269C829F112500B5E34127F7 /* ReleaseScenariosUITests.swift */; };
 		3A4F31F9396C14C867C86558 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A12DEA162BBC10A8CA136D /* Views.swift */; };
 		4DB4F5AB41099807895716B3 /* MobileConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15270A8B1FADC16CBEE2AB86 /* MobileConnection.swift */; };
 		4E6B82BD6C972AB6EE32CAFE /* MessageContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9FCFCC5FBCE6D6D6D612458 /* MessageContent.swift */; };
@@ -19,6 +21,7 @@
 		5B679607856CC1AB98F6A104 /* DigitalOceanCloudTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06FEF9F7FF45A0D9EF5FFC46 /* DigitalOceanCloudTests.swift */; };
 		5E16737811633861DD72192E /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9234E96C15CA694F0A31099 /* Models.swift */; };
 		5E17805965A351ABB7620CF2 /* MobilePairingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DDBDB4821F4175BB293C35F /* MobilePairingUITests.swift */; };
+		6117E204130547257A2588AE /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = B9A7842329C25226D34D8B1C /* cloud-init.sh */; };
 		6233DE5478EEF12B4815FD6E /* LocalHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96054101E4801A6BCC170C1 /* LocalHome.swift */; };
 		63497E44A5FAA3B8E94C0FF6 /* StorePreviewUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63F40AD948917E9AE1685058 /* StorePreviewUITests.swift */; };
 		64365D840FC1C3F656F9447B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = E29C1F0D3A0FE125E35B565D /* PrivacyInfo.xcprivacy */; };
@@ -48,6 +51,7 @@
 		E666DB6B98B0F9FDC670BCC0 /* MobileConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15270A8B1FADC16CBEE2AB86 /* MobileConnection.swift */; };
 		E881BC2893184397D1A9AFE9 /* DigitalOceanBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A041EB646E3F285D182418 /* DigitalOceanBootstrap.swift */; };
 		EFD46E79E43C1763A4CF16F6 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A12DEA162BBC10A8CA136D /* Views.swift */; };
+		FC61FB4F58F351C111D601E9 /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = B9A7842329C25226D34D8B1C /* cloud-init.sh */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -64,6 +68,7 @@
 		06FEF9F7FF45A0D9EF5FFC46 /* DigitalOceanCloudTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DigitalOceanCloudTests.swift; sourceTree = "<group>"; };
 		1132C0F7932A6440305D150A /* iPhoneSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iPhoneSmokeTests.swift; sourceTree = "<group>"; };
 		15270A8B1FADC16CBEE2AB86 /* MobileConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileConnection.swift; sourceTree = "<group>"; };
+		269C829F112500B5E34127F7 /* ReleaseScenariosUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseScenariosUITests.swift; sourceTree = "<group>"; };
 		3D8AC19EC197C2FC60EBEB3D /* MobilePairingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePairingTests.swift; sourceTree = "<group>"; };
 		41969DD182FE17F98BBEEE17 /* MobileConnectionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileConnectionViews.swift; sourceTree = "<group>"; };
 		4DDBDB4821F4175BB293C35F /* MobilePairingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePairingUITests.swift; sourceTree = "<group>"; };
@@ -79,6 +84,7 @@
 		98BB832A7436E9C4AD93FB56 /* OpenStrudel iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "OpenStrudel iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A4A12DEA162BBC10A8CA136D /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
 		A635A0DA48A1D907252A7BCB /* SetupViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupViews.swift; sourceTree = "<group>"; };
+		B9A7842329C25226D34D8B1C /* cloud-init.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "cloud-init.sh"; sourceTree = "<group>"; };
 		C1A041EB646E3F285D182418 /* DigitalOceanBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DigitalOceanBootstrap.swift; sourceTree = "<group>"; };
 		C9FCFCC5FBCE6D6D6D612458 /* MessageContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageContent.swift; sourceTree = "<group>"; };
 		D671F62812BA20E0AF9CB2FA /* HomeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeClient.swift; sourceTree = "<group>"; };
@@ -125,6 +131,7 @@
 			children = (
 				1132C0F7932A6440305D150A /* iPhoneSmokeTests.swift */,
 				4DDBDB4821F4175BB293C35F /* MobilePairingUITests.swift */,
+				269C829F112500B5E34127F7 /* ReleaseScenariosUITests.swift */,
 				63F40AD948917E9AE1685058 /* StorePreviewUITests.swift */,
 			);
 			path = UITests;
@@ -141,15 +148,33 @@
 			path = Tests;
 			sourceTree = "<group>";
 		};
+		D0FBB4C713A965B14D031306 /* openmagic */ = {
+			isa = PBXGroup;
+			children = (
+				DE8D5727C568F73772686335 /* scripts */,
+			);
+			name = openmagic;
+			path = ../..;
+			sourceTree = "<group>";
+		};
 		D36F1D4A4647B04498C8FA96 = {
 			isa = PBXGroup;
 			children = (
 				709BE1A9B19D0468720417CF /* Assets.xcassets */,
+				D0FBB4C713A965B14D031306 /* openmagic */,
 				2C1B064E52E9C728955B5E56 /* Sources */,
 				9332B7FCD8BAD85E05291826 /* Tests */,
 				546851BDDD0611547A254A69 /* UITests */,
 				02AB75132E50BEA37746ADF2 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		DE8D5727C568F73772686335 /* scripts */ = {
+			isa = PBXGroup;
+			children = (
+				B9A7842329C25226D34D8B1C /* cloud-init.sh */,
+			);
+			path = scripts;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -160,6 +185,7 @@
 			buildConfigurationList = 844BD3E688EE1D3B081DAE77 /* Build configuration list for PBXNativeTarget "OpenStrudel Text Tests" */;
 			buildPhases = (
 				077DAE2E968437B4E4D2D0DD /* Sources */,
+				C1E96E288D0CF4DD8A084F1E /* Resources */,
 			);
 			buildRules = (
 			);
@@ -281,6 +307,15 @@
 			files = (
 				AEBC06A730AF2BB81D4BA10A /* Assets.xcassets in Resources */,
 				8948A7997B267280DC592F77 /* PrivacyInfo.xcprivacy in Resources */,
+				6117E204130547257A2588AE /* cloud-init.sh in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C1E96E288D0CF4DD8A084F1E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1109A0AEE1C8475E2E3181A3 /* cloud-init.sh in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -290,6 +325,7 @@
 			files = (
 				A79D2D5137601CAA6E565304 /* Assets.xcassets in Resources */,
 				64365D840FC1C3F656F9447B /* PrivacyInfo.xcprivacy in Resources */,
+				FC61FB4F58F351C111D601E9 /* cloud-init.sh in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -356,6 +392,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5E17805965A351ABB7620CF2 /* MobilePairingUITests.swift in Sources */,
+				396D0DCDA42F07B7B6AD8CDA /* ReleaseScenariosUITests.swift in Sources */,
 				63497E44A5FAA3B8E94C0FF6 /* StorePreviewUITests.swift in Sources */,
 				2D09788DED8F1C5EDE458BE2 /* iPhoneSmokeTests.swift in Sources */,
 			);
@@ -376,6 +413,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = iOSAppIcon;
+				CODE_SIGN_ENTITLEMENTS = iOS.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				INFOPLIST_FILE = "iOS-Info.plist";
@@ -415,6 +453,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = iOSAppIcon;
+				CODE_SIGN_ENTITLEMENTS = iOS.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				INFOPLIST_FILE = "iOS-Info.plist";
@@ -516,7 +555,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -613,7 +652,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

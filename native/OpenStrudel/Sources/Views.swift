@@ -105,7 +105,7 @@ private struct HomeUnavailableView: View {
                     .font(.system(.largeTitle, design: .serif, weight: .medium))
                     .multilineTextAlignment(.center)
                 Text(client.isConfigured && !client.isLocalConnection
-                     ? "\(client.connectionName) пока недоступен. Ваши чаты сохранены — подключимся автоматически."
+                     ? "«\(client.connectionName)» пока не на связи. Ваши чаты сохранены. Подключимся автоматически."
                      : "Выберите, где будут работать ваши сотрудники.")
                     .font(.body).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
@@ -115,6 +115,13 @@ private struct HomeUnavailableView: View {
                     Button { Task { await client.load() } } label: {
                         SetupActionLabel(title: "Попробовать ещё раз", icon: "arrow.clockwise")
                     }.buttonStyle(.glassProminent).controlSize(.large)
+                    if let managementURL = DigitalOceanCloud.managementURL(for: client.normalizedBaseURL) {
+                        Link(destination: managementURL) {
+                            SetupActionLabel(title: "Управлять облаком", icon: "arrow.up.right.square")
+                        }.buttonStyle(.glass).controlSize(.large)
+                            .accessibilityIdentifier("manageCloudOffline")
+                            .accessibilityHint("Открыть вашу установку в DigitalOcean")
+                    }
                 } else if LocalHome.isAvailable {
                     Button {
                         starting = true

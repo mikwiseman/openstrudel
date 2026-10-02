@@ -16,6 +16,11 @@ targets:
   OpenStrudel iOS:
     type: application
     platform: iOS
+    entitlements:
+      path: iOS.entitlements
+      properties:
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)
     info:
       path: iOS-Info.plist
       properties:
@@ -48,9 +53,6 @@ targets:
     sources:
       - path: Sources
       - path: Assets.xcassets
-    resources:
-      - path: Assets.xcassets
-        buildPhase: resources
       - path: ../../scripts/cloud-init.sh
         buildPhase: resources
     settings:
@@ -92,9 +94,6 @@ targets:
     sources:
       - path: Sources
       - path: Assets.xcassets
-    resources:
-      - path: Assets.xcassets
-        buildPhase: resources
       - path: ../../scripts/cloud-init.sh
         buildPhase: resources
     settings:
@@ -117,7 +116,6 @@ targets:
       - path: Sources/MobileConnection.swift
       - path: Sources/DigitalOceanBootstrap.swift
       - path: Sources/DigitalOceanCloud.swift
-    resources:
       - path: ../../scripts/cloud-init.sh
         buildPhase: resources
     settings:

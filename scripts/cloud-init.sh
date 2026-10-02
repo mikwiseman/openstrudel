@@ -10,6 +10,71 @@ STAGING_DIR=
 fail() { printf 'OpenStrudel: %s\n' "$*" >&2; exit 1; }
 progress() { printf 'OpenStrudel: %s\n' "$1"; }
 
+installer_unit() {
+  cat <<'UNIT'
+[Unit]
+Description=Finish the OpenStrudel cloud installation
+Wants=network-online.target
+After=network-online.target cloud-final.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /var/lib/openstrudel-cloud/install.sh --attempt
+Restart=on-failure
+RestartSec=60
+RestartPreventExitStatus=78
+TimeoutStartSec=2h
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+}
+
+install_service() {
+  check_host
+  installer_unit > "$STATE_DIR/install.service"
+  install -m 0644 "$STATE_DIR/install.service" /etc/systemd/system/openstrudel-install.service
+  systemctl daemon-reload
+  # Do not wait for a unit ordered after cloud-final from inside cloud-final.
+  systemctl enable --now --no-block openstrudel-install.service
+}
+
+run_attempt() {
+  # Persist the limit before starting any work. Unlike systemd's restart counter,
+  # this survives reboot, a killed installer, and another "start" request.
+  exec 8>"$STATE_DIR/attempt.lock"
+  flock -w 30 8 || exit 78
+  if [[ -f "$STATE_DIR/complete" ]]; then
+    progress 'Installation already completed.'
+    return
+  fi
+  local attempt=0
+  if [[ -f "$STATE_DIR/attempts" ]]; then
+    read -r attempt < "$STATE_DIR/attempts" || exit 78
+  fi
+  if [[ ! "$attempt" =~ ^[0-5]$ || "$attempt" == 5 ]]; then
+    progress 'Installation attempts exhausted. Check this server in DigitalOcean; billing continues until it is deleted.'
+    exit 78
+  fi
+  attempt=$((attempt + 1))
+  printf '%s\n' "$attempt" > "$STATE_DIR/attempts.new"
+  mv "$STATE_DIR/attempts.new" "$STATE_DIR/attempts"
+  progress "Installation attempt $attempt of 5."
+  # A separate shell preserves errexit inside main, even in this conditional.
+  if /bin/bash "$STATE_DIR/install.sh" --run-once; then
+    printf 'complete\n' > "$STATE_DIR/complete.new"
+    mv "$STATE_DIR/complete.new" "$STATE_DIR/complete"
+  elif [[ "$attempt" == 5 ]]; then
+    progress 'Installation attempts exhausted. Existing data is preserved; check this server in DigitalOcean.'
+    exit 78
+  else
+    progress 'Installation interrupted. The same installation will resume after one minute.'
+    exit 1
+  fi
+}
+
 check_input() {
   INSTALLATION_ID=$(python3 - "$STATE_DIR" <<'PY'
 import json, pathlib, re, sys, uuid
@@ -111,26 +176,31 @@ install_metadata_guard() {
 install_dependencies() {
   progress 'Preparing the server.'
   export DEBIAN_FRONTEND=noninteractive
+  # A power loss can leave dpkg mid-configuration. Merely retrying apt then
+  # fails forever; finish the previous transaction before starting a new one.
+  timeout 900 dpkg --configure -a || {
+    timeout 900 apt-get -f install -y --no-install-recommends
+    timeout 900 dpkg --configure -a
+  }
   timeout 600 apt-get update -qq
   timeout 900 apt-get install -y --no-install-recommends ca-certificates curl python3 util-linux apparmor iptables
   install_metadata_guard
-  if ! command -v docker >/dev/null 2>&1; then
-    # Docker's official Ubuntu apt repository, not the convenience shell script:
-    # https://docs.docker.com/engine/install/ubuntu/#install-using-the-apt-repository
-    [[ ! -e /etc/apt/sources.list.d/docker.list ]] || fail 'Existing Docker repository configuration requires attention.'
-    if [[ -e /etc/apt/sources.list.d/docker.sources ]]; then
-      write_docker_source /etc/apt/sources.list.d/docker.sources "$(dpkg --print-architecture)"
-    fi
-    install -m 0755 -d /etc/apt/keyrings
-    curl --proto '=https' --tlsv1.2 -fsSL --retry 3 --connect-timeout 15 --max-time 90 \
-      https://download.docker.com/linux/ubuntu/gpg -o "$STATE_DIR/docker.asc"
-    install -m 0644 "$STATE_DIR/docker.asc" /etc/apt/keyrings/docker.asc
-    rm "$STATE_DIR/docker.asc"
-    chmod 0644 /etc/apt/keyrings/docker.asc
+  # Reconcile every package even when a previous attempt installed the CLI but
+  # was interrupted before the Engine or Compose was configured.
+  # https://docs.docker.com/engine/install/ubuntu/#install-using-the-apt-repository
+  [[ ! -e /etc/apt/sources.list.d/docker.list ]] || fail 'Existing Docker repository configuration requires attention.'
+  if [[ -e /etc/apt/sources.list.d/docker.sources ]]; then
     write_docker_source /etc/apt/sources.list.d/docker.sources "$(dpkg --print-architecture)"
-    timeout 600 apt-get update -qq
-    timeout 1200 apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   fi
+  install -m 0755 -d /etc/apt/keyrings
+  curl --proto '=https' --tlsv1.2 -fsSL --retry 3 --connect-timeout 15 --max-time 90 \
+    https://download.docker.com/linux/ubuntu/gpg -o "$STATE_DIR/docker.asc"
+  install -m 0644 "$STATE_DIR/docker.asc" /etc/apt/keyrings/docker.asc
+  rm "$STATE_DIR/docker.asc"
+  chmod 0644 /etc/apt/keyrings/docker.asc
+  write_docker_source /etc/apt/sources.list.d/docker.sources "$(dpkg --print-architecture)"
+  timeout 600 apt-get update -qq
+  timeout 1200 apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   [[ -r /sys/module/apparmor/parameters/enabled && "$(cat /sys/module/apparmor/parameters/enabled)" == Y ]] || fail 'AppArmor must be enabled; the Codex sandbox will not be disabled.'
   systemctl enable --now docker
   local version
@@ -266,4 +336,11 @@ main() {
   progress 'Ready. Return to OpenStrudel to connect.'
 }
 
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  case "${1:---attempt}" in
+    --install-service) install_service ;;
+    --attempt) run_attempt ;;
+    --run-once) main ;;
+    *) fail 'Unknown installer operation.' ;;
+  esac
+fi

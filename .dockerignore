@@ -4,6 +4,7 @@
 !tsconfig.json
 !src
 !src/**
+src/migration.ts
 !scripts
 !scripts/container-start.sh
 !scripts/check-sandbox.mjs

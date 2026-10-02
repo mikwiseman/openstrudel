@@ -135,7 +135,7 @@ struct MobileWelcomeView: View {
                         .font(.system(.largeTitle, design: .serif, weight: .medium))
                         .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                     Text(client.connectionNeedsPairing ? "Подключение отозвано. Создайте новое приглашение на своём Mac или сервере." : client.isConfigured
-                         ? "\(client.connectionName) пока недоступен. Подключимся автоматически."
+                         ? "«\(client.connectionName)» пока не на связи. Подключимся автоматически."
                          : "Начните в облаке или подключитесь\nк своему OpenStrudel.")
                         .font(.body).foregroundStyle(.secondary).multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true).padding(.top, 14)
@@ -145,6 +145,13 @@ struct MobileWelcomeView: View {
                     }
                     Spacer(minLength: 48)
                     VStack(spacing: 14) {
+                        if let managementURL = DigitalOceanCloud.managementURL(for: client.normalizedBaseURL) {
+                            Link(destination: managementURL) {
+                                SetupActionLabel(title: "Управлять облаком", icon: "arrow.up.right.square")
+                            }.buttonStyle(.glass).controlSize(.large)
+                                .accessibilityIdentifier("manageCloudOffline")
+                                .accessibilityHint("Открыть вашу установку в DigitalOcean")
+                        }
                         if !client.isConfigured {
                             Button { showingSetup = true } label: {
                                 SetupActionLabel(title: "Начать в облаке", icon: "cloud")
