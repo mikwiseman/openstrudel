@@ -107,7 +107,7 @@ private struct HomeUnavailableView: View {
                 Text(client.isConfigured && !client.isLocalConnection
                      ? "«\(client.connectionName)» пока не на связи. Ваши чаты сохранены. Подключимся автоматически."
                      : "Выберите, где будут работать ваши сотрудники.")
-                    .font(.body).foregroundStyle(.secondary)
+                    .font(.body).foregroundStyle(AppTheme.secondaryText)
                     .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             }
             VStack(spacing: 12) {
@@ -141,11 +141,11 @@ private struct HomeUnavailableView: View {
                 }
                 Button { showingInvitation = true } label: {
                     SetupActionLabel(title: "Уже настроено", icon: "link")
-                }.buttonStyle(.plain).foregroundStyle(.secondary)
+                }.buttonStyle(.plain).foregroundStyle(AppTheme.secondaryText)
                     .disabled(starting).accessibilityIdentifier("setupExisting")
             }
             Link("Конфиденциальность", destination: URL(string: "https://waiwai.is/openstrudel/privacy")!)
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(AppTheme.secondaryText)
         }
         .padding(40).frame(maxWidth: 520).frame(maxWidth: .infinity)
         }.defaultScrollAnchor(.center, for: .alignment)
@@ -169,7 +169,7 @@ private struct SetupChoiceLabel: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
-        }.foregroundStyle(.primary).padding(.horizontal, 8).padding(.vertical, 12)
+        }.padding(.horizontal, 8).padding(.vertical, 12)
             .frame(maxWidth: .infinity, minHeight: 62).contentShape(Rectangle())
     }
 }
@@ -192,7 +192,7 @@ private struct Sidebar: View {
             HStack(spacing: 10) {
                 if searching {
                     HStack(spacing: 6) {
-                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                        Image(systemName: "magnifyingglass").foregroundStyle(AppTheme.secondaryText)
                         TextField("Найти чат", text: $query)
                             .textFieldStyle(.plain)
                             .focused($searchFocused)
@@ -218,7 +218,7 @@ private struct Sidebar: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppTheme.secondaryText)
                     .accessibilityLabel("Поиск чата")
 
                     Spacer()
@@ -234,7 +234,7 @@ private struct Sidebar: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppTheme.secondaryText)
                 .disabled(client.isCreating)
                 .accessibilityLabel("Новый сотрудник")
             }
@@ -281,7 +281,7 @@ private struct Sidebar: View {
                 AccountBadge(email: client.openAIAccount?.email, size: 30)
                 Text(client.openAIAccount?.email ?? "Аккаунт")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppTheme.secondaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer()
@@ -292,7 +292,7 @@ private struct Sidebar: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppTheme.secondaryText)
                 .accessibilityLabel("Настройки")
             }
             .padding(.horizontal, 16)
@@ -324,7 +324,7 @@ private struct SidebarRow: View {
                 OpenStrudelMark(size: 36, hue: hue)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(.system(size: 15, weight: .medium)).lineLimit(1)
-                    if !subtitle.isEmpty { Text(subtitle).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1) }
+                    if !subtitle.isEmpty { Text(subtitle).font(.system(size: 12)).foregroundStyle(AppTheme.secondaryText).lineLimit(1) }
                 }
                 Spacer(minLength: 0)
             }
@@ -372,7 +372,7 @@ private struct ConversationView: View {
                         LazyVStack(alignment: .leading, spacing: 16) {
                             if client.messages.count >= client.historyLimit {
                                 Button("Ранее") { Task { await client.loadEarlierMessages() } }
-                                    .font(.caption).buttonStyle(.plain).foregroundStyle(.secondary)
+                                    .font(.caption).buttonStyle(.plain).foregroundStyle(AppTheme.secondaryText)
                                     .frame(maxWidth: .infinity)
                             }
                             ForEach(Array(client.messages.enumerated()), id: \.element.id) { index, message in
@@ -383,7 +383,7 @@ private struct ConversationView: View {
                                 VStack(alignment: .trailing, spacing: 4) {
                                     PendingMessageBubble(text: pending.text, files: pending.files)
                                     if let error = pending.error {
-                                        Text(error).font(.caption).foregroundStyle(.secondary)
+                                        Text(error).font(.caption).foregroundStyle(AppTheme.secondaryText)
                                         Button("Повторить") { Task { await client.retry(pending) } }.buttonStyle(.plain)
                                     }
                                 }
@@ -397,7 +397,7 @@ private struct ConversationView: View {
                                 ThinkingBubble(name: client.activeAgentName, hue: client.activeProfile?.markHue ?? .zero).id("thinking-message")
                             }
                             if let error = client.syncError {
-                                Text(error).font(.caption).foregroundStyle(.secondary)
+                                Text(error).font(.caption).foregroundStyle(AppTheme.secondaryText)
                             }
                             Color.clear.frame(height: 1).id("conversation-bottom")
                         }
@@ -511,6 +511,7 @@ private struct ConversationView: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button { focused = false; showEmployees = true } label: { Image(systemName: "line.3.horizontal") }
+                    .foregroundStyle(.primary)
                     .accessibilityLabel("Чаты")
             }
             ToolbarItem(placement: .principal) {
@@ -530,6 +531,7 @@ private struct ConversationView: View {
                     focused = false
                     if client.activeProfile == nil { showSettings = true } else { showBotDetails = true }
                 } label: { Image(systemName: "ellipsis") }
+                    .foregroundStyle(.primary)
                     .accessibilityLabel(client.activeProfile == nil ? "Настройки" : "Настройки бота")
             }
         }
@@ -589,7 +591,7 @@ private struct ConversationHeader: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AppTheme.secondaryText)
             .accessibilityLabel("Чаты")
             #else
             Spacer().frame(width: controlTarget)
@@ -624,7 +626,7 @@ private struct ConversationHeader: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppTheme.secondaryText)
                 .accessibilityLabel(client.activeProfile == nil ? "Настройки" : "Настройки бота")
             } else {
                 Spacer().frame(width: controlTarget)
@@ -654,7 +656,7 @@ private struct EmptyChat: View {
             if client.isEmployeeDraft {
                 Text("Расскажите прямо здесь. Остальное сложится в разговоре.")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppTheme.secondaryText)
                 Picker("Область", selection: $client.draftEmployeeDomain) {
                     Text("Личное").tag("personal")
                     Text("Работа").tag("work")
@@ -662,7 +664,7 @@ private struct EmptyChat: View {
                 .pickerStyle(.segmented).frame(width: 210).padding(.top, 8)
             } else if let profile = client.activeProfile {
                 Text(profile.roleText.isEmpty ? "Напишите, что нужно." : profile.roleText)
-                    .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .font(.subheadline).foregroundStyle(AppTheme.secondaryText).multilineTextAlignment(.center)
                     .frame(maxWidth: 360)
             }
         }
@@ -687,7 +689,7 @@ private struct DayDivider: View {
     var body: some View {
         Text(ChatClock.day(date))
             .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AppTheme.secondaryText)
             .frame(maxWidth: .infinity)
             .padding(.top, 6)
             .accessibilityAddTraits(.isHeader)
@@ -704,18 +706,18 @@ private struct MessageBubble: View {
         if let scheduleTitle = message.scheduleTitle {
             VStack(alignment: .leading, spacing: 4) {
                 Label(withTime(scheduleTitle), systemImage: "clock")
-                    .font(.caption).foregroundStyle(.secondary)
-                if let error = message.error { Text(error).font(.caption).foregroundStyle(.orange) }
+                    .font(.caption).foregroundStyle(AppTheme.secondaryText)
+                if let error = message.error { Text(error).font(.caption).foregroundStyle(AppTheme.warning) }
             }.padding(.vertical, 4)
         } else if message.kind == "notice" {
             Label(withTime(message.text), systemImage: "checkmark")
-                .font(.caption).foregroundStyle(.secondary).padding(.vertical, 4)
+                .font(.caption).foregroundStyle(AppTheme.secondaryText).padding(.vertical, 4)
         } else {
             HStack(alignment: .bottom) {
                 if isUser { Spacer(minLength: 44) }
                 VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
                     if message.imported == true, let author = message.author {
-                        Text(author).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 6)
+                        Text(author).font(.caption).foregroundStyle(AppTheme.secondaryText).padding(.horizontal, 6)
                     }
                     VStack(alignment: .leading, spacing: 9) {
                         if isUser && !message.text.isEmpty {
@@ -732,10 +734,10 @@ private struct MessageBubble: View {
                                 Task { previewURL = await client.previewFile(file) }
                             } label: {
                                 HStack(spacing: 10) {
-                                    Image(systemName: file.icon).font(.title3).foregroundStyle(.secondary)
+                                    Image(systemName: file.icon).font(.title3).foregroundStyle(AppTheme.secondaryText)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(file.name).font(.callout.weight(.medium)).lineLimit(2)
-                                        Text(file.sizeLabel).font(.caption).foregroundStyle(.secondary)
+                                        Text(file.sizeLabel).font(.caption).foregroundStyle(AppTheme.secondaryText)
                                     }
                                     Spacer(minLength: 8)
                                     Image(systemName: "arrow.down").font(.caption).foregroundStyle(.tertiary)
@@ -746,9 +748,9 @@ private struct MessageBubble: View {
                     }
                     .padding(.horizontal, 16).padding(.vertical, 11)
                     .background(.primary.opacity(isUser ? 0.10 : 0.045), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    if let error = message.error { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+                    if let error = message.error { Text(error).font(.caption).foregroundStyle(AppTheme.warning).textSelection(.enabled) }
                     if !meta.isEmpty {
-                        Text(meta).font(.caption2).foregroundStyle(.tertiary).monospacedDigit().padding(.horizontal, 6)
+                        Text(meta).font(.caption2).foregroundStyle(AppTheme.metadataText).monospacedDigit().padding(.horizontal, 6)
                     }
                 }
                 if !isUser { Spacer(minLength: 12) }
@@ -810,7 +812,7 @@ private struct ThinkingBubble: View {
                 }
                 Text(name + " работает")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppTheme.secondaryText)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
@@ -842,9 +844,9 @@ private struct Composer: View {
                                 if file.mimeType.hasPrefix("image/"), let image = ChatMedia.thumbnail(file.data) {
                                     Image(decorative: image, scale: 1).resizable().scaledToFill()
                                         .frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 8))
-                                } else { Image(systemName: "doc").foregroundStyle(.secondary).frame(width: 28) }
+                                } else { Image(systemName: "doc").foregroundStyle(AppTheme.secondaryText).frame(width: 28) }
                                 Text(file.name).font(.caption).lineLimit(1)
-                                Button { files.removeAll { $0.id == file.id } } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary).frame(width: 28, height: 28) }
+                                Button { files.removeAll { $0.id == file.id } } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(AppTheme.secondaryText).frame(width: controlTarget, height: controlTarget).contentShape(Rectangle()) }
                                     .buttonStyle(.plain).accessibilityLabel("Убрать " + file.name)
                             }.padding(5).background(.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
                         }
@@ -858,10 +860,10 @@ private struct Composer: View {
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppTheme.secondaryText)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AppTheme.secondaryText)
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .frame(width: controlTarget, height: controlTarget)
@@ -985,10 +987,10 @@ private struct EmployeePickerRow: View {
                 OpenStrudelMark(size: 42, hue: hue)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(.body.weight(.medium)).lineLimit(2)
-                    if !subtitle.isEmpty { Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                    if !subtitle.isEmpty { Text(subtitle).font(.caption).foregroundStyle(AppTheme.secondaryText).lineLimit(1) }
                 }
                 Spacer()
-                if selected { Image(systemName: "checkmark").foregroundStyle(.secondary) }
+                if selected { Image(systemName: "checkmark").foregroundStyle(AppTheme.secondaryText) }
             }
             .padding(.vertical, 5)
             .contentShape(Rectangle())
@@ -1023,7 +1025,7 @@ private struct BotDetailsView: View {
                     OpenStrudelMark(size: 56, hue: profile.markHue)
                     VStack(alignment: .leading, spacing: 3) {
                         TextField("Имя сотрудника", text: $name).textFieldStyle(.plain).font(.title2.weight(.semibold))
-                        Text(profile.isWork ? "Рабочий сотрудник" : "Личный сотрудник").font(.caption).foregroundStyle(.secondary)
+                        Text(profile.isWork ? "Рабочий сотрудник" : "Личный сотрудник").font(.caption).foregroundStyle(AppTheme.secondaryText)
                     }
                 }
                 VStack(alignment: .leading, spacing: 8) {
@@ -1046,7 +1048,7 @@ private struct BotDetailsView: View {
                         Label("Telegram", systemImage: "paperplane")
                         Spacer()
                         Text((client.telegram?.chats ?? []).filter { $0.profileId == profile.id }.map(\.title).joined(separator: ", "))
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            .font(.caption).foregroundStyle(AppTheme.secondaryText).lineLimit(1)
                         Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                     }.contentShape(Rectangle())
                 }.buttonStyle(.plain)
@@ -1058,7 +1060,7 @@ private struct BotDetailsView: View {
                     Toggle(isOn: Binding(get: { schedule.enabled }, set: { value in Task { await client.setSchedule(schedule, enabled: value) } })) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(schedule.name).font(.callout.weight(.medium))
-                            Text(schedule.timing).font(.caption).foregroundStyle(.secondary)
+                            Text(schedule.timing).font(.caption).foregroundStyle(AppTheme.secondaryText)
                         }
                     }
                 }
@@ -1070,7 +1072,7 @@ private struct BotDetailsView: View {
                     }
                 }
                 if let failed = client.scheduleRuns.first, let error = failed.error {
-                    Text(error).font(.caption).foregroundStyle(.orange)
+                    Text(error).font(.caption).foregroundStyle(AppTheme.warning)
                 }
             }
             .padding(24)
@@ -1113,20 +1115,24 @@ struct SettingsView: View {
                     SectionTitle(title: "Telegram", subtitle: "Пишите OpenStrudel из Telegram")
                     TelegramSettingsCard()
                     MobilePairingSettings()
+                    #if os(macOS)
+                    SectionTitle(title: "Обновления", subtitle: "Новые версии OpenStrudel")
+                    UpdateSettings()
+                    #endif
                     #if os(iOS)
                     Text("Чаты и сотрудники — с \(client.connectionName). Продолжайте с любого устройства.")
-                        .font(.footnote).foregroundStyle(.secondary).padding(.top, 12)
+                        .font(.footnote).foregroundStyle(AppTheme.secondaryText).padding(.top, 12)
                     #endif
                     if let url = DigitalOceanCloud.managementURL(for: client.normalizedBaseURL) {
                         Link(destination: url) { Label("Управлять облаком", systemImage: "arrow.up.right") }
                             .font(.callout).padding(.top, 12)
                         Text("Оплатой и размещением управляет DigitalOcean. Закрытие приложения не прекращает оплату.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.caption).foregroundStyle(AppTheme.secondaryText)
                     }
                     HStack(spacing: 20) {
                         Link("Помощь", destination: URL(string: "https://waiwai.is/openstrudel#help")!)
                         Link("Конфиденциальность", destination: URL(string: "https://waiwai.is/openstrudel/privacy")!)
-                    }.font(.caption).foregroundStyle(.secondary).padding(.top, 16)
+                    }.font(.caption).foregroundStyle(AppTheme.secondaryText).padding(.top, 16)
                 }
                 .padding(22)
                 .frame(maxWidth: 620, alignment: .leading)
@@ -1158,7 +1164,7 @@ struct SectionTitle: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.headline)
-            Text(subtitle).font(.caption).foregroundStyle(.secondary)
+            Text(subtitle).font(.caption).foregroundStyle(AppTheme.secondaryText)
         }
         .padding(.top, 8)
     }
@@ -1182,24 +1188,24 @@ private struct OpenAISettingsCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     if let account = client.openAIAccount, account.connected {
                         Text(account.email ?? "OpenAI").font(.subheadline.weight(.medium))
-                        Text(planTitle(account.planType)).font(.caption).foregroundStyle(.secondary)
+                        Text(planTitle(account.planType)).font(.caption).foregroundStyle(AppTheme.secondaryText)
                     } else {
                         Text("Аккаунт не подключён").font(.subheadline.weight(.medium))
-                        Text("Войдите через OpenAI").font(.caption).foregroundStyle(.secondary)
+                        Text("Войдите через OpenAI").font(.caption).foregroundStyle(AppTheme.secondaryText)
                     }
+                    ConnectionStatus(connected: connected)
                 }
                 Spacer()
-                ConnectionStatus(connected: connected)
             }
             }
 
             if let login = client.openAILogin {
                 VStack(alignment: .leading, spacing: 8) {
                     if login.type == "device", let code = login.userCode {
-                        Text("Введите код в открывшемся окне").font(.caption).foregroundStyle(.secondary)
+                        Text("Введите код в открывшемся окне").font(.caption).foregroundStyle(AppTheme.secondaryText)
                         Text(code).font(.system(.title3, design: .monospaced).weight(.semibold)).textSelection(.enabled)
                     } else {
-                        Text("Откройте страницу OpenAI и завершите вход.").font(.caption).foregroundStyle(.secondary)
+                        Text("Откройте страницу OpenAI и завершите вход.").font(.caption).foregroundStyle(AppTheme.secondaryText)
                     }
                     Button { Task { await client.cancelOpenAILogin() } } label: {
                         SetupActionLabel(title: "Отменить")
@@ -1240,7 +1246,7 @@ private struct OpenAIWelcomeView: View {
                 Text("Начнём с вашего аккаунта.")
                     .font(.system(.largeTitle, design: .serif, weight: .medium)).multilineTextAlignment(.center)
                 Text("Войдите в ChatGPT. OpenStrudel использует вашу подписку и Codex.")
-                    .font(.body).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .font(.body).foregroundStyle(AppTheme.secondaryText).multilineTextAlignment(.center)
             }
             OpenAISettingsCard(showIdentity: false)
         }.padding(32).frame(maxWidth: 480).frame(maxWidth: .infinity)
@@ -1272,7 +1278,7 @@ private struct TelegramChatsView: View {
             VStack(alignment: .leading, spacing: 20) {
                 if client.telegram?.configured != true {
                     Text("Telegram пока не подключён. Настройка доступна в настройках приложения.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppTheme.secondaryText)
                 } else {
                     Section {
                         if paired, let name = client.telegram?.botUsername, let url = URL(string: "https://t.me/" + name + "?startgroup=choose&admin=manage_chat") {
@@ -1284,24 +1290,24 @@ private struct TelegramChatsView: View {
                         }
                     } footer: {
                         Text(paired ? "Telegram предложит сделать бота администратором, чтобы он видел сообщения группы. Затем выберите сотрудника здесь." : "Сначала свяжите свой Telegram-аккаунт.")
-                            .font(.caption).fontWeight(.regular).foregroundStyle(.secondary)
+                            .font(.caption).fontWeight(.regular).foregroundStyle(AppTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if !chats.isEmpty {
                         Section {
                             ForEach(chats) { chat in
                                 HStack {
-                                    Image(systemName: chat.chatId.hasPrefix("-") ? "person.2" : "person.crop.circle").foregroundStyle(.secondary)
+                                    Image(systemName: chat.chatId.hasPrefix("-") ? "person.2" : "person.crop.circle").foregroundStyle(AppTheme.secondaryText)
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(chat.title)
                                         Text(client.profiles.first(where: { $0.id == chat.profileId })?.name ?? (chat.chatId.hasPrefix("-") ? "Выберите сотрудника" : "Главный собеседник"))
-                                            .font(.caption).foregroundStyle(.secondary)
+                                            .font(.caption).foregroundStyle(AppTheme.secondaryText)
                                     }
                                     Spacer()
                                     if let profile {
                                         if chat.profileId == profile.id {
                                             Menu { Button("Отвязать", role: .destructive) { Task { await client.bindTelegram(chatID: chat.chatId, profileID: nil) } } } label: {
-                                                Image(systemName: "checkmark").foregroundStyle(.secondary)
+                                                Image(systemName: "checkmark").foregroundStyle(AppTheme.secondaryText)
                                             }.menuIndicator(.hidden).accessibilityLabel("Чат связан")
                                         } else {
                                             Button("Связать") {
@@ -1320,7 +1326,7 @@ private struct TelegramChatsView: View {
                             }
                         } footer: {
                             Text("В группе — отдельная переписка. Личная история туда не передаётся. Пока бот отвечает только тому, кто его подключил.")
-                                .font(.caption).fontWeight(.regular).foregroundStyle(.secondary)
+                                .font(.caption).fontWeight(.regular).foregroundStyle(AppTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -1357,17 +1363,19 @@ private struct TelegramSettingsCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Image(systemName: "paperplane.fill").foregroundStyle(.blue)
-                Text(client.telegram?.botUsername.map { "@" + $0 } ?? "Telegram")
-                    .font(.subheadline.weight(.medium))
+                Image(systemName: "paperplane.fill").foregroundStyle(AppTheme.secondaryText)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(client.telegram?.botUsername.map { "@" + $0 } ?? "Telegram")
+                        .font(.subheadline.weight(.medium))
+                    if client.telegram?.configured == true { ConnectionStatus(connected: client.telegram?.running == true) }
+                }
                 Spacer()
-                if client.telegram?.configured == true { ConnectionStatus(connected: client.telegram?.running == true) }
             }
             if let telegram = client.telegram, telegram.configured {
                 if let url = client.telegramLink?.url {
                     Link("Открыть Telegram", destination: url).buttonStyle(.borderedProminent)
                     Text("В Telegram нажмите «Начать», чтобы продолжить разговор.")
-                        .font(.callout).foregroundStyle(.secondary)
+                        .font(.callout).foregroundStyle(AppTheme.secondaryText)
                 }
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) { telegramActions }
@@ -1375,7 +1383,7 @@ private struct TelegramSettingsCard: View {
                 }
             } else {
                 Text("Telegram пока недоступен для новых подключений в этой сборке. Ваши сотрудники уже работают в приложении.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .font(.callout).foregroundStyle(AppTheme.secondaryText)
             }
         }
         .settingsCard()
@@ -1404,7 +1412,7 @@ struct ConnectionStatus: View {
             Text(connected ? "Подключён" : "Не подключён")
         }
         .font(.caption)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(AppTheme.secondaryText)
     }
 }
 
@@ -1419,7 +1427,7 @@ private struct AccountBadge: View {
             .overlay {
                 Text(String((email ?? "O").prefix(1)).uppercased())
                     .font(.system(size: size * 0.42, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppTheme.secondaryText)
             }
             .accessibilityHidden(true)
     }
@@ -1463,7 +1471,6 @@ private struct HomeBackground: View {
             #else
             Color(uiColor: .systemBackground)
             #endif
-            RadialGradient(colors: [.indigo.opacity(0.05), .clear], center: .topLeading, startRadius: 0, endRadius: 620)
         }
         .ignoresSafeArea()
     }
@@ -1481,7 +1488,7 @@ private struct InteractionCard: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(interaction.title).font(.headline)
             if let detail = interaction.detail, !detail.isEmpty {
-                Text(detail).font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled)
+                Text(detail).font(.subheadline).foregroundStyle(AppTheme.secondaryText).textSelection(.enabled)
             }
             if let raw = interaction.url, let url = URL(string: raw) {
                 Button("Открыть подключение", systemImage: "arrow.up.right") { openURL(url) }
@@ -1505,7 +1512,7 @@ private struct InteractionCard: View {
                     .disabled(busy || interaction.questions.contains { (answers[$0.id] ?? "").isEmpty })
             }
             if busy { ProgressView().controlSize(.small) }
-            if let error { Text(error).font(.caption).foregroundStyle(.orange) }
+            if let error { Text(error).font(.caption).foregroundStyle(AppTheme.warning) }
         }
         .padding(18).frame(maxWidth: 480, alignment: .leading)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
@@ -1557,23 +1564,23 @@ private struct ConnectionsView: View {
                 if loading && client.connections.isEmpty {
                     ProgressView("Загружаем подключения…")
                         .controlSize(.small)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppTheme.secondaryText)
                 }
                 else {
                     List {
-                        if let error { Text(error).font(.caption).foregroundStyle(.orange) }
+                        if let error { Text(error).font(.caption).foregroundStyle(AppTheme.warning) }
                         ForEach(results) { connection in
                             HStack(spacing: 12) {
                                 Image(systemName: connection.icon)
-                                    .foregroundStyle(.secondary).frame(width: 26)
+                                    .foregroundStyle(AppTheme.secondaryText).frame(width: 26)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(connection.name)
-                                    if let detail = connection.detail { Text(detail).font(.caption).foregroundStyle(.secondary) }
+                                    if let detail = connection.detail { Text(detail).font(.caption).foregroundStyle(AppTheme.secondaryText) }
                                 }
                                 Spacer()
                                 if connection.connected {
                                     Image(systemName: "checkmark")
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(AppTheme.secondaryText)
                                         .accessibilityLabel("Подключено")
                                 }
                                 else {
@@ -1590,8 +1597,8 @@ private struct ConnectionsView: View {
                                 }
                             }.padding(.vertical, 5)
                         }
-                        if let notice = client.connectionNotice { Text(notice).font(.caption).foregroundStyle(.secondary) }
-                        if results.isEmpty { Text("Сервисы не найдены").foregroundStyle(.secondary) }
+                        if let notice = client.connectionNotice { Text(notice).font(.caption).foregroundStyle(AppTheme.secondaryText) }
+                        if results.isEmpty { Text("Сервисы не найдены").foregroundStyle(AppTheme.secondaryText) }
                     }
                     .scrollContentBackground(.hidden)
                 }

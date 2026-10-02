@@ -3,12 +3,15 @@ import SwiftUI
 @main
 struct OpenStrudelApp: App {
     @StateObject private var client = HomeClient()
+    #if os(macOS)
+    @StateObject private var updater = AppUpdater.shared
+    #endif
 
     var body: some Scene {
         WindowGroup {
             OpenStrudelRootView()
                 .environmentObject(client)
-                .tint(.indigo)
+                .tint(AppTheme.accent)
                 .onOpenURL { url in
                     // ASWebAuthenticationSession owns OAuth callbacks; these are not pairing links.
                     guard !(url.scheme == "openstrudel" && url.host == "oauth" && url.path == "/digitalocean") else { return }
@@ -19,11 +22,18 @@ struct OpenStrudelApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unifiedCompact)
         .defaultSize(width: 1120, height: 760)
+        .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Проверить обновления…", action: updater.checkForUpdates)
+                    .disabled(!updater.canCheckForUpdates)
+            }
+        }
         #endif
         #if os(macOS)
         Settings {
             SettingsView()
                 .environmentObject(client)
+                .tint(AppTheme.accent)
                 .frame(minWidth: 580, minHeight: 520)
         }
         #endif

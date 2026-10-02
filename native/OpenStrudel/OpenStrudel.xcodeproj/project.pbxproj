@@ -10,12 +10,15 @@
 		066029DEC026A68A1379F314 /* MobilePairingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8AC19EC197C2FC60EBEB3D /* MobilePairingTests.swift */; };
 		1109A0AEE1C8475E2E3181A3 /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = B9A7842329C25226D34D8B1C /* cloud-init.sh */; };
 		1B7D1573EF6D0D4B9743DC03 /* MobileConnectionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41969DD182FE17F98BBEEE17 /* MobileConnectionViews.swift */; };
+		2061E90D9AC95D39DAAA06E8 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38873CBA5B37136CDD8FF91 /* AppTheme.swift */; };
 		2D09788DED8F1C5EDE458BE2 /* iPhoneSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1132C0F7932A6440305D150A /* iPhoneSmokeTests.swift */; };
+		2F84019800922A922C82B1CE /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38873CBA5B37136CDD8FF91 /* AppTheme.swift */; };
 		38670454174D5126BB5A84D1 /* ChatMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3D241925EF81E938247C15 /* ChatMedia.swift */; };
 		396D0DCDA42F07B7B6AD8CDA /* ReleaseScenariosUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 269C829F112500B5E34127F7 /* ReleaseScenariosUITests.swift */; };
 		3A4F31F9396C14C867C86558 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A12DEA162BBC10A8CA136D /* Views.swift */; };
 		4DB4F5AB41099807895716B3 /* MobileConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15270A8B1FADC16CBEE2AB86 /* MobileConnection.swift */; };
 		4E6B82BD6C972AB6EE32CAFE /* MessageContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9FCFCC5FBCE6D6D6D612458 /* MessageContent.swift */; };
+		523AFBBC3F4EB9C2769483F3 /* AppUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25538EEFA0F0470CDF4958CC /* AppUpdater.swift */; };
 		528728D21AA6033C7D7F276D /* MobileConnectionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41969DD182FE17F98BBEEE17 /* MobileConnectionViews.swift */; };
 		5785006166AD53761DA29454 /* ChatMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3D241925EF81E938247C15 /* ChatMedia.swift */; };
 		5B679607856CC1AB98F6A104 /* DigitalOceanCloudTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06FEF9F7FF45A0D9EF5FFC46 /* DigitalOceanCloudTests.swift */; };
@@ -33,6 +36,7 @@
 		8948A7997B267280DC592F77 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = E29C1F0D3A0FE125E35B565D /* PrivacyInfo.xcprivacy */; };
 		8B0DD4E8C65EC9C02924DE59 /* DigitalOceanCloud.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CF338D2C3249DC58392487E /* DigitalOceanCloud.swift */; };
 		90908463E5E449B8A6864497 /* ChatMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3D241925EF81E938247C15 /* ChatMedia.swift */; };
+		954CECC367D15575AF45868F /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38873CBA5B37136CDD8FF91 /* AppTheme.swift */; };
 		96011E8827031FF477E78A0D /* DigitalOceanBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A041EB646E3F285D182418 /* DigitalOceanBootstrap.swift */; };
 		966082403049AA4A4D03B492 /* OpenStrudelApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 680E20C305BC52A853E797DD /* OpenStrudelApp.swift */; };
 		99F3C8183EE6FE6B2B2A9746 /* LocalHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96054101E4801A6BCC170C1 /* LocalHome.swift */; };
@@ -45,11 +49,14 @@
 		AEBC06A730AF2BB81D4BA10A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 709BE1A9B19D0468720417CF /* Assets.xcassets */; };
 		AF175297574377B16061325E /* MobileConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15270A8B1FADC16CBEE2AB86 /* MobileConnection.swift */; };
 		B94227E897A95830CFA06A03 /* MessageContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9FCFCC5FBCE6D6D6D612458 /* MessageContent.swift */; };
+		BA4C2329101E4E5D8C2EABD1 /* AppUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25538EEFA0F0470CDF4958CC /* AppUpdater.swift */; };
+		C1D22A6A95D61EF3973CECE1 /* Sparkle-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = 37B4BD216FB2EDE09E4E16E4 /* Sparkle-LICENSE.txt */; };
 		D24C4F8AD7FB5F62D4495C35 /* ChatClockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DA7A5FC9D1A46B7D5486153 /* ChatClockTests.swift */; };
 		DEEDEAD2AB25008C3CCAF7D7 /* SetupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A635A0DA48A1D907252A7BCB /* SetupViews.swift */; };
 		E09E082D82D45A7D09421AB8 /* DigitalOceanBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A041EB646E3F285D182418 /* DigitalOceanBootstrap.swift */; };
 		E666DB6B98B0F9FDC670BCC0 /* MobileConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15270A8B1FADC16CBEE2AB86 /* MobileConnection.swift */; };
 		E881BC2893184397D1A9AFE9 /* DigitalOceanBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A041EB646E3F285D182418 /* DigitalOceanBootstrap.swift */; };
+		EC2C02C1059E79D01E1D9924 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 034974DBF235D1A2CAF70200 /* Sparkle */; };
 		EFD46E79E43C1763A4CF16F6 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A12DEA162BBC10A8CA136D /* Views.swift */; };
 		FC61FB4F58F351C111D601E9 /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = B9A7842329C25226D34D8B1C /* cloud-init.sh */; };
 /* End PBXBuildFile section */
@@ -68,7 +75,9 @@
 		06FEF9F7FF45A0D9EF5FFC46 /* DigitalOceanCloudTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DigitalOceanCloudTests.swift; sourceTree = "<group>"; };
 		1132C0F7932A6440305D150A /* iPhoneSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iPhoneSmokeTests.swift; sourceTree = "<group>"; };
 		15270A8B1FADC16CBEE2AB86 /* MobileConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileConnection.swift; sourceTree = "<group>"; };
+		25538EEFA0F0470CDF4958CC /* AppUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdater.swift; sourceTree = "<group>"; };
 		269C829F112500B5E34127F7 /* ReleaseScenariosUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseScenariosUITests.swift; sourceTree = "<group>"; };
+		37B4BD216FB2EDE09E4E16E4 /* Sparkle-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Sparkle-LICENSE.txt"; sourceTree = "<group>"; };
 		3D8AC19EC197C2FC60EBEB3D /* MobilePairingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePairingTests.swift; sourceTree = "<group>"; };
 		41969DD182FE17F98BBEEE17 /* MobileConnectionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileConnectionViews.swift; sourceTree = "<group>"; };
 		4DDBDB4821F4175BB293C35F /* MobilePairingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePairingUITests.swift; sourceTree = "<group>"; };
@@ -89,10 +98,22 @@
 		C9FCFCC5FBCE6D6D6D612458 /* MessageContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageContent.swift; sourceTree = "<group>"; };
 		D671F62812BA20E0AF9CB2FA /* HomeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeClient.swift; sourceTree = "<group>"; };
 		E29C1F0D3A0FE125E35B565D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		E38873CBA5B37136CDD8FF91 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
 		F852C55F4C0DB4D5D58D578F /* OpenStrudel iOS UI Tests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = "OpenStrudel iOS UI Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		F9234E96C15CA694F0A31099 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		F96054101E4801A6BCC170C1 /* LocalHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHome.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		594139C33FDD0ED69545B120 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EC2C02C1059E79D01E1D9924 /* Sparkle in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		02AB75132E50BEA37746ADF2 /* Products */ = {
@@ -106,9 +127,19 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		29E00286E47652BF27B34BFC /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				37B4BD216FB2EDE09E4E16E4 /* Sparkle-LICENSE.txt */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
 		2C1B064E52E9C728955B5E56 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				E38873CBA5B37136CDD8FF91 /* AppTheme.swift */,
+				25538EEFA0F0470CDF4958CC /* AppUpdater.swift */,
 				7C3D241925EF81E938247C15 /* ChatMedia.swift */,
 				C1A041EB646E3F285D182418 /* DigitalOceanBootstrap.swift */,
 				5CF338D2C3249DC58392487E /* DigitalOceanCloud.swift */,
@@ -162,6 +193,7 @@
 			children = (
 				709BE1A9B19D0468720417CF /* Assets.xcassets */,
 				D0FBB4C713A965B14D031306 /* openmagic */,
+				29E00286E47652BF27B34BFC /* Resources */,
 				2C1B064E52E9C728955B5E56 /* Sources */,
 				9332B7FCD8BAD85E05291826 /* Tests */,
 				546851BDDD0611547A254A69 /* UITests */,
@@ -222,6 +254,7 @@
 			buildPhases = (
 				3F636A503959E370A65037CE /* Sources */,
 				1B970B537B5E5D2C1EB24723 /* Resources */,
+				594139C33FDD0ED69545B120 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -229,6 +262,7 @@
 			);
 			name = "OpenStrudel macOS";
 			packageProductDependencies = (
+				034974DBF235D1A2CAF70200 /* Sparkle */,
 			);
 			productName = "OpenStrudel macOS";
 			productReference = 701970C42730428CE9DABD8A /* OpenStrudel macOS.app */;
@@ -288,6 +322,9 @@
 			);
 			mainGroup = D36F1D4A4647B04498C8FA96;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				3EB9911774FE23671D5DC051 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
@@ -307,6 +344,7 @@
 			files = (
 				AEBC06A730AF2BB81D4BA10A /* Assets.xcassets in Resources */,
 				8948A7997B267280DC592F77 /* PrivacyInfo.xcprivacy in Resources */,
+				C1D22A6A95D61EF3973CECE1 /* Sparkle-LICENSE.txt in Resources */,
 				6117E204130547257A2588AE /* cloud-init.sh in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -336,6 +374,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				954CECC367D15575AF45868F /* AppTheme.swift in Sources */,
 				D24C4F8AD7FB5F62D4495C35 /* ChatClockTests.swift in Sources */,
 				90908463E5E449B8A6864497 /* ChatMedia.swift in Sources */,
 				E881BC2893184397D1A9AFE9 /* DigitalOceanBootstrap.swift in Sources */,
@@ -353,6 +392,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2061E90D9AC95D39DAAA06E8 /* AppTheme.swift in Sources */,
+				523AFBBC3F4EB9C2769483F3 /* AppUpdater.swift in Sources */,
 				5785006166AD53761DA29454 /* ChatMedia.swift in Sources */,
 				96011E8827031FF477E78A0D /* DigitalOceanBootstrap.swift in Sources */,
 				A789FE50A71BA8F813390382 /* DigitalOceanCloud.swift in Sources */,
@@ -372,6 +413,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2F84019800922A922C82B1CE /* AppTheme.swift in Sources */,
+				BA4C2329101E4E5D8C2EABD1 /* AppUpdater.swift in Sources */,
 				38670454174D5126BB5A84D1 /* ChatMedia.swift in Sources */,
 				E09E082D82D45A7D09421AB8 /* DigitalOceanBootstrap.swift in Sources */,
 				8769E196AFD3136FF6469A32 /* DigitalOceanCloud.swift in Sources */,
@@ -525,6 +568,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -555,7 +599,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -622,6 +666,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -652,7 +697,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -733,6 +778,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		3EB9911774FE23671D5DC051 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = revision;
+				revision = eef1a539a373c1f1a320624b1130fc5de7b2e100;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		034974DBF235D1A2CAF70200 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3EB9911774FE23671D5DC051 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 7324C9B86738F39E1BF8CFD9 /* Project object */;
 }

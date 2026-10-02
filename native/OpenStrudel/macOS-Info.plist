@@ -36,5 +36,19 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>SUAllowsAutomaticUpdates</key>
+	<false/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://waiwai.is/openstrudel/updates/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>1vr8F09jobPqwo22O0M7Sm3PNuLP1GmGsJopfN6rX7U=</string>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUSendProfileInfo</key>
+	<false/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 </dict>
 </plist>

@@ -93,7 +93,7 @@ struct MessageContent: View, Equatable {
         .font(ChatTypography.body)
         .lineSpacing(4)
         .textSelection(.enabled)
-        .tint(.blue)
+        .tint(AppTheme.accent)
     }
 
     @ViewBuilder private func blockContent(_ block: Block, first: Bool) -> some View {
@@ -105,12 +105,12 @@ struct MessageContent: View, Equatable {
                 .accessibilityAddTraits(.isHeader)
         case "list":
             HStack(alignment: .firstTextBaseline, spacing: 9) {
-                Text(block.marker).foregroundStyle(.secondary).monospacedDigit().frame(minWidth: 14, alignment: .trailing)
+                Text(block.marker).foregroundStyle(AppTheme.secondaryText).monospacedDigit().frame(minWidth: 14, alignment: .trailing)
                 Text(styled(block.content)).frame(maxWidth: .infinity, alignment: .leading)
             }
         case "quote":
             Text(styled(block.content))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppTheme.secondaryText)
                 .padding(.leading, 14)
                 .overlay(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 2).fill(.secondary.opacity(0.4)).frame(width: 3)
@@ -118,7 +118,7 @@ struct MessageContent: View, Equatable {
         case "code":
             VStack(alignment: .leading, spacing: 8) {
                 if let language = block.language, !language.isEmpty {
-                    Text(language).font(.caption).foregroundStyle(.secondary)
+                    Text(language).font(.caption).foregroundStyle(AppTheme.secondaryText)
                 }
                 ScrollView(.horizontal) {
                     Text(String(block.content.characters).trimmingCharacters(in: .newlines))
@@ -199,7 +199,7 @@ private struct MarkdownTableView: View {
                             ForEach(row.indices, id: \.self) { column in
                                 VStack(alignment: .leading, spacing: 3) {
                                     if let header = table.rows.first?[column] {
-                                        Text(header).font(.caption).foregroundStyle(.secondary)
+                                        Text(header).font(.caption).foregroundStyle(AppTheme.secondaryText)
                                     }
                                     Text(row[column]).font(column == 0 ? ChatTypography.body.weight(.semibold) : ChatTypography.body)
                                 }

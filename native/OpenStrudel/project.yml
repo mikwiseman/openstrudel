@@ -7,11 +7,17 @@ options:
     iOS: "26.0"
     macOS: "26.0"
   createIntermediateGroups: true
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    # Sparkle 2.10.0, pinned to the published immutable commit.
+    revision: eef1a539a373c1f1a320624b1130fc5de7b2e100
 settings:
   SWIFT_VERSION: "6.0"
   DEVELOPMENT_TEAM: R4A779QVVY
   MARKETING_VERSION: "1.0"
-  CURRENT_PROJECT_VERSION: 4
+  CURRENT_PROJECT_VERSION: 5
+  ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
 targets:
   OpenStrudel iOS:
     type: application
@@ -82,10 +88,20 @@ targets:
   OpenStrudel macOS:
     type: application
     platform: macOS
+    dependencies:
+      - package: Sparkle
+        product: Sparkle
     info:
       path: macOS-Info.plist
       properties:
         CFBundleDisplayName: OpenStrudel
+        SUFeedURL: https://waiwai.is/openstrudel/updates/appcast.xml
+        SUPublicEDKey: 1vr8F09jobPqwo22O0M7Sm3PNuLP1GmGsJopfN6rX7U=
+        SUEnableAutomaticChecks: true
+        SUAllowsAutomaticUpdates: false
+        SUSendProfileInfo: false
+        SURequireSignedFeed: true
+        SUVerifyUpdateBeforeExtraction: true
         CFBundleURLTypes:
           - CFBundleURLName: is.openstrudel.connect
             CFBundleURLSchemes: [openstrudel]
@@ -95,6 +111,8 @@ targets:
       - path: Sources
       - path: Assets.xcassets
       - path: ../../scripts/cloud-init.sh
+        buildPhase: resources
+      - path: Resources/Sparkle-LICENSE.txt
         buildPhase: resources
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: is.openstrudel.mac
@@ -111,6 +129,7 @@ targets:
     sources:
       - path: Tests
       - path: Sources/MessageContent.swift
+      - path: Sources/AppTheme.swift
       - path: Sources/ChatMedia.swift
       - path: Sources/Models.swift
       - path: Sources/MobileConnection.swift

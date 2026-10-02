@@ -71,13 +71,13 @@ struct ServerSetupView: View {
                 VStack(alignment: .leading, spacing: 28) {
                     Image(systemName: cloud.phase == .connected ? "checkmark" : "cloud")
                         .font(.system(size: 34, weight: .light))
-                        .foregroundStyle(.secondary).accessibilityHidden(true)
+                        .foregroundStyle(AppTheme.secondaryText).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 16) {
                         Text(title)
                             .font(.system(.largeTitle, design: .serif, weight: .medium))
                             .fixedSize(horizontal: false, vertical: true)
                         Text(explanation)
-                            .font(.body).foregroundStyle(.secondary)
+                            .font(.body).foregroundStyle(AppTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if cloud.phase == .readyToCreate, let quote = cloud.quote {
@@ -85,15 +85,15 @@ struct ServerSetupView: View {
                             Text(quote.monthlyPrice.formatted(.currency(code: "USD")) + " / месяц")
                                 .font(.title2.weight(.semibold)).monospacedDigit()
                             Text("Оплата напрямую DigitalOcean. Подписка ChatGPT оплачивается отдельно.")
-                                .font(.callout).foregroundStyle(.secondary)
+                                .font(.callout).foregroundStyle(AppTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                             Text("Начисляется за время размещения, пока вы не удалите его в DigitalOcean. Налоги могут добавляться отдельно.")
-                                .font(.footnote).foregroundStyle(.secondary)
+                                .font(.footnote).foregroundStyle(AppTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                         }.accessibilityElement(children: .combine)
                     }
                     if let message = connectionError ?? cloud.message {
-                        Text(message).font(.callout).foregroundStyle(.secondary)
+                        Text(message).font(.callout).foregroundStyle(AppTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                             .accessibilityIdentifier("cloudSetupMessage")
                     }
@@ -101,7 +101,7 @@ struct ServerSetupView: View {
                         HStack(spacing: 12) {
                             ProgressView().controlSize(.small)
                             Text(cloud.phase == .signingIn ? "Ожидаем входа" : "Настраиваем OpenStrudel")
-                                .font(.callout).foregroundStyle(.secondary)
+                                .font(.callout).foregroundStyle(AppTheme.secondaryText)
                         }.accessibilityElement(children: .combine)
                     }
                     actions
@@ -109,12 +109,12 @@ struct ServerSetupView: View {
                         Link("Открыть в DigitalOcean", destination: url)
                             .font(.callout)
                         Text("Размещение оплачивается, пока вы не удалите его в DigitalOcean.")
-                            .font(.footnote).foregroundStyle(.secondary)
+                            .font(.footnote).foregroundStyle(AppTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if cloud.phase == .idle {
                         Text("Понадобится аккаунт DigitalOcean и способ оплаты. Стоимость покажем до запуска.")
-                            .font(.footnote).foregroundStyle(.secondary)
+                            .font(.footnote).foregroundStyle(AppTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }.padding(32).frame(maxWidth: 480).frame(maxWidth: .infinity)
@@ -205,9 +205,9 @@ struct AIDataConsentView: View {
                 Text("Один важный момент.")
                     .font(.system(.largeTitle, design: .serif, weight: .medium))
                 Text("Для ответа Codex передаёт ваши сообщения, выбранные файлы и необходимый контекст в OpenAI. История хранится на вашем Mac или личном сервере.")
-                    .font(.body).foregroundStyle(.secondary)
+                    .font(.body).foregroundStyle(AppTheme.secondaryText)
                 Text("Подключённые сервисы получают данные только при использовании их инструментов. Добавляйте только то, чем готовы поделиться.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .font(.callout).foregroundStyle(AppTheme.secondaryText)
                 Link("Как используются данные", destination: URL(string: "https://waiwai.is/openstrudel/privacy")!)
                     .font(.callout)
                 Button(action: accept) {

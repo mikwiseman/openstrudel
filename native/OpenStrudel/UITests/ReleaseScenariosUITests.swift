@@ -9,6 +9,14 @@ final class ReleaseScenariosUITests: XCTestCase {
         }
         let initial = try await read(fixture + "/state")
         let app = XCUIApplication()
+        if let size = ProcessInfo.processInfo.environment["OPENSTRUDEL_QA_CONTENT_SIZE"] {
+            app.launchArguments = ["-UIPreferredContentSizeCategoryName", size]
+        }
+        if ProcessInfo.processInfo.environment["OPENSTRUDEL_QA_LANDSCAPE"] == "1" {
+            XCUIDevice.shared.orientation = .landscapeLeft
+        } else {
+            XCUIDevice.shared.orientation = .portrait
+        }
         app.launch()
         let invite = try await read(fixture + "/invite")
         app.open(try XCTUnwrap(URL(string: XCTUnwrap(invite["url"] as? String))))
@@ -23,15 +31,13 @@ final class ReleaseScenariosUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["preview@example.com"].waitForExistence(timeout: 10))
         capture("settings-account-telegram", app)
         let pair = app.buttons["Подключить устройство"]
-        for _ in 0..<4 where !pair.isHittable { app.swipeUp() }
-        XCTAssertTrue(pair.isHittable); pair.tap()
+        try reveal(pair, in: app); pair.tap()
         XCTAssertTrue(app.staticTexts["Продолжите на другом устройстве"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["Новое приглашение"].exists)
         capture("owner-qr-invitation", app)
-        try done(app)
+        app.buttons["closeMobileInvitation"].tap()
         let switchAccount = app.buttons["Сменить аккаунт"]
-        for _ in 0..<4 where !switchAccount.isHittable { app.swipeDown() }
-        XCTAssertTrue(switchAccount.isHittable); switchAccount.tap()
+        try reveal(switchAccount, in: app); switchAccount.tap()
         _ = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari").wait(for: .runningForeground, timeout: 10)
         app.activate()
         XCTAssertTrue(app.staticTexts["TEST-56789"].waitForExistence(timeout: 10))
@@ -110,8 +116,22 @@ final class ReleaseScenariosUITests: XCTestCase {
     }
 
     @MainActor private func capture(_ name: String, _ app: XCUIApplication) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
+        // The screen capture retains the correct canvas after iPad rotation.
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = "release-" + name; attachment.lifetime = .keepAlways; add(attachment)
+    }
+
+    @MainActor private func reveal(_ element: XCUIElement, in app: XCUIApplication) throws {
+        let scroller = app.scrollViews.allElementsBoundByIndex.last(where: \.isHittable) ?? app
+        for _ in 0..<16 where !element.isHittable {
+            if element.frame.midY < scroller.frame.midY { scroller.swipeDown() }
+            else { scroller.swipeUp() }
+        }
+        guard element.isHittable else {
+            capture("unreachable-control", app)
+            XCTFail(app.debugDescription)
+            throw NSError(domain: "ReleaseUI", code: 1)
+        }
     }
 
     @MainActor private func done(_ app: XCUIApplication) throws {
