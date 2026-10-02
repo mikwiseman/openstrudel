@@ -85,11 +85,13 @@ final class ReleaseScenariosUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Редактор QA"].waitForExistence(timeout: 10))
 
         let input = app.textFields["Сообщение"]
-        for text in ["Первое сообщение", "Второе сообщение", "Третье сообщение"] {
+        let messageCount = Int(ProcessInfo.processInfo.environment["OPENSTRUDEL_QA_MESSAGE_COUNT"] ?? "3") ?? 3
+        let queuedTexts = (1...max(3, min(messageCount, 30))).map { "Сообщение \($0)" }
+        for text in queuedTexts {
             input.tap(); input.typeText(text); app.buttons["Отправить"].tap()
             XCTAssertEqual(input.value as? String, "Сообщение")
         }
-        XCTAssertTrue(app.staticTexts["Принято: Третье сообщение"].waitForExistence(timeout: 30), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Принято: \(queuedTexts.last!)"].waitForExistence(timeout: 30), app.debugDescription)
         capture("queued-messages", app)
         input.tap(); input.typeText("Проверка выбора"); app.buttons["Отправить"].tap()
         XCTAssertTrue(app.buttons["Утром"].waitForExistence(timeout: 20))

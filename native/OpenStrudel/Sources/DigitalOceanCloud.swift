@@ -610,31 +610,52 @@ final class DigitalOceanHomeTrust: NSObject, URLSessionDelegate, URLSessionTaskD
                     newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) { completionHandler(nil) }
 }
 
-@MainActor private final class DigitalOceanWebLogin: NSObject, ASWebAuthenticationPresentationContextProviding {
+@MainActor final class DigitalOceanWebLogin: NSObject, ASWebAuthenticationPresentationContextProviding {
+    typealias Completion = @Sendable (URL?, (any Error)?) -> Void
+    private let makeSession: (URL, @escaping Completion) -> ASWebAuthenticationSession
     private var session: ASWebAuthenticationSession?
+    private var sessionID: UUID?
     private var continuation: CheckedContinuation<URL, any Error>?
+
+    init(makeSession: @escaping (URL, @escaping Completion) -> ASWebAuthenticationSession = {
+        ASWebAuthenticationSession(url: $0, callbackURLScheme: "openstrudel", completionHandler: $1)
+    }) {
+        self.makeSession = makeSession
+        super.init()
+    }
+
     func open(_ url: URL) async throws -> URL {
-        try await withTaskCancellationHandler {
+        let id = UUID()
+        return try await withTaskCancellationHandler {
             try Task.checkCancellation()
             return try await withCheckedThrowingContinuation { continuation in
                 self.continuation = continuation
-                let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "openstrudel") { [weak self] url, error in
+                self.sessionID = id
+                // AuthenticationServices can complete on its XPC queue.
+                // Keep this callback nonisolated, then hop to the UI actor.
+                let session = makeSession(url) { @Sendable [weak self] url, error in
                     Task { @MainActor in
-                        if let url { self?.finish(.success(url)) }
-                        else if (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin { self?.finish(.failure(CancellationError())) }
-                        else { self?.finish(.failure(DigitalOceanFailure.signIn)) }
+                        if let url { self?.finish(.success(url), for: id) }
+                        else if (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin { self?.finish(.failure(CancellationError()), for: id) }
+                        else { self?.finish(.failure(DigitalOceanFailure.signIn), for: id) }
                     }
                 }
                 session.presentationContextProvider = self
                 session.prefersEphemeralWebBrowserSession = false
                 self.session = session
-                if !session.start() { finish(.failure(DigitalOceanFailure.signIn)) }
+                if !session.start() { finish(.failure(DigitalOceanFailure.signIn), for: id) }
             }
-        } onCancel: { Task { @MainActor in self.cancel() } }
+        } onCancel: { Task { @MainActor in self.cancel(id) } }
     }
-    func cancel() { session?.cancel(); finish(.failure(CancellationError())) }
-    private func finish(_ result: Result<URL, any Error>) {
-        let pending = continuation; continuation = nil; session = nil
+    func cancel() { if let id = sessionID { cancel(id) } }
+    private func cancel(_ id: UUID) {
+        guard sessionID == id else { return }
+        session?.cancel(); finish(.failure(CancellationError()), for: id)
+    }
+    private func finish(_ result: Result<URL, any Error>, for id: UUID) {
+        // A canceled browser can report back after the next sign-in starts.
+        guard sessionID == id else { return }
+        let pending = continuation; continuation = nil; session = nil; sessionID = nil
         pending?.resume(with: result)
     }
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {

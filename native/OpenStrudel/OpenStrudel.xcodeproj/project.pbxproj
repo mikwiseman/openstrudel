@@ -39,6 +39,7 @@
 		954CECC367D15575AF45868F /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38873CBA5B37136CDD8FF91 /* AppTheme.swift */; };
 		96011E8827031FF477E78A0D /* DigitalOceanBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A041EB646E3F285D182418 /* DigitalOceanBootstrap.swift */; };
 		966082403049AA4A4D03B492 /* OpenStrudelApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 680E20C305BC52A853E797DD /* OpenStrudelApp.swift */; };
+		99944D193416881E7D8D727B /* DigitalOceanWebLoginTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC5BA14427968F91FEFE9F2F /* DigitalOceanWebLoginTests.swift */; };
 		99F3C8183EE6FE6B2B2A9746 /* LocalHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96054101E4801A6BCC170C1 /* LocalHome.swift */; };
 		9AEBA79A4E9D40E1EE309371 /* MessageContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9FCFCC5FBCE6D6D6D612458 /* MessageContent.swift */; };
 		A164C5DB09FEADCF6861BF35 /* SetupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A635A0DA48A1D907252A7BCB /* SetupViews.swift */; };
@@ -102,6 +103,7 @@
 		F852C55F4C0DB4D5D58D578F /* OpenStrudel iOS UI Tests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = "OpenStrudel iOS UI Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		F9234E96C15CA694F0A31099 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		F96054101E4801A6BCC170C1 /* LocalHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHome.swift; sourceTree = "<group>"; };
+		FC5BA14427968F91FEFE9F2F /* DigitalOceanWebLoginTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DigitalOceanWebLoginTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -173,6 +175,7 @@
 			children = (
 				6DA7A5FC9D1A46B7D5486153 /* ChatClockTests.swift */,
 				06FEF9F7FF45A0D9EF5FFC46 /* DigitalOceanCloudTests.swift */,
+				FC5BA14427968F91FEFE9F2F /* DigitalOceanWebLoginTests.swift */,
 				58B7111F287B0C5661239DEB /* MessageContentTests.swift */,
 				3D8AC19EC197C2FC60EBEB3D /* MobilePairingTests.swift */,
 			);
@@ -380,6 +383,7 @@
 				E881BC2893184397D1A9AFE9 /* DigitalOceanBootstrap.swift in Sources */,
 				8B0DD4E8C65EC9C02924DE59 /* DigitalOceanCloud.swift in Sources */,
 				5B679607856CC1AB98F6A104 /* DigitalOceanCloudTests.swift in Sources */,
+				99944D193416881E7D8D727B /* DigitalOceanWebLoginTests.swift in Sources */,
 				4E6B82BD6C972AB6EE32CAFE /* MessageContent.swift in Sources */,
 				80A890128CCD16FCD6ECE3AD /* MessageContentTests.swift in Sources */,
 				E666DB6B98B0F9FDC670BCC0 /* MobileConnection.swift in Sources */,
@@ -599,7 +603,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -697,7 +701,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

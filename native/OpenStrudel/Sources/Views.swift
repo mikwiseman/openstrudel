@@ -376,8 +376,12 @@ private struct ConversationView: View {
                                     .frame(maxWidth: .infinity)
                             }
                             ForEach(Array(client.messages.enumerated()), id: \.element.id) { index, message in
-                                if let day = newDay(at: index) { DayDivider(date: day) }
-                                MessageBubble(message: message).id(message.id)
+                                // Keep one stable lazy-layout node per message,
+                                // including its optional day heading.
+                                VStack(alignment: .leading, spacing: 16) {
+                                    if let day = newDay(at: index) { DayDivider(date: day) }
+                                    MessageBubble(message: message)
+                                }.id(message.id)
                             }
                             ForEach(client.visiblePendingMessages) { pending in
                                 VStack(alignment: .trailing, spacing: 4) {
@@ -388,7 +392,6 @@ private struct ConversationView: View {
                                     }
                                 }
                                     .id(pending.id)
-                                    .transition(.opacity)
                             }
                             ForEach(client.interactions) { interaction in
                                 InteractionCard(interaction: interaction).id(interaction.id)
@@ -455,7 +458,8 @@ private struct ConversationView: View {
                 .onChange(of: client.isLoading) { _, loading in
                     if !loading { scrollToBottom(proxy, animated: false) }
                 }
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: client.visiblePendingMessages)
+                // Animate scrolling, not pending-row replacement: an implicit
+                // layout animation can loop while the iPad keyboard is visible.
                 .overlay(alignment: .bottom) {
                     if hasNewMessages && !followsLatest {
                         Button("Новые сообщения", systemImage: "arrow.down") {
