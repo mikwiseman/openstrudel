@@ -108,6 +108,7 @@ struct ServerSetupView: View {
                     if let url = cloud.managementURL, cloud.phase != .connected {
                         Link("Открыть в DigitalOcean", destination: url)
                             .font(.callout)
+                            .buttonStyle(.plain).foregroundStyle(AppTheme.accent)
                         Text("Размещение оплачивается, пока вы не удалите его в DigitalOcean.")
                             .font(.footnote).foregroundStyle(AppTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
@@ -217,6 +218,7 @@ struct AIDataConsentView: View {
                     .font(.callout).foregroundStyle(AppTheme.secondaryText)
                 Link("Как используются данные", destination: URL(string: "https://waiwai.is/openstrudel/privacy")!)
                     .font(.callout)
+                    .buttonStyle(.plain).foregroundStyle(AppTheme.accent)
                 Button(action: accept) {
                     SetupActionLabel(title: "Разрешить и продолжить")
                 }

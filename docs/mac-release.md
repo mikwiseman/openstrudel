@@ -16,7 +16,7 @@ Apple signing uses the existing Developer ID identity for team `R4A779QVVY`, an 
 2. Build macOS Release for arm64. Bundle the public runtime with `scripts/bundle-mac-runtime.sh <app>`. That script includes only tracked runtime sources; private handoffs, migration scripts, local state and credentials are excluded.
 3. Run `python3 scripts/sign-mac-app.py <app> --identity <Developer-ID-SHA1> --keychain <unlocked-keychain>`. This signs runtime Mach-O files and Sparkle helpers inside out, then the outer app. Only Node and the Codex code-mode host receive the JIT entitlement. Never use `codesign --deep` for signing.
 4. Zip the app with `ditto -c -k --keepParent`, submit to `xcrun notarytool`, wait for Accepted, staple and validate. Build a DMG containing the app and an Applications link, sign it, notarize it, staple it and check Gatekeeper. Do not modify the app or DMG after this step.
-5. Put the DMG in a clean feed work directory under an immutable name such as `OpenStrudel-1.0-7-arm64.dmg`, with a matching `.html` release note fragment. Use the tools from the pinned Sparkle SDK:
+5. Put the DMG in a clean feed work directory under an immutable name such as `OpenStrudel-1.0-8-arm64.dmg`, with a matching `.html` release note fragment. Use the tools from the pinned Sparkle SDK:
 
    ```sh
    generate_appcast --ed-key-file "$HOME/.openstrudel/sparkle-key" \

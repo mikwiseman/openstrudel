@@ -145,7 +145,7 @@ private struct HomeUnavailableView: View {
                     .disabled(starting).accessibilityIdentifier("setupExisting")
             }
             Link("Конфиденциальность", destination: URL(string: "https://waiwai.is/openstrudel/privacy")!)
-                .font(.caption).foregroundStyle(AppTheme.secondaryText)
+                .font(.caption).buttonStyle(.plain).foregroundStyle(AppTheme.secondaryText)
         }
         .padding(40).frame(maxWidth: 520).frame(maxWidth: .infinity)
         }.defaultScrollAnchor(.center, for: .alignment)
@@ -1126,6 +1126,7 @@ struct SettingsView: View {
                     #endif
                     if let url = DigitalOceanCloud.managementURL(for: client.normalizedBaseURL) {
                         Link(destination: url) { Label("Управлять облаком", systemImage: "arrow.up.right") }
+                            .buttonStyle(.plain).foregroundStyle(AppTheme.accent)
                             .font(.callout).padding(.top, 12)
                         Text("Оплатой и размещением управляет DigitalOcean. Закрытие приложения не прекращает оплату.")
                             .font(.caption).foregroundStyle(AppTheme.secondaryText)
@@ -1133,7 +1134,7 @@ struct SettingsView: View {
                     HStack(spacing: 20) {
                         Link("Помощь", destination: URL(string: "https://waiwai.is/openstrudel#help")!)
                         Link("Конфиденциальность", destination: URL(string: "https://waiwai.is/openstrudel/privacy")!)
-                    }.font(.caption).foregroundStyle(AppTheme.secondaryText).padding(.top, 16)
+                    }.font(.caption).buttonStyle(.plain).foregroundStyle(AppTheme.secondaryText).padding(.top, 16)
                 }
                 .padding(22)
                 .frame(maxWidth: 620, alignment: .leading)
@@ -1284,6 +1285,7 @@ private struct TelegramChatsView: View {
                     Section {
                         if paired, let name = client.telegram?.botUsername, let url = URL(string: "https://t.me/" + name + "?startgroup=choose&admin=manage_chat") {
                             Link(destination: url) { Label("Добавить бота в группу", systemImage: "plus.bubble") }
+                                .buttonStyle(.plain).foregroundStyle(AppTheme.accent)
                         } else {
                             Button("Подключить Telegram") {
                                 Task { await client.createTelegramLink(); if let url = client.telegramLink?.url { openURL(url) } }
