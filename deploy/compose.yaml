@@ -1,0 +1,28 @@
+name: openstrudel
+services:
+  home:
+    build:
+      context: ..
+    image: openstrudel:1.0.4
+    init: true
+    restart: unless-stopped
+    user: "1000:1000"
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./docker/seccomp.json
+      - apparmor=openstrudel-container
+      - systempaths=unconfined
+    environment:
+      OPENSTRUDEL_PUBLIC_HOST: ${OPENSTRUDEL_PUBLIC_HOST:?Set the public hostname or IPv4 address in deploy/.env}
+      OPENSTRUDEL_PUBLIC_PORT: ${OPENSTRUDEL_PUBLIC_PORT:-7789}
+      TZ: ${TZ:-UTC}
+    ports:
+      - "${OPENSTRUDEL_PUBLIC_PORT:-7789}:7789"
+    volumes:
+      - data:/data
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 256
+volumes:
+  data:

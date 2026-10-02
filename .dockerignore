@@ -1,0 +1,9 @@
+**
+!package.json
+!package-lock.json
+!tsconfig.json
+!src
+!src/**
+!scripts
+!scripts/container-start.sh
+!scripts/check-sandbox.mjs

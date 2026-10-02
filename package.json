@@ -1,0 +1,32 @@
+{
+  "name": "openstrudel",
+  "version": "0.1.0",
+  "description": "One personal AI runtime for Mac, Raspberry Pi, Linux and Windows",
+  "private": true,
+  "engines": {
+    "node": ">=22.5"
+  },
+  "type": "module",
+  "bin": {
+    "openstrudel": "dist/cli.js"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/cli.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@openai/codex": "0.156.1",
+    "cron-parser": "5.10.1",
+    "marked": "18.0.14"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.1"
+  }
+}

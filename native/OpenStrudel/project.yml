@@ -1,0 +1,125 @@
+name: OpenStrudel
+options:
+  bundleIdPrefix: is.openstrudel
+  # The interface is Russian, so system menus, buttons and errors are too.
+  developmentLanguage: ru
+  deploymentTarget:
+    iOS: "26.0"
+    macOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  SWIFT_VERSION: "6.0"
+  DEVELOPMENT_TEAM: R4A779QVVY
+  MARKETING_VERSION: "1.0"
+  CURRENT_PROJECT_VERSION: 4
+targets:
+  OpenStrudel iOS:
+    type: application
+    platform: iOS
+    info:
+      path: iOS-Info.plist
+      properties:
+        CFBundleDisplayName: OpenStrudel
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleURLTypes:
+          - CFBundleURLName: is.openstrudel.connect
+            CFBundleURLSchemes: [openstrudel]
+        NSLocalNetworkUsageDescription: Подключение к вашему Mac или серверу, чтобы открыть общие чаты и сотрудников.
+        NSCameraUsageDescription: Сканирование приглашения OpenStrudel для подключения к вашим чатам.
+        NSAppTransportSecurity:
+          # Self-hosted Homes use a certificate carried in the one-use invite.
+          # PinnedHomeSession validates the exact host, port and certificate;
+          # HomeClient rejects remote HTTP and unpinned HTTPS.
+          NSAllowsArbitraryLoads: true
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    sources:
+      - path: Sources
+      - path: Assets.xcassets
+    resources:
+      - path: Assets.xcassets
+        buildPhase: resources
+      - path: ../../scripts/cloud-init.sh
+        buildPhase: resources
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: is.openstrudel.ios
+      ASSETCATALOG_COMPILER_APPICON_NAME: iOSAppIcon
+      CODE_SIGN_STYLE: Manual
+      CODE_SIGN_IDENTITY: Apple Development
+      PROVISIONING_PROFILE_SPECIFIER: OpenStrudel Development
+      INFOPLIST_KEY_CFBundleDisplayName: OpenStrudel
+      INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
+      TARGETED_DEVICE_FAMILY: "1,2"
+      SUPPORTS_MACCATALYST: NO
+    scheme:
+      testTargets:
+        - OpenStrudel iOS UI Tests
+  OpenStrudel iOS UI Tests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: OpenStrudel iOS
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: is.openstrudel.ios.uitests
+      GENERATE_INFOPLIST_FILE: YES
+      CODE_SIGN_STYLE: Automatic
+      TEST_TARGET_NAME: OpenStrudel iOS
+  OpenStrudel macOS:
+    type: application
+    platform: macOS
+    info:
+      path: macOS-Info.plist
+      properties:
+        CFBundleDisplayName: OpenStrudel
+        CFBundleURLTypes:
+          - CFBundleURLName: is.openstrudel.connect
+            CFBundleURLSchemes: [openstrudel]
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+    sources:
+      - path: Sources
+      - path: Assets.xcassets
+    resources:
+      - path: Assets.xcassets
+        buildPhase: resources
+      - path: ../../scripts/cloud-init.sh
+        buildPhase: resources
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: is.openstrudel.mac
+      PRODUCT_NAME: OpenStrudel
+      GENERATE_INFOPLIST_FILE: YES
+      INFOPLIST_KEY_CFBundleDisplayName: OpenStrudel
+      INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
+    scheme:
+      testTargets:
+        - OpenStrudel Text Tests
+  OpenStrudel Text Tests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+      - path: Sources/MessageContent.swift
+      - path: Sources/ChatMedia.swift
+      - path: Sources/Models.swift
+      - path: Sources/MobileConnection.swift
+      - path: Sources/DigitalOceanBootstrap.swift
+      - path: Sources/DigitalOceanCloud.swift
+    resources:
+      - path: ../../scripts/cloud-init.sh
+        buildPhase: resources
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: is.openstrudel.text-tests
+      GENERATE_INFOPLIST_FILE: YES

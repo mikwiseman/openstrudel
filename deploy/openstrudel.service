@@ -1,0 +1,15 @@
+[Unit]
+Description=OpenStrudel personal AI Home
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/openstrudel
+ExecStart=/usr/bin/node /opt/openstrudel/dist/cli.js start
+Restart=on-failure
+RestartSec=3
+Environment=OPENSTRUDEL_DB=/opt/openstrudel/.data/openstrudel.sqlite
+
+[Install]
+WantedBy=multi-user.target

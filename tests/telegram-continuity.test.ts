@@ -1,0 +1,89 @@
+import { afterEach,expect,it,vi } from "vitest";
+import { Store } from "../src/store.js";
+import { Scheduler } from "../src/scheduler.js";
+import { MessageService } from "../src/messages.js";
+import { TelegramAdapter } from "../src/telegram.js";
+const stores:Store[]=[];
+afterEach(()=>{vi.useRealTimers();vi.unstubAllGlobals();for(const s of stores.splice(0))s.close();});
+function setup() {
+ const s=new Store(":memory:");stores.push(s);const run=vi.fn(async()=>({threadId:"one",response:"**Done**",events:[]}));
+ const m=new MessageService(s,{run});const a=new TelegramAdapter("123:test",s,m);
+ s.linkTelegramChat({chatId:"-100",title:"Group",allowedSenders:["7"]});
+ vi.stubGlobal("fetch",vi.fn(async()=>Response.json({ok:true,result:{message_id:99}})));
+ return {s,m,a,run};
+}
+it("restricts a linked group to its approved senders",async()=>{
+ const {s,m,a,run}=setup();const p=s.createProfile({name:"News"});s.bindTelegramChat("-100",p.id);
+ await a.processUpdate({update_id:1,message:{message_id:1,from:{id:8},chat:{id:-100,type:"group"},text:"change everything"}});
+ expect(run).not.toHaveBeenCalled();
+ await a.processUpdate({update_id:2,message:{message_id:2,from:{id:7},chat:{id:-100,type:"group"},text:"Hello"}});
+ expect(s.listMessages(s.getTelegramChat("-100")!.conversationId!)).toHaveLength(2);await m.close();
+});
+it("does not resend a delivery whose response was lost",async()=>{
+ const {a}=setup();vi.stubGlobal("fetch",vi.fn(async()=>{throw new Error("connection lost");}));
+ await expect(a.sendMessage(-100,"Hello","same-reply")).rejects.toThrow();
+ await expect(a.sendMessage(-100,"Hello","same-reply")).rejects.toThrow();
+ expect(fetch).toHaveBeenCalledTimes(1);
+});
+it("retries a confirmed Telegram rate rejection after retry_after",async()=>{
+ const {a,s}=setup();vi.useFakeTimers();
+ const send=vi.fn()
+  .mockResolvedValueOnce(Response.json({ok:false,error_code:429,parameters:{retry_after:2},description:"Too Many Requests"},{status:429}))
+  .mockResolvedValueOnce(Response.json({ok:true,result:{message_id:99}}));
+ vi.stubGlobal("fetch",send);
+ const delivery=a.sendMessage(-100,"Hello","throttled");
+ await vi.advanceTimersByTimeAsync(1999);expect(send).toHaveBeenCalledTimes(1);
+ await vi.advanceTimersByTimeAsync(1);await delivery;
+ expect(send).toHaveBeenCalledTimes(2);
+ expect(s.db.prepare("SELECT status FROM telegram_outbox").get()?.status).toBe("delivered");
+});
+it("routes replies to a delivered digest back to that employee",async()=>{
+ const {s,m,a,run}=setup();const scheduler=new Scheduler(s,m);
+ const baby=s.createProfile({name:"Baby"});const news=s.createProfile({name:"News"});
+ s.bindTelegramChat("-100",news.id);
+ const babyChat=s.profileConversation(baby.id);
+ const schedule=scheduler.save({conversationId:babyChat.id,name:"Baby edition",prompt:"Digest",cron:"0 6 * * *",timezone:"Europe/Moscow",telegramChatId:"-100"},new Date("2026-09-26T10:00:00Z"));
+ s.db.prepare("INSERT INTO schedule_runs(id,schedule_id,conversation_id,scheduled_for,status,created_at) VALUES(?,?,?,?,?,?)").run("baby-run",schedule.id,babyChat.id,"2026-09-27T03:00:00.000Z","completed","2026-09-27T03:00:00.000Z");
+ await a.sendMessage(-100,"Baby edition","schedule:baby-run");
+ await a.processUpdate({update_id:5,message:{message_id:5,from:{id:7},chat:{id:-100,type:"group"},reply_to_message:{message_id:99},text:"Continue that edition"}});
+ expect(run.mock.calls[0]?.[1]).toMatchObject({profile:expect.stringContaining("Baby")});
+ expect(s.listMessages(babyChat.id)).toHaveLength(0);
+ expect(s.listConversations().filter(c=>c.externalId===`-100::employee::${baby.id}`)).toHaveLength(1);
+ expect(s.getTelegramChat("-100")?.profileId).toBe(news.id);await m.close();
+});
+it("transcribes voice before submitting later text in the same chat",async()=>{
+ const {a,run,m,s}=setup();let finish!:(v:string)=>void;
+ s.bindTelegramChat("-100",s.createProfile({name:"Voice"}).id);
+ a.transcribe=()=>new Promise(r=>{finish=r;});
+ vi.stubGlobal("fetch",vi.fn(async(url:string)=>url.includes("/file/") ? new Response(new Uint8Array([1,2])) : Response.json({ok:true,result:url.endsWith("getFile")?{file_path:"voice/file.ogg",file_size:2}:{message_id:99}})));
+ const first=a.processUpdate({update_id:3,message:{message_id:3,from:{id:7},chat:{id:-100,type:"group"},voice:{file_id:"voice",file_size:2}}});
+ await vi.waitFor(()=>expect(finish).toBeDefined());
+ const second=a.processUpdate({update_id:4,message:{message_id:4,from:{id:7},chat:{id:-100,type:"group"},text:"Second"}});
+ finish("First");await Promise.all([first,second]);
+ expect(run.mock.calls.map(c=>c[0])).toEqual(["First","Second"]);await m.close();
+});
+
+it("delivers an addressed employee's approval to its originating private chat", async () => {
+ const s=new Store(":memory:");stores.push(s);
+ const news=s.createProfile({name:"News"});const editor=s.createProfile({name:"Editor"});
+ s.linkTelegramChat({chatId:"42",title:"Personal",allowedSenders:["42"]});s.bindTelegramChat("42",news.id);
+ const m=new MessageService(s,{async run(_text,options){
+  const answer=await options!.onRequest!("item/commandExecution/requestApproval",{command:"test-only action"}) as {decision:string};
+  return {threadId:"editor",response:answer.decision,events:[]};
+ }});
+ const sent:Array<any>=[];
+ vi.stubGlobal("fetch",vi.fn(async(_url:string,init:RequestInit)=>{
+  sent.push(JSON.parse(String(init.body)));return Response.json({ok:true,result:{message_id:99}});
+ }));
+ const a=new TelegramAdapter("123:test",s,m);
+ const turn=a.processUpdate({update_id:80,message:{message_id:80,from:{id:42},chat:{id:42,type:"private"},text:"@Editor Ask approval"}});
+ await vi.waitFor(()=>expect(sent.some(s=>s.reply_markup?.inline_keyboard)).toBe(true));
+ const card=sent.find(s=>s.reply_markup?.inline_keyboard);
+ expect(card.chat_id).toBe("42");
+ expect(m.interactions.list(s.profileConversation(editor.id).id)).toHaveLength(1);
+ await a.processUpdate({update_id:81,callback_query:{id:"decline",from:{id:42},data:card.reply_markup.inline_keyboard[1][0].callback_data,message:{message_id:99,chat:{id:42}}}});
+ await turn;
+ expect(sent.some(s=>s.text==="decline")).toBe(true);
+ expect(s.getTelegramChat("42")?.profileId).toBe(news.id);
+ await m.close();
+});

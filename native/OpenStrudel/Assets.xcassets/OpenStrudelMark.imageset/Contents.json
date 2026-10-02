@@ -1,0 +1,13 @@
+{
+  "images" : [
+    {
+      "filename" : "OpenStrudelMark.png",
+      "idiom" : "universal",
+      "scale" : "1x"
+    }
+  ],
+  "info" : {
+    "author" : "openstrudel",
+    "version" : 1
+  }
+}

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>is.openstrudel.home</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/env</string>
+    <string>node</string>
+    <string>/opt/openstrudel/dist/cli.js</string>
+    <string>start</string>
+  </array>
+  <key>WorkingDirectory</key><string>/opt/openstrudel</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OPENSTRUDEL_DB</key><string>/opt/openstrudel/.data/openstrudel.sqlite</string>
+  </dict>
+  <key>StandardOutPath</key><string>/opt/openstrudel/.data/home.log</string>
+  <key>StandardErrorPath</key><string>/opt/openstrudel/.data/home.error.log</string>
+</dict>
+</plist>

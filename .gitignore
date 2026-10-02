@@ -1,0 +1,33 @@
+node_modules/
+dist/
+.data/
+.env
+*.log
+
+# Local credentials, user content and build products.
+.env.*
+!.env.example
+.DS_Store
+*.sqlite*
+*.db
+*.pem
+*.key
+*.p8
+*.p12
+*.mobileprovision
+*.provisionprofile
+*.xcresult/
+DerivedData/
+build/
+xcuserdata/
+*.xcuserstate
+
+# Private research and one-off imports of personal employee histories.
+/research/
+/src/migration.ts
+/scripts/import-employees.ts
+/scripts/export-personal-library.py
+/tests/migration.test.ts
+
+# Accidental nested generated Xcode project.
+/native/OpenStrudel/OpenStrudel.xcodeproj/OpenStrudel.xcodeproj/
