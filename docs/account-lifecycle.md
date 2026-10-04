@@ -31,6 +31,14 @@ Worker credential storage is ephemeral. This also prevents a worker upgraded fro
 an older release from loading its old `auth.json`; the Home remains the only OAuth
 refresh owner. Switching Homes scopes local drafts to the original Home address.
 
+Codex also receives a private operating-system home directory. Workers use their
+own writable workspace; the account helper uses a private directory under its
+Codex home. This prevents discovery of the owner's global `~/.agents` skills and
+shell startup files. In a macOS background service, a global skill symlink into
+Documents can otherwise block startup on a privacy prompt. Scoped skills remain
+available through that worker's `CODEX_HOME/skills`, and configured connections
+remain unchanged.
+
 Native clients refresh shared account status every 10 seconds. The Home coalesces
 reads and caches healthy status for up to 30 seconds (failure for 5 seconds).
 Login completion and authentication errors invalidate that cache. Explicit retry

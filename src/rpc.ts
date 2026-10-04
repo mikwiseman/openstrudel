@@ -16,13 +16,21 @@ export class CodexRpc {
 
   constructor(codexHome?: string, private readonly onNotification?: (m: RpcMessage) => void,
     private readonly onRequest?: (method: string, params: any) => Promise<unknown>,
-    private readonly onClose?: (error: Error) => void) {
+    private readonly onClose?: (error: Error) => void, processHome?: string) {
     const executable = resolve(dirname(createRequire(import.meta.url).resolve("@openai/codex/package.json")), "bin/codex.js");
     // Bot/server credentials must not become readable tool environment variables.
     const env: NodeJS.ProcessEnv = {};
     for (const key of ["HOME", "PATH", "SHELL", "TMPDIR", "LANG", "LC_ALL", "TZ", "USER", "LOGNAME", "TERM"]) if (process.env[key]) env[key] = process.env[key];
     if (!codexHome && process.env.CODEX_HOME) env.CODEX_HOME = process.env.CODEX_HOME;
-    if (codexHome) { mkdirSync(codexHome, { recursive: true }); env.CODEX_HOME = codexHome; }
+    if (codexHome) {
+      mkdirSync(codexHome, { recursive: true, mode: 0o700 });
+      env.CODEX_HOME = codexHome;
+      // CODEX_HOME does not isolate discovery of ~/.agents or shell startup
+      // files. A background Home must not enumerate the owner's Documents via
+      // global skill symlinks and block on a macOS privacy prompt.
+      env.HOME = processHome ?? resolve(codexHome, "user-home");
+      mkdirSync(env.HOME, { recursive: true, mode: 0o700 });
+    }
     this.child = spawn(process.execPath, [executable, "app-server"], { env, stdio: "pipe" });
     this.lines = createInterface({ input: this.child.stdout, crlfDelay: Infinity });
     this.lines.on("line", line => { void this.receive(line); });

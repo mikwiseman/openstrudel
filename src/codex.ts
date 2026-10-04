@@ -38,7 +38,7 @@ export class CodexEngineAdapter implements CodexEngine {
       const rpc = new CodexRpc(this.codexHome, m => this.notification(m), (m, p) => this.serverRequest(m, p), error => {
         for (const turn of this.active.values()) turn.reject(error);
         this.active.clear(); this.loaded.clear(); this.rpc = undefined; this.initializing = undefined;
-      });
+      }, this.options.scoped ? this.options.workingDirectory : undefined);
       try {
         await rpc.initialize();
         if (this.options.authTokens) await rpc.request("account/login/start", { type: "chatgptAuthTokens", ...await this.options.authTokens() });

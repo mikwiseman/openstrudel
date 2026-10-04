@@ -34,6 +34,22 @@ class RecoveryProbeEngine implements CodexEngine {
 }
 
 describe("MessageService", () => {
+  it("shows a readable startup timeout and keeps its receipt without replaying the request", async () => {
+    const store = new Store(":memory:");
+    const run = vi.fn(async () => { throw new Error("Codex не ответил на thread/start"); });
+    const messages = new MessageService(store, { run });
+    const request = { channel: "api" as const, externalChatId: "home", externalId: "timed-out-action", text: "Проверь соединение" };
+    try {
+      await expect(messages.handle(request)).rejects.toThrow("Codex не ответил вовремя");
+      await expect(messages.handle(request)).rejects.toThrow("Codex не ответил вовремя");
+      expect(run).toHaveBeenCalledOnce();
+      const conversation = store.getOrCreateConversation({ channel: "api", externalId: "home" });
+      expect(store.listMessages(conversation.id)).toHaveLength(1);
+      expect(store.listMessages(conversation.id)[0]).toMatchObject({ status: "failed" });
+      expect(store.listMessages(conversation.id)[0]!.error).not.toContain("thread/start");
+    } finally { store.close(); }
+  });
+
   it("keeps a rejected turn and its thread, refreshes account status, and never replays it after sign-in", async () => {
     const store = new Store(":memory:");
     try {

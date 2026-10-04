@@ -151,6 +151,7 @@ export class MessageService {
 function friendlyError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   if (isOpenAIAuthenticationError(error)) return OPENAI_SIGN_IN_REQUIRED;
+  if (/^Codex не ответил на /u.test(message)) return "Codex не ответил вовремя. Перед повтором проверьте результат последнего действия.";
   if (/active writer|thread-store conflict/i.test(message)) return "Этот чат ещё открыт другим процессом Codex. Закройте его и повторите сообщение. История сохранена.";
   if (/usage limit|rate limit|quota/i.test(message)) return "У аккаунта Codex закончился доступный лимит. Можно дождаться обновления или сменить аккаунт в настройках.";
   return message.length > 600 ? "Codex не завершил ответ. Перед повтором проверьте результат последнего действия." : message;
