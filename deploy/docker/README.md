@@ -7,10 +7,14 @@ The two profiles are adapted from OpenAI's `codex-security` project, commit `10e
 - `docker/codex-security-seccomp.json` → `seccomp.json`, unchanged.
 - `docker/codex-security.apparmor` → `openstrudel.apparmor`, profile name changed to `openstrudel-container` only.
 
-They allow Bubblewrap to create its own user and mount namespaces without granting host capabilities. The AppArmor profile retains restrictions on `/proc`, `/sys`, and kernel interfaces. Load it on the Docker host before starting the service:
+They allow Bubblewrap to create its own user and mount namespaces without granting host capabilities. The AppArmor profile retains restrictions on `/proc`, `/sys`, and kernel interfaces. Persist it on the Docker host and require it before Docker restores containers after reboot:
 
 ```sh
-sudo apparmor_parser -r deploy/docker/openstrudel.apparmor
+sudo install -m 0644 deploy/docker/openstrudel.apparmor /etc/apparmor.d/openstrudel-container
+sudo install -m 0644 deploy/docker/openstrudel-apparmor.service /etc/systemd/system/openstrudel-apparmor.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now openstrudel-apparmor.service
+sudo apparmor_parser -r /etc/apparmor.d/openstrudel-container
 ```
 
 Required container flags:

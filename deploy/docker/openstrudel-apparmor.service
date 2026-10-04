@@ -1,0 +1,14 @@
+[Unit]
+Description=Load the OpenStrudel container security profile
+Requires=apparmor.service
+After=apparmor.service
+Before=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/sbin/apparmor_parser -r /etc/apparmor.d/openstrudel-container
+
+[Install]
+RequiredBy=docker.service

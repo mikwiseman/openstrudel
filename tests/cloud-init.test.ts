@@ -106,6 +106,36 @@ ${action}
     expect(unit).not.toContain("Requires=docker.service");
     expect(unit).not.toContain("ExecStart=-");
   });
+  it("persists AppArmor before enabling a required Docker startup dependency", () => {
+    const root = fixture();
+    mkdirSync(join(root, "home/deploy/docker"), { recursive: true });
+    const profile = readFileSync(resolve("deploy/docker/openstrudel.apparmor"), "utf8");
+    writeFileSync(join(root, "home/deploy/docker/openstrudel.apparmor"), profile);
+    const result = shell(`
+install() { cp "$3" "$STATE_DIR/$(basename "$4")"; }
+systemctl() {
+  [[ -f "$STATE_DIR/openstrudel-container" && -f "$STATE_DIR/openstrudel-apparmor.service" ]] || exit 91
+  printf '%s\\n' "$*" >> "$STATE_DIR/systemctl.calls"
+}
+apparmor_parser() {
+  [[ "$*" == '-r /etc/apparmor.d/openstrudel-container' ]] || exit 92
+  cmp "$STATE_DIR/openstrudel-container" "$INSTALL_ROOT/deploy/docker/openstrudel.apparmor"
+}
+install_apparmor_profile
+`, root);
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(join(root, "openstrudel-container"), "utf8")).toBe(profile);
+    const unit = readFileSync(join(root, "openstrudel-apparmor.service"), "utf8");
+    expect(unit).toBe(readFileSync(resolve("deploy/docker/openstrudel-apparmor.service"), "utf8"));
+    expect(unit).toContain("Requires=apparmor.service");
+    expect(unit).toContain("After=apparmor.service");
+    expect(unit).toContain("Before=docker.service");
+    expect(unit).toContain("RequiredBy=docker.service");
+    expect(unit).toContain("PartOf=docker.service");
+    expect(unit).toContain("ExecStart=/sbin/apparmor_parser -r /etc/apparmor.d/openstrudel-container");
+    expect(unit).not.toContain("ExecStart=-");
+    expect(readFileSync(join(root, "systemctl.calls"), "utf8")).toBe("daemon-reload\nenable --now openstrudel-apparmor.service\n");
+  });
   it.skipIf(process.platform !== "darwin")("renders the actual Swift resource into bounded cloud-config without shell interpolation", () => {
     const root = fixture();
     const main = join(root, "main.swift");

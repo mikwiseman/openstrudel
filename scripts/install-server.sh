@@ -184,7 +184,13 @@ compose() (
   unset OPENSTRUDEL_PUBLIC_HOST OPENSTRUDEL_PUBLIC_PORT COMPOSE_PROJECT_NAME TZ
   "${DOCKER[@]}" compose --project-name "$PROJECT_NAME" --project-directory "$INSTALL_ROOT/deploy" --env-file "$ENV_FILE" -f "$INSTALL_ROOT/deploy/compose.yaml" "$@"
 )
-load_apparmor() { as_root apparmor_parser -r "$INSTALL_ROOT/deploy/docker/openstrudel.apparmor"; }
+load_apparmor() {
+  as_root install -m 0644 "$INSTALL_ROOT/deploy/docker/openstrudel.apparmor" /etc/apparmor.d/openstrudel-container
+  as_root install -m 0644 "$INSTALL_ROOT/deploy/docker/openstrudel-apparmor.service" /etc/systemd/system/openstrudel-apparmor.service
+  as_root systemctl daemon-reload
+  as_root systemctl enable --now openstrudel-apparmor.service
+  as_root apparmor_parser -r /etc/apparmor.d/openstrudel-container
+}
 
 wait_ready() {
   local attempt

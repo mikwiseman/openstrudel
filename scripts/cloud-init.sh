@@ -173,6 +173,37 @@ install_metadata_guard() {
   /usr/local/sbin/openstrudel-metadata-guard
 }
 
+apparmor_unit() {
+  cat <<'UNIT'
+[Unit]
+Description=Load the OpenStrudel container security profile
+Requires=apparmor.service
+After=apparmor.service
+Before=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/sbin/apparmor_parser -r /etc/apparmor.d/openstrudel-container
+
+[Install]
+RequiredBy=docker.service
+UNIT
+}
+
+install_apparmor_profile() {
+  # Loading only the in-memory profile lets the first boot work, but leaves
+  # Docker unable to restore its container after reboot. Persist the profile
+  # and make successful loading a prerequisite of every Docker start.
+  install -m 0644 "$INSTALL_ROOT/deploy/docker/openstrudel.apparmor" /etc/apparmor.d/openstrudel-container
+  apparmor_unit > "$STATE_DIR/apparmor.service"
+  install -m 0644 "$STATE_DIR/apparmor.service" /etc/systemd/system/openstrudel-apparmor.service
+  systemctl daemon-reload
+  systemctl enable --now openstrudel-apparmor.service
+  apparmor_parser -r /etc/apparmor.d/openstrudel-container
+}
+
 install_dependencies() {
   progress 'Preparing the server.'
   export DEBIAN_FRONTEND=noninteractive
@@ -327,7 +358,7 @@ main() {
   install_dependencies
   prepare_release
   configure
-  apparmor_parser -r "$INSTALL_ROOT/deploy/docker/openstrudel.apparmor"
+  install_apparmor_profile
   progress 'Preparing OpenStrudel.'
   COMPOSE_TIMEOUT=2400 compose build home
   bootstrap_home

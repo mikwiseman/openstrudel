@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		066029DEC026A68A1379F314 /* MobilePairingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8AC19EC197C2FC60EBEB3D /* MobilePairingTests.swift */; };
+		09FDF891ED4D0479E78D39E0 /* LiveCloudPairingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96A2DF3BB4A7D519FA68EA0F /* LiveCloudPairingUITests.swift */; };
 		1109A0AEE1C8475E2E3181A3 /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = B9A7842329C25226D34D8B1C /* cloud-init.sh */; };
 		1B7D1573EF6D0D4B9743DC03 /* MobileConnectionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41969DD182FE17F98BBEEE17 /* MobileConnectionViews.swift */; };
 		2061E90D9AC95D39DAAA06E8 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38873CBA5B37136CDD8FF91 /* AppTheme.swift */; };
@@ -91,6 +92,7 @@
 		709BE1A9B19D0468720417CF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7C3D241925EF81E938247C15 /* ChatMedia.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMedia.swift; sourceTree = "<group>"; };
 		8C5697D28D27A1636C95E5E2 /* OpenStrudel Text Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "OpenStrudel Text Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		96A2DF3BB4A7D519FA68EA0F /* LiveCloudPairingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveCloudPairingUITests.swift; sourceTree = "<group>"; };
 		98BB832A7436E9C4AD93FB56 /* OpenStrudel iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "OpenStrudel iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A4A12DEA162BBC10A8CA136D /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
 		A635A0DA48A1D907252A7BCB /* SetupViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupViews.swift; sourceTree = "<group>"; };
@@ -163,6 +165,7 @@
 			isa = PBXGroup;
 			children = (
 				1132C0F7932A6440305D150A /* iPhoneSmokeTests.swift */,
+				96A2DF3BB4A7D519FA68EA0F /* LiveCloudPairingUITests.swift */,
 				4DDBDB4821F4175BB293C35F /* MobilePairingUITests.swift */,
 				269C829F112500B5E34127F7 /* ReleaseScenariosUITests.swift */,
 				63F40AD948917E9AE1685058 /* StorePreviewUITests.swift */,
@@ -438,6 +441,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				09FDF891ED4D0479E78D39E0 /* LiveCloudPairingUITests.swift in Sources */,
 				5E17805965A351ABB7620CF2 /* MobilePairingUITests.swift in Sources */,
 				396D0DCDA42F07B7B6AD8CDA /* ReleaseScenariosUITests.swift in Sources */,
 				63497E44A5FAA3B8E94C0FF6 /* StorePreviewUITests.swift in Sources */,
@@ -603,7 +607,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -701,7 +705,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

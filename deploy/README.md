@@ -2,7 +2,7 @@
 
 Комплект для администратора собственного VDS. Установщик настраивает и запускает уже арендованный сервер; он не создаёт аккаунт у хостинга. Для установки без терминала выберите облачный запуск в приложении Mac или iPhone: войдите в свой аккаунт DigitalOcean, проверьте цену и подтвердите создание сервера. DigitalOcean — единственный встроенный облачный провайдер, оплата идёт напрямую ему. Чтобы прекратить начисления, сохраните нужные данные и удалите сервер в DigitalOcean; выключения сервера недостаточно.
 
-Нужны Ubuntu 22.04, 24.04 или 26.04 с AppArmor, Docker Engine 29+ с Compose, публичный адрес и открытый TCP-порт 7789. Начальная конфигурация: 2 vCPU, 4 ГБ памяти и 20 ГБ диска. GPU не нужен. Проверено на Ubuntu 26.04 с Docker 29; другие контейнерные хостинги отдельно не проверены.
+Нужны Ubuntu 22.04, 24.04 или 26.04 с AppArmor, Docker Engine 29+ с Compose, публичный адрес и открытый TCP-порт 7789. Начальная конфигурация: 2 vCPU, 4 ГБ памяти и 20 ГБ диска. GPU не нужен. Проверено на Ubuntu 24.04 в DigitalOcean и Ubuntu 26.04 с Docker 29; другие контейнерные хостинги отдельно не проверены.
 
 ## Установка
 
@@ -12,9 +12,9 @@
 bash scripts/install-server.sh
 ```
 
-Установщик проверит среду, определит публичный IPv4, загрузит профиль AppArmor, запустит Compose и выдаст личное приглашение. Повторный запуск сохраняет `deploy/.env`, том данных и подключённые устройства; вы получите новое приглашение. Он не меняет firewall, SSH, настройки ядра или чужие контейнеры.
+Установщик проверит среду, определит публичный IPv4, сохранит профиль AppArmor и настроит его загрузку перед Docker, запустит Compose и выдаст личное приглашение. Повторный запуск сохраняет `deploy/.env`, том данных и подключённые устройства; вы получите новое приглашение. Он не меняет firewall, SSH, настройки ядра или чужие контейнеры.
 
-Если Docker ещё не установлен, выполните [официальную инструкцию Docker для Ubuntu](https://docs.docker.com/engine/install/ubuntu/) и повторите команду. Сам установщик не устанавливает и не обновляет системные службы.
+Если Docker ещё не установлен, выполните [официальную инструкцию Docker для Ubuntu](https://docs.docker.com/engine/install/ubuntu/) и повторите команду. Установщик не устанавливает и не обновляет Docker. Служба `openstrudel-apparmor` загружает профиль защиты до восстановления контейнеров после перезагрузки.
 
 Если сервер использует домен или находится за NAT:
 
@@ -39,7 +39,11 @@ TZ=Europe/Moscow
 Укажите действительный публичный домен или IPv4 вашего сервера. Затем:
 
 ```sh
-sudo apparmor_parser -r deploy/docker/openstrudel.apparmor
+sudo install -m 0644 deploy/docker/openstrudel.apparmor /etc/apparmor.d/openstrudel-container
+sudo install -m 0644 deploy/docker/openstrudel-apparmor.service /etc/systemd/system/openstrudel-apparmor.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now openstrudel-apparmor.service
+sudo apparmor_parser -r /etc/apparmor.d/openstrudel-container
 docker compose --project-directory deploy -f deploy/compose.yaml up -d --build
 docker compose --project-directory deploy -f deploy/compose.yaml logs --tail 15
 ```
