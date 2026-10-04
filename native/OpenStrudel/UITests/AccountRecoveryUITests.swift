@@ -27,7 +27,7 @@ final class AccountRecoveryUITests: XCTestCase {
         capture("largest-type-recovery-controls", app)
         recover.tap()
         let signIn = app.buttons["signInOpenAI"]
-        for _ in 0..<12 where !signIn.isHittable { app.scrollViews.firstMatch.swipeUp() }
+        for _ in 0..<12 where !signIn.isHittable { scrollPresentedContent(app) }
         XCTAssertTrue(signIn.isHittable)
         capture("largest-type-sign-in", app)
     }
@@ -55,7 +55,7 @@ final class AccountRecoveryUITests: XCTestCase {
         app.activate()
         XCTAssertTrue(app.staticTexts["TEST-10204"].waitForExistence(timeout: 15))
         let cancel = app.buttons["Отменить"]
-        for _ in 0..<8 where !cancel.isHittable { app.scrollViews.firstMatch.swipeUp() }
+        for _ in 0..<8 where !cancel.isHittable { scrollPresentedContent(app) }
         XCTAssertTrue(cancel.isHittable)
         capture("device-code-and-cancel", app)
         cancel.tap()
@@ -114,5 +114,11 @@ final class AccountRecoveryUITests: XCTestCase {
     }
     @MainActor private func capture(_ name: String, _ app: XCUIApplication) {
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = name; shot.lifetime = .keepAlways; add(shot)
+    }
+
+    @MainActor private func scrollPresentedContent(_ app: XCUIApplication) {
+        // iPad sheets leave the underlying conversation in the AX hierarchy.
+        let scroller = app.scrollViews.allElementsBoundByIndex.last(where: \.isHittable) ?? app
+        scroller.swipeUp()
     }
 }
