@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MessageService } from "../src/messages.js";
 import { Store } from "../src/store.js";
 import type { CodexEngine, CodexRunResult } from "../src/types.js";
@@ -34,6 +34,31 @@ class RecoveryProbeEngine implements CodexEngine {
 }
 
 describe("MessageService", () => {
+  it("keeps a rejected turn and its thread, refreshes account status, and never replays it after sign-in", async () => {
+    const store = new Store(":memory:");
+    try {
+      const conversation = store.getOrCreateConversation({ channel: "api", externalId: "home" });
+      store.setConversationThread(conversation.id, "existing-thread");
+      let authorized = false;
+      const run = vi.fn(async () => {
+        if (!authorized) throw new Error("workspace routing discovery unauthorized (401)");
+        return { threadId: "existing-thread", response: "Готово", events: [] };
+      });
+      const messages = new MessageService(store, { run });
+      messages.onAuthenticationError = vi.fn();
+      const request = { channel: "api" as const, externalChatId: "home", externalId: "original-action", text: "Сделай действие" };
+      await expect(messages.handle(request)).rejects.toThrow("Вход в OpenAI больше не действует");
+      expect(messages.onAuthenticationError).toHaveBeenCalledOnce();
+      expect(store.listMessages(conversation.id)[0]).toMatchObject({ status: "failed" });
+      authorized = true;
+      await expect(messages.handle(request)).rejects.toThrow("Вход в OpenAI больше не действует");
+      expect(run).toHaveBeenCalledOnce();
+      expect(store.getConversation(conversation.id)?.codexThreadId).toBe("existing-thread");
+      expect((await messages.handle({ ...request, externalId: "explicit-new-action" })).text).toBe("Готово");
+      expect(run).toHaveBeenCalledTimes(2);
+    } finally { store.close(); }
+  });
+
   it("serializes rapid messages per conversation and resumes the latest thread", async () => {
     const store = new Store(":memory:");
     const engine = new SerialProbeEngine();

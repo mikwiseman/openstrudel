@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,5 +31,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   mkdirSync(directory, { recursive: true });
   let version = "development";
   try { version = readFileSync(resolve(root, "release.txt"), "utf8").trim(); } catch {}
-  writeFileSync(resolve(directory, "is.openstrudel.home.plist"), launchAgent(root, process.execPath, homedir(), dataRoot, version), { mode: 0o600 });
+  const target = process.argv[4] ? resolve(process.argv[4]) : resolve(directory, "is.openstrudel.home.plist");
+  const temporary = target + ".new";
+  writeFileSync(temporary, launchAgent(root, process.execPath, homedir(), dataRoot, version), { mode: 0o600 });
+  renameSync(temporary, target);
 }

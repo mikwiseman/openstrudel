@@ -2,7 +2,7 @@ export const OPENAI_SIGN_IN_REQUIRED = "Вход в OpenAI больше не д�
 
 export function isOpenAIAuthenticationError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /unauthorized|\b401\b|invalid_grant|refresh_token_(?:expired|reused|invalidated)|authentication required/i.test(message);
+  return /unauthorized|\b401\b|invalid_grant|refresh_token_(?:expired|reused|invalidated)|authentication required|refresh token.{0,160}(?:expired|already used|revoked|invalidated)|(?:expired|revoked|invalid) access token/i.test(message);
 }
 
 export function openAILoginError(error: unknown): string {

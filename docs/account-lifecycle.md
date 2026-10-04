@@ -23,6 +23,13 @@ Only the local Home owner and clients paired with an owner invitation can start,
 inspect, cancel or change OpenAI login. Ordinary paired clients see shared account
 status and wait for the owner to recover it. Remote owners use device-code login,
 so a browser callback is never accidentally sent to the remote server's localhost.
+OpenAI may require the owner to enable device-code login in ChatGPT security
+settings, or obtain permission from their workspace administrator. The code screen
+explains this; OpenStrudel never changes those account settings itself.
+
+Worker credential storage is ephemeral. This also prevents a worker upgraded from
+an older release from loading its old `auth.json`; the Home remains the only OAuth
+refresh owner. Switching Homes scopes local drafts to the original Home address.
 
 Native clients refresh shared account status every 10 seconds. The Home coalesces
 reads and caches healthy status for up to 30 seconds (failure for 5 seconds).

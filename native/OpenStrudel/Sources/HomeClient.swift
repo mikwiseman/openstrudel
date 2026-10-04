@@ -160,6 +160,7 @@ final class HomeClient: ObservableObject {
                 baseURLString = ""
             }
         }
+        HomeDrafts.migrate(defaults, currentHome: baseURLString)
     }
 
     var isConfigured: Bool {
@@ -707,7 +708,9 @@ final class HomeClient: ObservableObject {
             let method = ["localhost", "127.0.0.1", "::1"].contains(host ?? "") ? "browser" : "device"
             #endif
             let body = try JSONSerialization.data(withJSONObject: ["method": method])
-            openAILogin = try await request("/v1/account/login", method: "POST", body: body)
+            let login: OpenAILogin = try await request("/v1/account/login", method: "POST", body: body)
+            guard generation == connectionGeneration, !Task.isCancelled else { return }
+            openAILogin = login
             openAILoginStatus = nil
         } catch {
             guard generation == connectionGeneration, !(error is CancellationError) else { return }
@@ -739,21 +742,26 @@ final class HomeClient: ObservableObject {
 
     func cancelOpenAILogin() async {
         guard let login = openAILogin else { return }
+        let generation = connectionGeneration
         openAILogin = nil
         openAILoginStatus = nil
         openAIErrorMessage = nil
         do {
             let _: OpenAILoginStatus = try await request("/v1/account/login/" + login.loginId + "/cancel", method: "POST")
         } catch {
+            guard generation == connectionGeneration, !(error is CancellationError) else { return }
             openAIErrorMessage = "Не удалось подтвердить отмену. Незавершённый вход истечёт автоматически."
         }
     }
 
     func logoutOpenAI() async {
+        let generation = connectionGeneration
         do {
             let envelope: OpenAIAccountEnvelope = try await request("/v1/account/logout", method: "POST")
+            guard generation == connectionGeneration, !Task.isCancelled else { return }
             openAIAccount = envelope.account
         } catch {
+            guard generation == connectionGeneration, !(error is CancellationError) else { return }
             errorMessage = error.localizedDescription
         }
     }

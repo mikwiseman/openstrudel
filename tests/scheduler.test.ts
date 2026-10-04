@@ -13,6 +13,28 @@ function setup() {
   return { store, messages, scheduler, calls: () => calls };
 }
 describe("durable cron", () => {
+  it("keeps the failed receipt after lost authorization and uses recovery only for later runs", async () => {
+    const store = new Store(":memory:"); stores.push(store);
+    let authorized = false, calls = 0;
+    const messages = new MessageService(store, { async run() {
+      calls++;
+      if (!authorized) throw new Error("refresh_token_expired");
+      return { threadId: "restored", response: "Digest", events: [] };
+    } });
+    const scheduler = new Scheduler(store, messages), c = store.primaryConversation();
+    scheduler.save({ conversationId: c.id, name: "Daily", prompt: "Digest", cron: "0 6 * * *", timezone: "Europe/Moscow" }, new Date("2026-09-26T10:00:00Z"));
+    await scheduler.tick(new Date("2026-09-27T03:00:01Z")); await scheduler.idle();
+    expect(scheduler.runs(c.id)[0]).toMatchObject({ status: "failed", error: expect.stringContaining("Вход в OpenAI больше не действует") });
+    authorized = true;
+    scheduler.recover();
+    await scheduler.tick(new Date("2026-09-27T04:00:01Z")); await scheduler.idle();
+    expect(calls).toBe(1);
+    await scheduler.tick(new Date("2026-09-28T03:00:01Z")); await scheduler.idle();
+    expect(calls).toBe(2);
+    expect(scheduler.runs(c.id).map(r => r.status)).toEqual(["completed", "failed"]);
+    expect(scheduler.list(c.id)).toHaveLength(1);
+  });
+
   it("does not publish a second edition when Telegram delivery is ambiguous", async () => {
     const { store, scheduler, calls } = setup();
     const c = store.primaryConversation();

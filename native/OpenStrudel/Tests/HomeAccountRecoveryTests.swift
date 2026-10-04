@@ -3,6 +3,21 @@ import Testing
 
 @Suite(.serialized)
 @MainActor struct HomeAccountRecoveryTests {
+    @Test func draftsStayWithTheirHomeAcrossUpgradeAndAccountRecovery() throws {
+        let suite = "OpenStrudel.drafts-test." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(["main:personal": "Не отправлять на другой сервер"], forKey: "openstrudel.drafts")
+        HomeDrafts.migrate(defaults, currentHome: "https://home-a.example:7790/")
+        let key = HomeDrafts.key(home: "https://home-a.example:7790", profile: nil, chat: nil)
+        #expect((defaults.dictionary(forKey: "openstrudel.drafts") as? [String: String])?[key] == "Не отправлять на другой сервер")
+        HomeDrafts.migrate(defaults, currentHome: "https://home-b.example:7790")
+        let drafts = try #require(defaults.dictionary(forKey: "openstrudel.drafts") as? [String: String])
+        #expect(drafts[HomeDrafts.key(home: "https://home-b.example:7790", profile: nil, chat: nil)] == nil)
+        #expect(drafts[key] == "Не отправлять на другой сервер")
+        #expect(drafts.count == 1)
+    }
+
     @Test func rejectedOpenAIAuthorizationDoesNotDiscardTheHealthyHomeOrHistory() async throws {
         let state = AccountFixtureState()
         state.accountStatus = 400

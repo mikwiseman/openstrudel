@@ -1,5 +1,22 @@
 import Foundation
 
+enum HomeDrafts {
+    static func key(home: String, profile: String?, chat: String?) -> String {
+        home.trimmingCharacters(in: CharacterSet(charactersIn: "/ ")) + "\n" + (profile ?? "main") + ":" + (chat ?? "personal")
+    }
+
+    static func migrate(_ defaults: UserDefaults, currentHome: String) {
+        guard !currentHome.isEmpty,
+              let old = defaults.dictionary(forKey: "openstrudel.drafts") as? [String: String] else { return }
+        var scoped = old.filter { $0.key.contains("\n") }
+        for (key, value) in old where !key.contains("\n") {
+            let target = currentHome.trimmingCharacters(in: CharacterSet(charactersIn: "/ ")) + "\n" + key
+            if scoped[target] == nil { scoped[target] = value }
+        }
+        if scoped != old { defaults.set(scoped, forKey: "openstrudel.drafts") }
+    }
+}
+
 struct HomeHealth: Decodable {
     let ok: Bool
     let platform: String?

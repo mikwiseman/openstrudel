@@ -19,6 +19,7 @@ import { CodexAccountService } from "../src/account.js";
 import { Store } from "../src/store.js";
 import { ScopedCodexEngine } from "../src/scopes.js";
 import { OpenStrudelRuntime } from "../src/runtime.js";
+import { isOpenAIAuthenticationError } from "../src/account-errors.js";
 
 let root: string;
 let store: Store;
@@ -51,6 +52,15 @@ afterEach(() => {
 });
 
 describe("one explicitly authorized Home account", () => {
+  it("recognizes rejected refresh credentials without calling a network outage a logout", () => {
+    for (const message of ["Your refresh token has expired. Please sign in again.", "Refresh token was already used", "invalid access token", "refresh_token_invalidated", "workspace routing discovery unauthorized (401)"]) {
+      expect(isOpenAIAuthenticationError(new Error(message)), message).toBe(true);
+    }
+    for (const message of ["Connection timed out", "OpenAI returned 503", "Connection reset during refresh token request"]) {
+      expect(isOpenAIAuthenticationError(new Error(message)), message).toBe(false);
+    }
+  });
+
   it("never imports the device's Codex account, including an old unconfirmed local auth file", async () => {
     vi.stubEnv("CODEX_HOME", join(root, "another-product")); savedAuth();
     expect(await account.read()).toEqual({ connected: false, email: null, planType: null, managed: false });
@@ -138,6 +148,7 @@ describe("one explicitly authorized Home account", () => {
     const engine = new ScopedCodexEngine(root, join(root, "codex"), () => account.authTokens());
     engine.forContext("personal");
     expect(() => readFileSync(join(root, ".data/contexts/personal/auth.json"))).toThrow();
+    expect(readFileSync(join(root, ".data/contexts/personal/config.toml"), "utf8")).toContain('cli_auth_credentials_store = "ephemeral"');
     engine.close();
   });
 });

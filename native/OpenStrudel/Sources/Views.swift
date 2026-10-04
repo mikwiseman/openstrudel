@@ -362,7 +362,7 @@ private struct ConversationView: View {
     @State private var userIsScrolling = false
     @State private var hasNewMessages = false
     @FocusState private var focused: Bool
-    private var draftKey: String { (client.selectedProfileID ?? "main") + ":" + (client.selectedChatID ?? "personal") }
+    private var draftKey: String { HomeDrafts.key(home: client.baseURLString, profile: client.selectedProfileID, chat: client.selectedChatID) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -501,6 +501,9 @@ private struct ConversationView: View {
             .padding(.horizontal, chatInset)
         }
         .task { draft = drafts[draftKey] ?? "" }
+        .onChange(of: client.openAIAccount?.connected) { _, connected in
+            if connected == false { focused = false }
+        }
         .onChange(of: draft) { _, value in
             drafts[draftKey] = value.isEmpty ? nil : value
             UserDefaults.standard.set(drafts, forKey: "openstrudel.drafts")
@@ -592,24 +595,40 @@ private struct ConversationView: View {
 
 private struct OpenAIRecoveryNotice: View {
     @EnvironmentObject private var client: HomeClient
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Binding var showSettings: Bool
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if dynamicTypeSize.isAccessibilitySize {
+                Text(client.openAIAccount?.isUnavailable == true ? "Связь с OpenAI" : "Вход в OpenAI")
+                    .font(.callout.weight(.medium)).accessibilityIdentifier("openAIRecoveryNotice")
+                ScrollView {
+                    Text(client.openAIRecoveryMessage).font(.caption).foregroundStyle(AppTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                }.frame(height: 90)
+            } else {
+                explanation
+            }
+            if client.openAIAccount?.isUnavailable == true {
+                Button(dynamicTypeSize.isAccessibilitySize ? "Повторить" : "Проверить ещё раз") { Task { await client.refreshOpenAIAccount(force: true) } }
+                    .buttonStyle(.glass)
+            } else if client.canManageOpenAI {
+                Button(dynamicTypeSize.isAccessibilitySize ? "Войти" : "Восстановить вход") { showSettings = true }.buttonStyle(.glass)
+                    .accessibilityIdentifier("recoverOpenAIAccount")
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+            .background(.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var explanation: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(client.openAIAccount?.isUnavailable == true ? "Не удалось проверить соединение с OpenAI."
                  : "Вход в OpenAI нужно восстановить.").font(.callout.weight(.medium))
                 .accessibilityIdentifier("openAIRecoveryNotice")
             Text(client.openAIRecoveryMessage).font(.caption).foregroundStyle(AppTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
-            if client.openAIAccount?.isUnavailable == true {
-                Button("Проверить ещё раз") { Task { await client.refreshOpenAIAccount(force: true) } }
-                    .buttonStyle(.glass)
-            } else if client.canManageOpenAI {
-                Button("Восстановить вход") { showSettings = true }.buttonStyle(.glass)
-                    .accessibilityIdentifier("recoverOpenAIAccount")
-            }
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
-            .background(.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -1256,6 +1275,8 @@ private struct OpenAISettingsCard: View {
                     if login.type == "device", let code = login.userCode {
                         Text("Введите код в открывшемся окне").font(.caption).foregroundStyle(AppTheme.secondaryText)
                         Text(code).font(.system(.title3, design: .monospaced).weight(.semibold)).textSelection(.enabled)
+                        Text("Если OpenAI просит разрешить вход по коду: ChatGPT → Настройки → Безопасность. Для рабочего аккаунта может понадобиться администратор.")
+                            .font(.caption).foregroundStyle(AppTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                     } else {
                         Text("Откройте страницу OpenAI и завершите вход.").font(.caption).foregroundStyle(AppTheme.secondaryText)
                     }
