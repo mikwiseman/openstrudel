@@ -1,0 +1,100 @@
+{
+  "checkedAt": "2026-10-04T19:18:09.310Z",
+  "mode": "read_only",
+  "catalog": {
+    "pricingBasis": "public_retail_catalog_not_reseller_quote",
+    "capacityVerified": false,
+    "offers": [
+      {
+        "product": "ai-agent-ip",
+        "publicPlanId": 14,
+        "osId": 4,
+        "memoryMiB": 4096,
+        "diskGB": 40,
+        "dedicatedIPv4": true,
+        "monthlyUSD": 15
+      },
+      {
+        "product": "small-ip",
+        "publicPlanId": 10,
+        "osId": 4,
+        "memoryMiB": 4096,
+        "diskGB": 35,
+        "dedicatedIPv4": true,
+        "monthlyUSD": 16
+      },
+      {
+        "product": "medium-ip",
+        "publicPlanId": 11,
+        "osId": 4,
+        "memoryMiB": 6144,
+        "diskGB": 45,
+        "dedicatedIPv4": true,
+        "monthlyUSD": 20
+      },
+      {
+        "product": "pro-32",
+        "publicPlanId": 28,
+        "osId": 13,
+        "memoryMiB": 32768,
+        "diskGB": 400,
+        "dedicatedIPv4": true,
+        "monthlyUSD": 40
+      },
+      {
+        "product": "pro-48",
+        "publicPlanId": 29,
+        "osId": 13,
+        "memoryMiB": 49152,
+        "diskGB": 500,
+        "dedicatedIPv4": true,
+        "monthlyUSD": 55
+      },
+      {
+        "product": "pro-64",
+        "publicPlanId": 30,
+        "osId": 13,
+        "memoryMiB": 65536,
+        "diskGB": 600,
+        "dedicatedIPv4": true,
+        "monthlyUSD": 70
+      },
+      {
+        "product": "pro-80",
+        "publicPlanId": 31,
+        "osId": 13,
+        "memoryMiB": 81920,
+        "diskGB": 700,
+        "dedicatedIPv4": true,
+        "monthlyUSD": 90
+      }
+    ],
+    "recommendedReference": {
+      "product": "ai-agent-ip",
+      "publicPlanId": 14,
+      "osId": 4,
+      "memoryMiB": 4096,
+      "diskGB": 40,
+      "dedicatedIPv4": true,
+      "monthlyUSD": 15
+    }
+  },
+  "capabilities": {
+    "authenticated": false,
+    "toolCount": 45,
+    "resellerOrderVisible": false,
+    "dryRunAdvertised": false,
+    "sshKeyFieldAdvertised": false,
+    "cloudInitFieldAdvertised": false,
+    "idempotencyFieldAdvertised": false,
+    "readyForPaidProvisioning": false
+  },
+  "realServerVerified": false,
+  "blockers": [
+    "partner_account_and_key_required",
+    "reseller_order_schema_unavailable",
+    "bootstrap_transport_not_verified",
+    "wholesale_price_and_provider_terms_need_confirmation",
+    "fresh_budget_and_live_infrastructure_acceptance_required"
+  ]
+}

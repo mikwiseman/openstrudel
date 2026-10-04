@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>OpenStrudel · облако без сложностей</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./preview.mjs"></script>
+</head>
+<body>
+  <header class="preview-bar"><strong>OpenStrudel · проверка интерфейса</strong><span>Прототип. Цена условная. Оплаты и настоящих серверов нет.</span></header>
+  <div class="workspace">
+    <aside class="review-panel" aria-label="Настройки прототипа">
+      <p class="eyebrow">Проверка сценариев</p>
+      <label for="scenario">Состояние</label>
+      <select id="scenario">
+        <option value="offer">Начало</option><option value="checkout">Подтверждение оплаты</option>
+        <option value="verifying">Проверка платежа</option><option value="paymentFailed">Платёж отклонён</option>
+        <option value="creating">Создание</option><option value="installing">Установка</option><option value="checking">Проверка готовности</option>
+        <option value="uncertain">Ответ провайдера потерян</option><option value="setupDelayed">Настройка задержалась</option>
+        <option value="openai">Подключение OpenAI</option><option value="authorizing">Ожидание входа</option>
+        <option value="ready">Всё готово</option><option value="offline">Потеря соединения</option>
+        <option value="authExpired">Нужно снова войти в OpenAI</option><option value="cancelled">Продление отменено</option>
+        <option value="expired">Срок размещения закончился</option><option value="unavailable">Нет свободных мест</option>
+        <option value="openaiOutage">Временный сбой OpenAI</option><option value="ownerRequired">Участник ждёт владельца</option>
+        <option value="pairingRevoked">Доступ устройства отозван</option><option value="codeExpired">Код входа истёк</option>
+      </select>
+      <label for="device">Размер окна</label>
+      <select id="device"><option value="desktop">Компьютер</option><option value="phone">Телефон · 375 px</option><option value="landscape">Телефон · горизонтально</option></select>
+      <label for="theme">Оформление</label>
+      <select id="theme"><option value="light">Светлое</option><option value="dark">Тёмное</option></select>
+      <label class="check"><input id="large-text" type="checkbox"> Крупный текст</label>
+      <label class="check"><input id="reduced-motion" type="checkbox" checked> Без анимации</label>
+      <button id="advance" class="secondary">Следующее событие</button>
+      <button id="reload" class="secondary">Закрыть и открыть снова</button>
+      <button id="reset" class="text-button">Начать заново</button>
+      <p class="review-note">«Следующее событие» имитирует ответ сервиса. В приложении переходы будут происходить после подтверждения от сервера.</p>
+      <p id="evidence" class="review-note" aria-live="polite"></p>
+    </aside>
+    <div class="preview-stage">
+      <section class="app-window" data-device="desktop" data-theme="light" data-reduced-motion="true" aria-label="Предпросмотр OpenStrudel">
+        <div class="app-bar"><span>OpenStrudel</span><span id="step" class="muted"></span></div>
+        <main id="screen"></main>
+      </section>
+    </div>
+  </div>
+</body>
+</html>
