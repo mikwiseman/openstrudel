@@ -202,10 +202,16 @@ struct OpenAIAccount: Decodable, Equatable {
     let email: String?
     let planType: String?
     let managed: Bool
+    var issue: String? = nil
+
+    var needsSignInAgain: Bool { issue == "sign_in_required" }
+    var isUnavailable: Bool { issue == "unavailable" }
 }
 
 struct OpenAIAccountEnvelope: Decodable {
     let account: OpenAIAccount
+    var canManage: Bool? = nil
+    var loginPending: Bool? = nil
 }
 
 struct OpenAILogin: Decodable, Identifiable, Equatable {

@@ -101,6 +101,11 @@ export class HttpApi {
         this.send(response, 401, { error: "unauthorized" });
         return;
       }
+      const canManageAccount = !paired || owner;
+      if (path.startsWith("/v1/account/") && !canManageAccount) {
+        this.send(response, 403, { error: "Восстановите вход в OpenAI на основном Mac или устройстве, с которого настроили сервер. На этом устройстве отдельный вход не нужен." });
+        return;
+      }
       if (path.startsWith("/v1/mobile")) {
         const address = request.socket.remoteAddress;
         if ((paired && !owner) || (!paired && !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address ?? ""))) {
@@ -129,13 +134,13 @@ export class HttpApi {
         return;
       }
       if (request.method === "GET" && path === "/v1/account") {
-        this.send(response, 200, { account: this.account ? await this.account.read() : { connected: false, email: null, planType: null, managed: false } });
+        this.send(response, 200, { account: this.account ? await this.account.read(url.searchParams.get("refresh") === "true") : { connected: false, email: null, planType: null, managed: false }, canManage: canManageAccount, loginPending: this.account?.loginPending ?? false });
         return;
       }
       if (request.method === "POST" && path === "/v1/account/login") {
         if (!this.account) throw new Error("account service unavailable");
         const body = await this.body(request);
-        const method = body.method === "device" ? "device" : "browser";
+        const method = paired || body.method === "device" ? "device" : "browser";
         this.send(response, 201, await this.account.startLogin(method));
         return;
       }

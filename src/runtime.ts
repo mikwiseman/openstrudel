@@ -39,13 +39,14 @@ export class OpenStrudelRuntime {
     this.account = new CodexAccountService(this.store, resolve(options.rootDirectory ?? process.cwd(), ".data"));
     this.publishLocalConnection = !options.engine;
     const telegramToken = process.env.TELEGRAM_BOT_TOKEN ?? this.store.getSetting("telegram.bot_token") ?? undefined;
-    this.engine = options.engine ?? (process.env.OPENSTRUDEL_CODEX_MODE === "mock" ? createEngine({mode:"mock"}) : new ScopedCodexEngine(resolve(options.rootDirectory ?? process.cwd()), this.account.executionHome()));
-    this.account.setOnChange(() => {
+    this.engine = options.engine ?? (process.env.OPENSTRUDEL_CODEX_MODE === "mock" ? createEngine({mode:"mock"}) : new ScopedCodexEngine(resolve(options.rootDirectory ?? process.cwd()), this.account.executionHome(), refresh => this.account.authTokens(refresh)));
+    this.account.setOnChange(identityChanged => {
       const engine = this.engine as CodexEngine & { setCodexHome?: (home?: string) => void };
       engine.setCodexHome?.(this.account.executionHome());
-      this.store.clearConversationThreads();
+      if (identityChanged) this.store.clearConversationThreads();
     });
     this.messages = new MessageService(this.store, this.engine,undefined,options.rootDirectory);
+    this.messages.onAuthenticationError = () => this.account.invalidate();
     this.telegram = new TelegramAdapter(telegramToken, this.store, this.messages);
     this.scheduler = new Scheduler(this.store,this.messages);
     this.messages.scheduler=this.scheduler;

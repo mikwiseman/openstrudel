@@ -9,6 +9,7 @@ import { resolve } from "node:path";
 import type { Scheduler } from "./scheduler.js";
 import { createHash } from "node:crypto";
 import { ConversationFiles } from "./files.js";
+import { isOpenAIAuthenticationError, OPENAI_SIGN_IN_REQUIRED } from "./account-errors.js";
 
 /** One FIFO per conversation, shared by every client. No second agent loop. */
 export class MessageService {
@@ -17,6 +18,7 @@ export class MessageService {
   readonly interactions = new Interactions();
   private closing = false;
   scheduler?: Scheduler;
+  onAuthenticationError?: () => void;
   readonly files: ConversationFiles;
 
   constructor(private readonly store: Store, private readonly engine: CodexEngine, private readonly router = new AgentRouter(store, engine), root = process.cwd()) { this.files = new ConversationFiles(store,root); }
@@ -100,6 +102,7 @@ export class MessageService {
         this.store.setMessageStatus(inbound.id, "completed");
         return { ...receipt, messageId: outbound.id, text: outbound.text, attachments: outbound.attachments };
       } catch (error) {
+        if (isOpenAIAuthenticationError(error)) this.onAuthenticationError?.();
         const message = friendlyError(error);
         this.store.setMessageStatus(inbound.id, "failed", message);
         throw new Error(message);
@@ -147,6 +150,7 @@ export class MessageService {
 
 function friendlyError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
+  if (isOpenAIAuthenticationError(error)) return OPENAI_SIGN_IN_REQUIRED;
   if (/active writer|thread-store conflict/i.test(message)) return "Этот чат ещё открыт другим процессом Codex. Закройте его и повторите сообщение. История сохранена.";
   if (/usage limit|rate limit|quota/i.test(message)) return "У аккаунта Codex закончился доступный лимит. Можно дождаться обновления или сменить аккаунт в настройках.";
   return message.length > 600 ? "Codex не завершил ответ. Перед повтором проверьте результат последнего действия." : message;

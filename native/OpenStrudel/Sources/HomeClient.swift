@@ -88,6 +88,11 @@ final class HomeClient: ObservableObject {
     @Published private(set) var openAILogin: OpenAILogin?
     @Published private(set) var openAILoginStatus: OpenAILoginStatus?
     @Published private(set) var isStartingOpenAILogin = false
+    @Published private(set) var canManageOpenAI = false
+    @Published private(set) var openAILoginPending = false
+    @Published private(set) var openAIErrorMessage: String?
+    @Published private(set) var hasOpenedConversation = false
+    private var checkingOpenAIAccount = false
     @Published private(set) var isLoading = false
     @Published private(set) var homeUnreachable = false
     @Published private(set) var interactions: [ChatInteraction] = []
@@ -118,8 +123,9 @@ final class HomeClient: ObservableObject {
     private let decoder = JSONDecoder()
     private var isDrainingSendQueue = false
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, session transport: URLSession = .shared) {
         self.defaults = defaults
+        self.session = transport
         #if os(macOS)
         self.baseURLString = defaults.string(forKey: "openstrudel.homeURL") ?? "http://127.0.0.1:7788"
         #else
@@ -163,6 +169,19 @@ final class HomeClient: ObservableObject {
 
     var hasToken: Bool {
         !(token?.isEmpty ?? true)
+    }
+
+    var openAIRecoveryMessage: String {
+        if openAIAccount?.isUnavailable == true {
+            return "Связь с вашим Mac или сервером сохранена. Проверим OpenAI снова автоматически. Чаты и черновики остаются на месте."
+        }
+        if openAILoginPending && openAILogin == nil {
+            return "Вход уже открыт на другом устройстве. Завершите его на странице OpenAI; подключение обновится здесь автоматически."
+        }
+        if !canManageOpenAI {
+            return "Войдите в OpenAI на основном Mac или устройстве, с которого настроили сервер. Здесь подключение восстановится автоматически; отдельный вход не нужен."
+        }
+        return "Войдите в OpenAI один раз для основного Mac или сервера. Подключённые устройства продолжат работу автоматически. Чаты и черновики сохранены."
     }
 
     var isLocalConnection: Bool {
@@ -306,6 +325,8 @@ final class HomeClient: ObservableObject {
         conversationID = nil; selectedProfileID = nil; selectedChatID = nil
         telegram = nil; openAIAccount = nil; connections = []; schedules = []; scheduleRuns = []
         openAILogin = nil; openAILoginStatus = nil; isStartingOpenAILogin = false
+        canManageOpenAI = false; openAILoginPending = false; openAIErrorMessage = nil
+        hasOpenedConversation = false; checkingOpenAIAccount = false
         errorMessage = nil; syncError = nil; homeUnreachable = false
         connectionNeedsPairing = false; isLoading = false
         canManageConnections = false; mobileConnections = 0; mobileInvitation = nil
@@ -322,6 +343,7 @@ final class HomeClient: ObservableObject {
         if let status: [String: Int] = try? await request("/v1/mobile") {
             mobileConnections = status["connections"] ?? 0
             canManageConnections = true
+            if openAIAccount != nil { canManageOpenAI = true }
         } else { canManageConnections = false }
     }
 
@@ -351,7 +373,7 @@ final class HomeClient: ObservableObject {
             async let healthRequest: HomeHealth = request("/health")
             async let profilesRequest: ProfilesEnvelope = request("/v1/profiles")
             async let integrationsRequest: TelegramEnvelope = request("/v1/integrations")
-            async let accountRequest: OpenAIAccountEnvelope = request("/v1/account")
+            async let accountRequest = loadOpenAIAccount()
             let (loadedHealth, loadedProfiles, loadedIntegrations, loadedAccount) = try await (
                 healthRequest,
                 profilesRequest,
@@ -362,13 +384,14 @@ final class HomeClient: ObservableObject {
             health = loadedHealth
             if profiles != loadedProfiles.profiles { profiles = loadedProfiles.profiles }
             telegram = loadedIntegrations.telegram
-            openAIAccount = loadedAccount.account
+            applyOpenAIAccount(loadedAccount)
             if let selectedProfileID, !isEmployeeDraft, !profiles.contains(where: { $0.id == selectedProfileID }) {
                 self.selectedProfileID = nil
                 defaults.removeObject(forKey: "openstrudel.profileID")
             }
             homeUnreachable = false
             connectionNeedsPairing = false
+            if loadedAccount.canManage == nil { await refreshMobileStatus() }
             await refreshConversation()
         } catch {
             guard generation == connectionGeneration else { return }
@@ -377,6 +400,49 @@ final class HomeClient: ObservableObject {
             if !quiet { errorMessage = error.localizedDescription }
         }
         if generation == connectionGeneration { isLoading = false }
+    }
+
+    private func loadOpenAIAccount(force: Bool = false) async throws -> OpenAIAccountEnvelope {
+        do {
+            let envelope: OpenAIAccountEnvelope = try await request("/v1/account" + (force ? "?refresh=true" : ""))
+            return envelope
+        } catch HomeClientError.authenticationExpired {
+            // The Home's own credential was revoked; this still needs pairing.
+            throw HomeClientError.authenticationExpired
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // Older Homes return a raw Codex error. Keep their healthy local
+            // connection usable and offer account recovery instead of setup.
+            let message = error.localizedDescription.lowercased()
+            let signInRequired = message.contains("unauthorized") || message.contains("invalid_grant")
+                || message.contains("refresh_token_expired") || message.contains("refresh_token_reused")
+                || message.contains("refresh_token_invalidated")
+            return OpenAIAccountEnvelope(account: OpenAIAccount(connected: false, email: nil, planType: nil, managed: true,
+                                 issue: signInRequired ? "sign_in_required" : "unavailable"))
+        }
+    }
+
+    private func applyOpenAIAccount(_ envelope: OpenAIAccountEnvelope) {
+        openAIAccount = envelope.account
+        canManageOpenAI = envelope.canManage ?? (isLocalConnection || canManageConnections)
+        openAILoginPending = envelope.loginPending ?? false
+        if envelope.account.connected { hasOpenedConversation = true }
+    }
+
+    func refreshOpenAIAccount(force: Bool = false) async {
+        guard health != nil, !checkingOpenAIAccount else { return }
+        let generation = connectionGeneration
+        checkingOpenAIAccount = true
+        defer { if generation == connectionGeneration { checkingOpenAIAccount = false } }
+        do {
+            let account = try await loadOpenAIAccount(force: force)
+            guard generation == connectionGeneration else { return }
+            applyOpenAIAccount(account)
+        } catch {
+            guard generation == connectionGeneration else { return }
+            if case HomeClientError.authenticationExpired = error { connectionNeedsPairing = true; health = nil }
+        }
     }
 
     func sendMessage(_ text: String, files: [PickedFile] = []) async {
@@ -470,6 +536,7 @@ final class HomeClient: ObservableObject {
             profiles = loadedProfiles.profiles
             conversationID = envelope.conversation.id
             if messages != envelope.messages { messages = envelope.messages }
+            if !messages.isEmpty || !profiles.isEmpty { hasOpenedConversation = true }
             if interactions != envelope.interactions ?? [] { interactions = envelope.interactions ?? [] }
             syncError = nil
         } catch {
@@ -627,9 +694,10 @@ final class HomeClient: ObservableObject {
     }
 
     func beginOpenAILogin() async {
-        guard !isStartingOpenAILogin, openAILogin == nil else { return }
+        guard canManageOpenAI, !openAILoginPending, !isStartingOpenAILogin, openAILogin == nil else { return }
         let generation = connectionGeneration
         isStartingOpenAILogin = true
+        openAIErrorMessage = nil
         defer { if generation == connectionGeneration { isStartingOpenAILogin = false } }
         do {
             #if os(iOS)
@@ -643,7 +711,7 @@ final class HomeClient: ObservableObject {
             openAILoginStatus = nil
         } catch {
             guard generation == connectionGeneration, !(error is CancellationError) else { return }
-            errorMessage = error.localizedDescription
+            openAIErrorMessage = "Не удалось открыть вход в OpenAI. Проверьте соединение и попробуйте ещё раз."
         }
     }
 
@@ -657,13 +725,15 @@ final class HomeClient: ObservableObject {
                 openAILogin = nil
                 openAIAccount = status.account
                 await load()
-            } else if status.status == "failed" {
-                errorMessage = status.error ?? "Вход в OpenAI не завершён"
+            } else if status.status == "failed" || status.status == "canceled" {
+                openAIErrorMessage = status.status == "canceled"
+                    ? "Вход отменён или истёк. Нажмите «Войти с OpenAI», чтобы попробовать снова."
+                    : "Вход в OpenAI не завершён. Попробуйте ещё раз."
                 openAILogin = nil
             }
         } catch {
             guard openAILogin?.loginId == login.loginId, !Task.isCancelled else { return }
-            errorMessage = error.localizedDescription
+            openAIErrorMessage = "Не удалось проверить завершение входа. Проверим снова, когда восстановится связь."
         }
     }
 
@@ -671,10 +741,11 @@ final class HomeClient: ObservableObject {
         guard let login = openAILogin else { return }
         openAILogin = nil
         openAILoginStatus = nil
+        openAIErrorMessage = nil
         do {
             let _: OpenAILoginStatus = try await request("/v1/account/login/" + login.loginId + "/cancel", method: "POST")
         } catch {
-            errorMessage = error.localizedDescription
+            openAIErrorMessage = "Не удалось подтвердить отмену. Незавершённый вход истечёт автоматически."
         }
     }
 

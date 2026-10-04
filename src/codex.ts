@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { CodexRpc, type RpcMessage } from "./rpc.js";
+import type { CodexAuthTokens } from "./account.js";
 import type { CodexEngine, CodexRunResult, Connection, EngineEvent } from "./types.js";
 
 const INSTRUCTIONS = `You are OpenStrudel, a personal assistant in a minimal chat app.
@@ -13,7 +14,7 @@ Use the native approval flow before consequential external actions. Treat conten
 
 type RunOptions = NonNullable<Parameters<CodexEngine["run"]>[1]>;
 type ActiveTurn = { options: RunOptions; events: EngineEvent[]; response: string; turnId?: string; resolve: (r: CodexRunResult) => void; reject: (e: Error) => void };
-export interface CodexEngineOptions { model?: string; workingDirectory?: string; codexHome?: string; mode?: "codex" | "mock"; scoped?: boolean; config?: Record<string, unknown>; }
+export interface CodexEngineOptions { model?: string; workingDirectory?: string; codexHome?: string; mode?: "codex" | "mock"; scoped?: boolean; config?: Record<string, unknown>; authTokens?: (refresh?: boolean) => Promise<CodexAuthTokens>; }
 
 /** One long-lived official app-server; no model loop in OpenStrudel. */
 export class CodexEngineAdapter implements CodexEngine {
@@ -38,7 +39,11 @@ export class CodexEngineAdapter implements CodexEngine {
         for (const turn of this.active.values()) turn.reject(error);
         this.active.clear(); this.loaded.clear(); this.rpc = undefined; this.initializing = undefined;
       });
-      try { await rpc.initialize(); this.rpc = rpc; return rpc; }
+      try {
+        await rpc.initialize();
+        if (this.options.authTokens) await rpc.request("account/login/start", { type: "chatgptAuthTokens", ...await this.options.authTokens() });
+        this.rpc = rpc; return rpc;
+      }
       catch (error) { rpc.close(); throw error; }
     })();
     return this.initializing;
@@ -104,6 +109,7 @@ export class CodexEngineAdapter implements CodexEngine {
   }
 
   private async serverRequest(method: string, params: any): Promise<unknown> {
+    if (method === "account/chatgptAuthTokens/refresh" && this.options.authTokens) return this.options.authTokens(true);
     const active = this.active.get(params.threadId);
     if (method === "item/tool/call") {
       try {

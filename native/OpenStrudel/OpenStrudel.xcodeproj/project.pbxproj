@@ -10,10 +10,13 @@
 		066029DEC026A68A1379F314 /* MobilePairingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8AC19EC197C2FC60EBEB3D /* MobilePairingTests.swift */; };
 		09FDF891ED4D0479E78D39E0 /* LiveCloudPairingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96A2DF3BB4A7D519FA68EA0F /* LiveCloudPairingUITests.swift */; };
 		1109A0AEE1C8475E2E3181A3 /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = B9A7842329C25226D34D8B1C /* cloud-init.sh */; };
+		19BB73C6174838CCE33D3D0D /* HomeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D671F62812BA20E0AF9CB2FA /* HomeClient.swift */; };
 		1B7D1573EF6D0D4B9743DC03 /* MobileConnectionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41969DD182FE17F98BBEEE17 /* MobileConnectionViews.swift */; };
 		2061E90D9AC95D39DAAA06E8 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38873CBA5B37136CDD8FF91 /* AppTheme.swift */; };
 		2D09788DED8F1C5EDE458BE2 /* iPhoneSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1132C0F7932A6440305D150A /* iPhoneSmokeTests.swift */; };
+		2F7A1F01537586579154FC86 /* HomeAccountRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59124750DE089CC23DCB20B9 /* HomeAccountRecoveryTests.swift */; };
 		2F84019800922A922C82B1CE /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38873CBA5B37136CDD8FF91 /* AppTheme.swift */; };
+		35830784DC5290BC03679296 /* AccountRecoveryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 452D1C62E5C23CB46B6FD978 /* AccountRecoveryUITests.swift */; };
 		38670454174D5126BB5A84D1 /* ChatMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3D241925EF81E938247C15 /* ChatMedia.swift */; };
 		396D0DCDA42F07B7B6AD8CDA /* ReleaseScenariosUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 269C829F112500B5E34127F7 /* ReleaseScenariosUITests.swift */; };
 		3A4F31F9396C14C867C86558 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A12DEA162BBC10A8CA136D /* Views.swift */; };
@@ -30,6 +33,7 @@
 		63497E44A5FAA3B8E94C0FF6 /* StorePreviewUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63F40AD948917E9AE1685058 /* StorePreviewUITests.swift */; };
 		64365D840FC1C3F656F9447B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = E29C1F0D3A0FE125E35B565D /* PrivacyInfo.xcprivacy */; };
 		714657174DCE32C3AD9148AE /* HomeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D671F62812BA20E0AF9CB2FA /* HomeClient.swift */; };
+		76BF370363AC2C6470E67CBE /* LocalHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96054101E4801A6BCC170C1 /* LocalHome.swift */; };
 		80A890128CCD16FCD6ECE3AD /* MessageContentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58B7111F287B0C5661239DEB /* MessageContentTests.swift */; };
 		8264AD8368237A515B1B219D /* HomeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D671F62812BA20E0AF9CB2FA /* HomeClient.swift */; };
 		85C1C1D5EA678B5643F6884B /* OpenStrudelApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 680E20C305BC52A853E797DD /* OpenStrudelApp.swift */; };
@@ -82,8 +86,10 @@
 		37B4BD216FB2EDE09E4E16E4 /* Sparkle-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Sparkle-LICENSE.txt"; sourceTree = "<group>"; };
 		3D8AC19EC197C2FC60EBEB3D /* MobilePairingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePairingTests.swift; sourceTree = "<group>"; };
 		41969DD182FE17F98BBEEE17 /* MobileConnectionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileConnectionViews.swift; sourceTree = "<group>"; };
+		452D1C62E5C23CB46B6FD978 /* AccountRecoveryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountRecoveryUITests.swift; sourceTree = "<group>"; };
 		4DDBDB4821F4175BB293C35F /* MobilePairingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePairingUITests.swift; sourceTree = "<group>"; };
 		58B7111F287B0C5661239DEB /* MessageContentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageContentTests.swift; sourceTree = "<group>"; };
+		59124750DE089CC23DCB20B9 /* HomeAccountRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeAccountRecoveryTests.swift; sourceTree = "<group>"; };
 		5CF338D2C3249DC58392487E /* DigitalOceanCloud.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DigitalOceanCloud.swift; sourceTree = "<group>"; };
 		63F40AD948917E9AE1685058 /* StorePreviewUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorePreviewUITests.swift; sourceTree = "<group>"; };
 		680E20C305BC52A853E797DD /* OpenStrudelApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenStrudelApp.swift; sourceTree = "<group>"; };
@@ -164,6 +170,7 @@
 		546851BDDD0611547A254A69 /* UITests */ = {
 			isa = PBXGroup;
 			children = (
+				452D1C62E5C23CB46B6FD978 /* AccountRecoveryUITests.swift */,
 				1132C0F7932A6440305D150A /* iPhoneSmokeTests.swift */,
 				96A2DF3BB4A7D519FA68EA0F /* LiveCloudPairingUITests.swift */,
 				4DDBDB4821F4175BB293C35F /* MobilePairingUITests.swift */,
@@ -179,6 +186,7 @@
 				6DA7A5FC9D1A46B7D5486153 /* ChatClockTests.swift */,
 				06FEF9F7FF45A0D9EF5FFC46 /* DigitalOceanCloudTests.swift */,
 				FC5BA14427968F91FEFE9F2F /* DigitalOceanWebLoginTests.swift */,
+				59124750DE089CC23DCB20B9 /* HomeAccountRecoveryTests.swift */,
 				58B7111F287B0C5661239DEB /* MessageContentTests.swift */,
 				3D8AC19EC197C2FC60EBEB3D /* MobilePairingTests.swift */,
 			);
@@ -387,6 +395,9 @@
 				8B0DD4E8C65EC9C02924DE59 /* DigitalOceanCloud.swift in Sources */,
 				5B679607856CC1AB98F6A104 /* DigitalOceanCloudTests.swift in Sources */,
 				99944D193416881E7D8D727B /* DigitalOceanWebLoginTests.swift in Sources */,
+				2F7A1F01537586579154FC86 /* HomeAccountRecoveryTests.swift in Sources */,
+				19BB73C6174838CCE33D3D0D /* HomeClient.swift in Sources */,
+				76BF370363AC2C6470E67CBE /* LocalHome.swift in Sources */,
 				4E6B82BD6C972AB6EE32CAFE /* MessageContent.swift in Sources */,
 				80A890128CCD16FCD6ECE3AD /* MessageContentTests.swift in Sources */,
 				E666DB6B98B0F9FDC670BCC0 /* MobileConnection.swift in Sources */,
@@ -441,6 +452,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				35830784DC5290BC03679296 /* AccountRecoveryUITests.swift in Sources */,
 				09FDF891ED4D0479E78D39E0 /* LiveCloudPairingUITests.swift in Sources */,
 				5E17805965A351ABB7620CF2 /* MobilePairingUITests.swift in Sources */,
 				396D0DCDA42F07B7B6AD8CDA /* ReleaseScenariosUITests.swift in Sources */,
@@ -607,7 +619,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 10;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -705,7 +717,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 10;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

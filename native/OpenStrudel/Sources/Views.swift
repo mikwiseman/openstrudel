@@ -31,7 +31,7 @@ struct OpenStrudelRootView: View {
                 #endif
             } else if !aiConsent {
                 AIDataConsentView { aiConsent = true }
-            } else if client.openAIAccount?.connected == false {
+            } else if client.openAIAccount?.connected == false && !client.hasOpenedConversation {
                 OpenAIWelcomeView()
             } else {
                 #if os(macOS)
@@ -62,6 +62,13 @@ struct OpenStrudelRootView: View {
                 else if client.isConfigured && !client.isPairing && !client.connectionNeedsPairing {
                     await client.load(quiet: true)
                 }
+            }
+        }
+        .task(id: pollingPhase) {
+            guard pollingPhase == .active else { return }
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(10)) } catch { break }
+                await client.refreshOpenAIAccount()
             }
         }
         .sheet(isPresented: $showSettings) {
@@ -363,6 +370,11 @@ private struct ConversationView: View {
             ConversationHeader(showSettings: $showSettings, showEmployees: $showEmployees, showBotDetails: $showBotDetails)
             #endif
 
+            if client.openAIAccount?.connected == false {
+                OpenAIRecoveryNotice(showSettings: $showSettings)
+                    .padding(.horizontal, chatInset).padding(.vertical, 8)
+            }
+
             ScrollViewReader { proxy in
                 ScrollView {
                     if client.messages.isEmpty && client.visiblePendingMessages.isEmpty {
@@ -475,7 +487,8 @@ private struct ConversationView: View {
                 }
             }
 
-            Composer(draft: $draft, files: $pickedFiles, focused: $focused) {
+            Composer(draft: $draft, files: $pickedFiles, focused: $focused, canSend: client.openAIAccount?.connected != false) {
+                guard client.openAIAccount?.connected != false else { return }
                 let value = draft.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !value.isEmpty || !pickedFiles.isEmpty else { return }
                 let files = pickedFiles
@@ -574,6 +587,29 @@ private struct ConversationView: View {
                 proxy.scrollTo("conversation-bottom", anchor: .bottom)
             }
         }
+    }
+}
+
+private struct OpenAIRecoveryNotice: View {
+    @EnvironmentObject private var client: HomeClient
+    @Binding var showSettings: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(client.openAIAccount?.isUnavailable == true ? "Не удалось проверить соединение с OpenAI."
+                 : "Вход в OpenAI нужно восстановить.").font(.callout.weight(.medium))
+                .accessibilityIdentifier("openAIRecoveryNotice")
+            Text(client.openAIRecoveryMessage).font(.caption).foregroundStyle(AppTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            if client.openAIAccount?.isUnavailable == true {
+                Button("Проверить ещё раз") { Task { await client.refreshOpenAIAccount(force: true) } }
+                    .buttonStyle(.glass)
+            } else if client.canManageOpenAI {
+                Button("Восстановить вход") { showSettings = true }.buttonStyle(.glass)
+                    .accessibilityIdentifier("recoverOpenAIAccount")
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+            .background(.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
@@ -829,6 +865,7 @@ private struct Composer: View {
     @Binding var draft: String
     @Binding var files: [PickedFile]
     @FocusState.Binding var focused: Bool
+    let canSend: Bool
     let send: () -> Void
     @State private var showFiles = false
     @State private var showPhotos = false
@@ -890,6 +927,7 @@ private struct Composer: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .disabled(!canSend)
                 .accessibilityLabel("Отправить")
             }
         }
@@ -1111,7 +1149,7 @@ struct SettingsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    SectionTitle(title: "OpenAI", subtitle: "Аккаунт, на котором работает Codex")
+                    SectionTitle(title: "OpenAI", subtitle: "Один аккаунт для основного Mac или сервера и подключённых устройств")
                     OpenAISettingsCard()
                     SectionTitle(title: "Telegram", subtitle: "Пишите OpenStrudel из Telegram")
                     TelegramSettingsCard()
@@ -1201,7 +1239,19 @@ private struct OpenAISettingsCard: View {
             }
             }
 
-            if let login = client.openAILogin {
+            if let error = client.openAIErrorMessage {
+                Text(error).font(.callout).foregroundStyle(AppTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if showIdentity && !connected && client.canManageOpenAI {
+                Text(client.openAIRecoveryMessage).font(.callout).foregroundStyle(AppTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !client.canManageOpenAI {
+                Text(connected ? "Используется аккаунт основного Mac или сервера. Отдельный вход на этом устройстве не нужен."
+                     : client.openAIRecoveryMessage)
+                    .font(.callout).foregroundStyle(AppTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+            } else if let login = client.openAILogin {
                 VStack(alignment: .leading, spacing: 8) {
                     if login.type == "device", let code = login.userCode {
                         Text("Введите код в открывшемся окне").font(.caption).foregroundStyle(AppTheme.secondaryText)
@@ -1213,6 +1263,9 @@ private struct OpenAISettingsCard: View {
                         SetupActionLabel(title: "Отменить")
                     }.buttonStyle(.glass).controlSize(.large)
                 }
+            } else if client.openAILoginPending {
+                Text("Вход уже открыт на другом устройстве. Завершите его на странице OpenAI; здесь всё обновится автоматически.")
+                    .font(.callout).foregroundStyle(AppTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             } else if connected {
                 Button { Task { await client.beginOpenAILogin() } } label: {
                     SetupActionLabel(title: client.isStartingOpenAILogin ? "Открываем OpenAI…" : "Сменить аккаунт")
@@ -1245,10 +1298,24 @@ private struct OpenAIWelcomeView: View {
         VStack(spacing: 24) {
             OpenStrudelMark(size: 76)
             VStack(spacing: 12) {
-                Text("Начнём с вашего аккаунта.")
+                Text(!client.canManageOpenAI ? "Ожидаем основной OpenStrudel."
+                     : client.openAIAccount?.needsSignInAgain == true ? "Войдите в OpenAI снова."
+                     : client.openAIAccount?.isUnavailable == true ? "Не удалось проверить вход."
+                     : "Начнём с вашего аккаунта.")
                     .font(.system(.largeTitle, design: .serif, weight: .medium)).multilineTextAlignment(.center)
-                Text("Войдите в ChatGPT. OpenStrudel использует вашу подписку и Codex.")
+                Text(!client.canManageOpenAI ? client.openAIRecoveryMessage
+                     : client.openAIAccount?.needsSignInAgain == true
+                     ? "Сохранённый вход больше не действует. Войдите один раз для этого Mac или сервера. Подключённые устройства продолжат использовать тот же аккаунт."
+                     : client.openAIAccount?.isUnavailable == true
+                     ? "Проверьте подключение к интернету и попробуйте ещё раз. Ваши чаты и сотрудники сохранены."
+                     : "Авторизуйте свой аккаунт на странице OpenAI. Вход сохраняется на основном Mac или сервере; на подключённых устройствах повторять его не нужно.")
                     .font(.body).foregroundStyle(AppTheme.secondaryText).multilineTextAlignment(.center)
+            }
+            if client.openAIAccount?.isUnavailable == true {
+                Button { Task { await client.refreshOpenAIAccount(force: true) } } label: {
+                    SetupActionLabel(title: client.isLoading ? "Проверяем…" : "Попробовать ещё раз", icon: "arrow.clockwise")
+                }.buttonStyle(.glass).controlSize(.large).disabled(client.isLoading)
+                    .accessibilityIdentifier("retryOpenAIAccount")
             }
             OpenAISettingsCard(showIdentity: false)
         }.padding(32).frame(maxWidth: 480).frame(maxWidth: .infinity)
