@@ -144,7 +144,7 @@ struct ChatAttachment: Codable, Hashable, Identifiable {
     var sizeLabel: String { ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file) }
 }
 
-struct PickedFile: Equatable, Identifiable {
+struct PickedFile: Equatable, Identifiable, Sendable {
     let id = UUID()
     let name: String
     let mimeType: String

@@ -74,6 +74,21 @@ import Testing
         #expect(client.errorMessage == nil)
     }
 
+    @Test func outageCannotStartAnUnnecessaryLogin() async throws {
+        let state = AccountFixtureState()
+        state.accountBody = #"{"account":{"connected":false,"managed":true,"issue":"unavailable"},"canManage":true}"#
+        let (client, session) = makeClient(state)
+        defer { session.invalidateAndCancel() }
+        await client.load()
+        await client.beginOpenAILogin()
+        #expect(state.loginStarts == 0)
+        #expect(client.openAILogin == nil)
+        state.accountBody = #"{"account":{"connected":false,"managed":true,"issue":"sign_in_required"},"canManage":true}"#
+        await client.refreshOpenAIAccount(force: true)
+        await client.beginOpenAILogin()
+        #expect(state.loginStarts == 1)
+    }
+
     @Test func revokedHomePairingStillRequiresReconnection() async throws {
         let state = AccountFixtureState()
         state.accountStatus = 401

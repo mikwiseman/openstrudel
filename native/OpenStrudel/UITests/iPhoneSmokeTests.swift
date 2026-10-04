@@ -38,7 +38,7 @@ final class iPhoneSmokeTests: XCTestCase {
             input.tap()
             input.typeText("Ответь ровно: \(reply)")
             app.buttons["Отправить"].tap()
-            XCTAssertEqual(input.value as? String, "Сообщение", "Composer must clear immediately after sending")
+            XCTAssertEqual(input.value as? String, "", "Composer must clear immediately after sending")
         }
         for reply in replies {
             XCTAssertTrue(app.staticTexts[reply].waitForExistence(timeout: 120), app.debugDescription)
@@ -84,7 +84,7 @@ final class iPhoneSmokeTests: XCTestCase {
         XCTAssertTrue(employee.waitForExistence(timeout: 10), app.debugDescription)
         employee.tap()
         XCTAssertTrue(app.buttons["Готово"].waitForNonExistence(timeout: 10), app.debugDescription)
-        let settings = app.buttons["Настройки бота"]
+        let settings = app.buttons["Настройки сотрудника"]
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: settings)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed, app.debugDescription)
         settings.tap()
@@ -159,9 +159,9 @@ final class iPhoneSmokeTests: XCTestCase {
         XCTAssertTrue(app.buttons["Ouuuuu Baby Baby"].exists)
         capture("03-employees", app)
         app.buttons["Wai News"].tap()
-        XCTAssertTrue(app.buttons["Настройки бота"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Настройки сотрудника"].waitForExistence(timeout: 10))
         capture("04-news-history", app)
-        app.buttons["Настройки бота"].tap()
+        app.buttons["Настройки сотрудника"].tap()
         XCTAssertTrue(app.textViews["Описание сотрудника"].waitForExistence(timeout: 10))
         capture("05-bot-settings", app)
         app.buttons["Готово"].tap()

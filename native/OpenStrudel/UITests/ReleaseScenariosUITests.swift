@@ -28,9 +28,9 @@ final class ReleaseScenariosUITests: XCTestCase {
         capture("empty-conversation", app)
 
         app.buttons["Настройки"].tap()
-        XCTAssertTrue(app.staticTexts["preview@example.com"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["openAIAccountIdentity"].waitForExistence(timeout: 10))
         capture("settings-account-telegram", app)
-        let pair = app.buttons["Подключить устройство"]
+        let pair = app.buttons["Добавить устройство"]
         try reveal(pair, in: app); pair.tap()
         XCTAssertTrue(app.staticTexts["Продолжите на другом устройстве"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["Новое приглашение"].exists)
@@ -40,11 +40,15 @@ final class ReleaseScenariosUITests: XCTestCase {
         try reveal(switchAccount, in: app); switchAccount.tap()
         _ = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari").wait(for: .runningForeground, timeout: 10)
         app.activate()
-        XCTAssertTrue(app.staticTexts["TEST-56789"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["openAIDeviceCode"].waitForExistence(timeout: 10))
         capture("account-change", app)
-        app.buttons["Отменить"].tap()
+        let copyCode = app.buttons["copyOpenAICode"]
+        try reveal(copyCode, in: app); copyCode.tap()
+        XCTAssertTrue(app.buttons["Код скопирован"].exists || copyCode.label.contains("Код скопирован"))
+        let cancelLogin = app.buttons["cancelOpenAILogin"]
+        try reveal(cancelLogin, in: app); cancelLogin.tap()
         XCTAssertTrue(switchAccount.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["preview@example.com"].exists)
+        XCTAssertTrue(app.staticTexts["openAIAccountIdentity"].exists)
         try done(app)
 
         app.buttons["Чаты"].tap()
@@ -56,9 +60,22 @@ final class ReleaseScenariosUITests: XCTestCase {
         editor.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)).tap()
         XCTAssertTrue(app.staticTexts["Черновик готов"].waitForExistence(timeout: 10))
         capture("formatted-conversation", app)
-        app.buttons["Настройки бота"].tap()
+        app.buttons["Настройки сотрудника"].tap()
         XCTAssertTrue(app.textViews["Описание сотрудника"].waitForExistence(timeout: 10))
         capture("employee-settings", app)
+        let editableName = app.textFields["Имя сотрудника"]
+        editableName.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+        editableName.typeText(" Не сохранять")
+        app.buttons["cancelEmployeeChanges"].tap()
+        XCTAssertTrue(app.buttons["Продолжить редактирование"].waitForExistence(timeout: 5))
+        app.buttons["Продолжить редактирование"].tap()
+        XCTAssertTrue((editableName.value as? String)?.contains("Не сохранять") == true)
+        app.buttons["cancelEmployeeChanges"].tap()
+        app.buttons["Не сохранять"].tap()
+        XCTAssertTrue(app.buttons["Настройки сотрудника"].waitForExistence(timeout: 10))
+        app.buttons["Настройки сотрудника"].tap()
+        XCTAssertTrue(editableName.waitForExistence(timeout: 10))
+        XCTAssertEqual(editableName.value as? String, "Редактор")
         try reveal(app.buttons["Сервисы"], in: app)
         app.buttons["Сервисы"].tap()
         XCTAssertTrue(app.staticTexts["Документы"].waitForExistence(timeout: 10), app.debugDescription)
@@ -81,15 +98,21 @@ final class ReleaseScenariosUITests: XCTestCase {
         try reveal(name, in: app)
         name.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
         name.typeText(" QA")
-        try done(app)
+        app.buttons["saveEmployeeChanges"].tap()
         XCTAssertTrue(app.staticTexts["Редактор QA"].waitForExistence(timeout: 10))
 
-        let input = app.textFields["Сообщение"]
+        let input = app.descendants(matching: .any).matching(identifier: "messageComposer").firstMatch
+        input.tap(); input.typeText("Первая строка\nВторая строка")
+        XCTAssertEqual(input.value as? String, "Первая строка\nВторая строка", "The iOS Return key must preserve a multiline draft.")
+        app.buttons["Отправить"].tap()
+        // Markdown soft line breaks render as spaces; the draft assertion above
+        // verifies that Return retained the original newline before submission.
+        XCTAssertTrue(app.staticTexts["Принято: Первая строка Вторая строка"].waitForExistence(timeout: 20))
         let messageCount = Int(ProcessInfo.processInfo.environment["OPENSTRUDEL_QA_MESSAGE_COUNT"] ?? "3") ?? 3
         let queuedTexts = (1...max(3, min(messageCount, 30))).map { "Сообщение \($0)" }
         for text in queuedTexts {
             input.tap(); input.typeText(text); app.buttons["Отправить"].tap()
-            XCTAssertEqual(input.value as? String, "Сообщение")
+            XCTAssertEqual(input.value as? String, "")
         }
         XCTAssertTrue(app.staticTexts["Принято: \(queuedTexts.last!)"].waitForExistence(timeout: 30), app.debugDescription)
         capture("queued-messages", app)
@@ -98,12 +121,19 @@ final class ReleaseScenariosUITests: XCTestCase {
         capture("request-input", app)
         app.buttons["Утром"].tap()
         XCTAssertTrue(app.staticTexts["Выбрано: Утром"].waitForExistence(timeout: 20))
+        input.tap(); input.typeText("Проверка свободного места"); app.buttons["Отправить"].tap()
+        let storageError = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "На основном Mac или сервере закончилось место.")).firstMatch
+        XCTAssertTrue(storageError.waitForExistence(timeout: 20))
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "ENOSPC:")).firstMatch.exists)
+        capture("readable-storage-error", app)
+        input.tap(); input.typeText("После освобождения места"); app.buttons["Отправить"].tap()
+        XCTAssertTrue(app.staticTexts["Принято: После освобождения места"].waitForExistence(timeout: 20))
         app.terminate(); app.launch()
-        XCTAssertTrue(app.staticTexts["Выбрано: Утром"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["Принято: После освобождения места"].waitForExistence(timeout: 20))
 
         _ = try await read(fixture + "/offline?value=1")
         app.terminate(); app.launch()
-        XCTAssertTrue(app.staticTexts["Скоро на связи."].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["Нет связи с OpenStrudel"].waitForExistence(timeout: 15))
         capture("offline", app)
         _ = try await read(fixture + "/offline?value=0")
         XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 25))

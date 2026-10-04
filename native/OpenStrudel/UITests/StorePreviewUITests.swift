@@ -30,7 +30,7 @@ final class StorePreviewUITests: XCTestCase {
         let browser = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
         _ = browser.wait(for: .runningForeground, timeout: 10)
         app.activate()
-        let cancel = app.buttons["Отменить"]
+        let cancel = app.buttons["cancelOpenAILogin"]
         XCTAssertTrue(cancel.waitForExistence(timeout: 15), app.debugDescription)
         capture("13-openai-device-code", app)
         let (state, _) = try await URLSession.shared.data(from: XCTUnwrap(URL(string: fixture + "/state")))

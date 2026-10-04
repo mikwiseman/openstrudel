@@ -18,6 +18,9 @@ let serviceConnected = false;
 const engine: CodexEngine = {
   async run(input, options) {
     const message = input.split("Current user message:\n").at(-1)!;
+    if (message.includes("Проверка свободного места")) {
+      throw new Error("ENOSPC: no space left on device, open '/private/qa/history.jsonl.tmp'");
+    }
     if (message.includes("Проверка выбора")) {
       const answer = await options!.onRequest!("item/tool/requestUserInput", {
         questions: [{ id: "choice", question: "Когда подготовить черновик?", options: [{ label: "Утром" }, { label: "Вечером" }] }],

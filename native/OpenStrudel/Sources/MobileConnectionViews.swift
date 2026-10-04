@@ -7,6 +7,7 @@ import AVFoundation
 
 struct MobilePairingSettings: View {
     @EnvironmentObject private var client: HomeClient
+    @Environment(\.dynamicTypeSize) private var textSize
     @State private var showingCode = false
     @State private var creating = false
     @State private var revokeConfirmation = false
@@ -16,24 +17,29 @@ struct MobilePairingSettings: View {
         if client.isLocalConnection || client.canManageConnections {
         SectionTitle(title: "Другие устройства", subtitle: "Те же чаты на Mac, iPhone и iPad")
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Подключите приложение один раз — и продолжайте на другом устройстве.")
-                    .font(.callout).foregroundStyle(AppTheme.secondaryText)
-                Spacer()
-            }
-            HStack(spacing: 8) {
-                Button(creating ? "Готовим приглашение…" : "Подключить устройство") {
+            Text("Создайте приглашение и откройте его в OpenStrudel на другом устройстве.")
+                .font(.callout).foregroundStyle(AppTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            let layout = textSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+                : AnyLayout(HStackLayout(spacing: 8))
+            layout {
+                Button {
                     creating = true
                     Task {
                         await client.inviteMobile()
                         showingCode = client.mobileInvitation != nil
                         creating = false
                     }
-                }.buttonStyle(.glass).disabled(creating)
+                } label: {
+                    AdaptiveActionLabel(title: creating ? "Готовим приглашение…" : "Добавить устройство")
+                }.adaptiveActionStyle(.glass).disabled(creating)
                 if client.isLocalConnection && client.mobileConnections > 0 {
-                    Button("Отключить", role: .destructive) { revokeConfirmation = true }
-                        .buttonStyle(.bordered)
-                        .tint(.red)
+                    Button(role: .destructive) { revokeConfirmation = true } label: {
+                        AdaptiveActionLabel(title: "Отключить")
+                    }
+                        .adaptiveActionStyle(.bordered)
+                        .tint(AppTheme.destructive)
                 }
             }
         }
@@ -74,8 +80,8 @@ private struct MobileQRCodeView: View {
                                 .accessibilityLabel("Одноразовое приглашение OpenStrudel")
                             Text("Приглашение действует ещё \(remaining / 60):\(String(format: "%02d", remaining % 60))")
                                 .font(.caption).monospacedDigit().foregroundStyle(AppTheme.secondaryText)
-                            ShareLink(item: invitation.url) { Label("Поделиться приглашением", systemImage: "square.and.arrow.up") }
-                                .buttonStyle(.glass)
+                            ShareLink(item: invitation.url) { AdaptiveActionLabel(title: "Поделиться приглашением") }
+                                .adaptiveActionStyle(.glass)
                         } else {
                             ContentUnavailableView("Приглашение истекло", systemImage: "qrcode",
                                 description: Text("Создайте новое, чтобы подключить устройство."))
@@ -141,12 +147,12 @@ struct MobileWelcomeView: View {
                     Spacer(minLength: 48)
                     Image("OpenStrudelMark").resizable().scaledToFit().frame(width: 100, height: 100)
                         .accessibilityHidden(true).padding(.bottom, 30)
-                    Text(client.connectionNeedsPairing ? "Подключитесь снова." : client.isConfigured ? "Скоро на связи." : "Ваша команда.\nВсегда рядом.")
+                    Text(client.connectionNeedsPairing ? "Подключитесь снова." : client.isConfigured ? "Нет связи с OpenStrudel" : "Ваши сотрудники под рукой")
                         .font(.system(.largeTitle, design: .serif, weight: .medium))
                         .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                     Text(client.connectionNeedsPairing ? "Подключение отозвано. Создайте новое приглашение на своём Mac или сервере." : client.isConfigured
                          ? "«\(client.connectionName)» пока не на связи. Подключимся автоматически."
-                         : "Начните в облаке или подключитесь\nк своему OpenStrudel.")
+                         : "Создайте команду в облаке или откройте чаты с вашего Mac по приглашению.")
                         .font(.body).foregroundStyle(AppTheme.secondaryText).multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true).padding(.top, 14)
                     if client.isConfigured && !client.connectionNeedsPairing {
@@ -155,6 +161,12 @@ struct MobileWelcomeView: View {
                     }
                     Spacer(minLength: 48)
                     VStack(spacing: 14) {
+                        if client.isConfigured && !client.connectionNeedsPairing {
+                            Button { Task { await client.load(quiet: true) } } label: {
+                                SetupActionLabel(title: "Проверить соединение", icon: "arrow.clockwise")
+                            }.buttonStyle(.glassProminent).controlSize(.large)
+                                .disabled(client.isLoading).accessibilityIdentifier("retryHomeConnection")
+                        }
                         if let managementURL = DigitalOceanCloud.managementURL(for: client.normalizedBaseURL) {
                             Link(destination: managementURL) {
                                 SetupActionLabel(title: "Управлять облаком", icon: "arrow.up.right.square")
@@ -169,13 +181,13 @@ struct MobileWelcomeView: View {
                                 .accessibilityIdentifier("setupCloud")
                         }
                         Button { Task { await openScanner() } } label: {
-                            SetupActionLabel(title: textSize.isAccessibilitySize ? "QR-код" : "Сканировать QR", icon: "qrcode.viewfinder")
+                            SetupActionLabel(title: "Сканировать QR", icon: "qrcode.viewfinder")
                                 .foregroundStyle(.primary)
                         }
                         .buttonStyle(.glass).controlSize(.large)
                         .accessibilityLabel("Сканировать QR").accessibilityIdentifier("scanInvitation")
                         Button { enteringInvitation = true } label: {
-                            SetupActionLabel(title: textSize.isAccessibilitySize ? "По ссылке" : "Вставить приглашение", icon: "link")
+                            SetupActionLabel(title: "Вставить приглашение", icon: "link")
                                 .foregroundStyle(.primary)
                         }.buttonStyle(.glass).controlSize(.large)
                             .accessibilityLabel("Вставить приглашение").accessibilityIdentifier("pasteInvitation")
@@ -229,7 +241,7 @@ struct MobileWelcomeView: View {
         }
         let granted = await AVCaptureDevice.requestAccess(for: .video)
         guard granted, DataScannerViewController.isAvailable else {
-            cameraError = "Разрешите доступ к камере в настройках iPhone или вставьте приглашение."
+            cameraError = "Разрешите доступ к камере в настройках устройства или вставьте приглашение."
             return
         }
         scanning = true
@@ -280,7 +292,7 @@ struct ConfirmMacPairingView: View {
                 VStack(spacing: 20) {
                     Image("OpenStrudelMark").resizable().scaledToFit().frame(width: 72, height: 72)
                         .accessibilityHidden(true).padding(.top, 18)
-                    Text("Продолжить здесь.").font(.system(.title, design: .serif, weight: .medium))
+                    Text("Подключить это устройство?").font(.system(.title, design: .serif, weight: .medium))
                         .multilineTextAlignment(.center)
                     VStack(spacing: 6) {
                         Text(pairing.name).font(.headline)
@@ -293,7 +305,7 @@ struct ConfirmMacPairingView: View {
                             .font(.footnote).foregroundStyle(AppTheme.secondaryText).multilineTextAlignment(.center)
                     }
                     if let error = client.pairingError {
-                        Text(error).font(.callout).foregroundStyle(AppTheme.secondaryText).multilineTextAlignment(.center)
+                        Text(UserFacingError.text(error)).font(.callout).foregroundStyle(AppTheme.secondaryText).multilineTextAlignment(.center)
                             .accessibilityIdentifier("pairingError")
                     }
                     Button {
@@ -336,7 +348,7 @@ struct ConnectionInvitationView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Ваши чаты.\nНа этом устройстве.")
+                        Text("Подключиться по приглашению")
                             .font(.system(textSize.isAccessibilitySize ? .title3 : .largeTitle, design: .serif, weight: .medium))
                             .fixedSize(horizontal: false, vertical: true)
                         Text("Вставьте приглашение из OpenStrudel на Mac или со страницы установки сервера.")
@@ -359,7 +371,7 @@ struct ConnectionInvitationView: View {
                     }.labelStyle(.titleOnly).buttonStyle(.glass).controlSize(.large)
                     }
                     if let error {
-                        Text(error).font(.callout).foregroundStyle(AppTheme.secondaryText)
+                        Text(UserFacingError.text(error)).font(.callout).foregroundStyle(AppTheme.secondaryText)
                             .accessibilityIdentifier("invitationError")
                     }
                     Button(action: confirm) { SetupActionLabel(title: "Продолжить") }

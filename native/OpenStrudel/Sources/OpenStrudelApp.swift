@@ -27,6 +27,11 @@ struct OpenStrudelApp: App {
         .windowToolbarStyle(.unifiedCompact)
         .defaultSize(width: 1120, height: 760)
         .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("Новый сотрудник") { client.beginEmployee() }
+                    .keyboardShortcut("n", modifiers: .command)
+                    .disabled(client.health == nil || client.isCreating)
+            }
             CommandGroup(after: .appInfo) {
                 Button("Проверить обновления…", action: updater.checkForUpdates)
                     .disabled(!updater.canCheckForUpdates)

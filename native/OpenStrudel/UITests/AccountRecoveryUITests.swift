@@ -53,15 +53,15 @@ final class AccountRecoveryUITests: XCTestCase {
         capture("first-explicit-sign-in", app)
         signIn.tap()
         app.activate()
-        XCTAssertTrue(app.staticTexts["TEST-10204"].waitForExistence(timeout: 15))
-        let cancel = app.buttons["Отменить"]
+        XCTAssertTrue(app.staticTexts["openAIDeviceCode"].waitForExistence(timeout: 15))
+        let cancel = app.buttons["cancelOpenAILogin"]
         for _ in 0..<8 where !cancel.isHittable { scrollPresentedContent(app) }
         XCTAssertTrue(cancel.isHittable)
         capture("device-code-and-cancel", app)
         cancel.tap()
         XCTAssertTrue(signIn.waitForExistence(timeout: 15))
         signIn.tap(); app.activate()
-        XCTAssertTrue(app.staticTexts["TEST-10204"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["openAIDeviceCode"].waitForExistence(timeout: 15))
         _ = try await read(fixture + "/cancel-login")
         XCTAssertTrue(signIn.waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Вход отменён или истёк")).firstMatch.exists)

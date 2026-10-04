@@ -415,7 +415,11 @@ final class HomeClient: ObservableObject {
         } catch {
             // Older Homes return a raw Codex error. Keep their healthy local
             // connection usable and offer account recovery instead of setup.
-            let message = error.localizedDescription.lowercased()
+            // Recovery uses the original server error, never translated UI copy.
+            let originalMessage: String
+            if case HomeClientError.server(let serverMessage) = error { originalMessage = serverMessage }
+            else { originalMessage = error.localizedDescription }
+            let message = originalMessage.lowercased()
             let signInRequired = message.contains("unauthorized") || message.contains("invalid_grant")
                 || message.contains("refresh_token_expired") || message.contains("refresh_token_reused")
                 || message.contains("refresh_token_invalidated")
@@ -695,7 +699,8 @@ final class HomeClient: ObservableObject {
     }
 
     func beginOpenAILogin() async {
-        guard canManageOpenAI, !openAILoginPending, !isStartingOpenAILogin, openAILogin == nil else { return }
+        guard canManageOpenAI, openAIAccount?.isUnavailable != true,
+              !openAILoginPending, !isStartingOpenAILogin, openAILogin == nil else { return }
         let generation = connectionGeneration
         isStartingOpenAILogin = true
         openAIErrorMessage = nil
@@ -730,7 +735,7 @@ final class HomeClient: ObservableObject {
                 await load()
             } else if status.status == "failed" || status.status == "canceled" {
                 openAIErrorMessage = status.status == "canceled"
-                    ? "Вход отменён или истёк. Нажмите «Войти с OpenAI», чтобы попробовать снова."
+                    ? "Вход отменён или истёк. Откройте вход в OpenAI ещё раз."
                     : "Вход в OpenAI не завершён. Попробуйте ещё раз."
                 openAILogin = nil
             }
@@ -771,7 +776,7 @@ final class HomeClient: ObservableObject {
         do {
             return try decoder.decode(T.self, from: data)
         } catch {
-            throw HomeClientError.server("Не удалось прочитать ответ Home: " + error.localizedDescription)
+            throw HomeClientError.server("Не удалось прочитать ответ OpenStrudel. Проверьте, что приложение обновлено на всех ваших устройствах, и попробуйте ещё раз.")
         }
     }
 
@@ -800,7 +805,7 @@ final class HomeClient: ObservableObject {
             if let envelope = try? decoder.decode([String: String].self, from: data), let message = envelope["error"] {
                 throw HomeClientError.server(message)
             }
-            throw HomeClientError.server("Home вернул HTTP " + String(http.statusCode))
+            throw HomeClientError.server("OpenStrudel не смог выполнить действие (код \(http.statusCode)). Попробуйте ещё раз. Если ошибка повторится, обратитесь в поддержку.")
         }
         return data
     }

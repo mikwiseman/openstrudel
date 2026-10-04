@@ -36,28 +36,28 @@ struct ServerSetupView: View {
 
     private var title: String {
         switch cloud.phase {
-        case .idle: "Команда\nвсегда на связи."
+        case .idle: "Сотрудники в облаке"
         case .signingIn: "Войдите в DigitalOcean."
         case .billingRequired: "Подключите оплату."
         case .readyToCreate: "Всё готово к запуску."
         case .creating, .waitingForServer: "Готовим вашу команду."
         case .connected: "Всё готово."
-        case .failed: "Продолжим отсюда."
+        case .failed: "Настройка не завершена"
         }
     }
 
     private var explanation: String {
         switch cloud.phase {
         case .idle:
-            "Ваши сотрудники работают, даже когда Mac выключен. Войдите в DigitalOcean — остальное настроит OpenStrudel."
+            "Сотрудники смогут работать, когда Mac выключен. Размещение предоставляет DigitalOcean. Для начала войдите в свой аккаунт или создайте его."
         case .signingIn:
             "Завершите вход в открывшемся окне. Пароль получает только DigitalOcean."
         case .billingRequired:
             "Добавьте способ оплаты на сайте DigitalOcean, затем вернитесь сюда. Данные карты остаются у провайдера."
         case .readyToCreate:
-            "Отдельное облачное пространство для вашей команды. Установку и подключение мы уже подготовили."
+            "OpenStrudel установится на отдельном сервере в вашем аккаунте DigitalOcean. Проверьте стоимость перед запуском."
         case .creating, .waitingForServer:
-            "Это займёт несколько минут. Можно закрыть окно и продолжить позже — прогресс сохранится."
+            "Обычно настройка занимает несколько минут. Можно закрыть окно и вернуться позже. Прогресс сохранится."
         case .connected:
             "Открываем OpenStrudel. Дальше останется войти в свой аккаунт OpenAI."
         case .failed:
@@ -210,13 +210,15 @@ struct AIDataConsentView: View {
         ScrollView {
             VStack(spacing: 24) {
                 OpenStrudelMark(size: 76)
-                Text("Один важный момент.")
+                Text("Как используются ваши данные")
                     .font(.system(.largeTitle, design: .serif, weight: .medium))
-                Text("Для ответа Codex передаёт ваши сообщения, выбранные файлы и необходимый контекст в OpenAI. История хранится на вашем Mac или личном сервере.")
+                Text("Чтобы ответить вам, OpenStrudel передаёт сообщения, выбранные файлы и нужные сведения из переписки в OpenAI. История хранится на вашем Mac или личном сервере.")
                     .font(.body).foregroundStyle(AppTheme.secondaryText)
                 Text("Подключённые сервисы получают данные только при использовании их инструментов. Добавляйте только то, чем готовы поделиться.")
                     .font(.callout).foregroundStyle(AppTheme.secondaryText)
-                Link("Как используются данные", destination: URL(string: "https://waiwai.is/openstrudel/privacy")!)
+                Link(destination: URL(string: "https://waiwai.is/openstrudel/privacy")!) {
+                    Text("Как используются данные").frame(minHeight: 44).contentShape(Rectangle())
+                }
                     .font(.callout)
                     .buttonStyle(.plain).foregroundStyle(AppTheme.accent)
                 Button(action: accept) {
