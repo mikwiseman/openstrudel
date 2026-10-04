@@ -12,6 +12,7 @@ export function assessVdsCatalog(catalog) {
   if (!Number.isSafeInteger(plan?.amount) || plan.amount <= 0 || typeof plan?.currency !== 'string'
     || !/^[a-zA-Z]{3}$/.test(plan.currency)) blockers.push('quote_invalid');
   if (!Number.isInteger(plan?.period_days) || plan.period_days <= 0) blockers.push('billing_period_missing');
+  if (plan?.checkout_enabled === false) blockers.push('checkout_disabled');
   const infrastructureMode = catalog?.mode?.provider;
   const paymentMode = catalog?.mode?.payments;
   if (!infrastructureMode || infrastructureMode === 'emulator') blockers.push('live_provider_not_verified');

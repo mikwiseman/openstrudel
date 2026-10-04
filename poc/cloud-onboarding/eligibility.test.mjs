@@ -27,3 +27,8 @@ test('missing catalog, IPv6-only offers and unquoted prices fail preflight', () 
   assert.ok(result.blockers.includes('quote_invalid'));
   assert.ok(result.blockers.includes('billing_period_missing'));
 });
+test('a live catalog with closed checkout stays visibly blocked', () => {
+  const result = assessVdsCatalog({ ...smallCatalog, plan: { ...smallCatalog.plan, checkout_enabled: false }, mode: { provider: 'kamatera', payments: 'wai_pay' } });
+  assert.ok(result.blockers.includes('checkout_disabled'));
+  assert.equal(result.readyForPublicSales, false);
+});
