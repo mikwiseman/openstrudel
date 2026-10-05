@@ -2,11 +2,15 @@ import SwiftUI
 
 /// A generous, wrapping label; native glass supplies the material and interaction.
 struct SetupActionLabel: View {
+    @Environment(\.dynamicTypeSize) private var textSize
     let title: String
     var icon: String? = nil
 
     var body: some View {
-        HStack(spacing: 10) {
+        let layout = textSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 10))
+        layout {
             if let icon { Image(systemName: icon).accessibilityHidden(true) }
             Text(title).fixedSize(horizontal: false, vertical: true)
         }
@@ -22,6 +26,7 @@ struct SetupActionLabel: View {
     }
 }
 
+#if os(macOS)
 /// Cloud setup keeps the provider's account and billing in the user's name.
 struct ServerSetupView: View {
     @Environment(\.dismiss) private var dismiss
@@ -202,6 +207,8 @@ struct ServerSetupView: View {
         }
     }
 }
+
+#endif
 
 struct AIDataConsentView: View {
     let accept: () -> Void

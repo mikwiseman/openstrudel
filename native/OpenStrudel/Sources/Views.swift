@@ -1316,6 +1316,9 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var textSize
+    #if os(iOS)
+    @State private var showingMobileHelp = false
+    #endif
 
     var body: some View {
         NavigationStack {
@@ -1334,6 +1337,7 @@ struct SettingsView: View {
                     Text("Подключено к «\(client.connectionName)». Здесь доступны те же чаты и сотрудники.")
                         .font(.footnote).foregroundStyle(AppTheme.secondaryText).padding(.top, 12)
                     #endif
+                    #if os(macOS)
                     if let url = DigitalOceanCloud.managementURL(for: client.normalizedBaseURL) {
                         Link(destination: url) { Label("Управлять облаком", systemImage: "arrow.up.right") }
                             .buttonStyle(.plain).foregroundStyle(AppTheme.accent)
@@ -1341,6 +1345,7 @@ struct SettingsView: View {
                         Text("Оплатой и размещением управляет DigitalOcean. Закрытие приложения не прекращает оплату.")
                             .font(.caption).foregroundStyle(AppTheme.secondaryText)
                     }
+                    #endif
                     Group {
                         if textSize.isAccessibilitySize {
                             VStack(alignment: .leading, spacing: 4) { helpLinks }
@@ -1362,6 +1367,9 @@ struct SettingsView: View {
             #endif
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
         }
+        #if os(iOS)
+        .sheet(isPresented: $showingMobileHelp) { MobileConnectionHelpView() }
+        #endif
         .onChange(of: client.openAILogin) { _, login in
             guard let url = login?.url else { return }
             openURL(url)
@@ -1377,9 +1385,15 @@ struct SettingsView: View {
 
     private var helpLinks: some View {
         Group {
+            #if os(iOS)
+            Button { showingMobileHelp = true } label: {
+                Text("Помощь").frame(minHeight: controlTarget).contentShape(Rectangle())
+            }.accessibilityIdentifier("connectionHelp")
+            #else
             Link(destination: URL(string: "https://waiwai.is/openstrudel#help")!) {
                 Text("Помощь").frame(minHeight: controlTarget).contentShape(Rectangle())
             }
+            #endif
             Link(destination: URL(string: "https://waiwai.is/openstrudel/privacy")!) {
                 Text("Конфиденциальность").frame(minHeight: controlTarget).contentShape(Rectangle())
             }

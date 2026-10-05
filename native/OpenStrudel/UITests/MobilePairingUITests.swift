@@ -2,23 +2,32 @@ import XCTest
 
 final class MobilePairingUITests: XCTestCase {
     @MainActor
-    func testCloudSetupCanBeOpenedAndClosedBeforeSignIn() throws {
+    func testCompanionOnboardingExplainsInvitationsWithoutCheckout() throws {
         let app = XCUIApplication()
         app.launch()
-        let cloud = app.buttons["setupCloud"]
-        XCTAssertTrue(cloud.waitForExistence(timeout: 15))
-        XCTAssertGreaterThanOrEqual(cloud.frame.height, 50)
-        cloud.tap()
-        let signIn = app.buttons["cloudSignIn"]
-        XCTAssertTrue(signIn.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertGreaterThanOrEqual(signIn.frame.height, 50)
+        let help = app.buttons["invitationHelp"]
+        XCTAssertTrue(help.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["Подключите свою команду"].exists)
+        XCTAssertFalse(app.buttons["setupCloud"].exists)
+        XCTAssertFalse(app.buttons["cloudSignIn"].exists)
         XCTAssertFalse(app.buttons["cloudConfirmCost"].exists)
-        capture("12-cloud-before-sign-in", app)
-        app.buttons["Закрыть"].tap()
-        XCTAssertTrue(cloud.waitForExistence(timeout: 5))
-        cloud.tap()
-        XCTAssertTrue(signIn.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["cloudConfirmCost"].exists)
+        XCTAssertFalse(app.links["Управлять облаком"].exists)
+        for _ in 0..<4 where !help.isHittable { app.swipeUp() }
+        help.tap()
+        XCTAssertTrue(app.staticTexts["Где взять приглашение"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.links.count, 0, "Connection help must not lead to signup or payment")
+        capture("12-connection-help", app)
+        app.buttons["closeConnectionHelp"].tap()
+        XCTAssertTrue(app.buttons["pasteInvitation"].waitForExistence(timeout: 5))
+        // An old provider OAuth callback must not reopen cloud setup on iOS.
+        app.open(URL(string: "openstrudel://oauth/digitalocean?code=unused&state=unused")!)
+        XCTAssertTrue(help.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["cloudSignIn"].exists)
+        #if targetEnvironment(simulator)
+        app.buttons["scanInvitation"].tap()
+        XCTAssertTrue(app.staticTexts["На этом устройстве используйте приглашение вместо камеры."].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["pasteInvitation"].exists)
+        #endif
     }
 
     @MainActor
@@ -40,8 +49,29 @@ final class MobilePairingUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(input.frame.height, 44)
         let next = app.buttons["Продолжить"]
         XCTAssertGreaterThanOrEqual(next.frame.height, 50)
-        XCTAssertGreaterThan(next.frame.width, app.frame.width * 0.65)
+        // iPad presents this form in a sheet narrower than the app window.
+        XCTAssertGreaterThanOrEqual(next.frame.width, input.frame.width * 0.9)
         capture("11-invitation-actions", app)
+    }
+
+    @MainActor
+    func testHelpRemainsReachableInLandscape() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = XCUIApplication()
+        app.launch()
+        let help = app.buttons["invitationHelp"]
+        XCTAssertTrue(help.waitForExistence(timeout: 15))
+        for _ in 0..<4 where !help.isHittable { app.swipeUp() }
+        XCTAssertTrue(help.isHittable)
+        help.tap()
+        XCTAssertTrue(app.staticTexts["Где взять приглашение"].waitForExistence(timeout: 5))
+        let close = app.buttons["closeConnectionHelp"]
+        XCTAssertTrue(close.isHittable)
+        XCTAssertEqual(app.links.count, 0)
+        capture("13-landscape-help", app)
+        close.tap()
+        XCTAssertTrue(app.buttons["pasteInvitation"].waitForExistence(timeout: 5))
     }
 
     @MainActor
@@ -108,6 +138,18 @@ final class MobilePairingUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Подключение проверено."].waitForExistence(timeout: 10))
         capture("06-relaunch", app)
 
+        app.buttons["Настройки"].tap()
+        let help = app.buttons["connectionHelp"]
+        XCTAssertTrue(help.waitForExistence(timeout: 10))
+        for _ in 0..<6 where !help.isHittable { app.swipeUp() }
+        XCTAssertFalse(app.buttons["Управлять облаком"].exists)
+        help.tap()
+        XCTAssertTrue(app.buttons["closeConnectionHelp"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.links.count, 0)
+        capture("06-settings-help", app)
+        app.buttons["closeConnectionHelp"].tap()
+        app.buttons["Готово"].tap()
+
         app.open(valid)
         XCTAssertTrue(confirm.waitForExistence(timeout: 10))
         confirm.tap()
@@ -149,6 +191,7 @@ final class MobilePairingUITests: XCTestCase {
         return try XCTUnwrap(URL(string: XCTUnwrap(payload["url"] as? String)))
     }
     @MainActor private func capture(_ name:String,_ app:XCUIApplication) {
-        let attachment=XCTAttachment(screenshot:app.screenshot());attachment.name=name;attachment.lifetime = .keepAlways;add(attachment)
+        // Capture the screen so landscape attachments retain the full display bounds.
+        let attachment=XCTAttachment(screenshot:XCUIScreen.main.screenshot());attachment.name=name;attachment.lifetime = .keepAlways;add(attachment)
     }
 }

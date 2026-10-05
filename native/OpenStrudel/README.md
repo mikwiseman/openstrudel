@@ -7,7 +7,9 @@ This directory contains one shared SwiftUI client with two native targets:
 
 Both clients talk to the same OpenStrudel Home API. Home can run locally on a Mac or in the owner's DigitalOcean account. A phone pairs with the Mac over pinned HTTPS on the same Wi-Fi network; a cloud Home is reachable over the internet. The app is a thin native control surface: a person sees chats, employees, OpenAI account and Telegram.
 
-Cloud setup uses DigitalOcean sign-in, displays the provider's current price, and requires confirmation before creating a server. The customer pays DigitalOcean directly. The connection screen retains a cloud management link while Home is offline. Stopping the app or server does not stop hosting charges; delete the server in DigitalOcean when it is no longer needed.
+On Mac, cloud setup uses DigitalOcean sign-in, displays the provider's current price, and requires confirmation before creating a server. The customer pays DigitalOcean directly. The Mac connection screen retains a cloud management link while Home is offline. Stopping the app or server does not stop hosting charges; delete the server in DigitalOcean when it is no longer needed.
+
+iPhone and iPad are connection-only companions. They open an existing team's invitation or scan its QR code, with help inside the app. They do not create hosting, link to account registration or provide a checkout/billing route. Mac and web hosting remain separate from this iOS flow; see [the current scope](../../docs/ios-cloud-payments.md).
 
 The targets require iOS 26 or macOS 26 or later. SwiftUI supplies Liquid Glass controls. Reply typography combines SF Pro text, New York headings and monospaced code, with real Markdown emphasis, links, lists and quotations. Short replies fit their content. Employee settings keep the editable character in a compact scrolling field alongside Telegram binding and schedule switches.
 
@@ -23,7 +25,7 @@ xcodebuild -project OpenStrudel.xcodeproj -scheme "OpenStrudel iOS" -configurati
 xcodebuild -project OpenStrudel.xcodeproj -scheme "OpenStrudel macOS" -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO test
 ```
 
-The Mac app connects to the local Home at `http://127.0.0.1:7788`. In Mac Settings, choose **Подключить iPhone**. Scan the one-use code in the iPhone app, or open the shared connection link. Confirm the Mac and allow local-network access. Home must stay running on an awake Mac on the same network. The code expires after five minutes; creating another code invalidates the old one.
+The Mac app connects to the local Home at `http://127.0.0.1:7788`. In Mac Settings, choose **Другие устройства → Добавить устройство**. Scan the one-use code in the iPhone app, or open the shared connection link. Confirm the Mac and allow local-network access. Home must stay running on an awake Mac on the same network. The code expires after five minutes; creating another code invalidates the old one.
 
 The code carries a `.local` hostname, port, one-use secret and SHA-256 certificate fingerprint. The iPhone pins that certificate and rejects redirects. A successful pairing replaces the invitation with a random credential stored in Keychain; Home stores only its hash. Mac Settings can revoke all mobile credentials. Signing must remain enabled for simulator connection tests too: an unsigned simulator build cannot reliably exercise Keychain persistence.
 

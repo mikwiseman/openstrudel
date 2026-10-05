@@ -132,13 +132,13 @@ private struct MobileQRCodeView: View {
 }
 #if os(iOS)
 struct MobileWelcomeView: View {
-    @Environment(\.dynamicTypeSize) private var textSize
     @EnvironmentObject private var client: HomeClient
+    @Environment(\.dynamicTypeSize) private var textSize
     @State private var scanning = false
     @State private var enteringInvitation = false
     @State private var invitation: MacPairing?
     @State private var cameraError: String?
-    @State private var showingSetup = false
+    @State private var showingHelp = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -147,12 +147,12 @@ struct MobileWelcomeView: View {
                     Spacer(minLength: 48)
                     Image("OpenStrudelMark").resizable().scaledToFit().frame(width: 100, height: 100)
                         .accessibilityHidden(true).padding(.bottom, 30)
-                    Text(client.connectionNeedsPairing ? "Подключитесь снова." : client.isConfigured ? "Нет связи с OpenStrudel" : "Ваши сотрудники под рукой")
+                    Text(client.connectionNeedsPairing ? "Подключитесь снова." : client.isConfigured ? "Нет связи с OpenStrudel" : "Подключите свою команду")
                         .font(.system(.largeTitle, design: .serif, weight: .medium))
                         .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-                    Text(client.connectionNeedsPairing ? "Подключение отозвано. Создайте новое приглашение на своём Mac или сервере." : client.isConfigured
+                    Text(client.connectionNeedsPairing ? "Подключение отозвано. Вам нужно новое приглашение от владельца команды." : client.isConfigured
                          ? "«\(client.connectionName)» пока не на связи. Подключимся автоматически."
-                         : "Создайте команду в облаке или откройте чаты с вашего Mac по приглашению.")
+                         : "Откройте уже настроенную команду по приглашению. Здесь будут те же чаты и сотрудники.")
                         .font(.body).foregroundStyle(AppTheme.secondaryText).multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true).padding(.top, 14)
                     if client.isConfigured && !client.connectionNeedsPairing {
@@ -164,37 +164,32 @@ struct MobileWelcomeView: View {
                         if client.isConfigured && !client.connectionNeedsPairing {
                             Button { Task { await client.load(quiet: true) } } label: {
                                 SetupActionLabel(title: "Проверить соединение", icon: "arrow.clockwise")
-                            }.buttonStyle(.glassProminent).controlSize(.large)
+                            }.adaptiveActionStyle(.glassProminent).controlSize(.large)
                                 .disabled(client.isLoading).accessibilityIdentifier("retryHomeConnection")
                         }
-                        if let managementURL = DigitalOceanCloud.managementURL(for: client.normalizedBaseURL) {
-                            Link(destination: managementURL) {
-                                SetupActionLabel(title: "Управлять облаком", icon: "arrow.up.right.square")
-                            }.buttonStyle(.glass).controlSize(.large)
-                                .accessibilityIdentifier("manageCloudOffline")
-                                .accessibilityHint("Открыть вашу установку в DigitalOcean")
-                        }
-                        if !client.isConfigured {
-                            Button { showingSetup = true } label: {
-                                SetupActionLabel(title: "Начать в облаке", icon: "cloud")
-                            }.buttonStyle(.glassProminent).controlSize(.large)
-                                .accessibilityIdentifier("setupCloud")
-                        }
                         Button { Task { await openScanner() } } label: {
-                            SetupActionLabel(title: "Сканировать QR", icon: "qrcode.viewfinder")
+                            SetupActionLabel(title: textSize.isAccessibilitySize ? "QR-код" : "Сканировать QR", icon: "qrcode.viewfinder")
                                 .foregroundStyle(.primary)
                         }
-                        .buttonStyle(.glass).controlSize(.large)
+                        .adaptiveActionStyle(.glass).controlSize(.large)
                         .accessibilityLabel("Сканировать QR").accessibilityIdentifier("scanInvitation")
                         Button { enteringInvitation = true } label: {
-                            SetupActionLabel(title: "Вставить приглашение", icon: "link")
+                            SetupActionLabel(title: "Вставить ссылку", icon: "link")
                                 .foregroundStyle(.primary)
-                        }.buttonStyle(.glass).controlSize(.large)
-                            .accessibilityLabel("Вставить приглашение").accessibilityIdentifier("pasteInvitation")
+                        }.adaptiveActionStyle(.glass).controlSize(.large)
+                            .accessibilityLabel("Вставить ссылку приглашения").accessibilityIdentifier("pasteInvitation")
                         if let cameraError {
                             Text(cameraError).font(.footnote).foregroundStyle(AppTheme.secondaryText)
                                 .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                         }
+                        Button { showingHelp = true } label: {
+                            Text("Где взять приглашение?")
+                                .font(.callout).multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .contentShape(Rectangle())
+                        }.buttonStyle(.plain).foregroundStyle(AppTheme.secondaryText)
+                            .accessibilityIdentifier("invitationHelp")
                     }.frame(maxWidth: 340)
                     Color.clear.frame(height: 32)
                 }
@@ -205,8 +200,8 @@ struct MobileWelcomeView: View {
         .sheet(isPresented: $enteringInvitation, onDismiss: confirmInvitation) {
             ConnectionInvitationView { invitation = $0 }
         }
-        .sheet(isPresented: $showingSetup) {
-            ServerSetupView().environmentObject(client)
+        .sheet(isPresented: $showingHelp) {
+            MobileConnectionHelpView()
         }
         .fullScreenCover(isPresented: $scanning, onDismiss: confirmInvitation) {
             NavigationStack {
@@ -245,6 +240,47 @@ struct MobileWelcomeView: View {
             return
         }
         scanning = true
+    }
+}
+
+/// Connection help stays in the companion app and has no signup or payment route.
+struct MobileConnectionHelpView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Где взять приглашение").font(.title2.weight(.semibold)).foregroundStyle(Color.primary)
+                        Text("Откройте OpenStrudel на устройстве, где ваша команда уже работает. В настройках выберите «Другие устройства» → «Добавить устройство».")
+                        Text("Если команду настроил другой человек, попросите владельца прислать приглашение.")
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Как подключиться").font(.headline).foregroundStyle(Color.primary)
+                        Text("Отсканируйте QR в OpenStrudel или откройте приглашение на этом устройстве. Ссылку также можно вставить вручную.")
+                        Text("Приглашение одноразовое и действует пять минут. Если срок истёк, получите новое.")
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Если нет связи").font(.headline).foregroundStyle(Color.primary)
+                        Text("Проверьте интернет. Устройство, на котором работает команда, должно быть включено. Для подключения к Mac по локальной сети оба устройства должны быть в одной сети Wi-Fi.")
+                        Text("Уже подключённое устройство восстановит связь автоматически. Новое приглашение нужно, только если подключение отозвано.")
+                    }
+                }
+                .font(.body).foregroundStyle(AppTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(24).frame(maxWidth: 520, alignment: .leading)
+                .frame(maxWidth: .infinity)
+            }
+            .background(Color(uiColor: .systemBackground))
+            .navigationTitle("Подключение к команде")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Готово") { dismiss() }.accessibilityIdentifier("closeConnectionHelp")
+                }
+            }
+        }
     }
 }
 
