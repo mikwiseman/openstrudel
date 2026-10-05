@@ -139,6 +139,8 @@ targets:
       - path: Sources/MobileConnection.swift
       - path: Sources/DigitalOceanBootstrap.swift
       - path: Sources/DigitalOceanCloud.swift
+      - path: Sources/WaiVDSContract.swift
+      - path: Sources/WaiVDSClient.swift
       - path: ../../scripts/cloud-init.sh
         buildPhase: resources
     settings:
