@@ -13,7 +13,7 @@ export class ScopedCodexEngine implements CodexEngine {
   setCodexHome(home?: string): void { this.close(); this.sourceHome = home; }
   close(): void { for (const engine of this.contexts.values()) engine.close(); this.contexts.clear(); }
   forContext(context: string): CodexEngine {
-    if (!/^(personal|work|group-[a-f0-9]{64})$/.test(context)) throw new Error("Область не найдена");
+    if (!/^(personal|work|group-[a-f0-9]{64}|import-[a-f0-9]{32})$/.test(context)) throw new Error("Область не найдена");
     if (!this.sourceHome) throw new Error("Войдите в OpenAI в приложении OpenStrudel.");
     const current = this.contexts.get(context);
     if (current) return current;

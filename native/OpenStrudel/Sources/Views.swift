@@ -23,7 +23,9 @@ struct OpenStrudelRootView: View {
     var body: some View {
         ZStack {
             HomeBackground()
-            if client.health == nil {
+            if client.isConnecting {
+                HomeConnectingView()
+            } else if client.health == nil {
                 #if os(iOS)
                 MobileWelcomeView()
                 #else
@@ -55,11 +57,11 @@ struct OpenStrudelRootView: View {
                 await client.startLocalHome()
             }
             #endif
-            if client.isConfigured && !client.isPairing { await client.load(quiet: true) }
+            if client.shouldRestoreConnection && !client.isPairing { await client.load(quiet: true) }
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(client.health == nil ? 5 : 1)) } catch { break }
                 if client.health != nil { await client.refreshConversation() }
-                else if client.isConfigured && !client.isPairing && !client.connectionNeedsPairing {
+                else if client.shouldRestoreConnection && !client.isPairing && !client.connectionNeedsPairing {
                     await client.load(quiet: true)
                 }
             }
@@ -94,6 +96,21 @@ struct OpenStrudelRootView: View {
     }
 }
 
+private struct HomeConnectingView: View {
+    @EnvironmentObject private var client: HomeClient
+    var body: some View {
+        VStack(spacing: 24) {
+            OpenStrudelMark(size: 76)
+            Text(client.isStartingLocalHome ? "Запускаем OpenStrudel" : "Подключаемся к вашей команде")
+                .font(.system(.title, design: .serif, weight: .medium))
+                .multilineTextAlignment(.center)
+            ProgressView().controlSize(.large).accessibilityLabel("Подключение")
+        }
+        .padding(28).frame(maxWidth: 620)
+        .accessibilityIdentifier("homeConnecting")
+    }
+}
+
 #if os(macOS)
 /// Home runs beside the app. It is found again automatically once it starts.
 private struct HomeUnavailableView: View {
@@ -102,17 +119,18 @@ private struct HomeUnavailableView: View {
     @State private var invitation: MacPairing?
     @State private var starting = false
     @State private var showingServer = false
+    private var reconnecting: Bool { client.shouldRestoreConnection && client.connectionState == .unavailable }
 
     var body: some View {
         ScrollView {
         VStack(spacing: 28) {
             OpenStrudelMark(size: 76)
             VStack(spacing: 12) {
-                Text(client.isConfigured && !client.isLocalConnection ? "Нет связи с OpenStrudel" : "Помощники для ваших задач")
+                Text(reconnecting ? "Нет связи с OpenStrudel" : "Помощники для ваших задач")
                     .font(.system(.largeTitle, design: .serif, weight: .medium))
                     .multilineTextAlignment(.center)
-                Text(client.isConfigured && !client.isLocalConnection
-                     ? "«\(client.connectionName)» пока не на связи. Ваши чаты сохранены. Подключимся автоматически."
+                Text(reconnecting
+                     ? "Пока не удаётся подключиться к вашей команде. Ваши чаты сохранены. Подключимся автоматически."
                      : "Создавайте сотрудников для работы и личных дел. Выберите, где они будут работать.")
                     .font(.body).foregroundStyle(AppTheme.secondaryText)
                     .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
@@ -701,9 +719,10 @@ private struct ConversationTitle: View {
     private var chats: [TelegramChat] {
         (client.telegram?.chats ?? []).filter { $0.profileId == client.selectedProfileID && $0.conversationId != nil }
     }
-    private var chatName: String { chats.first { $0.conversationId == client.selectedChatID }?.title ?? "Личный чат" }
+    private var importedChats: [ImportedConversation] { client.importedConversations.filter { $0.profileId == client.selectedProfileID } }
+    private var chatName: String { importedChats.first { $0.id == client.selectedChatID }?.title ?? chats.first { $0.conversationId == client.selectedChatID }?.title ?? "Личный чат" }
     var body: some View {
-        if chats.isEmpty { title }
+        if chats.isEmpty && importedChats.isEmpty { title }
         else {
             Menu {
                 Button { Task { await client.selectChat(nil) } } label: {
@@ -714,6 +733,16 @@ private struct ConversationTitle: View {
                     Button { Task { await client.selectChat(chat.conversationId) } } label: {
                         if client.selectedChatID == chat.conversationId { Label(chat.title, systemImage: "checkmark") }
                         else { Text(chat.title) }
+                    }
+                }
+                if !importedChats.isEmpty {
+                    Section("Из экспорта") {
+                        ForEach(importedChats) { chat in
+                            Button { Task { await client.selectChat(chat.id) } } label: {
+                                if client.selectedChatID == chat.id { Label(chat.title, systemImage: "checkmark") }
+                                else { Text(chat.title) }
+                            }
+                        }
                     }
                 }
             } label: { title }
@@ -1329,6 +1358,8 @@ struct SettingsView: View {
                     SectionTitle(title: "Telegram", subtitle: "Пишите OpenStrudel из Telegram")
                     TelegramSettingsCard()
                     MobilePairingSettings()
+                    SectionTitle(title: "Перенос команды", subtitle: "Сотрудники, настройки и накопленные материалы")
+                    AgentTransferSettings()
                     #if os(macOS)
                     SectionTitle(title: "Обновления", subtitle: "Новые версии OpenStrudel")
                     UpdateSettings()

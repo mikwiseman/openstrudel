@@ -23,7 +23,7 @@
     .message-row { display:flex; margin:0 0 18px; } .message-row.user { justify-content:flex-end; } .bubble { max-width:min(720px,88%); padding:12px 15px; border-radius:19px; white-space:pre-wrap; overflow-wrap:anywhere; } .assistant .bubble { background:var(--panel); border:1px solid var(--line); } .user .bubble { background:linear-gradient(135deg,#7060e9,#5745c1); } .time { color:var(--muted); font-size:11px; margin:4px 5px 0; }
     .composer-wrap { padding:12px clamp(14px,5vw,72px) 16px; } .suggestions { display:flex; gap:7px; margin-bottom:9px; overflow:auto; } .chip { flex:none; color:var(--muted); background:rgba(255,255,255,.06); border:1px solid var(--line); border-radius:999px; padding:7px 11px; font-size:12px; } .chip:hover { color:var(--text); }
     .composer { display:flex; align-items:flex-end; gap:9px; padding:9px 10px 9px 15px; background:var(--panel-strong); border:1px solid rgba(255,255,255,.14); border-radius:21px; box-shadow:0 12px 35px #0004; } textarea { flex:1; min-height:25px; max-height:130px; resize:none; border:0; outline:0; background:transparent; } .send { width:35px;height:35px;border-radius:50%;background:white;color:#1b1b24;font-weight:700; } .send:disabled { opacity:.35; }
-    .modal-backdrop { position:fixed; inset:0; display:none; place-items:center; padding:20px; background:#0008; z-index:3; } .modal-backdrop.open { display:grid; } .modal { width:min(440px,100%); background:#202128f2; border:1px solid var(--line); border-radius:23px; padding:22px; box-shadow:0 25px 80px #0009; backdrop-filter:blur(34px); } .modal h2 { margin:0 0 7px; } .modal p { color:var(--muted); margin:0 0 18px; } .field { width:100%; padding:11px 12px; margin:6px 0; border:1px solid var(--line); border-radius:12px; background:#111219aa; outline:none; } .field:focus { border-color:#9889ff; } .modal-actions { display:flex; justify-content:flex-end; gap:9px; margin-top:15px; } .primary,.secondary { padding:9px 14px; border-radius:11px; } .primary { background:#8474f4; color:white; } .secondary { background:rgba(255,255,255,.09); }
+    .modal-backdrop { position:fixed; inset:0; display:none; place-items:center; padding:20px; background:#0008; z-index:3; } .modal-backdrop.open { display:grid; } .modal { width:min(440px,100%); background:#202128f2; border:1px solid var(--line); border-radius:23px; padding:22px; box-shadow:0 25px 80px #0009; backdrop-filter:blur(34px); } .modal { max-height:85vh; overflow:auto; } .modal button { min-height:44px; } .modal button:disabled { opacity:.45; cursor:default; } .modal :focus-visible { outline:2px solid #c7b8dd; outline-offset:3px; } .modal h2 { margin:0 0 7px; } .modal p { color:var(--muted); margin:0 0 18px; } .field { width:100%; padding:11px 12px; margin:6px 0; border:1px solid var(--line); border-radius:12px; background:#111219aa; outline:none; } .field:focus { border-color:#9889ff; } .modal-actions { display:flex; justify-content:flex-end; gap:9px; margin-top:15px; } .primary,.secondary { padding:9px 14px; border-radius:11px; } .primary { background:#8474f4; color:white; } .secondary { background:rgba(255,255,255,.09); }
     @media (max-width:700px) { .app { padding:0; } .sidebar { display:none; } .conversation { border-radius:0; border:0; min-height:100vh; } .topbar { height:58px; } .messages { padding:20px 15px; } .composer-wrap { padding:10px 10px 12px; } }
   </style>
 </head>
@@ -36,12 +36,12 @@
       <div class="side-bottom"><div class="status" id="status">Подключение…</div><button class="icon" id="settings" title="Настройки">⚙</button></div>
     </aside>
     <section class="conversation">
-      <header class="topbar"><div class="top-title"><span class="mark" style="width:26px;height:26px;border-radius:9px"></span><span id="active-name">OpenStrudel</span><small id="active-state">готов</small></div><div class="top-actions"><button class="icon" id="mobile-agents" title="Сотрудники">☷</button></div></header>
+      <header class="topbar"><div class="top-title"><span class="mark" style="width:26px;height:26px;border-radius:9px"></span><span id="active-name">OpenStrudel</span><small id="active-state">готов</small><select id="imported-chat" aria-label="Выбрать переписку" hidden style="max-width:180px"></select></div><div class="top-actions"><button class="icon" id="mobile-agents" title="Сотрудники">☷</button></div></header>
       <div class="messages" id="messages"></div>
       <div class="composer-wrap"><div class="suggestions"><button class="chip">Собери план на сегодня</button><button class="chip">Помоги разобраться</button></div><form class="composer" id="composer"><textarea id="draft" rows="1" placeholder="Напишите, что нужно…"></textarea><button class="send" id="send" disabled>↑</button></form></div>
     </section>
   </main>
-  <div class="modal-backdrop" id="modal"><div class="modal" id="modal-content"></div></div>
+  <div class="modal-backdrop" id="modal"><div class="modal" id="modal-content" role="dialog" aria-modal="true" aria-label="Настройки"></div></div>
   <script>
     const $ = (id) => document.getElementById(id);
     const state = { profiles: [], selected: null, messages: [], telegram: null, loading: false };
@@ -49,16 +49,104 @@
     function initials(name) { return name.split(/\s+/).map((part) => part[0]).join('').slice(0,2).toUpperCase(); }
     function renderAgents() { const root = $('agents'); root.replaceChildren(); const main = document.createElement('button'); main.className = 'agent' + (!state.selected ? ' active' : ''); main.innerHTML = '<span class="avatar">✦</span><span class="agent-copy"><span class="agent-name">OpenStrudel</span><span class="agent-sub">Главный собеседник</span></span>'; main.onclick = () => selectAgent(null); root.append(main); for (const profile of state.profiles) { const button = document.createElement('button'); button.className = 'agent' + (state.selected === profile.id ? ' active' : ''); button.innerHTML = `<span class="avatar employee">${initials(profile.name)}</span><span class="agent-copy"><span class="agent-name"></span><span class="agent-sub"></span></span>`; button.querySelector('.agent-name').textContent = profile.name; button.querySelector('.agent-sub').textContent = profile.instructions; button.onclick = () => selectAgent(profile.id); root.append(button); } }
     function renderMessages() { const root = $('messages'); root.replaceChildren(); if (!state.messages.length) { root.innerHTML = '<div class="empty"><div><span class="mark" style="width:62px;height:62px;border-radius:21px;display:inline-grid;font-size:28px"></span><h1>Что сделать?</h1><p>Пишите обычными словами. OpenStrudel сам выберет собеседника и передаст ему контекст.</p></div></div>'; return; } for (const message of state.messages) { const row = document.createElement('div'); row.className = 'message-row ' + (message.direction === 'inbound' ? 'user' : 'assistant'); const wrap = document.createElement('div'); const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.textContent = message.text; const time = document.createElement('div'); time.className = 'time'; time.textContent = new Date(message.createdAt).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }); wrap.append(bubble,time); row.append(wrap); root.append(row); } root.scrollTop = root.scrollHeight; }
-    async function loadConversation() { const path = state.selected ? '/v1/agents/' + encodeURIComponent(state.selected) + '/conversation' : '/v1/conversation'; const data = await api(path); state.messages = data.messages || []; renderMessages(); const profile = state.profiles.find((item) => item.id === state.selected); $('active-name').textContent = profile?.name || 'OpenStrudel'; $('active-state').textContent = profile ? 'сотрудник' : 'готов'; }
-    async function selectAgent(id) { state.selected = id; renderAgents(); await loadConversation(); }
-    async function refresh() { try { const [health, profiles, integrations] = await Promise.all([api('/health'), api('/v1/profiles'), api('/v1/integrations')]); state.profiles = profiles.profiles || []; state.telegram = integrations.telegram; $('status').innerHTML = health.ok ? '<b>●</b> готов' : 'ожидает'; renderAgents(); await loadConversation(); } catch (error) { $('status').textContent = error.message; } }
+    async function loadConversation() { const path = state.chat ? '/v1/conversations/' + encodeURIComponent(state.chat) : state.selected ? '/v1/agents/' + encodeURIComponent(state.selected) + '/conversation' : '/v1/conversation'; const data = await api(path); state.messages = data.messages || []; renderMessages(); const profile = state.profiles.find((item) => item.id === state.selected); $('active-name').textContent = profile?.name || 'OpenStrudel'; $('active-state').textContent = profile ? 'сотрудник' : 'готов'; renderImportedChats(); }
+    async function selectAgent(id) { state.chat = null; state.selected = id; renderImportedChats(); renderAgents(); await loadConversation(); }
+    async function refresh() { try { const [health, profiles, integrations] = await Promise.all([api('/health'), api('/v1/profiles'), api('/v1/integrations')]); state.archiveVersion = health.agentArchiveVersion; state.importedChats = profiles.importedConversations || []; state.profiles = profiles.profiles || []; state.telegram = integrations.telegram; $('status').innerHTML = health.ok ? '<b>●</b> готов' : 'ожидает'; renderAgents(); await loadConversation(); } catch (error) { $('status').textContent = error.message; } }
     $('draft').addEventListener('input', () => { $('send').disabled = !$('draft').value.trim(); $('draft').style.height = 'auto'; $('draft').style.height = Math.min($('draft').scrollHeight, 130) + 'px'; });
     document.querySelectorAll('.chip').forEach((chip) => chip.onclick = () => { $('draft').value = chip.textContent; $('draft').dispatchEvent(new Event('input')); $('draft').focus(); });
-    $('composer').onsubmit = async (event) => { event.preventDefault(); const text = $('draft').value.trim(); if (!text || state.loading) return; state.loading = true; $('send').disabled = true; $('draft').value = ''; $('draft').dispatchEvent(new Event('input')); try { const result = await api('/v1/messages', { method:'POST', body: JSON.stringify({ channel:'api', externalChatId: 'home', profile: state.selected || undefined, text }) }); if (result.profileId && !state.selected) state.selected = result.profileId; await refresh(); } catch (error) { $('status').textContent = error.message; } finally { state.loading = false; $('send').disabled = !$('draft').value.trim(); } };
+    $('composer').onsubmit = async (event) => { event.preventDefault(); const text = $('draft').value.trim(); if (!text || state.loading) return; state.loading = true; $('send').disabled = true; $('draft').value = ''; $('draft').dispatchEvent(new Event('input')); try { const result = await api('/v1/messages', { method:'POST', body: JSON.stringify({ channel:'api', externalChatId: 'home', conversationId: state.chat || undefined, profile: state.selected || undefined, text }) }); if (result.profileId && !state.selected) state.selected = result.profileId; await refresh(); } catch (error) { $('status').textContent = error.message; } finally { state.loading = false; $('send').disabled = !$('draft').value.trim(); } };
     $('new-employee').onclick = () => openEmployeeModal(); $('mobile-agents').onclick = () => openEmployeeModal(true); $('settings').onclick = () => openSettings();
     function showModal(content) { $('modal-content').replaceChildren(content); $('modal').classList.add('open'); } function closeModal() { $('modal').classList.remove('open'); } $('modal').onclick = (event) => { if (event.target === $('modal')) closeModal(); };
     function openEmployeeModal() { const box = document.createElement('div'); box.innerHTML = '<h2>Новый сотрудник</h2><p>Имя и одна ясная работа. Остальное сделает Codex.</p><input class="field" id="employee-name" placeholder="Например: Исследователь"><textarea class="field" id="employee-instructions" rows="4" placeholder="Чем он должен заниматься?"></textarea><div class="modal-actions"><button class="secondary" id="cancel">Закрыть</button><button class="primary" id="create">Создать</button></div>'; showModal(box); $('cancel').onclick = closeModal; $('create').onclick = async () => { const name = $('employee-name').value.trim(), instructions = $('employee-instructions').value.trim(); if (!name || !instructions) return; try { const result = await api('/v1/profiles', { method:'POST', body: JSON.stringify({ name, instructions }) }); state.profiles.push(result.profile); closeModal(); await selectAgent(result.profile.id); } catch (error) { $('status').textContent = error.message; } }; }
-    function openSettings() { const telegram = state.telegram || {}; const box = document.createElement('div'); box.innerHTML = `<h2>Настройки</h2><p>Подключите Telegram к этому Home.</p><input class="field" id="telegram-token" type="password" placeholder="Токен Telegram-бота"><div class="modal-actions"><button class="secondary" id="cancel">Закрыть</button><button class="primary" id="connect">Подключить</button></div><p style="margin-top:18px;color:var(--muted)">${telegram.configured ? ('Подключён ' + (telegram.botUsername ? '@' + telegram.botUsername : 'бот')) : 'Telegram ещё не подключён.'}</p>`; showModal(box); $('cancel').onclick = closeModal; $('connect').onclick = async () => { const token = $('telegram-token').value.trim(); if (!token) return; try { await api('/v1/integrations/telegram', { method:'POST', body: JSON.stringify({ token }) }); closeModal(); await refresh(); } catch (error) { $('status').textContent = error.message; } }; }
+    function openTelegramSettings() { const telegram = state.telegram || {}; const box = document.createElement('div'); box.innerHTML = `<h2>Настройки</h2><p>Подключите Telegram к этому Home.</p><input class="field" id="telegram-token" type="password" placeholder="Токен Telegram-бота"><div class="modal-actions"><button class="secondary" id="cancel">Закрыть</button><button class="primary" id="connect">Подключить</button></div><p style="margin-top:18px;color:var(--muted)">${telegram.configured ? ('Подключён ' + (telegram.botUsername ? '@' + telegram.botUsername : 'бот')) : 'Telegram ещё не подключён.'}</p>`; showModal(box); $('cancel').onclick = closeModal; $('connect').onclick = async () => { const token = $('telegram-token').value.trim(); if (!token) return; try { await api('/v1/integrations/telegram', { method:'POST', body: JSON.stringify({ token }) }); closeModal(); await refresh(); } catch (error) { $('status').textContent = error.message; } }; }
+
+    function renderImportedChats() {
+      const select = $('imported-chat'); select.replaceChildren();
+      const chats = (state.importedChats || []).filter(chat => chat.profileId === state.selected);
+      select.hidden = chats.length === 0;
+      const main = document.createElement('option'); main.value = ''; main.textContent = 'Личный чат'; select.append(main);
+      for (const chat of chats) { const option = document.createElement('option'); option.value = chat.id; option.textContent = chat.title; select.append(option); }
+      select.value = state.chat || '';
+    }
+    $('imported-chat').onchange = async () => { state.chat = $('imported-chat').value || null; try { await loadConversation(); } catch(e) { $('status').textContent = e.message; } };
+    function openSettings() {
+      const box = document.createElement('div');
+      box.innerHTML = '<h2>Перенос команды</h2><p>Сохраните сотрудников, инструкции, переписку, файлы и расписания в один файл.</p><p>При импорте текущая команда сохранится. Новые расписания будут на паузе. Вход в OpenAI и доступ к сервисам не переносятся.</p><div class="modal-actions"><button class="secondary" id="export-team">Сохранить копию</button><button class="primary" id="import-team">Добавить из файла</button></div><p id="transfer-status" role="status" style="margin-top:16px"></p><p id="transfer-error" role="alert" tabindex="-1"></p><div class="modal-actions"><button class="secondary" id="telegram-settings">Telegram</button><button class="secondary" id="cancel">Закрыть</button></div>';
+      showModal(box);
+      $('cancel').onclick = closeModal;
+      $('telegram-settings').onclick = openTelegramSettings;
+      const status = $('transfer-status'), error = $('transfer-error');
+      const buttons = [...box.querySelectorAll('button')];
+      const report = e => { error.textContent = e.message; error.focus(); };
+      const busy = value => { buttons.forEach(button => button.disabled = value); box.dataset.busy = String(value); };
+      if (state.archiveVersion !== 1) {
+        $('export-team').disabled = true; $('import-team').disabled = true;
+        status.textContent = 'Для переноса обновите OpenStrudel на основном Mac или сервере.';
+        return;
+      }
+      $('export-team').onclick = async () => {
+        busy(true); error.textContent = ''; status.textContent = 'Собираем копию команды…';
+        try {
+          const data = await api('/v1/agents/archive');
+          const url = URL.createObjectURL(new Blob([JSON.stringify(data)], { type:'application/vnd.openstrudel.team+json' }));
+          const link = document.createElement('a'); link.href = url; link.download = 'OpenStrudel-' + data.createdAt.slice(0,10) + '.openstrudel'; link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          status.textContent = 'Копия готова к сохранению. В файле есть личная переписка и материалы.';
+        } catch(e) { status.textContent = ''; report(e); } finally { busy(false); }
+      };
+      $('import-team').onclick = () => {
+        const picker = document.createElement('input'); picker.type = 'file'; picker.accept = '.openstrudel,.json';
+        picker.onchange = async () => {
+          const file = picker.files[0]; if (!file) return;
+          busy(true); error.textContent = ''; status.textContent = 'Проверяем файл…';
+          try {
+            if (!file.size || file.size > 192*1024*1024) throw new Error('Выберите файл экспорта OpenStrudel размером до 192 МБ.');
+            const data = await file.text();
+            const preview = await api('/v1/agents/archive/preview', {method:'POST', body:data});
+            showTeamImport(data, preview);
+          } catch(e) { status.textContent = ''; report(e); } finally { busy(false); }
+        }; picker.click();
+      };
+      $('export-team').focus();
+    }
+    function showTeamImport(data, preview) {
+      const box = document.createElement('div');
+      box.innerHTML = '<h2>Импорт команды</h2><p id="import-description"></p><ul id="import-names"></ul><p id="import-counts"></p><p id="import-policy"></p><p id="import-error" role="alert" tabindex="-1"></p><div class="modal-actions"><button class="secondary" id="cancel-import">Отмена</button><button class="primary" id="confirm-import">Добавить сотрудников</button></div>';
+      showModal(box);
+      $('cancel-import').onclick = openSettings;
+      if (preview.alreadyImported) {
+        $('import-description').textContent = 'Эта команда уже добавлена. Дубликаты не будут созданы.';
+        $('confirm-import').hidden = true; $('cancel-import').textContent = 'Готово'; $('cancel-import').focus(); return;
+      }
+      $('import-description').textContent = 'Текущие сотрудники и их файлы сохранятся.';
+      for (const person of preview.employees) { const li = document.createElement('li'); li.textContent = person.importedName + (person.name !== person.importedName ? ' · имя изменено' : ''); $('import-names').append(li); }
+      const c = preview.counts;
+      $('import-counts').textContent = `Чаты: ${c.conversations} · Сообщения: ${c.messages} · Файлы: ${c.files} · Расписания: ${c.schedules}`;
+      $('import-policy').textContent = 'Расписания будут на паузе, отправка в Telegram отключена. Подключённые сервисы нужно авторизовать заново.';
+      $('confirm-import').textContent = 'Добавить сотрудников: ' + c.employees;
+      $('confirm-import').onclick = async () => {
+        const confirm = $('confirm-import'), cancel = $('cancel-import'), error = $('import-error');
+        confirm.disabled = cancel.disabled = true; box.dataset.busy = 'true'; error.textContent = ''; confirm.textContent = 'Добавляем сотрудников…';
+        try {
+          const result = await api('/v1/agents/archive/import?plan=' + encodeURIComponent(preview.planToken), {method:'POST', body:data});
+          await refresh(); openSettings();
+          $('transfer-status').textContent = result.preview.alreadyImported ? 'Этот файл уже импортирован. Дубликаты не добавлены.' : 'Добавлено сотрудников: ' + result.profileIds.length + '.';
+        } catch(e) { error.textContent = e.message; error.focus(); }
+        finally { confirm.disabled = cancel.disabled = false; box.dataset.busy = 'false'; confirm.textContent = 'Добавить сотрудников: ' + c.employees; }
+      };
+      $('cancel-import').focus();
+    }
+    $('modal').onclick = event => { if (event.target === $('modal') && !$('modal-content').querySelector('[data-busy="true"]')) closeModal(); };
+    document.addEventListener('keydown', event => {
+      if (!$('modal').classList.contains('open')) return;
+      if (event.key === 'Escape' && !$('modal-content').querySelector('[data-busy="true"]')) { event.preventDefault(); closeModal(); }
+      if (event.key === 'Tab') {
+        const controls = [...$('modal-content').querySelectorAll('button:not(:disabled):not([hidden]),input,textarea')];
+        const first = controls[0], last = controls.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    });
     refresh();
   </script>
 </body>

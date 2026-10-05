@@ -1,5 +1,7 @@
 import Foundation
 
+enum HomeConnectionState { case idle, connecting, connected, unavailable }
+
 enum HomeDrafts {
     static func key(home: String, profile: String?, chat: String?) -> String {
         home.trimmingCharacters(in: CharacterSet(charactersIn: "/ ")) + "\n" + (profile ?? "main") + ":" + (chat ?? "personal")
@@ -24,6 +26,7 @@ struct HomeHealth: Decodable {
     let service: String?
     let time: String?
     let telegram: TelegramStatus?
+    let agentArchiveVersion: Int?
 }
 
 struct HomeConversation: Decodable {
@@ -201,6 +204,13 @@ struct EmployeeProfile: Codable, Identifiable, Hashable {
 
 struct ProfilesEnvelope: Decodable {
     let profiles: [EmployeeProfile]
+    let importedConversations: [ImportedConversation]?
+}
+
+struct ImportedConversation: Decodable, Identifiable, Equatable {
+    let id: String
+    let title: String
+    let profileId: String
 }
 
 struct ProfileResponse: Decodable {

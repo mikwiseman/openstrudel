@@ -82,6 +82,7 @@ final class HomeClient: ObservableObject {
     @Published private(set) var health: HomeHealth?
     @Published private(set) var messages: [HomeMessage] = []
     @Published private(set) var profiles: [EmployeeProfile] = []
+    @Published private(set) var importedConversations: [ImportedConversation] = []
     @Published private(set) var telegram: TelegramStatus?
     @Published private(set) var telegramLink: TelegramLinkResponse?
     @Published private(set) var openAIAccount: OpenAIAccount?
@@ -94,6 +95,8 @@ final class HomeClient: ObservableObject {
     @Published private(set) var hasOpenedConversation = false
     private var checkingOpenAIAccount = false
     @Published private(set) var isLoading = false
+    @Published private(set) var connectionState: HomeConnectionState = .idle
+    @Published private(set) var isStartingLocalHome = false
     @Published private(set) var homeUnreachable = false
     @Published private(set) var interactions: [ChatInteraction] = []
     @Published private(set) var connections: [ServiceConnection] = []
@@ -161,7 +164,14 @@ final class HomeClient: ObservableObject {
             }
         }
         HomeDrafts.migrate(defaults, currentHome: baseURLString)
+        if shouldRestoreConnection { connectionState = .connecting }
     }
+
+    var shouldRestoreConnection: Bool {
+        isConfigured && (hasToken || defaults.string(forKey: "openstrudel.homeURL") != nil)
+    }
+
+    var isConnecting: Bool { health == nil && (connectionState == .connecting || isStartingLocalHome) }
 
     var isConfigured: Bool {
         guard let url = URL(string: normalizedBaseURL) else { return false }
@@ -192,8 +202,14 @@ final class HomeClient: ObservableObject {
 
     #if os(macOS)
     func startLocalHome() async {
+        guard !isStartingLocalHome else { return }
+        let generation = connectionGeneration
+        isStartingLocalHome = true
+        connectionState = .connecting
+        defer { isStartingLocalHome = false }
         do {
             let connection = try await LocalHome.start()
+            guard generation == connectionGeneration else { return }
             if normalizedBaseURL != connection["url"] {
                 KeychainStore.remove(account: "home-connection")
                 resetConnectionState()
@@ -202,7 +218,7 @@ final class HomeClient: ObservableObject {
             baseURLString = connection["url"]!
             defaults.set(baseURLString, forKey: "openstrudel.homeURL")
             await load()
-        } catch { errorMessage = error.localizedDescription }
+        } catch { connectionState = .unavailable; errorMessage = error.localizedDescription }
     }
     #endif
 
@@ -314,6 +330,8 @@ final class HomeClient: ObservableObject {
     }
 
     private func resetConnectionState() {
+        connectionState = .idle
+        importedConversations = []
         connectionGeneration += 1
         refreshGeneration += 1
         if session !== URLSession.shared { session.invalidateAndCancel() }
@@ -369,6 +387,8 @@ final class HomeClient: ObservableObject {
             return
         }
         isLoading = true
+        if health == nil && (!quiet || connectionState != .unavailable) { connectionState = .connecting }
+        defer { if generation == connectionGeneration { isLoading = false } }
         if !quiet { errorMessage = nil }
         do {
             async let healthRequest: HomeHealth = request("/health")
@@ -383,7 +403,9 @@ final class HomeClient: ObservableObject {
             )
             guard generation == connectionGeneration else { return }
             health = loadedHealth
+            connectionState = .connected
             if profiles != loadedProfiles.profiles { profiles = loadedProfiles.profiles }
+            importedConversations = loadedProfiles.importedConversations ?? []
             telegram = loadedIntegrations.telegram
             applyOpenAIAccount(loadedAccount)
             if let selectedProfileID, !isEmployeeDraft, !profiles.contains(where: { $0.id == selectedProfileID }) {
@@ -396,11 +418,12 @@ final class HomeClient: ObservableObject {
             await refreshConversation()
         } catch {
             guard generation == connectionGeneration else { return }
+            if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
+            connectionState = .unavailable
             homeUnreachable = true
             if case HomeClientError.authenticationExpired = error { connectionNeedsPairing = true }
             if !quiet { errorMessage = error.localizedDescription }
         }
-        if generation == connectionGeneration { isLoading = false }
     }
 
     private func loadOpenAIAccount(force: Bool = false) async throws -> OpenAIAccountEnvelope {
@@ -539,6 +562,7 @@ final class HomeClient: ObservableObject {
             let (envelope, loadedProfiles) = try await (chat, people)
             guard generation == refreshGeneration, profileID == selectedProfileID else { return }
             profiles = loadedProfiles.profiles
+            importedConversations = loadedProfiles.importedConversations ?? []
             conversationID = envelope.conversation.id
             if messages != envelope.messages { messages = envelope.messages }
             if !messages.isEmpty || !profiles.isEmpty { hasOpenedConversation = true }
@@ -769,6 +793,31 @@ final class HomeClient: ObservableObject {
             guard generation == connectionGeneration, !(error is CancellationError) else { return }
             errorMessage = error.localizedDescription
         }
+    }
+
+    var canTransferAgents: Bool { canManageOpenAI && health?.agentArchiveVersion == 1 }
+
+    func exportAgents() async throws -> Data {
+        guard canTransferAgents else { throw HomeClientError.server("Экспорт доступен владельцу команды после обновления Home.") }
+        return try await requestData("/v1/agents/archive")
+    }
+
+    func previewAgentImport(_ data: Data) async throws -> PendingAgentImport {
+        guard canTransferAgents else { throw HomeClientError.server("Импорт доступен владельцу команды после обновления Home.") }
+        guard data.count <= AgentTransferFile.byteLimit else { throw AgentTransferFile.Failure.tooLarge }
+        let generation = connectionGeneration
+        let preview: AgentImportPreview = try await request("/v1/agents/archive/preview", method: "POST", body: data)
+        return PendingAgentImport(data: data, preview: preview, connectionGeneration: generation)
+    }
+
+    func importAgents(_ pending: PendingAgentImport) async throws -> AgentImportResult {
+        guard canTransferAgents, pending.connectionGeneration == connectionGeneration else {
+            throw HomeClientError.server("Подключение изменилось. Выберите файл заново в нужной команде.")
+        }
+        let result: AgentImportResult = try await request("/v1/agents/archive/import?plan=" + pending.preview.planToken, method: "POST", body: pending.data)
+        // A lost response is safe to retry: the Home remembers this archive.
+        await load(quiet: true)
+        return result
     }
 
     private func request<T: Decodable>(_ path: String, method: String = "GET", body: Data? = nil) async throws -> T {

@@ -14,18 +14,19 @@ mkdir -p "$WORK/source" "$RUNTIME/bin" "$RUNTIME/scripts"
 while IFS= read -r -d '' file; do
   mkdir -p "$WORK/source/$(dirname "$file")"
   cp "$ROOT/$file" "$WORK/source/$file"
-done < <(git -C "$ROOT" ls-files -z -- src package.json package-lock.json tsconfig.json)
+done < <(git -C "$ROOT" ls-files -z -- src public package.json package-lock.json tsconfig.json)
 npm ci --prefix "$WORK/source" --ignore-scripts
 npm run --prefix "$WORK/source" build
 cp "$WORK/source/package.json" "$WORK/source/package-lock.json" "$RUNTIME/"
 npm ci --prefix "$RUNTIME" --omit=dev --ignore-scripts
 ditto "$WORK/source/dist" "$RUNTIME/dist"
+ditto "$WORK/source/public" "$RUNTIME/public"
 cp "$ROOT/scripts/install-prebuilt-mac.sh" "$RUNTIME/scripts/"
 cp "$ROOT/scripts/mac-launch-agent.mjs" "$RUNTIME/scripts/"
 cp "$NODE_BIN" "$RUNTIME/bin/node"
 chmod 755 "$RUNTIME/bin/node" "$RUNTIME/scripts/install-prebuilt-mac.sh"
 # The digest lets the app replace its launch configuration after an update.
-(cd "$RUNTIME" && find dist scripts/install-prebuilt-mac.sh scripts/mac-launch-agent.mjs package-lock.json -type f -exec shasum -a 256 {} \; | LC_ALL=C sort | shasum -a 256 | cut -d ' ' -f 1) > "$RUNTIME/release.txt"
+(cd "$RUNTIME" && find dist public scripts/install-prebuilt-mac.sh scripts/mac-launch-agent.mjs package-lock.json -type f -exec shasum -a 256 {} \; | LC_ALL=C sort | shasum -a 256 | cut -d ' ' -f 1) > "$RUNTIME/release.txt"
 # Package only public runtime files. No user state, auth, configuration or exports.
 mkdir -p "$APP/Contents/Resources"
 if [[ -e "$APP/Contents/Resources/Runtime" ]]; then

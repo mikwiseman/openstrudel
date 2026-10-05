@@ -3,6 +3,67 @@ import Testing
 
 @Suite(.serialized)
 @MainActor struct HomeAccountRecoveryTests {
+    @Test func initialConnectionWaitsForTheServerWithoutShowingAnOutage() async throws {
+        let state = AccountFixtureState(); state.delay = .milliseconds(150)
+        let (client, session) = makeClient(state)
+        defer { session.invalidateAndCancel() }
+        #expect(client.isConnecting)
+        #expect(!client.homeUnreachable)
+        let load = Task { await client.load(quiet: true) }
+        await Task.yield()
+        #expect(client.isConnecting)
+        #expect(client.health == nil)
+        await load.value
+        #expect(client.health?.ok == true)
+        #expect(!client.isConnecting)
+        #expect(client.connectionState == .connected)
+        #expect(client.errorMessage == nil)
+    }
+
+    @Test func realFailureEndsLoadingAndQuietRetriesDoNotFlashTheLoadingScreen() async throws {
+        let state = AccountFixtureState(); state.healthStatus = 503
+        let (client, session) = makeClient(state)
+        defer { session.invalidateAndCancel() }
+        await client.load(quiet: true)
+        #expect(!client.isConnecting)
+        #expect(client.connectionState == .unavailable)
+        #expect(client.homeUnreachable)
+        #expect(client.errorMessage == nil)
+        state.delay = .milliseconds(100)
+        let retry = Task { await client.load(quiet: true) }
+        await Task.yield()
+        #expect(!client.isConnecting)
+        await retry.value
+        state.healthStatus = 200
+        let explicitRetry = Task { await client.load() }
+        while !client.isLoading { await Task.yield() }
+        #expect(client.isConnecting)
+        await explicitRetry.value
+        #expect(client.health?.ok == true)
+        #expect(!client.homeUnreachable)
+    }
+
+    @Test func canceledInitialRequestAndConnectionChangeCannotProduceAFalseOutageOrRestoreOldData() async throws {
+        let state = AccountFixtureState(); state.delay = .milliseconds(100)
+        let (client, session) = makeClient(state)
+        defer { session.invalidateAndCancel() }
+        let loading = Task { await client.load(quiet: true) }
+        while !client.isLoading { await Task.yield() }
+        loading.cancel()
+        await loading.value
+        #expect(!client.homeUnreachable)
+        #expect(!client.isLoading)
+        #expect(client.errorMessage == nil)
+        let second = Task { await client.load(quiet: true) }
+        while !client.isLoading { await Task.yield() }
+        client.disconnectFromMac()
+        await second.value
+        #expect(client.health == nil)
+        #expect(client.connectionState == .idle)
+        #expect(client.messages.isEmpty)
+        #expect(!client.homeUnreachable)
+    }
+
     @Test func draftsStayWithTheirHomeAcrossUpgradeAndAccountRecovery() throws {
         let suite = "OpenStrudel.drafts-test." + UUID().uuidString
         let defaults = try #require(UserDefaults(suiteName: suite))
@@ -122,13 +183,19 @@ import Testing
         defaults.set("http://127.0.0.1:57575", forKey: "openstrudel.homeURL")
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [AccountTestURLProtocol.self]
-        AccountTestURLProtocol.setHandler { request in await MainActor.run { state.respond(request) } }
+        AccountTestURLProtocol.setHandler { request in
+            let delay = await MainActor.run { state.delay }
+            if let delay { try? await Task.sleep(for: delay) }
+            return await MainActor.run { state.respond(request) }
+        }
         let session = URLSession(configuration: configuration)
         return (HomeClient(defaults: defaults, session: session), session)
     }
 }
 
 @MainActor private final class AccountFixtureState {
+    var delay: Duration?
+    var healthStatus = 200
     var accountStatus = 200
     var accountBody = #"{"account":{"connected":true,"email":"owner@example.invalid","planType":"plus","managed":true},"canManage":true,"loginPending":false}"#
     var loginStatus = "pending"
@@ -137,7 +204,7 @@ import Testing
         let status: Int
         let body: String
         switch request.url?.path {
-        case "/health": status = 200; body = #"{"ok":true,"service":"openstrudel"}"#
+        case "/health": status = healthStatus; body = healthStatus == 200 ? #"{"ok":true,"service":"openstrudel","agentArchiveVersion":1}"# : #"{"error":"unavailable"}"#
         case "/v1/profiles": status = 200; body = #"{"profiles":[]}"#
         case "/v1/integrations": status = 200; body = #"{"telegram":{"configured":false,"running":false,"linkedChats":[]}}"#
         case "/v1/account": status = accountStatus; body = accountBody

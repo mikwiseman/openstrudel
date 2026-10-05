@@ -1,6 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import { isIP, type AddressInfo } from "node:net";
 import { MessageService } from "./messages.js";
 import { Store } from "./store.js";
@@ -10,6 +9,7 @@ import { safeURL } from "./interactions.js";
 import { MobileAccess } from "./mobile.js";
 import { MAX_FILE_BYTES } from "./files.js";
 import {randomBytes} from "node:crypto";
+import { AgentArchives, MAX_ARCHIVE_BYTES } from "./agent-archive.js";
 
 const MAX_BODY_BYTES = 1_048_576;
 
@@ -102,6 +102,22 @@ export class HttpApi {
         return;
       }
       const canManageAccount = !paired || owner;
+      if (path.startsWith("/v1/agents/archive")) {
+        if (!canManageAccount) { this.send(response, 403, { error: "Перенос команды доступен владельцу на основном Mac или устройстве, с которого настроили сервер." }); return; }
+        response.setHeader("cache-control", "no-store");
+        const archives = new AgentArchives(this.store, this.messages);
+        if (request.method === "GET" && path === "/v1/agents/archive") {
+          const archive = archives.export();
+          response.setHeader("content-disposition", `attachment; filename="OpenStrudel-${archive.createdAt.slice(0,10)}.openstrudel"`);
+          this.send(response, 200, archive); return;
+        }
+        if (request.method === "POST" && path === "/v1/agents/archive/preview") {
+          this.send(response, 200, archives.preview(await this.archiveBody(request))); return;
+        }
+        if (request.method === "POST" && path === "/v1/agents/archive/import") {
+          this.send(response, 200, archives.import(await this.archiveBody(request), url.searchParams.get("plan") ?? "")); return;
+        }
+      }
       if (path.startsWith("/v1/account/") && !canManageAccount) {
         this.send(response, 403, { error: "Восстановите вход в OpenAI на основном Mac или устройстве, с которого настроили сервер. На этом устройстве отдельный вход не нужен." });
         return;
@@ -126,7 +142,7 @@ export class HttpApi {
         }
       }
       if (request.method === "GET" && path === "/health") {
-        this.send(response, 200, { ok: true, service: "openstrudel", platform: process.platform, arch: process.arch, time: new Date().toISOString(), telegram: this.telegram.status() });
+        this.send(response, 200, { ok: true, service: "openstrudel", platform: process.platform, arch: process.arch, time: new Date().toISOString(), telegram: this.telegram.status(), agentArchiveVersion: 1 });
         return;
       }
       if (request.method === "GET" && path === "/v1/integrations") {
@@ -201,7 +217,7 @@ export class HttpApi {
         return;
       }
       if (request.method === "GET" && path === "/v1/profiles") {
-        this.send(response, 200, { profiles: this.store.listProfiles() });
+        this.send(response, 200, { profiles: this.store.listProfiles(), importedConversations: this.store.listConversations().filter(c => c.externalId?.startsWith("import::")).map(c => ({ id: c.id, title: c.title ?? "Импортированный чат", profileId: c.profileId })) });
         return;
       }
       if (request.method === "POST" && path === "/v1/profiles") {
@@ -331,6 +347,16 @@ export class HttpApi {
     return request.headers.authorization === `Bearer ${this.token}`;
   }
 
+  private async archiveBody(request: IncomingMessage): Promise<Record<string, unknown>> {
+    try { return await this.body(request, MAX_ARCHIVE_BYTES); }
+    catch (error) {
+      if (error instanceof SyntaxError || (error instanceof Error && error.message === "JSON object expected")) {
+        throw new Error("Не удалось прочитать файл. Выберите целый файл экспорта команды OpenStrudel.");
+      }
+      throw error;
+    }
+  }
+
   private async body(request: IncomingMessage, limit = MAX_BODY_BYTES): Promise<Record<string, unknown>> {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -352,7 +378,7 @@ export class HttpApi {
 
   private async asset(response: ServerResponse, name: string, contentType: string): Promise<void> {
     try {
-      const content = await readFile(resolve(process.cwd(), "public", name));
+      const content = await readFile(new URL("../public/" + name, import.meta.url));
       response.writeHead(200, { "content-type": contentType }).end(content);
     } catch {
       response.writeHead(404).end("not found");
