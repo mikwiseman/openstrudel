@@ -34,7 +34,7 @@ targets:
         UTExportedTypeDeclarations:
           - UTTypeIdentifier: is.openstrudel.team
             UTTypeDescription: Команда OpenStrudel
-            UTTypeConformsTo: [public.json]
+            UTTypeConformsTo: [public.data]
             UTTypeTagSpecification:
               public.filename-extension: [openstrudel]
               public.mime-type: application/vnd.openstrudel.team+json
@@ -70,7 +70,7 @@ targets:
         buildPhase: resources
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: is.openstrudel.ios
-      CURRENT_PROJECT_VERSION: 13
+      CURRENT_PROJECT_VERSION: 14
       ASSETCATALOG_COMPILER_APPICON_NAME: iOSAppIcon
       CODE_SIGN_STYLE: Manual
       CODE_SIGN_IDENTITY: Apple Development
@@ -107,7 +107,7 @@ targets:
         UTExportedTypeDeclarations:
           - UTTypeIdentifier: is.openstrudel.team
             UTTypeDescription: Команда OpenStrudel
-            UTTypeConformsTo: [public.json]
+            UTTypeConformsTo: [public.data]
             UTTypeTagSpecification:
               public.filename-extension: [openstrudel]
               public.mime-type: application/vnd.openstrudel.team+json

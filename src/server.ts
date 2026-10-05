@@ -9,7 +9,7 @@ import { safeURL } from "./interactions.js";
 import { MobileAccess } from "./mobile.js";
 import { MAX_FILE_BYTES } from "./files.js";
 import {randomBytes} from "node:crypto";
-import { AgentArchives, MAX_ARCHIVE_BYTES } from "./agent-archive.js";
+import { AgentArchives, MAX_TRANSFER_BYTES, encodeArchive, decodeArchive } from "./agent-archive.js";
 
 const MAX_BODY_BYTES = 1_048_576;
 
@@ -108,8 +108,10 @@ export class HttpApi {
         const archives = new AgentArchives(this.store, this.messages);
         if (request.method === "GET" && path === "/v1/agents/archive") {
           const archive = archives.export();
+          const encoded = encodeArchive(archive);
           response.setHeader("content-disposition", `attachment; filename="OpenStrudel-${archive.createdAt.slice(0,10)}.openstrudel"`);
-          this.send(response, 200, archive); return;
+          response.setHeader("content-type", "application/vnd.openstrudel.team+gzip");
+          response.writeHead(200).end(encoded); return;
         }
         if (request.method === "POST" && path === "/v1/agents/archive/preview") {
           this.send(response, 200, archives.preview(await this.archiveBody(request))); return;
@@ -347,14 +349,16 @@ export class HttpApi {
     return request.headers.authorization === `Bearer ${this.token}`;
   }
 
-  private async archiveBody(request: IncomingMessage): Promise<Record<string, unknown>> {
-    try { return await this.body(request, MAX_ARCHIVE_BYTES); }
-    catch (error) {
-      if (error instanceof SyntaxError || (error instanceof Error && error.message === "JSON object expected")) {
-        throw new Error("Не удалось прочитать файл. Выберите целый файл экспорта команды OpenStrudel.");
-      }
-      throw error;
+  private async archiveBody(request: IncomingMessage): Promise<unknown> {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of request) {
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+      size += bytes.length;
+      if (size > MAX_TRANSFER_BYTES) throw new Error("Файл экспорта больше 192 МБ.");
+      chunks.push(bytes);
     }
+    return decodeArchive(Buffer.concat(chunks));
   }
 
   private async body(request: IncomingMessage, limit = MAX_BODY_BYTES): Promise<Record<string, unknown>> {

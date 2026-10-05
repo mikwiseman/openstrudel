@@ -2,14 +2,16 @@ import { createHash, randomUUID } from "node:crypto";
 import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 import { CronExpressionParser } from "cron-parser";
+import { gzipSync, gunzipSync } from "node:zlib";
 import type { Store } from "./store.js";
 import type { MessageService } from "./messages.js";
 import type { EmployeeProfile } from "./types.js";
 
-// A plain, versioned document: no executable installer, embedded credentials,
+// A compressed, versioned document: no executable installer, embedded credentials,
 // database replacement, or extraction of arbitrary archive paths.
-export const MAX_ARCHIVE_BYTES = 192 * 1024 * 1024;
-const MAX_CONTENT_BYTES = 128 * 1024 * 1024;
+export const MAX_ARCHIVE_BYTES = 384 * 1024 * 1024;
+export const MAX_TRANSFER_BYTES = 192 * 1024 * 1024;
+const MAX_CONTENT_BYTES = 256 * 1024 * 1024;
 type Row = Record<string, any>;
 type Profile = Omit<EmployeeProfile, "preview"> & { context: string };
 interface Workspace { id: string; sourcePath: string; connections: string[]; directories: string[]; files: { path: string; content: string; sha256: string; executable: boolean }[] }
@@ -58,7 +60,7 @@ export class AgentArchives {
           if (stat.isDirectory()) { directories.push(name); if (directories.length > 10000) throw new Error("В экспорте слишком много папок: максимум 10 000."); visit(path); continue; }
           if (!stat.isFile()) throw new Error("Не удалось сохранить рабочий файл: " + name);
           contentBytes += stat.size;
-          if (++fileCount > 10000 || contentBytes > MAX_CONTENT_BYTES) throw new Error("Рабочие файлы превышают лимит экспорта: 128 МБ и 10 000 файлов. Уменьшите их объём и повторите.");
+          if (++fileCount > 10000 || contentBytes > MAX_CONTENT_BYTES) throw new Error("Рабочие файлы превышают лимит экспорта: 256 МБ и 10 000 файлов. Уменьшите их объём и повторите.");
           const realRoot = realpathSync(root), parent = realpathSync(dirname(path));
           if (parent !== realRoot && !parent.startsWith(realRoot + sep)) throw new Error("Рабочая папка изменилась во время экспорта. Повторите после завершения работы сотрудников.");
           const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -197,6 +199,24 @@ export class AgentArchives {
 }
 
 function hash(value: string | Buffer): string { return createHash("sha256").update(value).digest("hex"); }
+export function encodeArchive(archive: AgentArchive): Buffer {
+  const encoded = gzipSync(JSON.stringify(archive), { level: 3 });
+  if (encoded.length > MAX_TRANSFER_BYTES) throw new Error("Сжатый файл экспорта больше 192 МБ. Уменьшите объём рабочих файлов и повторите.");
+  return encoded;
+}
+export function decodeArchive(bytes: Buffer): unknown {
+  if (bytes.length > MAX_TRANSFER_BYTES) throw new Error("Файл экспорта больше 192 МБ.");
+  try {
+    // Keep compatibility with the original JSON format. A decompression ceiling
+    // prevents small untrusted files from expanding without bound.
+    const json = bytes[0] === 0x1f && bytes[1] === 0x8b ? gunzipSync(bytes, { maxOutputLength: MAX_ARCHIVE_BYTES }) : bytes;
+    const value: unknown = JSON.parse(json.toString("utf8"));
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid document");
+    return value;
+  } catch {
+    throw new Error("Не удалось прочитать файл. Он повреждён или превышает допустимый размер. Выберите другой экспорт OpenStrudel.");
+  }
+}
 function checkWorkspacePath(root: string): void {
   for (const path of [root, dirname(root), dirname(dirname(root))]) if (existsSync(path) && lstatSync(path).isSymbolicLink()) throw new Error("Рабочая папка должна находиться внутри OpenStrudel.");
 }
@@ -221,7 +241,7 @@ export function validateArchive(input: unknown): AgentArchive {
   const a = object(input);
   if (a.format !== "openstrudel.team") throw new Error("Это не файл экспорта команды OpenStrudel.");
   if (a.version !== 1) throw new Error("Этот файл создан другой версией OpenStrudel. Обновите приложение и Home, затем повторите импорт.");
-  if (Buffer.byteLength(JSON.stringify(a)) > MAX_ARCHIVE_BYTES) throw new Error("Файл экспорта больше 192 МБ.");
+  if (Buffer.byteLength(JSON.stringify(a)) > MAX_ARCHIVE_BYTES) throw new Error("Распакованный экспорт больше 384 МБ. Уменьшите объём рабочих файлов и повторите.");
   const id = identifier(a.id);
   if (!/^[a-f0-9-]{36}$/.test(id)) fail();
   const profiles: Profile[] = array(a.profiles, 1000).map(v => {

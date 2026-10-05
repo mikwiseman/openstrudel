@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { request as httpsRequest } from "node:https";
 import { afterEach, describe, expect, it } from "vitest";
-import { AgentArchives, type AgentArchive } from "../src/agent-archive.js";
+import { AgentArchives, encodeArchive, decodeArchive, type AgentArchive } from "../src/agent-archive.js";
 import { OpenStrudelRuntime } from "../src/runtime.js";
 
 const fixtures: { root: string; runtime: OpenStrudelRuntime }[] = [];
@@ -51,6 +51,14 @@ function populated() {
 }
 
 describe("additive team transfer", () => {
+  it("compresses files for transfer and accepts both compressed and original JSON copies", () => {
+    const source = populated(), archive = source.archive.export();
+    const bytes = encodeArchive(archive);
+    expect(bytes[0]).toBe(0x1f);
+    expect(decodeArchive(bytes)).toEqual(archive);
+    expect(decodeArchive(Buffer.from(JSON.stringify(archive)))).toEqual(archive);
+    expect(() => decodeArchive(bytes.subarray(0, 20))).toThrow("повреждён");
+  });
   it("preserves empty folders and executable files without running them", () => {
     const source = populated(), target = fixture();
     const workspace = source.messages.files.workspace("work");
@@ -202,20 +210,21 @@ describe("additive team transfer", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-disposition")).toContain(".openstrudel");
     expect(response.headers.get("cache-control")).toBe("no-store");
-    const archive = await response.json();
+    const encoded = Buffer.from(await response.arrayBuffer());
+    const archive = decodeArchive(encoded);
     for (const body of ["{broken", "[]"]) {
       const invalid = await fetch(base + "/v1/agents/archive/preview", { method: "POST", body });
       expect(invalid.status).toBe(400);
       expect((await invalid.json()).error).toContain("Не удалось прочитать файл");
     }
-    const preview = await (await fetch(base + "/v1/agents/archive/preview", { method: "POST", body: JSON.stringify(archive) })).json();
-    expect((await fetch(base + "/v1/agents/archive/import?plan=" + preview.planToken, { method: "POST", body: JSON.stringify(archive) })).status).toBe(200);
+    const preview = await (await fetch(base + "/v1/agents/archive/preview", { method: "POST", body: encoded })).json();
+    expect((await fetch(base + "/v1/agents/archive/import?plan=" + preview.planToken, { method: "POST", body: encoded })).status).toBe(200);
     const profiles = await (await fetch(base + "/v1/profiles")).json();
     expect(profiles.importedConversations).toHaveLength(1);
     Object.assign((source.api.mobile as any).options, { directory: resolve(source.root, "mobile"), port: 0, host: "127.0.0.1", hostname: "127.0.0.1" });
     const request = (path: string, token?: string, method = "GET") => new Promise<{ status: number; body: any }>((done, reject) => {
       const req = httpsRequest({ hostname: "127.0.0.1", port: source.api.mobile.port!, path, method, rejectUnauthorized: false, headers: token ? { authorization: "Bearer " + token } : {} }, res => {
-        let body = ""; res.on("data", chunk => body += chunk); res.on("end", () => done({ status: res.statusCode!, body: JSON.parse(body) }));
+        const parts: Buffer[] = []; res.on("data", chunk => parts.push(chunk)); res.on("end", () => { const body = Buffer.concat(parts); done({ status: res.statusCode!, body: res.headers["content-type"]?.includes("+gzip") ? decodeArchive(body) : JSON.parse(body.toString()) }); });
       }); req.on("error", reject); req.end();
     });
     const invite = new URL((await source.api.mobile.invite(false)).url);

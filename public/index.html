@@ -45,7 +45,7 @@
   <script>
     const $ = (id) => document.getElementById(id);
     const state = { profiles: [], selected: null, messages: [], telegram: null, loading: false };
-    async function api(path, options = {}) { const response = await fetch(path, { headers: { 'content-type':'application/json', ...(options.headers || {}) }, ...options }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status)); return data; }
+    async function api(path, options = {}, binary = false) { const response = await fetch(path, { headers: { 'content-type':'application/json', ...(options.headers || {}) }, ...options }); if (response.ok && binary) return response.blob(); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status)); return data; }
     function initials(name) { return name.split(/\s+/).map((part) => part[0]).join('').slice(0,2).toUpperCase(); }
     function renderAgents() { const root = $('agents'); root.replaceChildren(); const main = document.createElement('button'); main.className = 'agent' + (!state.selected ? ' active' : ''); main.innerHTML = '<span class="avatar">✦</span><span class="agent-copy"><span class="agent-name">OpenStrudel</span><span class="agent-sub">Главный собеседник</span></span>'; main.onclick = () => selectAgent(null); root.append(main); for (const profile of state.profiles) { const button = document.createElement('button'); button.className = 'agent' + (state.selected === profile.id ? ' active' : ''); button.innerHTML = `<span class="avatar employee">${initials(profile.name)}</span><span class="agent-copy"><span class="agent-name"></span><span class="agent-sub"></span></span>`; button.querySelector('.agent-name').textContent = profile.name; button.querySelector('.agent-sub').textContent = profile.instructions; button.onclick = () => selectAgent(profile.id); root.append(button); } }
     function renderMessages() { const root = $('messages'); root.replaceChildren(); if (!state.messages.length) { root.innerHTML = '<div class="empty"><div><span class="mark" style="width:62px;height:62px;border-radius:21px;display:inline-grid;font-size:28px"></span><h1>Что сделать?</h1><p>Пишите обычными словами. OpenStrudel сам выберет собеседника и передаст ему контекст.</p></div></div>'; return; } for (const message of state.messages) { const row = document.createElement('div'); row.className = 'message-row ' + (message.direction === 'inbound' ? 'user' : 'assistant'); const wrap = document.createElement('div'); const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.textContent = message.text; const time = document.createElement('div'); time.className = 'time'; time.textContent = new Date(message.createdAt).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }); wrap.append(bubble,time); row.append(wrap); root.append(row); } root.scrollTop = root.scrollHeight; }
@@ -87,9 +87,9 @@
       $('export-team').onclick = async () => {
         busy(true); error.textContent = ''; status.textContent = 'Собираем копию команды…';
         try {
-          const data = await api('/v1/agents/archive');
-          const url = URL.createObjectURL(new Blob([JSON.stringify(data)], { type:'application/vnd.openstrudel.team+json' }));
-          const link = document.createElement('a'); link.href = url; link.download = 'OpenStrudel-' + data.createdAt.slice(0,10) + '.openstrudel'; link.click();
+          const data = await api('/v1/agents/archive', {}, true);
+          const url = URL.createObjectURL(data);
+          const link = document.createElement('a'); link.href = url; link.download = 'OpenStrudel-' + new Date().toISOString().slice(0,10) + '.openstrudel'; link.click();
           setTimeout(() => URL.revokeObjectURL(url), 1000);
           status.textContent = 'Копия готова к сохранению. В файле есть личная переписка и материалы.';
         } catch(e) { status.textContent = ''; report(e); } finally { busy(false); }
@@ -101,7 +101,7 @@
           busy(true); error.textContent = ''; status.textContent = 'Проверяем файл…';
           try {
             if (!file.size || file.size > 192*1024*1024) throw new Error('Выберите файл экспорта OpenStrudel размером до 192 МБ.');
-            const data = await file.text();
+            const data = await file.arrayBuffer();
             const preview = await api('/v1/agents/archive/preview', {method:'POST', body:data});
             showTeamImport(data, preview);
           } catch(e) { status.textContent = ''; report(e); } finally { busy(false); }

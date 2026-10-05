@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension UTType {
-    static let openStrudelTeam = UTType(exportedAs: "is.openstrudel.team", conformingTo: .json)
+    static let openStrudelTeam = UTType(exportedAs: "is.openstrudel.team", conformingTo: .data)
 }
 
 struct AgentTeamDocument: FileDocument {
