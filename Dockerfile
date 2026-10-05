@@ -4,6 +4,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
+COPY public ./public
 RUN npm run build && npm prune --omit=dev
 
 # Official whisper.cpp v1.9.4, built for the image architecture (no native CPU flags).

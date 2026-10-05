@@ -4,6 +4,8 @@
 !tsconfig.json
 !src
 !src/**
+!public
+!public/**
 src/migration.ts
 !scripts
 !scripts/container-start.sh
