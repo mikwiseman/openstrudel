@@ -16,7 +16,7 @@
 
 ```sh
 node --test poc/wai-vds/*.test.mjs poc/cloud-onboarding/*.test.mjs poc/eqvps/provider.test.mjs
-node poc/cloud-onboarding/preflight.mjs --base-url https://pay.waiwai.is/vds/
+node poc/cloud-onboarding/preflight.mjs --base-url https://server.waiwai.is
 node poc/wai-vds/production-readiness.mjs \
   --env-file '/Users/mikwiseman/Library/Application Support/OpenStrudel/runtime/.data/workspace/personal/integrations/wai-vds/.env.production'
 node poc/wai-vds/smoke.mjs \
@@ -56,9 +56,15 @@ node poc/wai-vds/smoke.mjs \
 
 Протоколы Stripe и Cryptomus подтверждают настоящие неоплаченные счета, их завершение и подписанные уведомления. Реальных списаний, криптопереводов и выплат продавцу не было. Новый production-ключ OpenStrudel ограничен отдельным аккаунтом, срок по документам до 4 ноября 2026. `GET /me` этим ключом подтверждён; заказов и серверов 0. Scope не даёт читать управление API-ключами. Исходный sandbox сохранён.
 
-`production-readiness.mjs` выполняет только три фиксированных GET: health, каталог и собственный аккаунт. Credential передаётся только в `/me`, только на закреплённый HTTPS origin с путём `/vds`; redirect запрещён. Ключ, email, CSRF, IP и данные root не входят в отчёт. Скрипт не имеет пути создания заказов, платёжных сессий или VM. Его тесты также проверяют, что `refunded`/`needs_refund` не приводят к повторной выдаче и что оставшееся после истечения счёта `order.status=checkout` не считается оплатой. USD и USDT сохраняют отдельные валюты и суммы.
+`production-readiness.mjs` выполняет только три фиксированных GET: health, каталог и собственный аккаунт. Credential передаётся только в `/api/v1/me`, только на закреплённый HTTPS origin; redirect запрещён. Ключ, email, CSRF, IP и данные root не входят в отчёт. Скрипт не имеет пути создания заказов, платёжных сессий или VM. Его тесты также проверяют, что `refunded`/`needs_refund` не приводят к повторной выдаче и что оставшееся после истечения счёта `order.status=checkout` не считается оплатой. USD и USDT сохраняют отдельные валюты и суммы.
 
 Evidence: `.data/wai-vds-readiness/2026-10-05-v6/`. В этом прогоне 0 заказов, 0 новых VM и 0 списаний. Новый endpoint готов к ограниченному чтению; это не подтверждение полного сценария Home. 5 октября пользователь дополнительно поручил сделать оплату под брендом OpenStrudel без отдельного кабинета VDS. [Сценарий и контракт](../../docs/integrated-cloud-checkout.md) переданы в чат WAI VDS по его прямому разрешению; реализация там продолжается вместе с дизайном и выбором постоянного домена. Не направлять production-ключ на новый origin автоматически.
+
+## Постоянный адрес, 5 октября
+
+По решению пользователя сервис перенесён на `https://server.waiwai.is`, без совместимости с прежним `/vds`. Публичные `/healthz`, `/api/v1/catalog` и `/openapi.json` проверены на новом домене с обычной проверкой сертификата и явным разрешением IP `103.45.247.25`. OpenAPI объявляет этот же сервер. Публичный DNS через Google DNS-over-HTTPS возвращает `103.45.247.25`; системный resolver Mini и UDP-запросы пока сохраняют отрицательный ответ. Затем на том же домене бесплатно проверен `GET /api/v1/me` существующим отдельным ключом: заказов и серверов 0. Сертификат и имя проверены, redirect не используется. Обычное DNS-разрешение пока остаётся отдельной незавершённой проверкой. Закрытая конфигурация интеграции уже содержит новый адрес.
+
+Read-only адаптер закреплён на новом origin и отклоняет старый адрес, HTTP, другие пути и redirect. Повторная выдача учебной VM не выполнялась. Оплата без отдельного кабинета VDS остаётся задачей Mac/web; iOS подключает уже готовую команду, см. [текущий сценарий](../../docs/ios-cloud-payments.md).
 
 ## Что требуется до включения в приложение
 

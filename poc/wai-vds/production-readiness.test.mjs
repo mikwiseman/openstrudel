@@ -39,7 +39,7 @@ test('production inspection makes only three fixed GETs; credentials are confine
 });
 test('production credentials cannot be sent to a different URL or used as a sandbox key', async () => {
   let calls = 0; const fetchImpl = () => { calls++; throw Error(); };
-  for (const baseURL of ['http://pay.waiwai.is/vds', 'https://other.example/vds', productionBaseURL + '?token=x', productionBaseURL + '/other']) {
+  for (const baseURL of ['https://pay.waiwai.is/vds', 'http://server.waiwai.is', 'https://other.example/vds', productionBaseURL + '/vds', productionBaseURL + '?token=x', productionBaseURL + '/other']) {
     await assert.rejects(inspectProduction({ baseURL, apiKey, fetchImpl }), { code: 'configuration' });
   }
   await assert.rejects(inspectProduction({ apiKey: apiKey.replace('live', 'test'), fetchImpl }), { code: 'configuration' });

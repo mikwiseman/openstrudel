@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { assessVdsCatalog } from '../cloud-onboarding/eligibility.mjs';
 
-export const productionBaseURL = 'https://pay.waiwai.is/vds';
+export const productionBaseURL = 'https://server.waiwai.is';
 const uuid = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 const orderStates = new Set(['draft', 'checkout', 'paid', 'fulfilling', 'fulfilled', 'needs_refund', 'refunded']);
 const serverStates = new Set(['paid', 'creating', 'configuring', 'checking', 'ready', 'unknown', 'attention', 'rejected', 'overdue', 'deleting', 'deleted']);
