@@ -21,6 +21,7 @@ DerivedData/
 build/
 xcuserdata/
 *.xcuserstate
+/deploy/tls/
 
 # Private research and one-off imports of personal employee histories.
 /research/

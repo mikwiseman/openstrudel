@@ -1,0 +1,9 @@
+# Optional public-web TLS. Prepare ./tls/current before enabling this overlay.
+# The whole directory is mounted so atomic symlink replacement stays visible.
+services:
+  home:
+    environment:
+      OPENSTRUDEL_TLS_CERT: /tls/current/fullchain.pem
+      OPENSTRUDEL_TLS_KEY: /tls/current/privkey.pem
+    volumes:
+      - ./tls:/tls:ro

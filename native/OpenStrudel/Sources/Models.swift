@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 enum HomeConnectionState { case idle, connecting, connected, unavailable }
 
@@ -17,6 +18,17 @@ enum HomeDrafts {
         }
         if scoped != old { defaults.set(scoped, forKey: "openstrudel.drafts") }
     }
+    static func relocate(_ defaults: UserDefaults, from oldHome: String, to newHome: String) {
+        guard let old = defaults.dictionary(forKey: "openstrudel.drafts") as? [String: String] else { return }
+        let prefix = oldHome.trimmingCharacters(in: CharacterSet(charactersIn: "/ ")) + "\n"
+        let replacement = newHome.trimmingCharacters(in: CharacterSet(charactersIn: "/ ")) + "\n"
+        var updated = old
+        for (key, value) in old where key.hasPrefix(prefix) {
+            let target = replacement + key.dropFirst(prefix.count)
+            if updated[target] == nil { updated[target] = value }
+        }
+        defaults.set(updated, forKey: "openstrudel.drafts")
+    }
 }
 
 struct HomeHealth: Decodable {
@@ -27,6 +39,10 @@ struct HomeHealth: Decodable {
     let time: String?
     let telegram: TelegramStatus?
     let agentArchiveVersion: Int?
+    var homeProtocol: Int? = nil
+    var homeId: String? = nil
+    var nodeId: String? = nil
+    var primaryId: String? = nil
 }
 
 struct HomeConversation: Decodable {
@@ -147,8 +163,8 @@ struct ChatAttachment: Codable, Hashable, Identifiable {
     var sizeLabel: String { ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file) }
 }
 
-struct PickedFile: Equatable, Identifiable, Sendable {
-    let id = UUID()
+struct PickedFile: Codable, Equatable, Identifiable, Sendable {
+    var id = UUID()
     let name: String
     let mimeType: String
     let data: Data
@@ -170,14 +186,39 @@ enum ChatClock {
     }
 }
 
-struct PendingHomeMessage: Identifiable, Equatable {
-    let id = UUID()
+struct PendingHomeMessage: Codable, Identifiable, Equatable {
+    var id = UUID()
     let text: String
     var profileID: String?
     var conversationID: String? = nil
     var error: String? = nil
     var files: [PickedFile] = []
     var draftDomain: String = "personal"
+    var deviceID: String? = nil
+    var deliveryState: String? = nil
+    var operationID: String? = nil
+}
+
+enum PendingMessagesFile {
+    static func url(directory: URL, home: String) -> URL {
+        let key = SHA256.hash(data: Data(home.utf8)).map { String(format: "%02x", $0) }.joined()
+        return directory.appending(path: key + ".json")
+    }
+    static func save(_ messages: [PendingHomeMessage], directory: URL, home: String) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let data = try JSONEncoder().encode(messages)
+        guard data.count <= 128 * 1024 * 1024 else { throw HomeClientError.server("Слишком много неотправленных файлов. Дождитесь их доставки.") }
+        let file = url(directory: directory, home: home)
+        try data.write(to: file, options: [.atomic, .completeFileProtectionUnlessOpen])
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+    }
+    static func read(directory: URL, home: String) throws -> [PendingHomeMessage] {
+        let file = url(directory: directory, home: home)
+        guard FileManager.default.fileExists(atPath: file.path) else { return [] }
+        let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max
+        guard size <= 128 * 1024 * 1024 else { throw HomeClientError.invalidResponse }
+        return try JSONDecoder().decode([PendingHomeMessage].self, from: Data(contentsOf: file))
+    }
 }
 
 struct EmployeeProfile: Codable, Identifiable, Hashable {
@@ -191,6 +232,7 @@ struct EmployeeProfile: Codable, Identifiable, Hashable {
     var preview: String? = nil
     var domain: String? = nil
     var purpose: String? = nil
+    var deviceId: String? = nil
 
     var isWork: Bool { domain == "work" }
     var roleText: String { purpose?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
@@ -222,6 +264,62 @@ struct HomeMessageResponse: Decodable {
     let messageId: String
     let text: String
     let profileId: String?
+    let operationId: String?
+    let deliveryState: String?
+}
+
+struct HomeEndpoint: Codable, Equatable { let url: String; let pin: String? }
+struct HomeDevice: Decodable, Identifiable {
+    let id: String; let name: String; let platform: String; let primary: Bool; let online: Bool; let agents: Int
+    let endpoint: HomeEndpoint?
+}
+struct HomeDevices: Decodable { let devices: [HomeDevice]; let primaryId: String }
+struct HomeManagement: Decodable {
+    struct State: Decodable { let id: String; let nodeId: String; let primaryId: String; let role: String; let name: String; let epoch: Int; let mainNodeId: String? }
+    let home: State; let devices: [HomeDevice]; let operations: [HomeTransferOperation]?
+}
+struct ManagedCodexAccount: Decodable, Identifiable {
+    struct Usage: Decodable {
+        struct Window: Decodable, Identifiable {
+            let name: String; let remainingPercent: Double?; let windowDurationMins: Int?; let resetsAt: Double?
+            var id: String { name }
+        }
+        let checkedAt: String; let ordinaryUsageAllowed: Bool?; let windows: [Window]; let unavailable: Bool?
+    }
+    let id: String; let name: String; let account: OpenAIAccount; let usage: Usage; let activeRuns: Int; let loginPending: Bool
+}
+struct ManagedCodexAccounts: Decodable { let accounts: [ManagedCodexAccount]; let canManage: Bool }
+struct HomeActionResult: Decodable { let ok: Bool?; let status: String?; let operationId: String? }
+struct HomeRequestStatus: Decodable {
+    let status: String
+    let response: Response?
+    struct Response: Decodable { let status: Int; let body: String }
+}
+struct HomeBackup: Decodable { let archive: String }
+struct HomeTransferOperation: Decodable, Identifiable {
+    let id: String; let phase: String; let error: String?; let backup: String?; let endpoint: HomeEndpoint?
+    var kind: String? = nil
+    var warnings: [String]? = nil
+    var isFinished: Bool { ["completed", "active", "canceled"].contains(phase) }
+    var phaseDescription: String {
+        switch phase {
+        case "waiting": return "Ждём завершения принятых поручений"
+        case "preparing": return "Готовим копию"
+        case "staging": return "Проверяем копию на новом устройстве"
+        case "releasing", "transferred": return "Передаём управление"
+        case "activating": return "Включаем на новом устройстве"
+        case "canceling": return "Отменяем подготовку"
+        case "completed", "active": return "Перенос завершён"
+        case "canceled": return "Подготовка отменена"
+        case "attention", "activation_failed": return "Нужна проверка устройств"
+        default: return "Проверяем состояние переноса"
+        }
+    }
+}
+struct HomeMoved: Decodable { let url: String; let pin: String?; let homeId: String; let primaryId: String; let epoch: Int }
+struct HomeFailure: Decodable { let error: String?; let moved: HomeMoved? }
+struct HomePeerIdentity: Decodable { let homeId: String; let nodeId: String; let protocolVersion: Int; let role: String; let epoch: Int
+    enum CodingKeys: String, CodingKey { case homeId, nodeId, role, epoch; case protocolVersion = "protocol" }
 }
 
 struct OpenAIAccount: Decodable, Equatable {

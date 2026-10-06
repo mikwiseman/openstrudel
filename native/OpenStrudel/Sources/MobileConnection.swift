@@ -87,7 +87,11 @@ struct MacPairing: Identifiable {
               let key = value("key"), key.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
               let pin = value("pin"), pin.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil
         else { throw HomeClientError.server("Это не приглашение OpenStrudel. Создайте новое в настройках на компьютере.") }
-        self.host = host; self.port = port; self.key = key; self.pin = pin
+        if let keyPin = value("keyPin") {
+            guard keyPin.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil else { throw HomeClientError.invalidURL }
+            self.pin = "spki:" + keyPin
+        } else { self.pin = pin }
+        self.host = host; self.port = port; self.key = key
         let encodedName = parts.percentEncodedQueryItems?.first { $0.name == "name" }?.value
         let name = encodedName?.replacingOccurrences(of: "+", with: " ").removingPercentEncoding?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -95,8 +99,8 @@ struct MacPairing: Identifiable {
     }
 }
 
-/// Trust exactly the certificate scanned from the user's Mac. Never accepts
-/// another certificate, HTTP redirects, or a different destination host.
+/// Trust the public key carried in the invitation. Certificate renewal keeps the
+/// same key; expiry and host changes still fail. Legacy certificate pins remain valid.
 final class PinnedHomeSession: NSObject, URLSessionDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     private let host: String
     private let port: Int
@@ -119,13 +123,66 @@ final class PinnedHomeSession: NSObject, URLSessionDelegate, URLSessionTaskDeleg
               let trust = space.serverTrust,
               let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate], let certificate = chain.first
         else { completionHandler(.cancelAuthenticationChallenge, nil); return }
-        let actual = SHA256.hash(data: SecCertificateCopyData(certificate) as Data).map { String(format: "%02x", $0) }.joined()
-        guard actual == pin else { completionHandler(.cancelAuthenticationChallenge, nil); return }
+        guard HomeCertificate.matches(certificate, pin: pin) else { completionHandler(.cancelAuthenticationChallenge, nil); return }
         completionHandler(.useCredential, URLCredential(trust: trust))
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
         completionHandler(nil)
+    }
+}
+
+enum HomeCertificate {
+    private struct Element { let tag: UInt8; let start: Int; let content: Int; let end: Int }
+    private static func element(_ bytes: [UInt8], at start: Int, limit: Int) -> Element? {
+        guard start >= 0, start + 2 <= limit, limit <= bytes.count else { return nil }
+        let tag = bytes[start], first = bytes[start + 1]
+        var cursor = start + 2, length = Int(first)
+        if first & 0x80 != 0 {
+            let count = Int(first & 0x7f)
+            guard (1...4).contains(count), cursor + count <= limit else { return nil }
+            length = 0
+            for _ in 0..<count { length = (length << 8) | Int(bytes[cursor]); cursor += 1 }
+        }
+        guard length <= limit - cursor else { return nil }
+        return Element(tag: tag, start: start, content: cursor, end: cursor + length)
+    }
+    private static func children(_ bytes: [UInt8], of parent: Element) -> [Element]? {
+        var cursor = parent.content, result: [Element] = []
+        while cursor < parent.end {
+            guard let child = element(bytes, at: cursor, limit: parent.end), child.end > cursor else { return nil }
+            result.append(child); cursor = child.end
+        }
+        return result
+    }
+    private static func date(_ bytes: [UInt8], element: Element) -> Date? {
+        guard [0x17, 0x18].contains(element.tag), var value = String(bytes: bytes[element.content..<element.end], encoding: .ascii) else { return nil }
+        if element.tag == 0x17 {
+            guard value.count == 13, let year = Int(value.prefix(2)) else { return nil }
+            value = (year >= 50 ? "19" : "20") + value
+        }
+        guard value.count == 15, value.hasSuffix("Z") else { return nil }
+        let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0); formatter.dateFormat = "yyyyMMddHHmmss'Z'"; formatter.isLenient = false
+        return formatter.date(from: value)
+    }
+    static func publicKeyAndValidity(_ data: Data) -> (key: Data, from: Date, until: Date)? {
+        let bytes = [UInt8](data)
+        guard let outer = element(bytes, at: 0, limit: bytes.count), outer.tag == 0x30,
+              let tbs = element(bytes, at: outer.content, limit: outer.end), tbs.tag == 0x30,
+              let fields = children(bytes, of: tbs) else { return nil }
+        let offset = fields.first?.tag == 0xa0 ? 1 : 0
+        guard fields.count > offset + 5, let dates = children(bytes, of: fields[offset + 3]), dates.count == 2,
+              let from = date(bytes, element: dates[0]), let until = date(bytes, element: dates[1]) else { return nil }
+        let key = fields[offset + 5]
+        guard key.tag == 0x30 else { return nil }
+        return (Data(bytes[key.start..<key.end]), from, until)
+    }
+    static func matches(_ certificate: SecCertificate, pin: String, at now: Date = Date()) -> Bool {
+        let data = SecCertificateCopyData(certificate) as Data
+        guard let parsed = publicKeyAndValidity(data), parsed.from <= now, now < parsed.until else { return false }
+        let digest = SHA256.hash(data: pin.hasPrefix("spki:") ? parsed.key : data).map { String(format: "%02x", $0) }.joined()
+        return digest == (pin.hasPrefix("spki:") ? String(pin.dropFirst(5)) : pin)
     }
 }

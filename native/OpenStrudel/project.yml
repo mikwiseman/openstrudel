@@ -131,6 +131,7 @@ targets:
         buildPhase: resources
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: is.openstrudel.mac
+      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       PRODUCT_NAME: OpenStrudel
       GENERATE_INFOPLIST_FILE: YES
       INFOPLIST_KEY_CFBundleDisplayName: OpenStrudel
@@ -149,6 +150,7 @@ targets:
       - path: Sources/AttachmentImport.swift
       - path: Sources/Models.swift
       - path: Sources/HomeClient.swift
+      - path: Sources/HostingStore.swift
       - path: Sources/AgentTransfer.swift
       - path: Sources/LocalHome.swift
       - path: Sources/MobileConnection.swift

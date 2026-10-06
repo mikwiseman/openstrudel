@@ -1,0 +1,12 @@
+{
+  "images": [
+    {
+      "filename": "icon.png",
+      "idiom": "universal"
+    }
+  ],
+  "info": {
+    "author": "openstrudel",
+    "version": 1
+  }
+}

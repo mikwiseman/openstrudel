@@ -18,6 +18,7 @@ struct PendingAgentImport: Identifiable {
     let data: Data
     let preview: AgentImportPreview
     let connectionGeneration: Int
+    var deviceID: String? = nil
     var id: String { preview.archiveId }
 }
 

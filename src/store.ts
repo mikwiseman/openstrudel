@@ -269,10 +269,10 @@ export class Store {
   }
 
   listConversations(): Conversation[] {
-    return (this.db.prepare("SELECT * FROM conversations ORDER BY updated_at DESC LIMIT 100").all() as Row[]).map((row) => this.mapConversation(row));
+    return (this.db.prepare("SELECT * FROM conversations ORDER BY updated_at DESC").all() as Row[]).map((row) => this.mapConversation(row));
   }
 
-  setConversationThread(conversationId: string, threadId: string): void {
+  setConversationThread(conversationId: string, threadId: string | null): void {
     this.db.prepare("UPDATE conversations SET codex_thread_id = ?, updated_at = ? WHERE id = ?").run(threadId, nowIso(), conversationId);
   }
 
@@ -372,6 +372,9 @@ export class Store {
       profile.domain!,
       profile.purpose!,
     );
+    // Existing agents keep their explicitly shared legacy workspace. New agents
+    // start with separate files and sandbox permissions from the first turn.
+    this.setSetting("employee.context." + profile.id, "agent-" + profile.id.replaceAll("-", ""));
     return profile;
   }
 

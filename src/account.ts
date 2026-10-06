@@ -13,6 +13,8 @@ export type OpenAIAccount = {
 };
 
 export type CodexAuthTokens = { accessToken: string; chatgptAccountId: string; chatgptPlanType?: string };
+export type UsageWindow = { usedPercent: number; windowDurationMins: number | null; resetsAt: number | null };
+export type AccountUsage = { checkedAt: string; ordinaryUsageAllowed: boolean | null; windows: Array<UsageWindow & { name: string; remainingPercent: number }>; unavailable?: boolean };
 
 export type LoginStart =
   | { type: "browser"; loginId: string; authUrl: string }
@@ -46,9 +48,13 @@ export class CodexAccountService {
   private loginGeneration = 0;
   private authQueue: Promise<void> = Promise.resolve();
   private refreshing?: Promise<CodexAuthTokens>;
+  private usageCache?: { until: number; value: AccountUsage };
+  private usageReading?: Promise<AccountUsage>;
+  private readonly modeKey: string;
 
-  constructor(private readonly store: Store, rootDirectory = resolve(".data")) {
-    this.codexHome = process.env.OPENSTRUDEL_CODEX_HOME ?? resolve(rootDirectory, "codex");
+  constructor(private readonly store: Store, rootDirectory = resolve(".data"), accountId = "default") {
+    this.codexHome = accountId === "default" ? process.env.OPENSTRUDEL_CODEX_HOME ?? resolve(rootDirectory, "codex") : resolve(rootDirectory, "accounts", accountId, "codex");
+    this.modeKey = accountId === "default" ? "codex.auth.mode" : `codex.account.${accountId}.mode`;
   }
 
   setOnChange(handler: (identityChanged: boolean) => void): void {
@@ -56,7 +62,7 @@ export class CodexAccountService {
   }
 
   executionHome(): string | undefined {
-    return this.store.getSetting("codex.auth.mode") === "managed" ? this.codexHome : undefined;
+    return this.store.getSetting(this.modeKey) === "managed" ? this.codexHome : undefined;
   }
 
   read(force = false): Promise<OpenAIAccount> {
@@ -76,6 +82,7 @@ export class CodexAccountService {
     this.generation++;
     this.cached = undefined;
     this.reading = undefined;
+    this.usageCache = undefined;
   }
 
   get loginPending(): boolean {
@@ -84,7 +91,7 @@ export class CodexAccountService {
   }
 
   private async readAccount(): Promise<OpenAIAccount> {
-    const managed = this.store.getSetting("codex.auth.mode") === "managed";
+    const managed = this.store.getSetting(this.modeKey) === "managed";
     const disconnected: OpenAIAccount = { connected: false, email: null, planType: null, managed };
     // A Codex installation on the same computer is not consent to connect it.
     // Only our completed OAuth flow grants access to this Home's account.
@@ -103,6 +110,29 @@ export class CodexAccountService {
       // unreachable. Keep credentials and history intact so login can recover.
       return { ...disconnected, issue: isOpenAIAuthenticationError(error) ? "sign_in_required" : "unavailable" };
     }
+  }
+
+  /** Read-only usage. Never consumes reset credits or changes billing. */
+  usage(force = false): Promise<AccountUsage> {
+    if (!force && this.usageCache && this.usageCache.until > Date.now()) return Promise.resolve(this.usageCache.value);
+    if (!this.executionHome()) return Promise.resolve({ checkedAt: new Date().toISOString(), ordinaryUsageAllowed: null, windows: [], unavailable: true });
+    if (!this.usageReading) this.usageReading = this.withAuthRpc(async rpc => {
+      const result = await rpc.request("account/rateLimits/read", { excludeResetCreditDetails: true });
+      const windows: AccountUsage["windows"] = [];
+      const buckets = result.rateLimitsByLimitId ?? { codex: result.rateLimits };
+      for (const [id, raw] of Object.entries(buckets)) {
+        const bucket = raw as any;
+        for (const [kind, window] of Object.entries({ primary: bucket?.primary, secondary: bucket?.secondary })) {
+          const w = window as any;
+          if (!w || typeof w.usedPercent !== "number" || !Number.isFinite(w.usedPercent)) continue;
+          windows.push({ name: `${bucket.limitName ?? id} · ${kind === "primary" ? "основной лимит" : "дополнительный лимит"}`, usedPercent: w.usedPercent, remainingPercent: Math.max(0, Math.min(100, 100 - w.usedPercent)), windowDurationMins: w.windowDurationMins ?? null, resetsAt: w.resetsAt ?? null });
+        }
+      }
+      return { checkedAt: new Date().toISOString(), ordinaryUsageAllowed: typeof result.ordinaryUsageAllowed === "boolean" ? result.ordinaryUsageAllowed : null, windows };
+    }).catch(() => ({ checkedAt: new Date().toISOString(), ordinaryUsageAllowed: null, windows: [], unavailable: true })).then(value => {
+      this.usageCache = { until: Date.now() + 30_000, value }; return value;
+    }).finally(() => { this.usageReading = undefined; });
+    return this.usageReading;
   }
 
   /** Only the Home renews OAuth. Worker contexts never receive a refresh token. */
@@ -211,7 +241,7 @@ export class CodexAccountService {
     } finally {
       rpc.close();
     }
-    this.store.setSetting("codex.auth.mode", "signed-out");
+    this.store.setSetting(this.modeKey, "signed-out");
     this.invalidate();
     this.onChange?.(true);
   }
@@ -244,7 +274,7 @@ export class CodexAccountService {
     if (!session || session.status !== "pending") return;
     if (params.success) {
       session.status = "completed";
-      this.store.setSetting("codex.auth.mode", "managed");
+      this.store.setSetting(this.modeKey, "managed");
       this.invalidate();
       this.onChange?.(!session.previousAccountID || session.previousAccountID !== this.accountID());
     } else {

@@ -4,10 +4,14 @@ import { loadDotEnv } from "./config.js";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { bootstrapCloud, readCloudBootstrapInput } from "./cloud-bootstrap.js";
+import { clientCommand } from "./client-cli.js";
+import { serversCommand } from "./servers-cli.js";
 
 async function main(): Promise<void> {
   loadDotEnv();
   const [command = "start", ...args] = process.argv.slice(2);
+  if (command === "servers") { await serversCommand(args); return; }
+  if (await clientCommand(command, args)) return;
   if (command === "cloud-bootstrap") {
     if (args.length || process.stdin.isTTY) throw new Error("cloud-bootstrap accepts its JSON payload only through stdin");
     if (process.env.OPENSTRUDEL_DB && resolve(process.env.OPENSTRUDEL_DB) !== resolve(".data/openstrudel.sqlite")) {
@@ -42,17 +46,6 @@ async function main(): Promise<void> {
       employees: runtime.store.listProfiles().map((profile) => ({ id: profile.id, name: profile.name })),
     }, null, 2));
     await runtime.stop();
-    return;
-  }
-  if (command === "message") {
-    const headers: Record<string, string> = { "content-type": "application/json" };
-    if (process.env.OPENSTRUDEL_API_TOKEN) headers.authorization = `Bearer ${process.env.OPENSTRUDEL_API_TOKEN}`;
-    const response = await fetch(`http://127.0.0.1:${process.env.OPENSTRUDEL_PORT ?? 7788}/v1/messages`, {
-      method: "POST", headers, body: JSON.stringify({ text: args.join(" "), externalChatId: "cli", externalId: crypto.randomUUID() }),
-    });
-    const result = await response.json() as { text?: string; error?: string };
-    if (!response.ok) throw new Error(result.error ?? "Start OpenStrudel Home first");
-    console.log(result.text);
     return;
   }
   if (command !== "start") throw new Error(`unknown command: ${command}`);

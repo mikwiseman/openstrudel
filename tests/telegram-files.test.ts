@@ -11,7 +11,7 @@ it("keeps Telegram documents and generated replies in the same employee chat",as
     const file=runtime.store.listMessages(runtime.store.profileConversation(employee.id).id)[0]!.attachments![0]!;
     received.bytes=readFileSync(runtime.messages.files.get(file.id)!.path,"utf8");
     received.path=input;
-    const directory=resolve(root,".data/workspace/work");mkdirSync(directory,{recursive:true});
+    const directory=runtime.messages.files.workspace(runtime.messages.contextFor(runtime.store.profileConversation(employee.id).id));mkdirSync(directory,{recursive:true});
     const output=resolve(directory,"answer.txt");writeFileSync(output,"Verified reply file");
     await options!.tools!.call("attach_file",{path:output});
     return {threadId:"document-chat",response:"Файл готов.",events:[]};

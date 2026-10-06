@@ -11,6 +11,7 @@ import { ScopedCodexEngine } from "./scopes.js";
 import {homedir} from "node:os";
 import {mkdirSync,writeFileSync,renameSync} from "node:fs";
 import { createSetupServer } from "./setup.js";
+import { Accounts, AccountEngines } from "./accounts.js";
 
 export interface RuntimeOptions {
   dbPath?: string;
@@ -18,6 +19,7 @@ export interface RuntimeOptions {
   rootDirectory?: string;
   startTelegram?: boolean;
   apiToken?: string;
+  mobilePort?: number;
 }
 
 /** One small Home process. Channels enter here; Codex does the actual work. */
@@ -25,6 +27,7 @@ export class OpenStrudelRuntime {
   readonly store: Store;
   readonly engine: CodexEngine;
   readonly account: CodexAccountService;
+  readonly accounts: Accounts;
   readonly messages: MessageService;
   readonly api: HttpApi;
   readonly telegram: TelegramAdapter;
@@ -37,16 +40,17 @@ export class OpenStrudelRuntime {
   constructor(options: RuntimeOptions = {}) {
     this.store = new Store(options.dbPath);
     this.account = new CodexAccountService(this.store, resolve(options.rootDirectory ?? process.cwd(), ".data"));
+    this.accounts = new Accounts(this.store, resolve(options.rootDirectory ?? process.cwd()), this.account);
     this.publishLocalConnection = !options.engine;
     const telegramToken = process.env.TELEGRAM_BOT_TOKEN ?? this.store.getSetting("telegram.bot_token") ?? undefined;
-    this.engine = options.engine ?? (process.env.OPENSTRUDEL_CODEX_MODE === "mock" ? createEngine({mode:"mock"}) : new ScopedCodexEngine(resolve(options.rootDirectory ?? process.cwd()), this.account.executionHome(), refresh => this.account.authTokens(refresh)));
-    this.account.setOnChange(identityChanged => {
+    this.engine = options.engine ?? (process.env.OPENSTRUDEL_CODEX_MODE === "mock" ? createEngine({mode:"mock"}) : new AccountEngines(this.accounts));
+    if (!(this.engine instanceof AccountEngines)) this.account.setOnChange(identityChanged => {
       const engine = this.engine as CodexEngine & { setCodexHome?: (home?: string) => void };
       engine.setCodexHome?.(this.account.executionHome());
       if (identityChanged) this.store.clearConversationThreads();
     });
     this.messages = new MessageService(this.store, this.engine,undefined,options.rootDirectory);
-    this.messages.onAuthenticationError = () => this.account.invalidate();
+    if (!(this.engine instanceof AccountEngines)) this.messages.onAuthenticationError = () => this.account.invalidate();
     this.telegram = new TelegramAdapter(telegramToken, this.store, this.messages);
     this.scheduler = new Scheduler(this.store,this.messages);
     this.messages.scheduler=this.scheduler;
@@ -54,7 +58,7 @@ export class OpenStrudelRuntime {
       await this.telegram.sendMessage(chat,text,key);
       await this.telegram.sendFiles(chat,attachments,key);
     };
-    this.api = new HttpApi(this.store, this.messages, this.telegram, options.apiToken ?? (options.engine ? null : process.env.OPENSTRUDEL_API_TOKEN), this.account, this.engine);
+    this.api = new HttpApi(this.store, this.messages, this.telegram, options.apiToken ?? (options.engine ? null : process.env.OPENSTRUDEL_API_TOKEN), this.account, this.engine, { mobileDirectory: resolve(options.rootDirectory ?? process.cwd(), ".data/mobile"), mobilePort: options.mobilePort }, this.accounts);
     this.startTelegram = options.startTelegram ?? true;
   }
 
@@ -108,7 +112,7 @@ export class OpenStrudelRuntime {
     await this.messages.close();
     await this.scheduler.idle();
     await this.api.close();
-    this.account.close();
+    this.accounts.close();
     this.store.close();
     this.started = false;
   }

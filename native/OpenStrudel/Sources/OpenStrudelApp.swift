@@ -8,10 +8,15 @@ struct OpenStrudelApp: App {
     #endif
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "home") {
             OpenStrudelRootView()
                 .environmentObject(client)
                 .tint(AppTheme.accent)
+                #if os(macOS)
+                .modifier(AppIconAppearance())
+                .modifier(HomeStatusItemAppearance())
+                .environmentObject(client)
+                #endif
                 .onOpenURL { url in
                     if url.scheme == "openstrudel" && url.host == "oauth" && url.path == "/digitalocean" {
                         #if os(macOS)
@@ -33,12 +38,24 @@ struct OpenStrudelApp: App {
                     .disabled(client.health == nil || client.isCreating)
             }
             CommandGroup(after: .appInfo) {
+                Button("Аккаунты и остатки") {
+                    Task { @MainActor in
+                        // Let the application menu finish tracking before opening
+                        // the transient status popover.
+                        await Task.yield()
+                        HomeStatusItem.shared.showAccounts()
+                    }
+                }
+                    .keyboardShortcut("u", modifiers: [.command, .shift])
                 Button("Проверить обновления…", action: updater.checkForUpdates)
                     .disabled(!updater.canCheckForUpdates)
             }
         }
         #endif
         #if os(macOS)
+        Window("Серверы", id: "servers") {
+            HostingStoreView().tint(AppTheme.accent)
+        }.defaultSize(width: 1000, height: 760)
         Settings {
             SettingsView()
                 .environmentObject(client)

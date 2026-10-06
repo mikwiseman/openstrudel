@@ -30,15 +30,22 @@ struct AgentTransferSettings: View {
     @State private var busy: String?
     @State private var error: String?
     @State private var notice: String?
+    @State private var deviceID = ""
     @AccessibilityFocusState private var errorFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Сохраните всех сотрудников вместе с инструкциями, перепиской, файлами и расписаниями. Из этого файла можно добавить команду на другой Mac или сервер.")
+            Text("Сохраните агентов выбранного устройства вместе с инструкциями, перепиской, файлами и расписаниями. Из этого файла можно добавить их на другой Mac или сервер.")
                 .font(.callout).fixedSize(horizontal: false, vertical: true)
             Text("Текущие сотрудники при импорте сохранятся. Новые расписания будут на паузе. Доступ к OpenAI и подключённым сервисам в файл не входит.")
                 .font(.caption).foregroundStyle(AppTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             if client.canTransferAgents {
+                if client.devices.count > 1 {
+                    Picker("Устройство", selection: $deviceID) {
+                        Text("Главное устройство").tag("")
+                        ForEach(client.devices) { device in Text(device.name).tag(device.id) }
+                    }.disabled(busy != nil || showingImport || pending != nil)
+                }
                 if textSize.isAccessibilitySize {
                     VStack(alignment: .leading, spacing: 8) { actions }
                 } else {
@@ -77,7 +84,7 @@ struct AgentTransferSettings: View {
                 Task {
                     busy = "Проверяем файл…"; error = nil; notice = nil
                     defer { busy = nil }
-                    do { pending = try await client.previewAgentImport(AgentTransferFile.read(url)) }
+                    do { pending = try await client.previewAgentImport(AgentTransferFile.read(url), deviceID: deviceID.isEmpty ? nil : deviceID) }
                     catch { report(error) }
                 }
             case .failure(let value): report(value)
@@ -96,7 +103,7 @@ struct AgentTransferSettings: View {
             Task {
                 busy = "Собираем копию команды…"; error = nil; notice = nil
                 defer { busy = nil }
-                do { document = AgentTeamDocument(data: try await client.exportAgents()); showingExport = true }
+                do { document = AgentTeamDocument(data: try await client.exportAgents(deviceID: deviceID.isEmpty ? nil : deviceID)); showingExport = true }
                 catch { report(error) }
             }
         } label: { transferLabel("Сохранить копию", icon: "square.and.arrow.up") }

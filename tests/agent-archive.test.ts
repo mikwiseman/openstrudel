@@ -21,7 +21,10 @@ afterEach(async () => { for (const f of fixtures.splice(0)) { await f.runtime.st
 function populated() {
   const f = fixture(), s = f.store;
   const employee = s.createProfile({ name: "Редактор", instructions: "Сохраняй мой голос.", capabilities: ["research"], model: "gpt-5", tokenLimit: 12345, domain: "work", purpose: "Мой журнал" });
-  s.createProfile({ name: "Коллега", domain: "work" });
+  const colleague = s.createProfile({ name: "Коллега", domain: "work" });
+  // This fixture represents a team created before individual agent workspaces.
+  s.deleteSetting("employee.context." + employee.id);
+  s.deleteSetting("employee.context." + colleague.id);
   s.setSetting("main.soul", "Главный помощник");
   for (const name of ["api.local_token", "telegram.bot_token", "codex.auth.mode"]) s.setSetting(name, "DO_NOT_EXPORT_SECRET");
   s.setSetting("mobile.tokens", '["DO_NOT_EXPORT_SECRET"]');
@@ -51,6 +54,25 @@ function populated() {
 }
 
 describe("additive team transfer", () => {
+  it("keeps new agents isolated through export and additive import", () => {
+    const source = fixture(), target = fixture();
+    const first = source.store.createProfile({ name: "One", domain: "work" });
+    const second = source.store.createProfile({ name: "Two", domain: "work" });
+    for (const agent of [first, second]) {
+      const chat = source.store.profileConversation(agent.id), context = source.messages.contextFor(chat.id);
+      const directory = source.messages.files.workspace(context); mkdirSync(directory, { recursive: true });
+      writeFileSync(resolve(directory, "MEMORY.md"), agent.name);
+    }
+    const archive = source.archive.export();
+    target.archive.import(archive, target.archive.preview(archive).planToken);
+    const contexts = ["One", "Two"].map(name => {
+      const chat = target.store.profileConversation(target.store.getProfile(name)!.id);
+      const context = target.messages.contextFor(chat.id);
+      expect(readFileSync(resolve(target.messages.files.workspace(context), "MEMORY.md"), "utf8")).toBe(name);
+      return context;
+    });
+    expect(contexts[0]).not.toBe(contexts[1]);
+  });
   it("compresses files for transfer and accepts both compressed and original JSON copies", () => {
     const source = populated(), archive = source.archive.export();
     const bytes = encodeArchive(archive);

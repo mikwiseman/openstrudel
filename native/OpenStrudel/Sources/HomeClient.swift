@@ -1,4 +1,5 @@
 import Combine
+import CryptoKit
 import Foundation
 import Security
 
@@ -108,12 +109,14 @@ final class HomeClient: ObservableObject {
     @Published var syncError: String?
     @Published private(set) var isCreating = false
     @Published var draftEmployeeDomain = "personal"
+    @Published var draftDeviceID = ""
+    @Published private(set) var devices: [HomeDevice] = []
     private var refreshGeneration = 0
     var visiblePendingMessages: [PendingHomeMessage] {
         pendingMessages.filter { pending in pending.profileID == selectedProfileID && pending.conversationID == selectedChatID && !messages.contains(where: { $0.externalId == pending.id.uuidString }) }
     }
     var isSending: Bool {
-        messages.contains { $0.status == "queued" || $0.status == "running" } || visiblePendingMessages.contains { $0.error == nil }
+        messages.contains { $0.status == "queued" || $0.status == "running" } || visiblePendingMessages.contains { $0.error == nil && $0.deliveryState == nil }
     }
     @Published private(set) var pendingMessages: [PendingHomeMessage] = []
     @Published var errorMessage: String?
@@ -121,13 +124,16 @@ final class HomeClient: ObservableObject {
     @Published private(set) var selectedProfileID: String?
 
     private let defaults: UserDefaults
+    private let pendingDirectory: URL
     private var token: String?
     private var session: URLSession = .shared
+    private var relocation: Task<Void, Error>?
     private let decoder = JSONDecoder()
     private var isDrainingSendQueue = false
 
-    init(defaults: UserDefaults = .standard, session transport: URLSession = .shared) {
+    init(defaults: UserDefaults = .standard, session transport: URLSession = .shared, pendingDirectory: URL? = nil) {
         self.defaults = defaults
+        self.pendingDirectory = pendingDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.appending(path: (Bundle.main.bundleIdentifier ?? "OpenStrudel") + "/Pending")
         self.session = transport
         #if os(macOS)
         self.baseURLString = defaults.string(forKey: "openstrudel.homeURL") ?? "http://127.0.0.1:7788"
@@ -164,6 +170,13 @@ final class HomeClient: ObservableObject {
             }
         }
         HomeDrafts.migrate(defaults, currentHome: baseURLString)
+        do {
+            self.pendingMessages = try PendingMessagesFile.read(directory: self.pendingDirectory, home: baseURLString).map { value in
+                var pending = value
+                if pending.deliveryState == nil { pending.error = "Сообщение сохранено на этом устройстве. Проверьте доставку и отправьте ещё раз." }
+                return pending
+            }
+        } catch { self.errorMessage = "Не удалось прочитать неотправленные сообщения. Сохранённый файл остался на устройстве." }
         if shouldRestoreConnection { connectionState = .connecting }
     }
 
@@ -259,9 +272,14 @@ final class HomeClient: ObservableObject {
         defer { isPairing = false }
         let pairedSession = PinnedHomeSession(host: pairing.host, port: pairing.port, pin: pairing.pin).session()
         do {
+            // Persist the attempt before redeeming the one-use invitation.
+            let attemptKey = "pair-attempt-" + SHA256.hash(data: Data(pairing.key.utf8)).map { String(format: "%02x", $0) }.joined()
+            let attempt = KeychainStore.read(account: attemptKey) ?? UUID().uuidString
+            try KeychainStore.save(attempt, account: attemptKey)
             var request = URLRequest(url: URL(string: pairing.baseURL + "/pair")!)
             request.httpMethod = "POST"
             request.setValue("Bearer " + pairing.key, forHTTPHeaderField: "Authorization")
+            request.setValue(attempt, forHTTPHeaderField: "X-OpenStrudel-Pair-Id")
             request.timeoutInterval = 20
             let (data, response) = try await pairedSession.data(for: request)
             guard let response = response as? HTTPURLResponse else { throw HomeClientError.invalidResponse }
@@ -273,6 +291,7 @@ final class HomeClient: ObservableObject {
             guard let token = credential["token"], !token.isEmpty else { throw HomeClientError.invalidResponse }
             let connection = HomeConnection(url: pairing.baseURL, token: token, pin: pairing.pin, name: pairing.name)
             try installConnection(connection, using: pairedSession)
+            KeychainStore.remove(account: attemptKey)
             pendingPairing = nil
             await load(quiet: true)
             // The invitation was consumed successfully. A temporary load failure
@@ -316,6 +335,7 @@ final class HomeClient: ObservableObject {
         resetConnectionState()
         token = connection.token
         baseURLString = connection.url
+        pendingMessages = (try? PendingMessagesFile.read(directory: pendingDirectory, home: connection.url)) ?? []
         connectionName = connection.name
         defaults.set(baseURLString, forKey: "openstrudel.homeURL")
         defaults.set(connectionName, forKey: "openstrudel.connectionName")
@@ -403,6 +423,9 @@ final class HomeClient: ObservableObject {
             )
             guard generation == connectionGeneration else { return }
             health = loadedHealth
+            if loadedHealth.homeProtocol == 1 {
+                if let result: HomeDevices = try? await request("/v1/devices") { devices = result.devices }
+            }
             connectionState = .connected
             if profiles != loadedProfiles.profiles { profiles = loadedProfiles.profiles }
             importedConversations = loadedProfiles.importedConversations ?? []
@@ -428,7 +451,9 @@ final class HomeClient: ObservableObject {
 
     private func loadOpenAIAccount(force: Bool = false) async throws -> OpenAIAccountEnvelope {
         do {
-            let envelope: OpenAIAccountEnvelope = try await request("/v1/account" + (force ? "?refresh=true" : ""))
+            var query = force ? "?refresh=true" : "?refresh=false"
+            if health?.homeProtocol == 1 { query += "&agentId=" + (isEmployeeDraft ? "main" : selectedProfileID ?? "main") }
+            let envelope: OpenAIAccountEnvelope = try await request("/v1/account" + query)
             return envelope
         } catch HomeClientError.authenticationExpired {
             // The Home's own credential was revoked; this still needs pairing.
@@ -476,7 +501,8 @@ final class HomeClient: ObservableObject {
     func sendMessage(_ text: String, files: [PickedFile] = []) async {
         let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty || !files.isEmpty else { return }
-        pendingMessages.append(PendingHomeMessage(text: value, profileID: selectedProfileID, conversationID: selectedChatID, files: files, draftDomain: draftEmployeeDomain))
+        pendingMessages.append(PendingHomeMessage(text: value, profileID: selectedProfileID, conversationID: selectedChatID, files: files, draftDomain: draftEmployeeDomain, deviceID: draftDeviceID.isEmpty ? nil : draftDeviceID))
+        do { try savePending() } catch { errorMessage = error.localizedDescription; pendingMessages[pendingMessages.count - 1].error = "Не удалось сохранить отправку на устройстве. Освободите место и повторите."; return }
         guard !isDrainingSendQueue else { return }
         isDrainingSendQueue = true
         await drainSendQueue()
@@ -484,13 +510,15 @@ final class HomeClient: ObservableObject {
 
     private func drainSendQueue() async {
         defer { isDrainingSendQueue = false }
-        while let pending = pendingMessages.first(where: { $0.error == nil }) {
+        while let pending = pendingMessages.first(where: { $0.error == nil && $0.deliveryState == nil }) {
             do {
                 var profileID = pending.profileID
                 if let draftID = profileID, draftID.hasPrefix("draft:") {
                     isCreating = true
                     defer { isCreating = false }
-                    let body = try JSONSerialization.data(withJSONObject: ["creationId": String(draftID.dropFirst(6)), "domain": pending.draftDomain])
+                    var creation: [String: Any] = ["creationId": String(draftID.dropFirst(6)), "domain": pending.draftDomain]
+                    if let device = pending.deviceID { creation["deviceId"] = device }
+                    let body = try JSONSerialization.data(withJSONObject: creation)
                     let created: ProfileResponse = try await request("/v1/profiles", method: "POST", body: body)
                     profiles.append(created.profile)
                     for i in pendingMessages.indices where pendingMessages[i].profileID == draftID { pendingMessages[i].profileID = created.profile.id }
@@ -517,14 +545,21 @@ final class HomeClient: ObservableObject {
                 if let routed = result.profileId, pending.profileID == nil, selectedProfileID == nil {
                     await selectProfile(routed)
                 } else { await refreshConversation() }
-                pendingMessages.removeAll { $0.id == pending.id }
+                if let operation = result.operationId, let index = pendingMessages.firstIndex(where: { $0.id == pending.id }) {
+                    pendingMessages[index].operationID = operation
+                    pendingMessages[index].deliveryState = result.deliveryState ?? "queued"
+                } else { pendingMessages.removeAll { $0.id == pending.id } }
+                try savePending()
             } catch {
                 if let i = pendingMessages.firstIndex(where: { $0.id == pending.id }) {
                     pendingMessages[i].error = "Не удалось подтвердить доставку. Повтор проверит это же сообщение."
+                    try? savePending()
                 }
             }
         }
     }
+
+    private func savePending() throws { try PendingMessagesFile.save(pendingMessages, directory: pendingDirectory, home: baseURLString) }
 
     func previewFile(_ file: ChatAttachment) async -> URL? {
         do {
@@ -544,6 +579,7 @@ final class HomeClient: ObservableObject {
 
     func retry(_ pending: PendingHomeMessage) async {
         guard let i = pendingMessages.firstIndex(where: { $0.id == pending.id }) else { return }
+        if pending.deliveryState != nil { await checkPendingRequests(); return }
         pendingMessages[i].error = nil
         guard !isDrainingSendQueue else { return }
         isDrainingSendQueue = true
@@ -552,6 +588,7 @@ final class HomeClient: ObservableObject {
 
     func refreshConversation() async {
         guard !isEmployeeDraft else { return }
+        await checkPendingRequests()
         let profileID = selectedProfileID
         refreshGeneration += 1
         let generation = refreshGeneration
@@ -565,6 +602,10 @@ final class HomeClient: ObservableObject {
             importedConversations = loadedProfiles.importedConversations ?? []
             conversationID = envelope.conversation.id
             if messages != envelope.messages { messages = envelope.messages }
+            let pendingCount = pendingMessages.count
+            let delivered = Set(envelope.messages.compactMap(\.externalId))
+            pendingMessages.removeAll { delivered.contains($0.id.uuidString) }
+            if pendingMessages.count != pendingCount { try savePending() }
             if !messages.isEmpty || !profiles.isEmpty { hasOpenedConversation = true }
             if interactions != envelope.interactions ?? [] { interactions = envelope.interactions ?? [] }
             syncError = nil
@@ -573,6 +614,35 @@ final class HomeClient: ObservableObject {
             if case HomeClientError.authenticationExpired = error { connectionNeedsPairing = true; health = nil }
             syncError = "Нет связи. Сообщения появятся после подключения."
         }
+    }
+
+    private func checkPendingRequests() async {
+        let generation = connectionGeneration
+        var changed = false
+        for pending in pendingMessages where pending.operationID != nil && pending.error == nil {
+            do {
+                let status: HomeRequestStatus = try await request("/v1/home/requests/" + pending.operationID!)
+                guard generation == connectionGeneration, let index = pendingMessages.firstIndex(where: { $0.id == pending.id }) else { return }
+                if status.status == "canceled" {
+                    pendingMessages[index].error = "Отменено до отправки устройству. Текст сохранён здесь."
+                    changed = true
+                } else if let response = status.response, response.status >= 400, response.status != 410 {
+                    let data = Data(base64Encoded: response.body) ?? Data()
+                    let failure = try? decoder.decode(HomeFailure.self, from: data)
+                    pendingMessages[index].error = (failure?.error ?? "Устройство не подтвердило выполнение.") + " Проверьте чат перед новой отправкой."
+                    changed = true
+                }
+            } catch { /* Keep the durable receipt while Home is unavailable. */ }
+        }
+        if changed { try? savePending() }
+    }
+
+    func cancelPending(_ pending: PendingHomeMessage) async {
+        guard let operation = pending.operationID else { return }
+        do {
+            let _: [String: Bool] = try await request("/v1/home/requests/" + operation, method: "DELETE")
+            await checkPendingRequests()
+        } catch { errorMessage = error.localizedDescription }
     }
 
     func loadConnections(refresh: Bool = false) async throws {
@@ -658,6 +728,7 @@ final class HomeClient: ObservableObject {
         selectedChatID = nil; conversationID = nil
         messages = []; interactions = []; schedules = []
         draftEmployeeDomain = "personal"
+        draftDeviceID = devices.first(where: \.primary)?.id ?? ""
     }
 
     @discardableResult
@@ -797,27 +868,59 @@ final class HomeClient: ObservableObject {
 
     var canTransferAgents: Bool { canManageOpenAI && health?.agentArchiveVersion == 1 }
 
-    func exportAgents() async throws -> Data {
+    func exportAgents(deviceID: String? = nil) async throws -> Data {
         guard canTransferAgents else { throw HomeClientError.server("Экспорт доступен владельцу команды после обновления Home.") }
-        return try await requestData("/v1/agents/archive")
+        return try await requestData("/v1/agents/archive" + (deviceID.map { "?deviceId=" + $0 } ?? ""))
     }
 
-    func previewAgentImport(_ data: Data) async throws -> PendingAgentImport {
+    func previewAgentImport(_ data: Data, deviceID: String? = nil) async throws -> PendingAgentImport {
         guard canTransferAgents else { throw HomeClientError.server("Импорт доступен владельцу команды после обновления Home.") }
         guard data.count <= AgentTransferFile.byteLimit else { throw AgentTransferFile.Failure.tooLarge }
         let generation = connectionGeneration
-        let preview: AgentImportPreview = try await request("/v1/agents/archive/preview", method: "POST", body: data)
-        return PendingAgentImport(data: data, preview: preview, connectionGeneration: generation)
+        let preview: AgentImportPreview = try await request("/v1/agents/archive/preview" + (deviceID.map { "?deviceId=" + $0 } ?? ""), method: "POST", body: data)
+        return PendingAgentImport(data: data, preview: preview, connectionGeneration: generation, deviceID: deviceID)
     }
 
     func importAgents(_ pending: PendingAgentImport) async throws -> AgentImportResult {
         guard canTransferAgents, pending.connectionGeneration == connectionGeneration else {
             throw HomeClientError.server("Подключение изменилось. Выберите файл заново в нужной команде.")
         }
-        let result: AgentImportResult = try await request("/v1/agents/archive/import?plan=" + pending.preview.planToken, method: "POST", body: pending.data)
+        let result: AgentImportResult = try await request("/v1/agents/archive/import?plan=" + pending.preview.planToken + (pending.deviceID.map { "&deviceId=" + $0 } ?? ""), method: "POST", body: pending.data)
         // A lost response is safe to retry: the Home remembers this archive.
         await load(quiet: true)
         return result
+    }
+
+    func management<T: Decodable>(_ path: String, method: String = "GET", payload: [String: Any]? = nil) async throws -> T {
+        try await request(path, method: method, body: payload.map { try JSONSerialization.data(withJSONObject: $0) })
+    }
+
+    func managementFile(_ path: String, method: String = "GET", payload: [String: Any]? = nil) async throws -> Data {
+        try await requestData(path, method: method, body: payload.map { try JSONSerialization.data(withJSONObject: $0) })
+    }
+
+    private var actionStorageKey: String { "openstrudel.controlActions." + (health?.homeId ?? normalizedBaseURL) }
+    var savedActionIDs: [String] { defaults.stringArray(forKey: actionStorageKey) ?? [] }
+    private func rememberAction(_ id: String, pending: Bool) {
+        var values = savedActionIDs.filter { $0 != id }
+        if pending { values.append(id) }
+        defaults.set(values, forKey: actionStorageKey)
+    }
+    func checkSavedActions() async throws -> String {
+        var completed = 0, waiting = 0
+        for id in savedActionIDs {
+            let value: HomeRequestStatus = try await management("/v1/home/requests/" + id)
+            if value.status == "canceled" { rememberAction(id, pending: false); continue }
+            if let reply = value.response {
+                rememberAction(id, pending: false)
+                if reply.status >= 400 {
+                    let failure = Data(base64Encoded: reply.body).flatMap { try? decoder.decode(HomeFailure.self, from: $0) }
+                    throw HomeClientError.server(failure?.error ?? "Действие не завершено. Проверьте его результат перед повтором.")
+                }
+                completed += 1
+            } else { waiting += 1 }
+        }
+        return "Завершено: \(completed). Ожидают устройства: \(waiting)."
     }
 
     private func request<T: Decodable>(_ path: String, method: String = "GET", body: Data? = nil) async throws -> T {
@@ -829,7 +932,7 @@ final class HomeClient: ObservableObject {
         }
     }
 
-    private func requestData(_ path: String, method: String = "GET", body: Data? = nil) async throws -> Data {
+    private func requestData(_ path: String, method: String = "GET", body: Data? = nil, mayRelocate: Bool = true) async throws -> Data {
         let generation = connectionGeneration
         guard let url = URL(string: normalizedBaseURL + path) else { throw HomeClientError.invalidURL }
         guard (url.scheme == "http" && isLocalConnection)
@@ -843,6 +946,7 @@ final class HomeClient: ObservableObject {
         // simple request path and let the native client wait for that turn.
         request.timeoutInterval = path == "/health" ? 10 : 60
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if method != "GET" { request.setValue(UUID().uuidString, forHTTPHeaderField: "Idempotency-Key") }
         if let token, !token.isEmpty {
             request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         }
@@ -851,11 +955,74 @@ final class HomeClient: ObservableObject {
         guard let http = response as? HTTPURLResponse else { throw HomeClientError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
             if http.statusCode == 401 { throw HomeClientError.authenticationExpired }
-            if let envelope = try? decoder.decode([String: String].self, from: data), let message = envelope["error"] {
-                throw HomeClientError.server(message)
+            if let envelope = try? decoder.decode(HomeFailure.self, from: data) {
+                if http.statusCode == 409, let moved = envelope.moved, mayRelocate {
+                    if relocation == nil {
+                        relocation = Task { try await self.adoptPrimary(moved) }
+                    }
+                    let pending = relocation!
+                    defer { relocation = nil }
+                    try await pending.value
+                    if method == "GET" { return try await requestData(path, mayRelocate: false) }
+                    throw HomeClientError.server("Главное устройство изменилось. Действие не отправлено: повторите его на новом подключении.")
+                }
+                if let message = envelope.error { throw HomeClientError.server(message) }
             }
             throw HomeClientError.server("OpenStrudel не смог выполнить действие (код \(http.statusCode)). Попробуйте ещё раз. Если ошибка повторится, обратитесь в поддержку.")
         }
+        if http.statusCode == 202, method != "GET", !path.hasPrefix("/v1/messages"),
+           let queued = try? decoder.decode(HomeActionResult.self, from: data), let id = queued.operationId {
+            rememberAction(id, pending: true)
+            for _ in 0..<30 {
+                try await Task.sleep(for: .seconds(1))
+                guard generation == connectionGeneration else { throw CancellationError() }
+                let value: HomeRequestStatus = try await management("/v1/home/requests/" + id)
+                if value.status == "canceled" { rememberAction(id, pending: false); throw HomeClientError.server("Действие отменено до передачи устройству.") }
+                if let reply = value.response, let bytes = Data(base64Encoded: reply.body) {
+                    rememberAction(id, pending: false)
+                    if reply.status >= 400 {
+                        let failure = try? decoder.decode(HomeFailure.self, from: bytes)
+                        throw HomeClientError.server(failure?.error ?? "Действие не завершено. Проверьте результат перед повтором.")
+                    }
+                    return bytes
+                }
+            }
+            throw HomeClientError.server("Действие принято, но устройство ещё не подтвердило результат. Откройте «Устройства» → «Проверить сохранённые действия». Повторять действие не нужно.")
+        }
         return data
+    }
+
+    private func adoptPrimary(_ moved: HomeMoved) async throws {
+        guard let url = URL(string: moved.url), url.scheme == "https", let host = url.host,
+              url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
+              url.path.isEmpty || url.path == "/",
+              let pin = moved.pin, pin.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
+              let credential = token, !credential.isEmpty,
+              health?.homeId == nil || health?.homeId == moved.homeId else { throw HomeClientError.invalidURL }
+        let transport = PinnedHomeSession(host: host, port: url.port ?? 443, pin: "spki:" + pin).session()
+        var committed = false
+        defer { if !committed { transport.invalidateAndCancel() } }
+        let (identityData, identityResponse) = try await transport.data(from: url.appending(path: "v1/home/identity"))
+        guard (identityResponse as? HTTPURLResponse)?.statusCode == 200,
+              let identity = try? decoder.decode(HomePeerIdentity.self, from: identityData),
+              identity.nodeId == moved.primaryId, identity.homeId == moved.homeId,
+              identity.protocolVersion == 1, identity.role == "primary", identity.epoch == moved.epoch
+        else { throw HomeClientError.server("Новое главное ещё запускается. Подключимся, когда передача завершится.") }
+        // Identity and TLS are verified before the credential is sent.
+        var check = URLRequest(url: url.appending(path: "health"))
+        check.setValue("Bearer " + credential, forHTTPHeaderField: "Authorization")
+        let (healthData, response) = try await transport.data(for: check)
+        guard (response as? HTTPURLResponse)?.statusCode == 200,
+              let verified = try? decoder.decode(HomeHealth.self, from: healthData), verified.ok,
+              verified.homeId == moved.homeId, verified.primaryId == moved.primaryId else { throw HomeClientError.invalidResponse }
+        let connection = HomeConnection(url: moved.url, token: credential, pin: "spki:" + pin, name: connectionName)
+        try PendingMessagesFile.save(pendingMessages, directory: pendingDirectory, home: moved.url)
+        HomeDrafts.relocate(defaults, from: baseURLString, to: moved.url)
+        try KeychainStore.save(String(decoding: JSONEncoder().encode(connection), as: UTF8.self), account: "home-connection")
+        baseURLString = moved.url; defaults.set(moved.url, forKey: "openstrudel.homeURL")
+        session = transport; committed = true
+        connectionGeneration += 1; isLoading = false; checkingOpenAIAccount = false
+        health = verified; connectionState = .connected; homeUnreachable = false
+        Task { await self.load(quiet: true) }
     }
 }

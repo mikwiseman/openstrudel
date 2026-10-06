@@ -1,6 +1,8 @@
 # OpenStrudel
 
-OpenStrudel is a minimal personal AI Home: a Grok Bots style set of named employees with Codex underneath. One Home can be reached from the native Mac app, iOS app, Telegram, or the optional browser fallback.
+OpenStrudel connects your agents and conversations through a primary Mac or server that you choose. Native Mac and iOS apps, Telegram, your Home's own web interface and the OpenStrudel CLI use that connection.
+
+The primary-device, multi-account and integrated-hosting changes in this branch are in local acceptance, not yet in the downloadable release. See [the implementation and release boundaries](docs/primary-home.md).
 
 This repository contains the public source. Local credentials, chat histories and personal migration scripts are excluded. Downloads and current iOS availability are listed at [waiwai.is/openstrudel](https://waiwai.is/openstrudel).
 
@@ -8,7 +10,9 @@ The product has three concepts: one Home process, named employees, and conversat
 
 ## Choose where Home runs
 
-The native Mac app can run Home on your Mac. For access away from the Mac or while it is asleep, choose cloud setup in the Mac or iPhone app. DigitalOcean is the only integrated cloud provider. Sign in to your own DigitalOcean account, review the current price and confirm before a server is created. You pay DigitalOcean directly; OpenStrudel adds no hosting charge.
+The native Mac app can run Home on your Mac. For access away from the Mac or while it is asleep, cloud setup on Mac supports your own DigitalOcean account. Review the current price and confirm before a server is created. You pay DigitalOcean directly; OpenStrudel adds no hosting charge. iOS connects to an existing Home by invitation and does not offer hosting signup or payment.
+
+The optional hosting service imported from WAI VDS is in `services/hosting`. Its own account and billing are separate from Home and Codex. The new purchase path remains disabled in public builds pending real infrastructure acceptance.
 
 The cloud plan uses 2 vCPU and 4 GB RAM in Frankfurt, with Amsterdam as the same-plan fallback. Installation retries are bounded and reuse the same server and data volume. If setup is interrupted, reopen the app to check the existing installation rather than create another one. The app checks the server's generated identity before sending the owner credential.
 

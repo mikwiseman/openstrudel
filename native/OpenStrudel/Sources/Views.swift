@@ -33,7 +33,7 @@ struct OpenStrudelRootView: View {
                 #endif
             } else if !aiConsent {
                 AIDataConsentView { aiConsent = true }
-            } else if client.openAIAccount?.connected == false && !client.hasOpenedConversation {
+            } else if client.openAIAccount?.connected == false && !client.hasOpenedConversation && client.profiles.isEmpty && client.devices.count < 2 {
                 OpenAIWelcomeView()
             } else {
                 #if os(macOS)
@@ -312,7 +312,7 @@ private struct Sidebar: View {
 
             HStack(spacing: 10) {
                 AccountBadge(email: client.openAIAccount?.email, size: 30)
-                Text(client.openAIAccount?.email ?? "Аккаунт")
+                Text(client.health?.homeProtocol == 1 ? "Ваша команда" : client.openAIAccount?.email ?? "Аккаунт")
                     .font(.subheadline)
                     .foregroundStyle(AppTheme.secondaryText)
                     .lineLimit(1)
@@ -433,7 +433,15 @@ private struct ConversationView: View {
                                     PendingMessageBubble(text: pending.text, files: pending.files)
                                     if let error = pending.error {
                                         Text(UserFacingError.text(error)).font(.caption).foregroundStyle(AppTheme.secondaryText)
-                                        Button("Отправить ещё раз") { Task { await client.retry(pending) } }.buttonStyle(.plain).frame(minHeight: controlTarget)
+                                        if pending.operationID == nil {
+                                            Button("Проверить доставку и повторить") { Task { await client.retry(pending) } }.buttonStyle(.plain).frame(minHeight: controlTarget)
+                                        }
+                                    } else if let delivery = pending.deliveryState {
+                                        Text(delivery == "waiting_for_device" ? "Сохранено на главном. Ждёт подключения устройства." : "Сохранено на главном. Ожидает доставки агенту.")
+                                            .font(.caption).foregroundStyle(AppTheme.secondaryText)
+                                        if client.canManageOpenAI {
+                                            Button("Отменить доставку") { Task { await client.cancelPending(pending) } }.buttonStyle(.plain).frame(minHeight: controlTarget)
+                                        }
                                     }
                                 }
                                     .id(pending.id)
@@ -517,8 +525,8 @@ private struct ConversationView: View {
                 }
             }
 
-            Composer(draft: $draft, files: $pickedFiles, focused: $focused, contextID: draftKey, canSend: client.openAIAccount?.connected != false) {
-                guard client.openAIAccount?.connected != false else { return }
+            Composer(draft: $draft, files: $pickedFiles, focused: $focused, contextID: draftKey, canSend: client.health?.homeProtocol == 1 || client.openAIAccount?.connected != false) {
+                guard client.health?.homeProtocol == 1 || client.openAIAccount?.connected != false else { return }
                 let value = draft.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !value.isEmpty || !pickedFiles.isEmpty else { return }
                 let files = pickedFiles
@@ -790,6 +798,13 @@ private struct EmptyChat: View {
                     Text("Работа").tag("work")
                 }
                 .pickerStyle(.segmented).frame(width: 210).padding(.top, 8)
+                }
+                if client.devices.count > 1 {
+                    Picker("Где работает", selection: $client.draftDeviceID) {
+                        ForEach(client.devices) { device in
+                            Text(device.name + (device.online ? "" : " · не на связи")).tag(device.id).disabled(!device.online)
+                        }
+                    }.pickerStyle(.menu).frame(maxWidth: 360)
                 }
             } else if let profile = client.activeProfile {
                 Text(profile.roleText.isEmpty ? "Напишите, что нужно." : profile.roleText)
@@ -1274,6 +1289,7 @@ private struct BotDetailsView: View {
                     Divider()
                     Text("Расписание").font(.subheadline.weight(.medium))
                 }
+                if client.health?.homeProtocol == 1 { AgentAccountPreference(profile: profile) }
                 ForEach(client.schedules.filter(\.enabled)) { schedule in
                     Toggle(isOn: Binding(get: { schedule.enabled }, set: { value in Task { await client.setSchedule(schedule, enabled: value) } })) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -1345,6 +1361,9 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var textSize
+    #if os(macOS)
+    @AppStorage("openstrudel.showMenuBar") private var showMenuBar = true
+    #endif
     #if os(iOS)
     @State private var showingMobileHelp = false
     #endif
@@ -1353,8 +1372,16 @@ struct SettingsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    SectionTitle(title: "OpenAI", subtitle: "Один вход для всех ваших сотрудников и устройств")
-                    OpenAISettingsCard()
+                    if client.health?.homeProtocol == 1 { PrimaryHomeSettings() }
+                    #if os(macOS)
+                    HostingStoreSettings()
+                    Toggle("Показывать OpenStrudel в строке меню", isOn: $showMenuBar)
+                        .padding(.vertical, 8)
+                    #endif
+                    if client.health?.homeProtocol != 1 {
+                        SectionTitle(title: "OpenAI", subtitle: "Вход на устройстве, где работает помощник")
+                        OpenAISettingsCard()
+                    }
                     SectionTitle(title: "Telegram", subtitle: "Пишите OpenStrudel из Telegram")
                     TelegramSettingsCard()
                     MobilePairingSettings()
@@ -1792,15 +1819,15 @@ extension View {
 }
 
 struct OpenStrudelMark: View {
+    @Environment(\.colorScheme) private var appearance
     let size: CGFloat
     var hue: Angle = .zero
 
     var body: some View {
-        Image("OpenStrudelMark")
+        Image(appearance == .dark ? "DockGraphite" : "DockCream")
             .resizable()
             .scaledToFit()
             .frame(width: size, height: size)
-            .hueRotation(hue)
             .accessibilityHidden(true)
     }
 }
@@ -1813,7 +1840,7 @@ extension EmployeeProfile {
     }
 }
 
-private struct HomeBackground: View {
+struct HomeBackground: View {
     var body: some View {
         ZStack {
             #if os(macOS)

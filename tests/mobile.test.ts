@@ -8,10 +8,10 @@ import { describe, expect, it, vi } from "vitest";
 import { Store } from "../src/store.js";
 import { MobileAccess } from "../src/mobile.js";
 
-function call(port: number, path: string, token?: string, origin?: string) {
+function call(port: number, path: string, token?: string, origin?: string, nonce?: string) {
   return new Promise<{ status: number; body: any }>((resolve, reject) => {
     const req = request({ hostname: "127.0.0.1", port, path, method: path === "/pair" ? "POST" : "GET", rejectUnauthorized: false,
-      headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(origin ? { origin } : {}) },
+      headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(origin ? { origin } : {}), ...(nonce ? { "x-openstrudel-pair-id": nonce } : {}) },
     }, res => {
       let body = "";
       res.on("data", chunk => { body += chunk; });
@@ -22,6 +22,24 @@ function call(port: number, path: string, token?: string, origin?: string) {
 }
 
 describe("iPhone pairing", () => {
+  it("recovers a lost pairing response across restart only for the same client attempt", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "strudel-pair-retry-")), store = new Store(":memory:");
+    let mobile = new MobileAccess(store, (_req, res) => res.end('{}'), { directory, port: 0, host: "127.0.0.1" });
+    try {
+      const key = new URL((await mobile.invite()).url).searchParams.get("key")!;
+      const attempt = "12345678-1234-1234-1234-123456789012";
+      const first = await call(mobile.port!, "/pair", key, undefined, attempt);
+      await mobile.close();
+      mobile = new MobileAccess(store, (_req, res) => res.end('{}'), { directory, port: 0, host: "127.0.0.1" });
+      await mobile.restore();
+      expect((await call(mobile.port!, "/pair", key, undefined, attempt)).body).toEqual(first.body);
+      expect(mobile.status().connections).toBe(1);
+      expect((await call(mobile.port!, "/pair", key, undefined, "22345678-1234-1234-1234-123456789012")).status).toBe(401);
+      expect((await call(mobile.port!, "/pair", key)).status).toBe(401);
+      mobile.revokeClient(mobile.status().clients[0]!.id);
+      expect((await call(mobile.port!, "/pair", key, undefined, attempt)).status).toBe(401);
+    } finally { await mobile.close(); store.close(); await rm(directory, { recursive: true, force: true }); }
+  });
   it("issues owner access only from an owner invitation and retains ordinary clients as clients", async () => {
     const directory=await mkdtemp(join(tmpdir(),"strudel-owner-"));const store=new Store(":memory:");
     const mobile=new MobileAccess(store,(_req,res,owner)=>res.end(JSON.stringify({owner})),{directory,port:0,host:"127.0.0.1"});

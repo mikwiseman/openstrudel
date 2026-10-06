@@ -59,10 +59,12 @@ export interface CodexRunResult {
 
 export interface CodexEngine {
   forContext?(context: string): CodexEngine;
+  forAgent?(agentId: string, context: string): CodexEngine;
   run(
     input: string,
     options?: {
       threadId?: string | null;
+      conversationId?: string;
       signal?: AbortSignal;
       onEvent?: (event: EngineEvent) => void;
       profile?: string | null;

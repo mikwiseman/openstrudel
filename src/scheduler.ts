@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Store } from "./store.js";
 import type { MessageService } from "./messages.js";
 import type { Attachment } from "./types.js";
+import { agentTransfer } from "./agent-move.js";
 
 export interface ScheduleInput {
   id?: string; conversationId: string; name: string; prompt: string; cron: string; timezone: string;
@@ -15,6 +16,7 @@ type Row = Record<string, any>;
 export class Scheduler {
   private timer?: ReturnType<typeof setInterval>;
   private readonly active = new Map<string, Promise<void>>();
+  get hasActiveRuns() { return this.active.size > 0; }
   deliver?: (chatId: string, text: string, key: string, attachments?: Attachment[]) => Promise<void>;
   constructor(private readonly store: Store, private readonly messages: MessageService) {
     store.db.exec(`CREATE TABLE IF NOT EXISTS schedules (
@@ -78,6 +80,7 @@ export class Scheduler {
   async tick(now = new Date()): Promise<void> {
     const due = this.store.db.prepare("SELECT * FROM schedules WHERE enabled=1 AND next_run_at<=?").all(now.toISOString()) as Row[];
     for (const row of due) {
+      if (agentTransfer(this.store, this.store.getConversation(row.conversation_id)?.profileId ?? "main")) continue;
       if (this.active.has(row.id)) continue;
       const schedule = this.list(row.conversation_id).find(s => s.id === row.id)!;
       // After sleep, produce only the latest due edition, never a burst of old digests.
@@ -94,6 +97,7 @@ export class Scheduler {
       if (claimed) this.track(schedule.id, this.execute(schedule,runId,scheduledFor));
     }
     for (const row of this.store.db.prepare("SELECT r.*,s.telegram_chat_id,s.delivery FROM schedule_runs r JOIN schedules s ON s.id=r.schedule_id WHERE r.status='ready'").all() as Row[]) {
+      if (agentTransfer(this.store, this.store.getConversation(row.conversation_id)?.profileId ?? "main")) continue;
       if (!this.active.has(row.schedule_id)) this.track(row.schedule_id,this.finish(row.id,row.conversation_id,row.message_id,row.telegram_chat_id,row.delivery));
     }
   }

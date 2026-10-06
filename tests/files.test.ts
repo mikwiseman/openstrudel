@@ -8,8 +8,7 @@ import { OpenStrudelRuntime } from "../src/runtime.js";
 describe("files in a conversation", () => {
   it("returns a real generated file and refuses files outside the employee workspace", async () => {
     const root = mkdtempSync(resolve(tmpdir(),"strudel-output-"));
-    const path=resolve(root,".data/workspace/work/report.txt");
-    mkdirSync(resolve(root,".data/workspace/work"),{recursive:true}); writeFileSync(path,"Verified report");
+    let path = "";
     const outside=resolve(root,"private.txt");writeFileSync(outside,"Private");
     const runtime = new OpenStrudelRuntime({dbPath:":memory:",rootDirectory:root,startTelegram:false,engine:{async run(_text,options){
       await expect(options!.tools!.call("attach_file",{path:outside})).rejects.toThrow("рабочей области");
@@ -18,6 +17,8 @@ describe("files in a conversation", () => {
     }}});
     try {
       const employee=runtime.store.createProfile({name:"Reports",domain:"work"});
+      const workspace = runtime.messages.files.workspace(runtime.messages.contextFor(runtime.store.profileConversation(employee.id).id));
+      mkdirSync(workspace, { recursive: true }); path = resolve(workspace, "report.txt"); writeFileSync(path, "Verified report");
       const result=await runtime.messages.handle({channel:"api",profile:employee.id,text:"Create a report"});
       const answer=runtime.store.findReplyTo(runtime.store.listMessages(result.conversationId)[0]!.id)!;
       expect(answer.attachments?.[0]?.name).toBe("report.txt");

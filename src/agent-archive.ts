@@ -32,18 +32,25 @@ export interface ArchivePreview {
   connections: string[];
 }
 interface Receipt { digest: string; profileIds: string[]; preview: ArchivePreview }
+export interface MoveMetadata {
+  messages: { id: string; channel: string; externalId: string | null; imported: boolean }[];
+  schedules: { id: string; nextRunAt: string }[];
+}
+interface MoveImport { metadata: MoveMetadata; commit: () => void }
 
 export class AgentArchives {
   constructor(private readonly store: Store, private readonly messages: MessageService) {}
 
-  export(): AgentArchive {
+  export(profileId?: string): AgentArchive {
     if (this.messages.hasActiveRuns) throw new Error("Сотрудники ещё работают. Дождитесь завершения их ответов и повторите экспорт.");
     const store = this.store;
-    const conversations = store.listConversations();
-    const profiles: Profile[] = store.listProfiles().map(({ preview: _, ...p }) => ({ ...p, context: store.getSetting("employee.context." + p.id) ?? p.domain ?? "personal" }));
+    const visible = (id: string) => !["moved", "staged"].includes(JSON.parse(store.getSetting("agent.transfer." + id) ?? "null")?.phase);
+    const conversations = store.listConversations().filter(c => (profileId ? (c.profileId ?? "main") === profileId : visible(c.profileId ?? "main")));
+    const profiles: Profile[] = store.listProfiles().filter(p => profileId ? p.id === profileId : visible(p.id)).map(({ preview: _, ...p }) => ({ ...p, context: store.getSetting("employee.context." + p.id) ?? p.domain ?? "personal" }));
     // The main assistant becomes an ordinary added employee on import. Never
     // overwrite the receiving Home's main personality or primary conversation.
-    profiles.unshift({ id: "main", name: "OpenStrudel", instructions: store.getSetting("main.soul") ?? "", capabilities: [], model: null, tokenLimit: null, domain: "personal", purpose: "", createdAt: new Date().toISOString(), context: "personal" });
+    if (profileId === "main" || !profileId && visible("main")) profiles.unshift({ id: "main", name: "OpenStrudel", instructions: store.getSetting("main.soul") ?? "", capabilities: [], model: null, tokenLimit: null, domain: "personal", purpose: "", createdAt: new Date().toISOString(), context: "personal" });
+    if (!profiles.length) throw new Error("На устройстве нет агентов для экспорта.");
     const chats: Conversation[] = conversations.map(c => ({ id: c.id, profileId: c.profileId ?? "main", context: this.messages.contextFor(c.id), title: c.title ?? "Чат", createdAt: c.createdAt, updatedAt: c.updatedAt, sourceChannel: c.channel,
       primary: c.channel === "api" && c.externalId === (c.profileId ? "home::employee::" + c.profileId : "home") }));
     const contexts = [...new Set([...profiles.map(p => p.context), ...chats.map(c => c.context)])];
@@ -80,7 +87,8 @@ export class AgentArchives {
       const previous = store.getSetting("archive.connections." + id);
       return { id, sourcePath: root, connections: [...new Set([...connections, ...JSON.parse(previous ?? "[]")])], directories, files };
     });
-    const all = (table: string): Row[] => store.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table) ? store.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all() as Row[] : [];
+    const chatIds = new Set(chats.map(c => c.id));
+    const all = (table: string): Row[] => store.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table) ? (store.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all() as Row[]).filter(r => chatIds.has(r.conversation_id)) : [];
     const archive: AgentArchive = {
       format: "openstrudel.team", version: 1, id: randomUUID(), createdAt: new Date().toISOString(), profiles, workspaces, conversations: chats,
       messages: all("messages").map(m => ({ id: m.id, conversationId: m.conversation_id, direction: m.direction, replyToId: m.reply_to_id, text: m.text, createdAt: m.created_at, status: m.status, error: m.error, kind: m.kind, author: m.author, hidden: m.hidden === 1, attachments: JSON.parse(m.attachments_json).map((a: Row) => a.id) })),
@@ -118,12 +126,12 @@ export class AgentArchives {
       connections: [...new Set(archive.workspaces.flatMap(w => w.connections))] } };
   }
 
-  import(input: unknown, planToken: string): { profileIds: string[]; preview: ArchivePreview } {
+  import(input: unknown, planToken: string, move?: MoveImport): { profileIds: string[]; preview: ArchivePreview } {
     const archive = validateArchive(input), { preview, receipt, digest } = this.plan(archive);
     if (receipt) return { profileIds: receipt.profileIds, preview };
     if (planToken !== preview.planToken) throw new Error("Состав команды изменился. Проверьте файл ещё раз перед добавлением сотрудников.");
     if (archive.schedules.length && !this.messages.scheduler) throw new Error("На этом Home недоступны расписания. Обновите OpenStrudel и повторите импорт.");
-    const ids = <T extends { id: string }>(items: T[]) => new Map(items.map(item => [item.id, randomUUID()]));
+    const ids = <T extends { id: string }>(items: T[]) => new Map(items.map(item => [item.id, move ? item.id : randomUUID()]));
     const profiles = ids(archive.profiles), conversations = ids(archive.conversations), messages = ids(archive.messages), attachments = ids(archive.attachments), schedules = ids(archive.schedules);
     const contexts = new Map(archive.workspaces.map(w => [w.id, w.id.startsWith("group-") ? "group-" + hash(randomUUID()) : "import-" + randomUUID().replaceAll("-", "")]));
     const written: string[] = [];
@@ -168,10 +176,11 @@ export class AgentArchives {
           .run(id, conversationId, a.name, a.mimeType, a.size, resolve(this.messages.files.workspace(contexts.get(c.context)!), a.path));
         files.set(a.id, { id, conversationId, name: a.name, mimeType: a.mimeType, size: a.size });
       }
+      const originalMessages = new Map(move?.metadata.messages.map(r => [r.id, r]) ?? []);
       for (const m of archive.messages) {
-        const interrupted = ["queued", "running"].includes(m.status);
-        db.prepare("INSERT INTO messages(id,conversation_id,channel,direction,reply_to_id,text,external_id,created_at,status,error,kind,author,imported,attachments_json,hidden) VALUES(?,?,'api',?,?,?,NULL,?,?,?,?,?,1,?,?)")
-          .run(messages.get(m.id)!, conversations.get(m.conversationId)!, m.direction, m.replyToId ? messages.get(m.replyToId)! : null, m.text, m.createdAt, interrupted ? "failed" : m.status, interrupted ? "Не запущено после импорта." : m.error, m.kind, m.author, JSON.stringify(m.attachments.map(id => files.get(id)!)), m.hidden ? 1 : 0);
+        const interrupted = ["queued", "running"].includes(m.status), original = originalMessages.get(m.id);
+        db.prepare("INSERT INTO messages(id,conversation_id,channel,direction,reply_to_id,text,external_id,created_at,status,error,kind,author,imported,attachments_json,hidden) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+          .run(messages.get(m.id)!, conversations.get(m.conversationId)!, original?.channel ?? "api", m.direction, m.replyToId ? messages.get(m.replyToId)! : null, m.text, original?.externalId ?? null, m.createdAt, interrupted ? "failed" : m.status, interrupted ? "Не запущено после импорта." : m.error, m.kind, m.author, original ? (original.imported ? 1 : 0) : 1, JSON.stringify(m.attachments.map(id => files.get(id)!)), m.hidden ? 1 : 0);
       }
       for (const s of archive.schedules) {
         // Insert primaries and backups before linking them; source row order
@@ -184,10 +193,11 @@ export class AgentArchives {
       for (const r of archive.runs) {
         // Historic receipts are terminal: recovery must never deliver them.
         db.prepare("INSERT INTO schedule_runs(id,schedule_id,conversation_id,scheduled_for,status,created_at,message_id,error) VALUES(?,?,?,?,?,?,?,?)")
-          .run(randomUUID(), schedules.get(r.scheduleId)!, conversations.get(r.conversationId)!, r.scheduledFor, "imported", r.createdAt, r.messageId ? messages.get(r.messageId)! : null, r.error);
+          .run(move ? r.id : randomUUID(), schedules.get(r.scheduleId)!, conversations.get(r.conversationId)!, r.scheduledFor, move ? r.status : "imported", r.createdAt, r.messageId ? messages.get(r.messageId)! : null, r.error);
       }
       const result = { profileIds: [...profiles.values()], preview };
       this.store.setSetting("agents.import." + archive.id, JSON.stringify({ ...result, digest }));
+      move?.commit();
       db.exec("COMMIT");
       return result;
     } catch (error) {

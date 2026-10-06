@@ -235,7 +235,7 @@ private final class AccountTestURLProtocol: URLProtocol, @unchecked Sendable {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
-        operation = Task {
+        operation = Task { @Sendable [self] in
             guard let handler = Self.currentHandler(), let url = request.url else { return }
             let (status, data) = await handler(request)
             guard !Task.isCancelled else { return }

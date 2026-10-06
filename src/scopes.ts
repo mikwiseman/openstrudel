@@ -9,16 +9,16 @@ import type { CodexAuthTokens } from "./account.js";
 export class ScopedCodexEngine implements CodexEngine {
   private readonly contexts = new Map<string, CodexEngineAdapter>();
   constructor(private readonly root: string, private sourceHome?: string,
-    private readonly authTokens?: (refresh?: boolean) => Promise<CodexAuthTokens>) {}
+    private readonly authTokens?: (refresh?: boolean) => Promise<CodexAuthTokens>, private readonly contextsRoot?: string) {}
   setCodexHome(home?: string): void { this.close(); this.sourceHome = home; }
   close(): void { for (const engine of this.contexts.values()) engine.close(); this.contexts.clear(); }
   forContext(context: string): CodexEngine {
-    if (!/^(personal|work|group-[a-f0-9]{64}|import-[a-f0-9]{32})$/.test(context)) throw new Error("Область не найдена");
+    if (!/^(personal|work|group-[a-f0-9]{64}|(?:import|agent)-[a-f0-9]{32})$/.test(context)) throw new Error("Область не найдена");
     if (!this.sourceHome) throw new Error("Войдите в OpenAI в приложении OpenStrudel.");
     const current = this.contexts.get(context);
     if (current) return current;
     const cwd = resolve(this.root, ".data/workspace",context);
-    const home = resolve(this.root, ".data/contexts",context);
+    const home = resolve(this.contextsRoot ?? resolve(this.root, ".data/contexts"), context);
     mkdirSync(cwd,{recursive:true,mode:0o700}); mkdirSync(home,{recursive:true,mode:0o700});
     const source = resolve(this.sourceHome,"auth.json");
     if (!this.authTokens && existsSync(source)) { copyFileSync(source,resolve(home,"auth.json")); chmodSync(resolve(home,"auth.json"),0o600); }

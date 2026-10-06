@@ -28,7 +28,8 @@ describe("OpenStrudel runtime", () => {
     expect((await response.json()) as { text: string }).toHaveProperty("text");
     const profiles = await fetch(`http://127.0.0.1:${address.port}/v1/profiles`);
     expect(profiles.status).toBe(200);
-    for (const path of ["/v1/tasks", "/v1/devices", "/v1/search"]) {
+    expect((await fetch(`http://127.0.0.1:${address.port}/v1/devices`)).status).toBe(200);
+    for (const path of ["/v1/tasks", "/v1/search"]) {
       expect((await fetch(`http://127.0.0.1:${address.port}${path}`)).status).toBe(404);
     }
     await runtime.stop();
