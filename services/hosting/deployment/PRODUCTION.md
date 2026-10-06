@@ -1,7 +1,15 @@
-# Production: 5 October 2026
+# Production: 6 October 2026
 
 Service: https://server.waiwai.is/ · operator WaiWai, LLC · support hi@waiwai.is.
-Documented host: `root@103.45.247.25`, exact Compose project/service `wai-vds`, current release `20261005-vds-v12`, SQLite schema 9. The service has no published Docker port, runs as UID 1000 with a read-only root, 256 MiB RAM and 0.5 CPU. Caddy provides HTTPS.
+Documented host: `root@103.45.247.25`, exact Compose project/service `wai-vds`, current release `20261006-openstrudel-v13`, SQLite schema 9. The service has no published Docker port, runs as UID 1000 with a read-only root, 256 MiB RAM and 0.5 CPU. Caddy provides HTTPS.
+
+## OpenStrudel repository release v13
+
+Installed 6 October at 12:39 UTC from OpenStrudel source `aa17b77` (hosting source imported in `28641b9`). Image `sha256:e242035d3ddb4b5f1eca7876b7bf82a2af74597bc99833e6265316e0fac92be1`. Timestamped backup `/srv/wai-vds/backups/openstrudel-20261006T123912Z`. Full Linux suite: **269/269**, no failures or skips. Snapshot rehearsal compared all 30 existing tables, retained every row and confirmed SQLite integrity/foreign keys. Schema stays 9.
+
+The public interface now uses OpenStrudel naming and the cream/graphite strudel icons. The v1 catalog advertises `client_quote_version: 1`; the OpenStrudel CLI binds a new order to the displayed price, currency and period. Legacy web ordering remains compatible. Existing runtime configuration, keys, prices, capacity/spend limits, mail and payment providers were preserved. Only the exact `wai-vds` service was recreated. Public catalog, auth discovery, icons, Home gates and WAI Pay health passed after apply; automatic rollback retained the current database if any check failed.
+
+No new invoices, payments or VMs. Home v2 purchase remains closed and its old artifact pin is not a declaration of readiness. The Mac embedded store entry also remains hidden pending its separate purchase/login acceptance; the existing standalone shop and CLI are available. For the next Home pilot use a reviewed immutable artifact and fresh bounded budget. The new public Home archive is `https://waiwai.is/openstrudel/downloads/OpenStrudel-Home-1.0-13.tar.gz`, SHA256 `cfa9ed5864f369a7f99d134c507ceeeb46271f96658bc2a5fe8f922829907e29`; it has not been substituted into an approved paid profile.
 
 ## Magic Link current v12
 
