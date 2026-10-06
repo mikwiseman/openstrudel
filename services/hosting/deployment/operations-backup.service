@@ -1,0 +1,18 @@
+# Managed exclusively by WAI VDS operations.
+[Unit]
+Description=Encrypted WAI VDS backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/srv/wai-vds/operations/operations-backup.sh
+User=root
+UMask=0077
+TimeoutStartSec=15min
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+StandardOutput=journal
+StandardError=journal

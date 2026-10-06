@@ -1,0 +1,12 @@
+# Managed exclusively by WAI VDS operations.
+[Unit]
+Description=Daily encrypted WAI VDS backup
+
+[Timer]
+OnCalendar=*-*-* 03:10:00 UTC
+RandomizedDelaySec=10min
+Persistent=true
+Unit=wai-vds-operations-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,17 @@
+# Managed exclusively by WAI VDS operations.
+[Unit]
+Description=WAI VDS health and bounded owned-service recovery
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/srv/wai-vds/operations/operations-monitor.sh
+User=root
+UMask=0077
+TimeoutStartSec=150s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+StandardOutput=journal
+StandardError=journal

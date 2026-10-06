@@ -1,0 +1,11 @@
+work/
+.env
+.env.*
+!.env.example
+node_modules/
+*.sqlite*
+.DS_Store
+outputs/*.zip
+.playwright-mcp/
+
+__pycache__/

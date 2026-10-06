@@ -1,0 +1,41 @@
+name: wai-vds
+services:
+  wai-vds:
+    image: wai-vds:${WAI_VDS_RELEASE:?Set the reviewed release ID}
+    build:
+      context: /srv/wai-vds/releases/${WAI_VDS_RELEASE:?Set the reviewed release ID}/app
+      dockerfile: Dockerfile
+    container_name: wai-vds
+    restart: unless-stopped
+    init: true
+    env_file:
+      - /srv/wai-vds/runtime.env
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,mode=1777
+    volumes:
+      - /srv/wai-vds/data:/var/lib/wai-vds
+    expose: ["4781"]
+    networks:
+      - waipay
+    healthcheck:
+      test: [CMD, node, -e, "require('node:http').get('http://127.0.0.1:4781/healthz',{headers:{host:'server.waiwai.is'}},r=>{let b='';r.on('data',x=>b+=x);r.on('end',()=>{try{process.exit(r.statusCode===200&&JSON.parse(b).service==='wai-vds'?0:1)}catch{process.exit(1)}})}).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+networks:
+  waipay:
+    external: true
+    name: app_waipay

@@ -1,0 +1,3052 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "OpenStrudel cloud backend",
+    "version": "2.0.0",
+    "description": "Production preview. Home purchases remain closed until a separately approved real 4/30 VM and payment acceptance. No shared production API key. Millisecond timestamps; USD/USDT quote amounts both have exponent 2. iOS joins existing teams only."
+  },
+  "servers": [
+    {
+      "url": "https://server.waiwai.is"
+    }
+  ],
+  "paths": {
+    "/api/v2/openstrudel/catalog": {
+      "get": {
+        "operationId": "getCatalog",
+        "description": "",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Catalog"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Owner login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Fresh login or platform/origin restriction",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found for this owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Saved state conflicts with requested action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; retain order and retry status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/openstrudel/quotes": {
+      "post": {
+        "operationId": "createQuote",
+        "description": "Immutable 15-minute quote. Same VM renewal uses installation_id; no bootstrap for renewal. iOS purchase rejected.",
+        "security": [
+          {
+            "nativeOwner": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuoteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Quote"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Owner login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Fresh login or platform/origin restriction",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found for this owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Saved state conflicts with requested action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; retain order and retry status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/openstrudel/orders": {
+      "post": {
+        "operationId": "createOrder",
+        "description": "Initial requires bootstrap; renewal forbids it. Same owner + idempotency key + identical payload always returns same order, even after quote expiry. Changed payload =>409.",
+        "security": [
+          {
+            "nativeOwner": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Owner login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Fresh login or platform/origin restriction",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found for this owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Saved state conflicts with requested action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; retain order and retry status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listOwnOrders",
+        "description": "",
+        "security": [
+          {
+            "nativeOwner": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "orders": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Order"
+                      }
+                    }
+                  },
+                  "required": [
+                    "orders"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Owner login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Fresh login or platform/origin restriction",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found for this owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Saved state conflicts with requested action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; retain order and retry status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/openstrudel/orders/{order_id}": {
+      "get": {
+        "operationId": "getOwnOrder",
+        "description": "",
+        "security": [
+          {
+            "nativeOwner": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Owner login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Fresh login or platform/origin restriction",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found for this owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Saved state conflicts with requested action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; retain order and retry status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/openstrudel/orders/{order_id}/checkout": {
+      "post": {
+        "operationId": "checkout",
+        "description": "Hosted WAI Pay fallback. Sync before checkout; resume same unknown payment attempt. Never request a new order on network failure.",
+        "security": [
+          {
+            "nativeOwner": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Checkout"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Owner login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Fresh login or platform/origin restriction",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found for this owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Saved state conflicts with requested action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; retain order and retry status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/openstrudel/orders/{order_id}/sync": {
+      "post": {
+        "operationId": "syncPayment",
+        "description": "Authenticated gateway read only; no new invoice or charge.",
+        "security": [
+          {
+            "nativeOwner": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Owner login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Fresh login or platform/origin restriction",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found for this owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Saved state conflicts with requested action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; retain order and retry status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/openstrudel/orders/{order_id}/abandon": {
+      "post": {
+        "operationId": "abandonUnpaidOrder",
+        "description": "Only before invoice or after verified unpaid expiry/cancellation. Unknown or partly paid attempts cannot be abandoned.",
+        "security": [
+          {
+            "nativeOwner": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Owner login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Fresh login or platform/origin restriction",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found for this owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Saved state conflicts with requested action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; retain order and retry status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/openstrudel/installations/{installation_id}/claims": {
+      "post": {
+        "operationId": "issueConnectionClaim",
+        "description": "",
+        "security": [
+          {
+            "nativeOwner": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installation_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Claim"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Owner login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Fresh login or platform/origin restriction",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found for this owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Saved state conflicts with requested action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; retain order and retry status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/openstrudel/claims/consume": {
+      "post": {
+        "operationId": "consumeConnectionClaim",
+        "description": "Five minutes, one use, bound to owner, grant and installation. No credentials in redirects. Recovery consumes the claim before requesting a Home invitation; on uncertain response issue a new claim.",
+        "security": [
+          {
+            "nativeOwner": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsumeClaim"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Connection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Owner login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Fresh login or platform/origin restriction",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found for this owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Saved state conflicts with requested action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; retain order and retry status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/openstrudel/installations/{installation_id}/cancellation": {
+      "post": {
+        "operationId": "setCancellation",
+        "description": "",
+        "security": [
+          {
+            "nativeOwner": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installation_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cancel_at_end": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "cancel_at_end"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Owner login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Fresh login or platform/origin restriction",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found for this owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Saved state conflicts with requested action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; retain order and retry status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/openstrudel/installations/{installation_id}/access": {
+      "post": {
+        "operationId": "rootAccess",
+        "description": "Requires fresh login (prompt=login); refresh does not reset auth_time.",
+        "security": [
+          {
+            "nativeOwner": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installation_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Access"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Owner login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Fresh login or platform/origin restriction",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found for this owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Saved state conflicts with requested action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; retain order and retry status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/openstrudel/installations/{installation_id}/export": {
+      "post": {
+        "operationId": "exportInstructions",
+        "description": "Owner-run SSH export, with a brief Home stop and automatic restart. Does not create an archive or execute commands on this request. Requires fresh login.",
+        "security": [
+          {
+            "nativeOwner": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installation_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Export"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Owner login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Fresh login or platform/origin restriction",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found for this owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Saved state conflicts with requested action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; retain order and retry status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/openstrudel/installations/{installation_id}/delete": {
+      "post": {
+        "operationId": "deleteInstallation",
+        "description": "Explicit installation ID confirmation and fresh login. Deletion is asynchronous and separately verified.",
+        "security": [
+          {
+            "nativeOwner": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installation_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirm": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "confirm"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Owner login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Fresh login or platform/origin restriction",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found for this owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Saved state conflicts with requested action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; retain order and retry status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/oauth/token": {
+      "post": {
+        "operationId": "exchangeCodeOrRefresh",
+        "description": "",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Credentials"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "OAuth exchange rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Owner login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Fresh login or platform/origin restriction",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found for this owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Saved state conflicts with requested action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; retain order and retry status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/oauth/revoke": {
+      "post": {
+        "operationId": "revokeCurrentGrant",
+        "description": "",
+        "security": [
+          {
+            "nativeOwner": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Owner login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Fresh login or platform/origin restriction",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found for this owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Saved state conflicts with requested action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Unavailable; retain order and retry status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/oauth/authorize": {
+      "get": {
+        "operationId": "authorizeOwner",
+        "security": [],
+        "description": "Open in system browser. Short OpenStrudel login. Default exact redirect openstrudel://oauth/wai-vds. Returns code, state and issuer; codes expire in 120 seconds. Public client; no secret. Login/create/recovery is hosted on this origin.",
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "const": "openstrudel"
+            }
+          },
+          {
+            "name": "response_type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "const": "code"
+            }
+          },
+          {
+            "name": "redirect_uri",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._~-]{16,128}$"
+            }
+          },
+          {
+            "name": "code_challenge",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "code_challenge_method",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "const": "S256"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "const": "home:manage"
+            }
+          },
+          {
+            "name": "prompt",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "login",
+                "consent"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Branded owner login HTML"
+          },
+          "400": {
+            "description": "Invalid OAuth request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "nativeOwner": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Opaque short-lived OAuth owner token, not a WAI API key."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "error",
+          "code",
+          "request_id"
+        ],
+        "additionalProperties": false
+      },
+      "OAuthError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "error_description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "error_description"
+        ],
+        "additionalProperties": false
+      },
+      "Profile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "const": "openstrudel-home-v1"
+          },
+          "version": {
+            "const": 1
+          },
+          "region": {
+            "type": "string"
+          },
+          "ram_mb": {
+            "const": 4096
+          },
+          "disk_gb": {
+            "const": 30
+          },
+          "cpu": {
+            "const": "1A"
+          },
+          "public_ipv4": {
+            "const": 1
+          },
+          "traffic_gb": {
+            "const": 5000
+          },
+          "os": {
+            "const": "Ubuntu 24.04 LTS"
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "release_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "release_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "recipe_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "region",
+          "ram_mb",
+          "disk_gb",
+          "cpu",
+          "public_ipv4",
+          "traffic_gb",
+          "os",
+          "image",
+          "release_url",
+          "release_sha256",
+          "recipe_sha256"
+        ],
+        "additionalProperties": false
+      },
+      "QuoteRequest": {
+        "type": "object",
+        "properties": {
+          "profile_id": {
+            "const": "openstrudel-home-v1"
+          },
+          "payment_method": {
+            "type": "string",
+            "enum": [
+              "card",
+              "crypto",
+              "test"
+            ]
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "mac",
+              "web",
+              "ios"
+            ]
+          },
+          "installation_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "profile_id",
+          "payment_method",
+          "platform"
+        ],
+        "additionalProperties": false
+      },
+      "Quote": {
+        "type": "object",
+        "properties": {
+          "quote_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quote_digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/Profile"
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "mac",
+              "web"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "initial",
+              "renewal"
+            ]
+          },
+          "installation_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "payment_method": {
+            "type": "string",
+            "enum": [
+              "card",
+              "crypto",
+              "test"
+            ]
+          },
+          "amount_minor": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "USD",
+              "USDT"
+            ]
+          },
+          "currency_exponent": {
+            "const": 2
+          },
+          "total_is_final": {
+            "const": true
+          },
+          "tax_note": {
+            "type": "string"
+          },
+          "period_days": {
+            "const": 30
+          },
+          "starts_at": {
+            "type": "string",
+            "enum": [
+              "current_period_end_or_payment",
+              "verified_home_ready"
+            ]
+          },
+          "automatic_renewal": {
+            "const": false
+          },
+          "grace_days": {
+            "const": 3
+          },
+          "cancellation": {
+            "type": "string"
+          },
+          "refund_policy": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix milliseconds; null means not verified/absent."
+          },
+          "expires_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix milliseconds; null means not verified/absent."
+          },
+          "checkout_deadline": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix milliseconds; null means not verified/absent."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "emulator",
+              "live"
+            ]
+          }
+        },
+        "required": [
+          "quote_id",
+          "quote_digest",
+          "profile",
+          "platform",
+          "kind",
+          "installation_id",
+          "payment_method",
+          "amount_minor",
+          "currency",
+          "currency_exponent",
+          "total_is_final",
+          "tax_note",
+          "period_days",
+          "starts_at",
+          "automatic_renewal",
+          "grace_days",
+          "cancellation",
+          "refund_policy",
+          "created_at",
+          "expires_at",
+          "checkout_deadline",
+          "mode"
+        ],
+        "additionalProperties": false
+      },
+      "Bootstrap": {
+        "type": "object",
+        "properties": {
+          "installationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "privateKeyPEM": {
+            "type": "string",
+            "maxLength": 4096,
+            "writeOnly": true,
+            "description": "P-256 PKCS8 PEM; only over authenticated TLS; encrypted until verified installation. Never send owner token."
+          },
+          "ownerTokenHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "installationId",
+          "privateKeyPEM",
+          "ownerTokenHash"
+        ],
+        "additionalProperties": false
+      },
+      "OrderRequest": {
+        "type": "object",
+        "properties": {
+          "quote_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quote_digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "pattern": "^[-a-zA-Z0-9_]{8,100}$"
+          },
+          "consent": {
+            "const": true
+          },
+          "bootstrap": {
+            "$ref": "#/components/schemas/Bootstrap"
+          },
+          "return_uri": {
+            "type": "string",
+            "format": "uri",
+            "description": "Exact registered callback. Default openstrudel://checkout/wai-vds; no query, fragment or userinfo."
+          },
+          "return_state": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._~-]{16,128}$"
+          }
+        },
+        "required": [
+          "quote_id",
+          "quote_digest",
+          "idempotency_key",
+          "consent",
+          "return_uri",
+          "return_state"
+        ],
+        "additionalProperties": false
+      },
+      "Order": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "installation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quote_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quote_digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "order_status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "checkout",
+              "paid",
+              "fulfilling",
+              "fulfilled",
+              "needs_refund",
+              "refunded",
+              "canceled"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "initial",
+              "renewal"
+            ]
+          },
+          "amount_minor": {
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "USD",
+              "USDT"
+            ]
+          },
+          "currency_exponent": {
+            "const": 2
+          },
+          "payment_method": {
+            "type": "string",
+            "enum": [
+              "card",
+              "crypto",
+              "test"
+            ]
+          },
+          "payment_state": {
+            "type": "string",
+            "enum": [
+              "unpaid",
+              "pending",
+              "unknown",
+              "failed",
+              "partially_paid",
+              "paid",
+              "partially_refunded",
+              "refunded",
+              "refund_review",
+              "additional_payment_review"
+            ]
+          },
+          "session_state": {
+            "type": "string",
+            "enum": [
+              "none",
+              "open",
+              "unknown",
+              "expired",
+              "canceled",
+              "closed",
+              "review",
+              "confirmation_pending"
+            ]
+          },
+          "action_required": {
+            "type": "string",
+            "enum": [
+              "start_payment",
+              "retry_payment",
+              "wait_for_confirmation",
+              "contact_support",
+              "wait_for_home",
+              "claim_connection",
+              "complete_payment",
+              "none",
+              "new_quote_required",
+              "purchase_unavailable"
+            ]
+          },
+          "session_expires_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix milliseconds; null means not verified/absent."
+          },
+          "payment_verified_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix milliseconds; null means not verified/absent."
+          },
+          "provisioning_state": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "paid",
+              "creating",
+              "configuring",
+              "checking",
+              "ready",
+              "overdue",
+              "rejected",
+              "unknown",
+              "attention",
+              "deleting",
+              "deleted"
+            ]
+          },
+          "home_state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "installing",
+              "ready",
+              "attention",
+              "canceled",
+              "deleted"
+            ]
+          },
+          "paid_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix milliseconds; null means not verified/absent."
+          },
+          "cancel_at_end": {
+            "type": "boolean"
+          },
+          "readiness_verified_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix milliseconds; null means not verified/absent."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "emulator",
+              "live"
+            ]
+          },
+          "created_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix milliseconds; null means not verified/absent."
+          }
+        },
+        "required": [
+          "order_id",
+          "installation_id",
+          "quote_id",
+          "quote_digest",
+          "order_status",
+          "kind",
+          "amount_minor",
+          "currency",
+          "currency_exponent",
+          "payment_method",
+          "payment_state",
+          "session_state",
+          "action_required",
+          "session_expires_at",
+          "payment_verified_at",
+          "provisioning_state",
+          "home_state",
+          "paid_until",
+          "cancel_at_end",
+          "readiness_verified_at",
+          "mode",
+          "created_at"
+        ],
+        "additionalProperties": false
+      },
+      "Checkout": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "installation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quote_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quote_digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "order_status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "checkout",
+              "paid",
+              "fulfilling",
+              "fulfilled",
+              "needs_refund",
+              "refunded",
+              "canceled"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "initial",
+              "renewal"
+            ]
+          },
+          "amount_minor": {
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "USD",
+              "USDT"
+            ]
+          },
+          "currency_exponent": {
+            "const": 2
+          },
+          "payment_method": {
+            "type": "string",
+            "enum": [
+              "card",
+              "crypto",
+              "test"
+            ]
+          },
+          "payment_state": {
+            "type": "string",
+            "enum": [
+              "unpaid",
+              "pending",
+              "unknown",
+              "failed",
+              "partially_paid",
+              "paid",
+              "partially_refunded",
+              "refunded",
+              "refund_review",
+              "additional_payment_review"
+            ]
+          },
+          "session_state": {
+            "type": "string",
+            "enum": [
+              "none",
+              "open",
+              "unknown",
+              "expired",
+              "canceled",
+              "closed",
+              "review",
+              "confirmation_pending"
+            ]
+          },
+          "action_required": {
+            "type": "string",
+            "enum": [
+              "start_payment",
+              "retry_payment",
+              "wait_for_confirmation",
+              "contact_support",
+              "wait_for_home",
+              "claim_connection",
+              "complete_payment",
+              "none",
+              "new_quote_required",
+              "purchase_unavailable"
+            ]
+          },
+          "session_expires_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix milliseconds; null means not verified/absent."
+          },
+          "payment_verified_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix milliseconds; null means not verified/absent."
+          },
+          "provisioning_state": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "paid",
+              "creating",
+              "configuring",
+              "checking",
+              "ready",
+              "overdue",
+              "rejected",
+              "unknown",
+              "attention",
+              "deleting",
+              "deleted"
+            ]
+          },
+          "home_state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "installing",
+              "ready",
+              "attention",
+              "canceled",
+              "deleted"
+            ]
+          },
+          "paid_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix milliseconds; null means not verified/absent."
+          },
+          "cancel_at_end": {
+            "type": "boolean"
+          },
+          "readiness_verified_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix milliseconds; null means not verified/absent."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "emulator",
+              "live"
+            ]
+          },
+          "created_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix milliseconds; null means not verified/absent."
+          },
+          "type": {
+            "const": "hosted"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          }
+        },
+        "required": [
+          "order_id",
+          "installation_id",
+          "quote_id",
+          "quote_digest",
+          "order_status",
+          "kind",
+          "amount_minor",
+          "currency",
+          "currency_exponent",
+          "payment_method",
+          "payment_state",
+          "session_state",
+          "action_required",
+          "session_expires_at",
+          "payment_verified_at",
+          "provisioning_state",
+          "home_state",
+          "paid_until",
+          "cancel_at_end",
+          "readiness_verified_at",
+          "mode",
+          "created_at",
+          "type",
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "ClaimRequest": {
+        "type": "object",
+        "properties": {
+          "recover_owner": {
+            "type": "boolean",
+            "default": false,
+            "description": "Issue existing Home owner-pairing invitation; requires auth_time within 5 minutes."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "Claim": {
+        "type": "object",
+        "properties": {
+          "claim_token": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "writeOnly": false
+          },
+          "installation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expires_in": {
+            "const": 300
+          }
+        },
+        "required": [
+          "claim_token",
+          "installation_id",
+          "expires_in"
+        ],
+        "additionalProperties": false
+      },
+      "ConsumeClaim": {
+        "type": "object",
+        "properties": {
+          "claim_token": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "installation_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "claim_token",
+          "installation_id"
+        ],
+        "additionalProperties": false
+      },
+      "Pairing": {
+        "type": "object",
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "const": 7789
+          },
+          "certificate_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "invitation_key": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "expires_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix milliseconds; null means not verified/absent."
+          },
+          "path": {
+            "const": "/pair"
+          },
+          "method": {
+            "const": "POST"
+          },
+          "authorization": {
+            "const": "Bearer invitation_key"
+          },
+          "emulated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "host",
+          "port",
+          "certificate_sha256",
+          "invitation_key",
+          "expires_at",
+          "path",
+          "method",
+          "authorization"
+        ],
+        "additionalProperties": false
+      },
+      "Connection": {
+        "type": "object",
+        "properties": {
+          "installation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "certificate_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "release_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "owner_token_source": {
+            "type": "string",
+            "enum": [
+              "device_keychain",
+              "home_pairing"
+            ]
+          },
+          "openai_action": {
+            "const": "owner_sign_in_on_home"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "emulator",
+              "kamatera"
+            ]
+          },
+          "pairing": {
+            "$ref": "#/components/schemas/Pairing"
+          }
+        },
+        "required": [
+          "installation_id",
+          "url",
+          "certificate_sha256",
+          "release_sha256",
+          "owner_token_source",
+          "openai_action",
+          "mode"
+        ],
+        "additionalProperties": false
+      },
+      "Credentials": {
+        "type": "object",
+        "properties": {
+          "access_token": {
+            "type": "string"
+          },
+          "token_type": {
+            "const": "Bearer"
+          },
+          "expires_in": {
+            "const": 900
+          },
+          "refresh_token": {
+            "type": "string"
+          },
+          "refresh_expires_in": {
+            "type": "integer"
+          },
+          "scope": {
+            "const": "home:manage"
+          }
+        },
+        "required": [
+          "access_token",
+          "token_type",
+          "expires_in",
+          "refresh_token",
+          "refresh_expires_in",
+          "scope"
+        ],
+        "additionalProperties": false
+      },
+      "TokenRequest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "grant_type": {
+                "const": "authorization_code"
+              },
+              "client_id": {
+                "const": "openstrudel"
+              },
+              "code": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "code_verifier": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._~-]{43,128}$"
+              },
+              "redirect_uri": {
+                "type": "string",
+                "format": "uri"
+              }
+            },
+            "required": [
+              "grant_type",
+              "client_id",
+              "code",
+              "code_verifier",
+              "redirect_uri"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "grant_type": {
+                "const": "refresh_token"
+              },
+              "client_id": {
+                "const": "openstrudel"
+              },
+              "refresh_token": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "grant_type",
+              "client_id",
+              "refresh_token"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "Access": {
+        "type": "object",
+        "properties": {
+          "installation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ip": {
+            "type": "string"
+          },
+          "ssh": {
+            "type": "string"
+          },
+          "host_key": {
+            "type": "string"
+          },
+          "private_key": {
+            "type": "string",
+            "description": "Secret response body. Requires fresh OAuth login. Never put in a URL or log."
+          }
+        },
+        "required": [
+          "installation_id",
+          "ip",
+          "ssh",
+          "host_key",
+          "private_key"
+        ],
+        "additionalProperties": false
+      },
+      "Export": {
+        "type": "object",
+        "properties": {
+          "installation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "const": "manual_ssh"
+          },
+          "contains_secrets": {
+            "const": true
+          },
+          "temporary_home_stop": {
+            "const": true
+          },
+          "instruction": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "stdin_script": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "installation_id",
+          "type",
+          "contains_secrets",
+          "temporary_home_stop",
+          "instruction",
+          "command",
+          "stdin_script"
+        ],
+        "additionalProperties": false
+      },
+      "Catalog": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "const": "openstrudel"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/Profile"
+          },
+          "purchase_enabled": {
+            "type": "boolean"
+          },
+          "availability_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "payment_methods": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "enum": [
+                    "card",
+                    "crypto",
+                    "test"
+                  ]
+                },
+                "currency": {
+                  "type": "string",
+                  "enum": [
+                    "USD",
+                    "USDT"
+                  ]
+                },
+                "amount_minor": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "currency_exponent": {
+                  "const": 2
+                }
+              },
+              "required": [
+                "id",
+                "currency",
+                "amount_minor",
+                "currency_exponent"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "checkout": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "hosted"
+              },
+              "embedded": {
+                "const": false
+              },
+              "provider": {
+                "const": "WAI Pay"
+              },
+              "return_to": {
+                "const": "OpenStrudel"
+              }
+            },
+            "required": [
+              "type",
+              "embedded",
+              "provider",
+              "return_to"
+            ],
+            "additionalProperties": false
+          },
+          "platforms": {
+            "type": "object",
+            "properties": {
+              "mac": {
+                "type": "object",
+                "properties": {
+                  "purchase_enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "purchase_enabled"
+                ],
+                "additionalProperties": false
+              },
+              "web": {
+                "type": "object",
+                "properties": {
+                  "purchase_enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "purchase_enabled"
+                ],
+                "additionalProperties": false
+              },
+              "ios": {
+                "type": "object",
+                "properties": {
+                  "purchase_enabled": {
+                    "const": false
+                  },
+                  "mode": {
+                    "const": "join_by_invitation"
+                  }
+                },
+                "required": [
+                  "purchase_enabled",
+                  "mode"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "mac",
+              "web",
+              "ios"
+            ],
+            "additionalProperties": false
+          },
+          "automatic_renewal": {
+            "const": false
+          },
+          "period_days": {
+            "const": 30
+          },
+          "grace_days": {
+            "const": 3
+          },
+          "openai": {
+            "const": "owner_signs_in_on_home"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "emulator",
+              "live_gated"
+            ]
+          }
+        },
+        "required": [
+          "client_id",
+          "profile",
+          "purchase_enabled",
+          "availability_reason",
+          "payment_methods",
+          "checkout",
+          "platforms",
+          "automatic_renewal",
+          "period_days",
+          "grace_days",
+          "openai",
+          "mode"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

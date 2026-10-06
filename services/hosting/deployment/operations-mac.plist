@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>is.wai-vds.production-backup-pull</string>
+<key>ProgramArguments</key><array><string>/bin/bash</string><string>/Users/mikwiseman/Library/Application Support/WAI VDS/operations/operations-pull-mac.sh</string></array>
+<key>EnvironmentVariables</key><dict>
+<key>PATH</key><string>/Users/mikwiseman/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+<key>WAI_BACKUP_SCRIPT</key><string>/Users/mikwiseman/Library/Application Support/WAI VDS/operations/production-backup.mjs</string>
+</dict>
+<key>StartInterval</key><integer>3600</integer>
+<key>RunAtLoad</key><true/>
+<key>StandardOutPath</key><string>/Users/mikwiseman/Library/Application Support/WAI VDS/logs/production-backup.log</string>
+<key>StandardErrorPath</key><string>/Users/mikwiseman/Library/Application Support/WAI VDS/logs/production-backup-error.log</string>
+</dict></plist>

@@ -1,0 +1,16 @@
+{
+  "name": "openstrudel-hosting",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/main.mjs",
+    "test": "node --test --test-concurrency=1 tests/*.test.mjs",
+    "check": "node --check src/main.mjs && node --check src/service.mjs && node --check src/providers.mjs && node --check public/app.js",
+    "ops": "node --env-file-if-exists=.env scripts/ops.mjs",
+    "preflight": "node --env-file-if-exists=.env scripts/preflight.mjs"
+  }
+}

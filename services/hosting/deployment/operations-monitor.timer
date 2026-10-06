@@ -1,0 +1,12 @@
+# Managed exclusively by WAI VDS operations.
+[Unit]
+Description=Check WAI VDS every two minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=2min
+AccuracySec=15s
+Unit=wai-vds-operations-monitor.service
+
+[Install]
+WantedBy=timers.target

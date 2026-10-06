@@ -1,0 +1,7 @@
+    # WAI VDS: keep /vds prefix; its server handles the configured base path.
+    handle /vds {
+        redir * /vds/ 308
+    }
+    handle /vds/* {
+        reverse_proxy wai-vds:4781
+    }

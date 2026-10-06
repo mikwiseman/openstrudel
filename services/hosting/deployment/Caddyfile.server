@@ -1,0 +1,50 @@
+# pay.waiwai.is — wai-pay reverse proxy
+# Caddy auto-obtains and renews Let's Encrypt certificates.
+
+pay.waiwai.is {
+    encode zstd gzip
+
+    # Public API for client apps
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+
+    # Webhooks from payment providers
+    handle /webhooks/* {
+        reverse_proxy backend:8000
+    }
+
+    # Admin API (used by admin-ui)
+    handle /admin/api/* {
+        reverse_proxy backend:8000
+    }
+
+    # Admin UI
+    handle /admin/* {
+        reverse_proxy admin-ui:3000
+    }
+
+    # Root → redirect to admin
+    handle / {
+        redir /admin/ 301
+    }
+
+    # Everything else → 404
+    handle {
+        respond "Not Found" 404
+    }
+
+    log {
+        output file /data/access.log {
+            roll_size 100mb
+            roll_keep 5
+        }
+        format json
+    }
+}
+
+# WAI VDS — standalone product; no legacy /vds routes.
+server.waiwai.is {
+    encode zstd gzip
+    reverse_proxy wai-vds:4781
+}
