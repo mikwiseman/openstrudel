@@ -8,13 +8,15 @@ extension UTType {
 struct AgentTeamDocument: FileDocument {
     static var readableContentTypes: [UTType] { [.openStrudelTeam] }
     var data: Data
-    init(data: Data) { self.data = data }
+    var filename: String? = nil
+    init(data: Data, filename: String? = nil) { self.data = data; self.filename = filename }
     init(configuration: ReadConfiguration) throws {
         guard let data = configuration.file.regularFileContents, data.count <= AgentTransferFile.byteLimit else { throw AgentTransferFile.Failure.invalidFile }
         self.data = data
     }
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         let file = FileWrapper(regularFileWithContents: data)
+        file.preferredFilename = filename
         file.fileAttributes[FileAttributeKey.posixPermissions.rawValue] = 0o600
         return file
     }

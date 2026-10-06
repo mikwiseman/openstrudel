@@ -126,12 +126,12 @@ private struct HomeUnavailableView: View {
         VStack(spacing: 28) {
             OpenStrudelMark(size: 76)
             VStack(spacing: 12) {
-                Text(reconnecting ? "Нет связи с OpenStrudel" : "Помощники для ваших задач")
+                Text(reconnecting ? "Нет связи с OpenStrudel" : client.isSignedOut ? "Вы вышли на этом устройстве" : "Помощники для ваших задач")
                     .font(.system(.largeTitle, design: .serif, weight: .medium))
                     .multilineTextAlignment(.center)
                 Text(reconnecting
                      ? "Пока не удаётся подключиться к вашей команде. Ваши чаты сохранены. Подключимся автоматически."
-                     : "Создавайте сотрудников для работы и личных дел. Выберите, где они будут работать.")
+                     : client.isSignedOut ? "Ваша команда сохранена. Подключитесь к ней снова или выберите другую." : "Создавайте сотрудников для работы и личных дел. Выберите, где они будут работать.")
                     .font(.body).foregroundStyle(AppTheme.secondaryText)
                     .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             }
@@ -169,6 +169,7 @@ private struct HomeUnavailableView: View {
                 }.buttonStyle(.plain).foregroundStyle(AppTheme.secondaryText)
                     .disabled(starting).accessibilityIdentifier("setupExisting")
             }
+            if client.isConfigured { DeviceSignOutButton {} }
             Link("Конфиденциальность", destination: URL(string: "https://waiwai.is/openstrudel/privacy")!)
                 .font(.caption).buttonStyle(.plain).foregroundStyle(AppTheme.secondaryText)
         }
@@ -282,12 +283,12 @@ private struct Sidebar: View {
                             name: "OpenStrudel",
                             subtitle: "Общий помощник",
                             selected: client.selectedProfileID == nil,
-                            hue: .zero
+                            appearance: nil
                         ) { select(nil) }
                     }
 
                     if client.isEmployeeDraft {
-                        SidebarRow(name: "Новый сотрудник", subtitle: "Опишите его задачу в чате", selected: true, hue: .zero) {}
+                        SidebarRow(name: "Новый сотрудник", subtitle: "Опишите его задачу в чате", selected: true, appearance: client.draftAppearance) {}
                     }
                     ForEach([false, true], id: \.self) { work in
                         let people = results.filter { $0.isWork == work }
@@ -299,7 +300,7 @@ private struct Sidebar: View {
                                 .padding(.horizontal, 12).padding(.top, 17).padding(.bottom, 5)
                             ForEach(people) { profile in
                                 SidebarRow(name: profile.name, subtitle: profile.previewText.isEmpty ? profile.roleText : profile.previewText,
-                                           selected: client.selectedProfileID == profile.id, hue: profile.markHue) { select(profile.id) }
+                                           selected: client.selectedProfileID == profile.id, appearance: profile.resolvedAppearance) { select(profile.id) }
                             }
                         }
                     }
@@ -350,13 +351,13 @@ private struct SidebarRow: View {
     let name: String
     let subtitle: String
     let selected: Bool
-    let hue: Angle
+    let appearance: AgentAppearance?
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 11) {
-                OpenStrudelMark(size: 36, hue: hue)
+                AgentAvatar(appearance: appearance, size: 36)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(.system(size: 15, weight: .medium)).lineLimit(1)
                     if !subtitle.isEmpty { Text(subtitle).font(.system(size: 12)).foregroundStyle(AppTheme.secondaryText).lineLimit(1) }
@@ -450,7 +451,7 @@ private struct ConversationView: View {
                                 InteractionCard(interaction: interaction).id(interaction.id)
                             }
                             if client.isSending && client.interactions.isEmpty {
-                                ThinkingBubble(name: client.activeAgentName, hue: client.activeProfile?.markHue ?? .zero).id("thinking-message")
+                                ThinkingBubble(name: client.activeAgentName, appearance: client.activeAppearance).id("thinking-message")
                             }
                             if let error = client.syncError {
                                 Text(UserFacingError.text(error)).font(.caption).foregroundStyle(AppTheme.secondaryText)
@@ -763,7 +764,7 @@ private struct ConversationTitle: View {
     }
     private var title: some View {
         HStack(spacing: 7) {
-            OpenStrudelMark(size: 26, hue: client.activeProfile?.markHue ?? .zero)
+            AgentAvatar(appearance: client.activeAppearance, size: 30)
             VStack(spacing: 2) {
                 Text(client.activeAgentName).font(.headline).lineLimit(1)
                 if !chats.isEmpty { Text(chatName).font(.caption).foregroundStyle(AppTheme.secondaryText).lineLimit(1) }
@@ -778,10 +779,14 @@ private struct EmptyChat: View {
     @Environment(\.dynamicTypeSize) private var textSize
     var body: some View {
         VStack(spacing: 12) {
-            OpenStrudelMark(size: 56, hue: client.activeProfile?.markHue ?? .zero)
+            AgentAvatar(appearance: client.activeAppearance, size: 72)
             Text(client.isEmployeeDraft ? "Создайте сотрудника" : client.activeProfile?.name ?? "Напишите, что нужно")
                 .font(.system(.title2, design: .serif, weight: .semibold))
             if client.isEmployeeDraft {
+                if client.health?.agentAppearanceVersion == 1 {
+                    DisclosureGroup("Выбрать образ") { AgentAppearancePicker(selection: $client.draftAppearance).padding(.top, 12) }
+                        .frame(maxWidth: 340).padding(.bottom, 4)
+                }
                 Text("Напишите, чем он должен заниматься. Например: «Редактор, который помогает писать короткие посты».")
                     .font(.subheadline)
                     .foregroundStyle(AppTheme.secondaryText)
@@ -944,16 +949,13 @@ private struct PendingMessageBubble: View {
 private struct ThinkingBubble: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let name: String
-    let hue: Angle
+    let appearance: AgentAppearance?
 
     var body: some View {
         HStack {
             HStack(spacing: 8) {
-                // The employee's own mark turns while it works.
-                TimelineView(.animation(paused: reduceMotion)) { context in
-                    OpenStrudelMark(size: 18, hue: hue)
-                        .rotationEffect(.degrees(reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.4) * 150))
-                }
+                AgentAvatar(appearance: appearance, size: 24)
+                ProgressView().controlSize(.small).accessibilityHidden(true)
                 Text(name + " работает")
                     .font(.subheadline)
                     .foregroundStyle(AppTheme.secondaryText)
@@ -1143,6 +1145,7 @@ private struct EmployeePicker: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var query = ""
+    @State private var showingSettings = false
     private var searchTerm: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var results: [EmployeeProfile] {
         client.profiles.filter { searchTerm.isEmpty || $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) }
@@ -1153,7 +1156,7 @@ private struct EmployeePicker: View {
         NavigationStack {
             List {
                 if showsMain {
-                EmployeePickerRow(name: "OpenStrudel", subtitle: "Общий помощник", selected: client.selectedProfileID == nil, hue: .zero) {
+                EmployeePickerRow(name: "OpenStrudel", subtitle: "Общий помощник", selected: client.selectedProfileID == nil, appearance: nil) {
                     Task { await client.selectProfile(nil); dismiss() }
                 }
                 }
@@ -1163,7 +1166,7 @@ private struct EmployeePicker: View {
                     if !people.isEmpty {
                         Section {
                             ForEach(people) { profile in
-                                EmployeePickerRow(name: profile.name, subtitle: profile.previewText.isEmpty ? profile.roleText : profile.previewText, selected: client.selectedProfileID == profile.id, hue: profile.markHue) {
+                                EmployeePickerRow(name: profile.name, subtitle: profile.previewText.isEmpty ? profile.roleText : profile.previewText, selected: client.selectedProfileID == profile.id, appearance: profile.resolvedAppearance) {
                                     Task { await client.selectProfile(profile.id); dismiss() }
                                 }
                             }
@@ -1177,12 +1180,17 @@ private struct EmployeePicker: View {
             .searchable(text: $query, prompt: "Найти сотрудника")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button { client.beginEmployee(); dismiss() } label: { Image(systemName: "plus") }
-                        .accessibilityLabel("Новый сотрудник")
+                    HStack(spacing: 16) {
+                        Button { showingSettings = true } label: { Image(systemName: "gearshape") }
+                            .accessibilityLabel("Настройки").accessibilityIdentifier("teamSettings")
+                        Button { client.beginEmployee(); dismiss() } label: { Image(systemName: "plus") }
+                            .accessibilityLabel("Новый сотрудник")
+                    }
                 }
                 ToolbarItem(placement: .cancellationAction) { Button("Готово") { dismiss() } }
             }
         }
+        .sheet(isPresented: $showingSettings) { SettingsView().environmentObject(client) }
     }
 }
 
@@ -1191,13 +1199,13 @@ private struct EmployeePickerRow: View {
     let name: String
     let subtitle: String
     let selected: Bool
-    let hue: Angle
+    let appearance: AgentAppearance?
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 11) {
-                if !textSize.isAccessibilitySize { OpenStrudelMark(size: 42, hue: hue) }
+                if !textSize.isAccessibilitySize { AgentAvatar(appearance: appearance, size: 42) }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(.body.weight(.medium)).lineLimit(textSize.isAccessibilitySize ? nil : 2)
                     if !subtitle.isEmpty { Text(subtitle).font(.caption).foregroundStyle(AppTheme.secondaryText).lineLimit(1) }
@@ -1234,17 +1242,19 @@ private struct BotDetailsView: View {
     let profile: EmployeeProfile
     @State private var name: String
     @State private var instructions: String
+    @State private var appearance: AgentAppearance
     @State private var showConnections = false
     @State private var showTelegram = false
     @State private var isSaving = false
     @State private var confirmDiscard = false
     @State private var saveError: String?
-    private var hasChanges: Bool { name != profile.name || instructions != profile.instructions }
+    private var hasChanges: Bool { name != profile.name || instructions != profile.instructions || appearance != profile.resolvedAppearance }
 
     init(profile: EmployeeProfile) {
         self.profile = profile
         _name = State(initialValue: profile.name)
         _instructions = State(initialValue: profile.instructions)
+        _appearance = State(initialValue: profile.resolvedAppearance)
     }
 
     var body: some View {
@@ -1252,12 +1262,15 @@ private struct BotDetailsView: View {
             ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 HStack(spacing: 12) {
-                    OpenStrudelMark(size: 56, hue: profile.markHue)
+                    AgentAvatar(appearance: appearance, size: 72)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Имя").font(.caption).foregroundStyle(AppTheme.secondaryText)
                         TextField("Имя сотрудника", text: $name).textFieldStyle(.plain).font(.title2.weight(.semibold))
                         Text(profile.isWork ? "Рабочий сотрудник" : "Личный сотрудник").font(.caption).foregroundStyle(AppTheme.secondaryText)
                     }
+                }
+                if client.health?.agentAppearanceVersion == 1 {
+                    AgentAppearancePicker(selection: $appearance)
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Чем занимается сотрудник").font(.subheadline.weight(.medium))
@@ -1332,7 +1345,7 @@ private struct BotDetailsView: View {
                         isSaving = true
                         saveError = nil
                         Task {
-                            let saved = await client.updateProfile(id: profile.id, name: name, instructions: instructions)
+                            let saved = await client.updateProfile(id: profile.id, name: name, instructions: instructions, appearance: appearance != profile.resolvedAppearance ? appearance : nil)
                             isSaving = false
                             if saved { dismiss() }
                             else { saveError = client.errorMessage ?? "Не удалось сохранить изменения. Попробуйте ещё раз."; client.errorMessage = nil }
@@ -1345,7 +1358,7 @@ private struct BotDetailsView: View {
             .alert("Не сохранять изменения?", isPresented: $confirmDiscard) {
                 Button("Не сохранять", role: .destructive) { dismiss() }
                 Button("Продолжить редактирование", role: .cancel) {}
-            } message: { Text("Имя и описание сотрудника останутся прежними.") }
+            } message: { Text("Имя, образ и описание сотрудника останутся прежними.") }
             .sheet(isPresented: $showConnections) { ConnectionsView() }
             .sheet(isPresented: $showTelegram) { TelegramChatsView(profile: profile) }
             .task { await client.loadChatSettings() }
@@ -1387,6 +1400,7 @@ struct SettingsView: View {
                     MobilePairingSettings()
                     SectionTitle(title: "Перенос команды", subtitle: "Сотрудники, настройки и накопленные материалы")
                     AgentTransferSettings()
+                    if client.isConfigured { DeviceSignOutButton { closeSettings() } }
                     #if os(macOS)
                     SectionTitle(title: "Обновления", subtitle: "Новые версии OpenStrudel")
                     UpdateSettings()
@@ -1423,7 +1437,7 @@ struct SettingsView: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { closeSettings() } } }
         }
         #if os(iOS)
         .sheet(isPresented: $showingMobileHelp) { MobileConnectionHelpView() }
@@ -1439,6 +1453,14 @@ struct SettingsView: View {
                 await client.pollOpenAILogin()
             }
         }
+    }
+
+    private func closeSettings() {
+        dismiss()
+        #if os(macOS)
+        // The Settings scene is a window, so SwiftUI's sheet dismiss alone does not close it.
+        NSApp.windows.first { $0.identifier?.rawValue == "com_apple_SwiftUI_Settings_window" }?.close()
+        #endif
     }
 
     private var helpLinks: some View {
@@ -1821,7 +1843,6 @@ extension View {
 struct OpenStrudelMark: View {
     @Environment(\.colorScheme) private var appearance
     let size: CGFloat
-    var hue: Angle = .zero
 
     var body: some View {
         Image(appearance == .dark ? "DockGraphite" : "DockCream")
@@ -1829,14 +1850,6 @@ struct OpenStrudelMark: View {
             .scaledToFit()
             .frame(width: size, height: size)
             .accessibilityHidden(true)
-    }
-}
-
-extension EmployeeProfile {
-    /// One color of the mark per employee, the same on every screen.
-    var markHue: Angle {
-        let hues: [Double] = [110, 70, -110, 140, 40, 170, -70, -30]
-        return .degrees(hues[id.unicodeScalars.reduce(0) { ($0 + Int($1.value)) % hues.count }])
     }
 }
 

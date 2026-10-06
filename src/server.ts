@@ -138,6 +138,8 @@ export class HttpApi {
     if (request.method === "GET" && path === "/favicon.ico") { response.writeHead(204).end(); return; }
     if (request.method === "GET" && path === "/home-settings.js") { await this.asset(response, "home-settings.js", "text/javascript; charset=utf-8"); return; }
     if (request.method === "GET" && ["/strudel-cream.png", "/strudel-graphite.png"].includes(path)) { await this.asset(response, path.slice(1), "image/png"); return; }
+    if (request.method === "GET" && path === "/agent-characters.js") { await this.asset(response, "agent-characters.js", "text/javascript; charset=utf-8"); return; }
+    if (request.method === "GET" && /^\/characters\/(coil|fold|knot|curl|wave|pillow)\.png$/.test(path)) { await this.asset(response, path.slice(1), "image/png"); return; }
     let counted = false;
     try {
       if (await this.web.handle(request, response)) return;
@@ -251,7 +253,7 @@ export class HttpApi {
         }
       }
       if (request.method === "GET" && path === "/health") {
-        this.send(response, 200, { ok: true, service: "openstrudel", platform: process.platform, arch: process.arch, time: new Date().toISOString(), telegram: this.telegram.status(), agentArchiveVersion: 1, homeProtocol: 1, homeId: this.home.state.id, primaryId: this.home.state.primaryId, nodeId: this.home.state.nodeId, hostingOrigin: hostingOrigin(process.env.OPENSTRUDEL_HOSTING_ORIGIN) });
+        this.send(response, 200, { ok: true, service: "openstrudel", platform: process.platform, arch: process.arch, time: new Date().toISOString(), telegram: this.telegram.status(), agentArchiveVersion: 1, agentAppearanceVersion: 1, deviceLogoutVersion: 1, homeProtocol: 1, homeId: this.home.state.id, primaryId: this.home.state.primaryId, nodeId: this.home.state.nodeId, hostingOrigin: hostingOrigin(process.env.OPENSTRUDEL_HOSTING_ORIGIN) });
         return;
       }
       if (request.method === "GET" && path === "/v1/integrations") {
@@ -357,6 +359,7 @@ export class HttpApi {
             tokenLimit,
             domain: body.domain == null ? undefined : body.domain as import("./types.js").EmployeeProfile["domain"],
             purpose: body.purpose == null ? undefined : String(body.purpose),
+            appearance: body.appearance as import("./agent-appearance.js").AgentAppearance | undefined,
           });
           if (creationId) this.store.setSetting("employee.creation." + creationId,profile.id);
           this.store.db.exec("RELEASE create_profile");
@@ -371,7 +374,7 @@ export class HttpApi {
         const body = await this.body(request);
         const name = String(body.name ?? "").trim();
         const instructions = String(body.instructions ?? "").trim();
-        const profile = this.store.updateProfile(decodeURIComponent(profileMatch[1] ?? ""), { name, instructions, purpose: body.purpose == null ? undefined : String(body.purpose) });
+        const profile = this.store.updateProfile(decodeURIComponent(profileMatch[1] ?? ""), { name, instructions, purpose: body.purpose == null ? undefined : String(body.purpose), appearance: body.appearance as import("./agent-appearance.js").AgentAppearance | undefined });
         this.send(response, 200, { profile });
         return;
       }

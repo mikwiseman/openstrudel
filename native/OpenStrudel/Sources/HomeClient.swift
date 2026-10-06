@@ -110,6 +110,9 @@ final class HomeClient: ObservableObject {
     @Published private(set) var isCreating = false
     @Published var draftEmployeeDomain = "personal"
     @Published var draftDeviceID = ""
+    @Published var draftAppearance = AgentAppearance.seeded(UUID().uuidString)
+    @Published private(set) var isSignedOut = false
+    @Published private(set) var isSigningOut = false
     @Published private(set) var devices: [HomeDevice] = []
     private var refreshGeneration = 0
     var visiblePendingMessages: [PendingHomeMessage] {
@@ -135,6 +138,7 @@ final class HomeClient: ObservableObject {
         self.defaults = defaults
         self.pendingDirectory = pendingDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.appending(path: (Bundle.main.bundleIdentifier ?? "OpenStrudel") + "/Pending")
         self.session = transport
+        self.isSignedOut = defaults.bool(forKey: "openstrudel.signedOut")
         #if os(macOS)
         self.baseURLString = defaults.string(forKey: "openstrudel.homeURL") ?? "http://127.0.0.1:7788"
         #else
@@ -169,6 +173,9 @@ final class HomeClient: ObservableObject {
                 baseURLString = ""
             }
         }
+        if isSignedOut {
+            baseURLString = ""; token = nil; connectionName = "OpenStrudel"; session = transport
+        }
         HomeDrafts.migrate(defaults, currentHome: baseURLString)
         do {
             self.pendingMessages = try PendingMessagesFile.read(directory: self.pendingDirectory, home: baseURLString).map { value in
@@ -181,7 +188,7 @@ final class HomeClient: ObservableObject {
     }
 
     var shouldRestoreConnection: Bool {
-        isConfigured && (hasToken || defaults.string(forKey: "openstrudel.homeURL") != nil)
+        !isSignedOut && isConfigured && (hasToken || defaults.string(forKey: "openstrudel.homeURL") != nil)
     }
 
     var isConnecting: Bool { health == nil && (connectionState == .connecting || isStartingLocalHome) }
@@ -227,11 +234,13 @@ final class HomeClient: ObservableObject {
                 KeychainStore.remove(account: "home-connection")
                 resetConnectionState()
             }
+            isSignedOut = false
+            defaults.set(false, forKey: "openstrudel.signedOut")
             token = connection["token"]
             baseURLString = connection["url"]!
             defaults.set(baseURLString, forKey: "openstrudel.homeURL")
             await load()
-        } catch { connectionState = .unavailable; errorMessage = error.localizedDescription }
+        } catch { if generation == connectionGeneration { connectionState = .unavailable; errorMessage = error.localizedDescription } }
     }
     #endif
 
@@ -244,6 +253,8 @@ final class HomeClient: ObservableObject {
         guard let selectedProfileID else { return nil }
         return profiles.first { $0.id == selectedProfileID }
     }
+
+    var activeAppearance: AgentAppearance? { isEmployeeDraft ? draftAppearance : activeProfile?.resolvedAppearance }
 
     var activeAgentName: String {
         isEmployeeDraft ? "Новый сотрудник" : activeProfile?.name ?? "OpenStrudel"
@@ -333,6 +344,8 @@ final class HomeClient: ObservableObject {
         // Preserve the previous connection until the replacement is safely saved.
         try KeychainStore.save(saved, account: "home-connection")
         resetConnectionState()
+        isSignedOut = false
+        defaults.set(false, forKey: "openstrudel.signedOut")
         token = connection.token
         baseURLString = connection.url
         pendingMessages = (try? PendingMessagesFile.read(directory: pendingDirectory, home: connection.url)) ?? []
@@ -343,13 +356,36 @@ final class HomeClient: ObservableObject {
     }
 
     func disconnectFromMac() {
+        defaults.set(true, forKey: "openstrudel.signedOut")
+        isSignedOut = true
         resetConnectionState()
         KeychainStore.remove(account: "home-connection")
         KeychainStore.remove()
         KeychainStore.remove(account: "home-certificate-pin")
     }
 
+    func signOutOnThisDevice() async {
+        guard !isSigningOut else { return }
+        isSigningOut = true
+        let generation = connectionGeneration
+        // Paired clients revoke only their own credential. The local Home's
+        // runtime token and OpenAI sessions belong to the running Home.
+        if !isLocalConnection, health?.deviceLogoutVersion == 1,
+           let url = URL(string: normalizedBaseURL + "/auth/device/logout") {
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"; request.timeoutInterval = 5
+            if let token { request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization") }
+            _ = try? await session.data(for: request)
+        }
+        if generation == connectionGeneration { disconnectFromMac() }
+        isSigningOut = false
+    }
+
     private func resetConnectionState() {
+        relocation?.cancel(); relocation = nil
+        pendingPairing = nil; pairingError = nil; telegramLink = nil
+        devices = []; connectionNotice = nil
+        draftDeviceID = ""; draftEmployeeDomain = "personal"
         connectionState = .idle
         importedConversations = []
         connectionGeneration += 1
@@ -424,8 +460,9 @@ final class HomeClient: ObservableObject {
             guard generation == connectionGeneration else { return }
             health = loadedHealth
             if loadedHealth.homeProtocol == 1 {
-                if let result: HomeDevices = try? await request("/v1/devices") { devices = result.devices }
+                if let result: HomeDevices = try? await request("/v1/devices"), generation == connectionGeneration { devices = result.devices }
             }
+            guard generation == connectionGeneration else { return }
             connectionState = .connected
             if profiles != loadedProfiles.profiles { profiles = loadedProfiles.profiles }
             importedConversations = loadedProfiles.importedConversations ?? []
@@ -500,8 +537,8 @@ final class HomeClient: ObservableObject {
 
     func sendMessage(_ text: String, files: [PickedFile] = []) async {
         let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty || !files.isEmpty else { return }
-        pendingMessages.append(PendingHomeMessage(text: value, profileID: selectedProfileID, conversationID: selectedChatID, files: files, draftDomain: draftEmployeeDomain, deviceID: draftDeviceID.isEmpty ? nil : draftDeviceID))
+        guard !isSignedOut, !isSigningOut, !value.isEmpty || !files.isEmpty else { return }
+        pendingMessages.append(PendingHomeMessage(text: value, profileID: selectedProfileID, conversationID: selectedChatID, files: files, draftDomain: draftEmployeeDomain, deviceID: draftDeviceID.isEmpty ? nil : draftDeviceID, appearance: isEmployeeDraft ? draftAppearance : nil))
         do { try savePending() } catch { errorMessage = error.localizedDescription; pendingMessages[pendingMessages.count - 1].error = "Не удалось сохранить отправку на устройстве. Освободите место и повторите."; return }
         guard !isDrainingSendQueue else { return }
         isDrainingSendQueue = true
@@ -517,6 +554,7 @@ final class HomeClient: ObservableObject {
                     isCreating = true
                     defer { isCreating = false }
                     var creation: [String: Any] = ["creationId": String(draftID.dropFirst(6)), "domain": pending.draftDomain]
+                    if let appearance = pending.appearance { creation["appearance"] = appearance.payload }
                     if let device = pending.deviceID { creation["deviceId"] = device }
                     let body = try JSONSerialization.data(withJSONObject: creation)
                     let created: ProfileResponse = try await request("/v1/profiles", method: "POST", body: body)
@@ -728,6 +766,7 @@ final class HomeClient: ObservableObject {
         selectedChatID = nil; conversationID = nil
         messages = []; interactions = []; schedules = []
         draftEmployeeDomain = "personal"
+        draftAppearance = .seeded(selectedProfileID!)
         draftDeviceID = devices.first(where: \.primary)?.id ?? ""
     }
 
@@ -754,7 +793,7 @@ final class HomeClient: ObservableObject {
     }
 
     @discardableResult
-    func updateProfile(id: String, name: String, instructions: String, purpose: String? = nil) async -> Bool {
+    func updateProfile(id: String, name: String, instructions: String, purpose: String? = nil, appearance: AgentAppearance? = nil) async -> Bool {
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanInstructions = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanName.isEmpty else { return false }
@@ -764,8 +803,12 @@ final class HomeClient: ObservableObject {
                 "instructions": cleanInstructions
             ]
             if let purpose { payload["purpose"] = purpose }
+            if let appearance { payload["appearance"] = appearance.payload }
             let body = try JSONSerialization.data(withJSONObject: payload)
             let response: ProfileResponse = try await request("/v1/profiles/" + id, method: "PATCH", body: body)
+            if let appearance, response.profile.appearance != appearance {
+                throw HomeClientError.server("Обновите OpenStrudel на устройстве этого сотрудника, чтобы сохранить образ.")
+            }
             if let index = profiles.firstIndex(where: { $0.id == id }) {
                 profiles[index] = response.profile
             }
@@ -993,6 +1036,7 @@ final class HomeClient: ObservableObject {
     }
 
     private func adoptPrimary(_ moved: HomeMoved) async throws {
+        let generation = connectionGeneration
         guard let url = URL(string: moved.url), url.scheme == "https", let host = url.host,
               url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
               url.path.isEmpty || url.path == "/",
@@ -1008,6 +1052,7 @@ final class HomeClient: ObservableObject {
               identity.nodeId == moved.primaryId, identity.homeId == moved.homeId,
               identity.protocolVersion == 1, identity.role == "primary", identity.epoch == moved.epoch
         else { throw HomeClientError.server("Новое главное ещё запускается. Подключимся, когда передача завершится.") }
+        guard generation == connectionGeneration, !Task.isCancelled else { throw CancellationError() }
         // Identity and TLS are verified before the credential is sent.
         var check = URLRequest(url: url.appending(path: "health"))
         check.setValue("Bearer " + credential, forHTTPHeaderField: "Authorization")
@@ -1015,6 +1060,7 @@ final class HomeClient: ObservableObject {
         guard (response as? HTTPURLResponse)?.statusCode == 200,
               let verified = try? decoder.decode(HomeHealth.self, from: healthData), verified.ok,
               verified.homeId == moved.homeId, verified.primaryId == moved.primaryId else { throw HomeClientError.invalidResponse }
+        guard generation == connectionGeneration, !Task.isCancelled else { throw CancellationError() }
         let connection = HomeConnection(url: moved.url, token: credential, pin: "spki:" + pin, name: connectionName)
         try PendingMessagesFile.save(pendingMessages, directory: pendingDirectory, home: moved.url)
         HomeDrafts.relocate(defaults, from: baseURLString, to: moved.url)

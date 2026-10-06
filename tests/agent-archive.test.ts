@@ -54,6 +54,24 @@ function populated() {
 }
 
 describe("additive team transfer", () => {
+  it("preserves characters when importing with new IDs, including older archives", () => {
+    const source = fixture(), target = fixture();
+    const agent = source.store.createProfile({ name: "Образ", appearance: { version: 1, kind: "curl", tone: 6 } });
+    const archive = source.archive.export();
+    target.archive.import(archive, target.archive.preview(archive).planToken);
+    const imported = target.store.getProfile("Образ")!;
+    expect(imported.id).not.toBe(agent.id);
+    expect(imported.appearance).toEqual(agent.appearance);
+    delete archive.profiles.find(p => p.id === agent.id)!.appearance;
+    const decoded = decodeArchive(Buffer.from(JSON.stringify(archive)));
+    const olderTarget = fixture();
+    olderTarget.archive.import(decoded, olderTarget.archive.preview(decoded).planToken);
+    expect(olderTarget.store.getProfile("Образ")!.appearance).toBeDefined();
+    const invalid = structuredClone(archive);
+    (invalid.profiles[0] as any).appearance = { version: 1, kind: "external", tone: 0 };
+    expect(() => target.archive.preview(decodeArchive(Buffer.from(JSON.stringify(invalid))))).toThrow();
+    expect(target.store.listProfiles()).toHaveLength(2);
+  });
   it("keeps new agents isolated through export and additive import", () => {
     const source = fixture(), target = fixture();
     const first = source.store.createProfile({ name: "One", domain: "work" });

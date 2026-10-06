@@ -43,6 +43,8 @@ struct HomeHealth: Decodable {
     var homeId: String? = nil
     var nodeId: String? = nil
     var primaryId: String? = nil
+    var agentAppearanceVersion: Int? = nil
+    var deviceLogoutVersion: Int? = nil
 }
 
 struct HomeConversation: Decodable {
@@ -197,6 +199,7 @@ struct PendingHomeMessage: Codable, Identifiable, Equatable {
     var deviceID: String? = nil
     var deliveryState: String? = nil
     var operationID: String? = nil
+    var appearance: AgentAppearance? = nil
 }
 
 enum PendingMessagesFile {
@@ -233,6 +236,7 @@ struct EmployeeProfile: Codable, Identifiable, Hashable {
     var domain: String? = nil
     var purpose: String? = nil
     var deviceId: String? = nil
+    var appearance: AgentAppearance? = nil
 
     var isWork: Bool { domain == "work" }
     var roleText: String { purpose?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }

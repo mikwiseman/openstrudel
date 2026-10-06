@@ -3,6 +3,33 @@ import Testing
 
 @Suite(.serialized)
 @MainActor struct HomeAccountRecoveryTests {
+    @Test func signOutSurvivesRelaunchAndPreservesUnsentMessages() async throws {
+        let suite = "OpenStrudel.signout-test." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let directory = FileManager.default.temporaryDirectory.appending(path: suite)
+        defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: directory) }
+        let home = "http://127.0.0.1:57575"
+        defaults.set(home, forKey: "openstrudel.homeURL")
+        let pending = PendingHomeMessage(text: "Сохранить до возвращения", profileID: nil)
+        try PendingMessagesFile.save([pending], directory: directory, home: home)
+        let client = HomeClient(defaults: defaults, pendingDirectory: directory)
+        #expect(client.pendingMessages.count == 1)
+        await client.signOutOnThisDevice()
+        #expect(client.isSignedOut)
+        #expect(!client.shouldRestoreConnection)
+        #expect(client.pendingMessages.isEmpty)
+        #expect(client.devices.isEmpty)
+        #expect(client.profiles.isEmpty)
+        #expect(try PendingMessagesFile.read(directory: directory, home: home) == [pending])
+        let relaunched = HomeClient(defaults: defaults, pendingDirectory: directory)
+        #expect(relaunched.isSignedOut)
+        #expect(relaunched.normalizedBaseURL.isEmpty)
+        #expect(!relaunched.hasToken)
+        #expect(!relaunched.shouldRestoreConnection)
+        await relaunched.sendMessage("Не отправлять после выхода")
+        #expect(relaunched.pendingMessages.isEmpty)
+    }
+
     @Test func initialConnectionWaitsForTheServerWithoutShowingAnOutage() async throws {
         let state = AccountFixtureState(); state.delay = .milliseconds(150)
         let (client, session) = makeClient(state)

@@ -8,9 +8,9 @@ import { describe, expect, it, vi } from "vitest";
 import { Store } from "../src/store.js";
 import { MobileAccess } from "../src/mobile.js";
 
-function call(port: number, path: string, token?: string, origin?: string, nonce?: string) {
+function call(port: number, path: string, token?: string, origin?: string, nonce?: string, method?: string) {
   return new Promise<{ status: number; body: any }>((resolve, reject) => {
-    const req = request({ hostname: "127.0.0.1", port, path, method: path === "/pair" ? "POST" : "GET", rejectUnauthorized: false,
+    const req = request({ hostname: "127.0.0.1", port, path, method: method ?? (path === "/pair" ? "POST" : "GET"), rejectUnauthorized: false,
       headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(origin ? { origin } : {}), ...(nonce ? { "x-openstrudel-pair-id": nonce } : {}) },
     }, res => {
       let body = "";
@@ -22,6 +22,23 @@ function call(port: number, path: string, token?: string, origin?: string, nonce
 }
 
 describe("iPhone pairing", () => {
+  it("signs out only the requesting device without disturbing agents or another connection", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "strudel-signout-")), store = new Store(":memory:");
+    const mobile = new MobileAccess(store, (_req, res) => res.end('{"ok":true}'), { directory, port: 0, host: "127.0.0.1" });
+    try {
+      const agent = store.createProfile({ name: "Продолжает работать" });
+      const pair = async (owner: boolean) => (await call(mobile.port!, "/pair", new URL((await mobile.invite(owner)).url).searchParams.get("key")!)).body.token;
+      await mobile.invite();
+      const first = await pair(false), second = await pair(true);
+      expect((await call(mobile.port!, "/auth/device/logout", first, "https://evil.test", undefined, "POST")).status).toBe(403);
+      expect((await call(mobile.port!, "/health", first)).status).toBe(200);
+      expect((await call(mobile.port!, "/auth/device/logout", first, undefined, undefined, "POST")).status).toBe(200);
+      expect((await call(mobile.port!, "/health", first)).status).toBe(401);
+      expect((await call(mobile.port!, "/health", second)).status).toBe(200);
+      expect(mobile.status().connections).toBe(1);
+      expect(store.getProfile(agent.id)).toMatchObject(agent);
+    } finally { await mobile.close(); store.close(); await rm(directory, { recursive: true, force: true }); }
+  });
   it("recovers a lost pairing response across restart only for the same client attempt", async () => {
     const directory = await mkdtemp(join(tmpdir(), "strudel-pair-retry-")), store = new Store(":memory:");
     let mobile = new MobileAccess(store, (_req, res) => res.end('{}'), { directory, port: 0, host: "127.0.0.1" });

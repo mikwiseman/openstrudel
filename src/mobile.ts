@@ -121,7 +121,7 @@ export class MobileAccess {
       res.setHeader("cache-control", "no-store");
       if (!sameOrigin(req)) { res.writeHead(403).end('{"error":"Запрос с другого сайта отклонён"}'); return; }
       const path = new URL(req.url ?? "/", "https://localhost").pathname;
-      if (["/", "/home-settings.js", "/manifest.webmanifest", "/strudel-cream.png", "/strudel-graphite.png", "/favicon.ico", "/auth/session", "/auth/logout"].includes(path)) { this.handle(req, res, false); return; }
+      if (/^\/characters\/(coil|fold|knot|curl|wave|pillow)\.png$/.test(path) || ["/", "/agent-characters.js", "/home-settings.js", "/manifest.webmanifest", "/strudel-cream.png", "/strudel-graphite.png", "/favicon.ico", "/auth/session", "/auth/logout"].includes(path)) { this.handle(req, res, false); return; }
       if (isPeerRoute(new URL(req.url ?? "/", "https://localhost").pathname)) { this.handle(req, res, false); return; }
       try { const session = this.web?.authenticate(req); if (session) { this.handle(req, res, session.owner); return; } }
       catch { res.writeHead(403).end('{"error":"Обновите страницу и повторите действие"}'); return; }
@@ -151,6 +151,10 @@ export class MobileAccess {
       }
       if (!token || !this.tokens().includes(hash(token))) {
         res.writeHead(401).end('{"error":"Подключите iPhone заново через QR на Mac."}'); return;
+      }
+      if (req.method === "POST" && path === "/auth/device/logout") {
+        this.revokeClient(hash(token).slice(0, 20));
+        res.end('{"ok":true}'); return;
       }
       // A phone cannot issue more invitations or revoke someone else's access.
       const owner=(JSON.parse(this.store.getSetting("mobile.owners") ?? "[]") as string[]).includes(hash(token));

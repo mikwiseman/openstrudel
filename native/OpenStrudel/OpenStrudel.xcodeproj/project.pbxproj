@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		0273A3B12C532A6C897E1E4D /* AttachmentImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 718BE32FAB2706C4D8DB4C86 /* AttachmentImport.swift */; };
 		066029DEC026A68A1379F314 /* MobilePairingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8AC19EC197C2FC60EBEB3D /* MobilePairingTests.swift */; };
+		077A169A25CD4395F918F4E7 /* DeviceSignOut.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8709EBB6593952ABF30E9889 /* DeviceSignOut.swift */; };
+		088E7C7AA2674D44C3751AE5 /* AgentAppearanceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D96F9460E173BD6E9269AE3 /* AgentAppearanceViews.swift */; };
 		09FDF891ED4D0479E78D39E0 /* LiveCloudPairingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96A2DF3BB4A7D519FA68EA0F /* LiveCloudPairingUITests.swift */; };
 		0E0F3C4329E1EA2E6C689738 /* AgentTransferViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31C9D3DF0BCBDC8DE546D88B /* AgentTransferViews.swift */; };
 		1109A0AEE1C8475E2E3181A3 /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = B9A7842329C25226D34D8B1C /* cloud-init.sh */; };
@@ -27,6 +29,7 @@
 		38670454174D5126BB5A84D1 /* ChatMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3D241925EF81E938247C15 /* ChatMedia.swift */; };
 		396D0DCDA42F07B7B6AD8CDA /* ReleaseScenariosUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 269C829F112500B5E34127F7 /* ReleaseScenariosUITests.swift */; };
 		3A4F31F9396C14C867C86558 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A12DEA162BBC10A8CA136D /* Views.swift */; };
+		405EE709A22DB0AD7D596EF5 /* AgentCharactersUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C156BE0450E7CC24D988FA90 /* AgentCharactersUITests.swift */; };
 		4069A7E903D63727808053A3 /* HomeMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = B49A5A4FE8FCDBCA5997D859 /* HomeMenu.swift */; };
 		4452A1ECB47F859886AD7276 /* WaiVDSClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F4C8D0A80AE9D97821FA98C /* WaiVDSClientTests.swift */; };
 		4A0104CC2C576E467EF78724 /* HostingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B99FD977A6DF945EF17152E /* HostingStore.swift */; };
@@ -35,6 +38,7 @@
 		523AFBBC3F4EB9C2769483F3 /* AppUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25538EEFA0F0470CDF4958CC /* AppUpdater.swift */; };
 		528728D21AA6033C7D7F276D /* MobileConnectionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41969DD182FE17F98BBEEE17 /* MobileConnectionViews.swift */; };
 		5785006166AD53761DA29454 /* ChatMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3D241925EF81E938247C15 /* ChatMedia.swift */; };
+		588CD75B3C1F9C3EE35BC4F4 /* AgentAppearanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACD91A75580ED25308693AB1 /* AgentAppearanceTests.swift */; };
 		5B679607856CC1AB98F6A104 /* DigitalOceanCloudTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06FEF9F7FF45A0D9EF5FFC46 /* DigitalOceanCloudTests.swift */; };
 		5DE440D2FB286AD1ED3CE80A /* AttachmentImportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6EBF07406C0F7BBD5F47800 /* AttachmentImportTests.swift */; };
 		5E16737811633861DD72192E /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9234E96C15CA694F0A31099 /* Models.swift */; };
@@ -47,11 +51,14 @@
 		64365D840FC1C3F656F9447B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = E29C1F0D3A0FE125E35B565D /* PrivacyInfo.xcprivacy */; };
 		710C9EA301B072949AB43AF4 /* UserFacingErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16302AC88D0BE5545DFBFC7F /* UserFacingErrorTests.swift */; };
 		714657174DCE32C3AD9148AE /* HomeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D671F62812BA20E0AF9CB2FA /* HomeClient.swift */; };
+		76A9DEA63806F5B706E1F523 /* AgentAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A54DEED2D78EBBD77B24825 /* AgentAppearance.swift */; };
 		76BF370363AC2C6470E67CBE /* LocalHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96054101E4801A6BCC170C1 /* LocalHome.swift */; };
 		7731DA55E2CDCA3C6C0735AE /* AgentTransferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A087F040F8395EFA9DA4306 /* AgentTransferTests.swift */; };
 		7CB4918D49632B6169D77921 /* HostingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B99FD977A6DF945EF17152E /* HostingStore.swift */; };
+		7F3CBCD184E1FE8592F1625E /* AgentAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A54DEED2D78EBBD77B24825 /* AgentAppearance.swift */; };
 		80A890128CCD16FCD6ECE3AD /* MessageContentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58B7111F287B0C5661239DEB /* MessageContentTests.swift */; };
 		8264AD8368237A515B1B219D /* HomeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D671F62812BA20E0AF9CB2FA /* HomeClient.swift */; };
+		850B934B29DF93BD5D94629D /* AgentAppearanceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D96F9460E173BD6E9269AE3 /* AgentAppearanceViews.swift */; };
 		85C1C1D5EA678B5643F6884B /* OpenStrudelApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 680E20C305BC52A853E797DD /* OpenStrudelApp.swift */; };
 		8769E196AFD3136FF6469A32 /* DigitalOceanCloud.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CF338D2C3249DC58392487E /* DigitalOceanCloud.swift */; };
 		87816A6CD5C75D29103B8A80 /* WaiVDSContract.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61A4BCF298A1E1126E8D3482 /* WaiVDSContract.swift */; };
@@ -83,6 +90,7 @@
 		BD17762CF52EB077E6C09EC9 /* AppIconAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B9B3467FCD3522515AD8F38 /* AppIconAppearance.swift */; };
 		C1D22A6A95D61EF3973CECE1 /* Sparkle-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = 37B4BD216FB2EDE09E4E16E4 /* Sparkle-LICENSE.txt */; };
 		C8DE0605E64DF75EAD5BA868 /* AttachmentImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 718BE32FAB2706C4D8DB4C86 /* AttachmentImport.swift */; };
+		C8E9F77A1A8A5D66D4211EF5 /* DeviceSignOut.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8709EBB6593952ABF30E9889 /* DeviceSignOut.swift */; };
 		D24C4F8AD7FB5F62D4495C35 /* ChatClockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DA7A5FC9D1A46B7D5486153 /* ChatClockTests.swift */; };
 		DEA7AE93CC5A847816D864F5 /* WaiVDSContract.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61A4BCF298A1E1126E8D3482 /* WaiVDSContract.swift */; };
 		DEEDEAD2AB25008C3CCAF7D7 /* SetupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A635A0DA48A1D907252A7BCB /* SetupViews.swift */; };
@@ -91,6 +99,7 @@
 		E881BC2893184397D1A9AFE9 /* DigitalOceanBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A041EB646E3F285D182418 /* DigitalOceanBootstrap.swift */; };
 		EC2C02C1059E79D01E1D9924 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 034974DBF235D1A2CAF70200 /* Sparkle */; };
 		EFD46E79E43C1763A4CF16F6 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A12DEA162BBC10A8CA136D /* Views.swift */; };
+		F6604979C497258E987E2193 /* AgentAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A54DEED2D78EBBD77B24825 /* AgentAppearance.swift */; };
 		F92751B4CA90257CFDC92A40 /* DesignAccessibilityUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1AB12278F64C5C7247C698 /* DesignAccessibilityUITests.swift */; };
 		FA990FEF4C0EA7D7B16F790C /* PrimaryHomeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6E988F61680172334C63B12 /* PrimaryHomeTests.swift */; };
 		FC61FB4F58F351C111D601E9 /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = B9A7842329C25226D34D8B1C /* cloud-init.sh */; };
@@ -124,6 +133,7 @@
 		452D1C62E5C23CB46B6FD978 /* AccountRecoveryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountRecoveryUITests.swift; sourceTree = "<group>"; };
 		4AF0B9DD514B9520C3BB378E /* wai-vds-v2.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "wai-vds-v2.json"; sourceTree = "<group>"; };
 		4B9B3467FCD3522515AD8F38 /* AppIconAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconAppearance.swift; sourceTree = "<group>"; };
+		4D96F9460E173BD6E9269AE3 /* AgentAppearanceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAppearanceViews.swift; sourceTree = "<group>"; };
 		4DDBDB4821F4175BB293C35F /* MobilePairingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePairingUITests.swift; sourceTree = "<group>"; };
 		58B7111F287B0C5661239DEB /* MessageContentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageContentTests.swift; sourceTree = "<group>"; };
 		58DAA420A0BE0C62176A43DB /* PrimaryHomeSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryHomeSettings.swift; sourceTree = "<group>"; };
@@ -139,15 +149,19 @@
 		709BE1A9B19D0468720417CF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		718BE32FAB2706C4D8DB4C86 /* AttachmentImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentImport.swift; sourceTree = "<group>"; };
 		7C3D241925EF81E938247C15 /* ChatMedia.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMedia.swift; sourceTree = "<group>"; };
+		8709EBB6593952ABF30E9889 /* DeviceSignOut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceSignOut.swift; sourceTree = "<group>"; };
 		8C5697D28D27A1636C95E5E2 /* OpenStrudel Text Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "OpenStrudel Text Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		96A2DF3BB4A7D519FA68EA0F /* LiveCloudPairingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveCloudPairingUITests.swift; sourceTree = "<group>"; };
 		97A6C72C5E00D5723795E8B1 /* AgentTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTransfer.swift; sourceTree = "<group>"; };
 		98BB832A7436E9C4AD93FB56 /* OpenStrudel iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "OpenStrudel iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		9A54DEED2D78EBBD77B24825 /* AgentAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAppearance.swift; sourceTree = "<group>"; };
 		A4A12DEA162BBC10A8CA136D /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
 		A635A0DA48A1D907252A7BCB /* SetupViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupViews.swift; sourceTree = "<group>"; };
 		A6EBF07406C0F7BBD5F47800 /* AttachmentImportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentImportTests.swift; sourceTree = "<group>"; };
+		ACD91A75580ED25308693AB1 /* AgentAppearanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAppearanceTests.swift; sourceTree = "<group>"; };
 		B49A5A4FE8FCDBCA5997D859 /* HomeMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeMenu.swift; sourceTree = "<group>"; };
 		B9A7842329C25226D34D8B1C /* cloud-init.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "cloud-init.sh"; sourceTree = "<group>"; };
+		C156BE0450E7CC24D988FA90 /* AgentCharactersUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCharactersUITests.swift; sourceTree = "<group>"; };
 		C1A041EB646E3F285D182418 /* DigitalOceanBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DigitalOceanBootstrap.swift; sourceTree = "<group>"; };
 		C4EA2EF5DDC9D052A757B498 /* home-certificate.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "home-certificate.json"; sourceTree = "<group>"; };
 		C7D69A9EDA344A443227E0B2 /* WaiVDSClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiVDSClient.swift; sourceTree = "<group>"; };
@@ -196,6 +210,8 @@
 		2C1B064E52E9C728955B5E56 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				9A54DEED2D78EBBD77B24825 /* AgentAppearance.swift */,
+				4D96F9460E173BD6E9269AE3 /* AgentAppearanceViews.swift */,
 				97A6C72C5E00D5723795E8B1 /* AgentTransfer.swift */,
 				31C9D3DF0BCBDC8DE546D88B /* AgentTransferViews.swift */,
 				4B9B3467FCD3522515AD8F38 /* AppIconAppearance.swift */,
@@ -203,6 +219,7 @@
 				25538EEFA0F0470CDF4958CC /* AppUpdater.swift */,
 				718BE32FAB2706C4D8DB4C86 /* AttachmentImport.swift */,
 				7C3D241925EF81E938247C15 /* ChatMedia.swift */,
+				8709EBB6593952ABF30E9889 /* DeviceSignOut.swift */,
 				C1A041EB646E3F285D182418 /* DigitalOceanBootstrap.swift */,
 				5CF338D2C3249DC58392487E /* DigitalOceanCloud.swift */,
 				D671F62812BA20E0AF9CB2FA /* HomeClient.swift */,
@@ -228,6 +245,7 @@
 			isa = PBXGroup;
 			children = (
 				452D1C62E5C23CB46B6FD978 /* AccountRecoveryUITests.swift */,
+				C156BE0450E7CC24D988FA90 /* AgentCharactersUITests.swift */,
 				6D1AB12278F64C5C7247C698 /* DesignAccessibilityUITests.swift */,
 				1132C0F7932A6440305D150A /* iPhoneSmokeTests.swift */,
 				96A2DF3BB4A7D519FA68EA0F /* LiveCloudPairingUITests.swift */,
@@ -241,6 +259,7 @@
 		9332B7FCD8BAD85E05291826 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				ACD91A75580ED25308693AB1 /* AgentAppearanceTests.swift */,
 				5A087F040F8395EFA9DA4306 /* AgentTransferTests.swift */,
 				A6EBF07406C0F7BBD5F47800 /* AttachmentImportTests.swift */,
 				6DA7A5FC9D1A46B7D5486153 /* ChatClockTests.swift */,
@@ -463,6 +482,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				76A9DEA63806F5B706E1F523 /* AgentAppearance.swift in Sources */,
+				588CD75B3C1F9C3EE35BC4F4 /* AgentAppearanceTests.swift in Sources */,
 				FE16FE1017F5BA162CF34398 /* AgentTransfer.swift in Sources */,
 				7731DA55E2CDCA3C6C0735AE /* AgentTransferTests.swift in Sources */,
 				954CECC367D15575AF45868F /* AppTheme.swift in Sources */,
@@ -495,6 +516,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F6604979C497258E987E2193 /* AgentAppearance.swift in Sources */,
+				850B934B29DF93BD5D94629D /* AgentAppearanceViews.swift in Sources */,
 				605C0ED95C9C79FCD1EACED1 /* AgentTransfer.swift in Sources */,
 				A468660D4A41BD2C0F719FDB /* AgentTransferViews.swift in Sources */,
 				631BE06D25300A0E399F2E28 /* AppIconAppearance.swift in Sources */,
@@ -502,6 +525,7 @@
 				523AFBBC3F4EB9C2769483F3 /* AppUpdater.swift in Sources */,
 				FED472FDDD9D5774F84AD1A4 /* AttachmentImport.swift in Sources */,
 				5785006166AD53761DA29454 /* ChatMedia.swift in Sources */,
+				077A169A25CD4395F918F4E7 /* DeviceSignOut.swift in Sources */,
 				96011E8827031FF477E78A0D /* DigitalOceanBootstrap.swift in Sources */,
 				A789FE50A71BA8F813390382 /* DigitalOceanCloud.swift in Sources */,
 				8264AD8368237A515B1B219D /* HomeClient.swift in Sources */,
@@ -525,6 +549,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7F3CBCD184E1FE8592F1625E /* AgentAppearance.swift in Sources */,
+				088E7C7AA2674D44C3751AE5 /* AgentAppearanceViews.swift in Sources */,
 				33E5289AE4FCC51707985917 /* AgentTransfer.swift in Sources */,
 				0E0F3C4329E1EA2E6C689738 /* AgentTransferViews.swift in Sources */,
 				BD17762CF52EB077E6C09EC9 /* AppIconAppearance.swift in Sources */,
@@ -532,6 +558,7 @@
 				BA4C2329101E4E5D8C2EABD1 /* AppUpdater.swift in Sources */,
 				0273A3B12C532A6C897E1E4D /* AttachmentImport.swift in Sources */,
 				38670454174D5126BB5A84D1 /* ChatMedia.swift in Sources */,
+				C8E9F77A1A8A5D66D4211EF5 /* DeviceSignOut.swift in Sources */,
 				E09E082D82D45A7D09421AB8 /* DigitalOceanBootstrap.swift in Sources */,
 				8769E196AFD3136FF6469A32 /* DigitalOceanCloud.swift in Sources */,
 				714657174DCE32C3AD9148AE /* HomeClient.swift in Sources */,
@@ -556,6 +583,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				35830784DC5290BC03679296 /* AccountRecoveryUITests.swift in Sources */,
+				405EE709A22DB0AD7D596EF5 /* AgentCharactersUITests.swift in Sources */,
 				F92751B4CA90257CFDC92A40 /* DesignAccessibilityUITests.swift in Sources */,
 				09FDF891ED4D0479E78D39E0 /* LiveCloudPairingUITests.swift in Sources */,
 				5E17805965A351ABB7620CF2 /* MobilePairingUITests.swift in Sources */,
@@ -583,7 +611,7 @@
 				CODE_SIGN_ENTITLEMENTS = iOS.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 15;
+				CURRENT_PROJECT_VERSION = 16;
 				INFOPLIST_FILE = "iOS-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = OpenStrudel;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -624,7 +652,7 @@
 				CODE_SIGN_ENTITLEMENTS = iOS.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 15;
+				CURRENT_PROJECT_VERSION = 16;
 				INFOPLIST_FILE = "iOS-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = OpenStrudel;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -725,7 +753,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -823,7 +851,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

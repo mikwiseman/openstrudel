@@ -145,9 +145,9 @@ struct MobileWelcomeView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     Spacer(minLength: 48)
-                    Image("OpenStrudelMark").resizable().scaledToFit().frame(width: 100, height: 100)
+                    OpenStrudelMark(size: 100)
                         .accessibilityHidden(true).padding(.bottom, 30)
-                    Text(client.connectionNeedsPairing ? "Подключитесь снова." : client.isConfigured ? "Нет связи с OpenStrudel" : "Подключите свою команду")
+                    Text(client.connectionNeedsPairing ? "Подключитесь снова." : client.isConfigured ? "Нет связи с OpenStrudel" : client.isSignedOut ? "Вы вышли на этом устройстве" : "Подключите свою команду")
                         .font(.system(.largeTitle, design: .serif, weight: .medium))
                         .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                     Text(client.connectionNeedsPairing ? "Подключение отозвано. Вам нужно новое приглашение от владельца команды." : client.isConfigured
@@ -178,6 +178,7 @@ struct MobileWelcomeView: View {
                                 .foregroundStyle(.primary)
                         }.adaptiveActionStyle(.glass).controlSize(.large)
                             .accessibilityLabel("Вставить ссылку приглашения").accessibilityIdentifier("pasteInvitation")
+                        if client.isConfigured { DeviceSignOutButton {} }
                         if let cameraError {
                             Text(cameraError).font(.footnote).foregroundStyle(AppTheme.secondaryText)
                                 .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
@@ -326,7 +327,7 @@ struct ConfirmMacPairingView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
-                    Image("OpenStrudelMark").resizable().scaledToFit().frame(width: 72, height: 72)
+                    OpenStrudelMark(size: 72)
                         .accessibilityHidden(true).padding(.top, 18)
                     Text("Подключить это устройство?").font(.system(.title, design: .serif, weight: .medium))
                         .multilineTextAlignment(.center)

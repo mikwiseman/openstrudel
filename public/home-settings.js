@@ -80,7 +80,7 @@ async function openHomeSettings() {
     link.href=state.hostingOrigin; link.target='_blank'; link.rel='noopener noreferrer';
     link.style.cssText='display:block;margin:12px 0'; page.content.append(link);
   }
-  action(page,'Выйти из браузера',async()=>{ await api('/auth/logout',{method:'POST'}); location.reload(); });
+  action(page,'Выйти на этом устройстве',openDeviceSignOut);
 }
 async function openDevices() {
   const page=modalPage('Устройства','Главное хранит каталог и соединяет ваши приложения с агентами.');
@@ -115,6 +115,14 @@ async function openDevices() {
 async function openCurrentAgent() {
   const agent=state.selected||'main', profile=state.profiles.find(p=>p.id===agent), name=profile?.name||'OpenStrudel';
   const page=modalPage(name,'Настройки изменят новые поручения. Уже начатая работа продолжится с прежним аккаунтом.');
+  if(profile && state.appearanceVersion===1) {
+    const editor=appearanceEditor(agentAppearance(profile)); page.content.append(editor.root);
+    action(page,'Сохранить образ',async()=>{
+      const result=await api('/v1/profiles/'+encodeURIComponent(profile.id),{method:'PATCH',body:JSON.stringify({name:profile.name,instructions:profile.instructions,appearance:editor.value()})});
+      if(JSON.stringify(result.profile?.appearance)!==JSON.stringify(editor.value())) throw new Error('Обновите OpenStrudel на устройстве этого агента, чтобы сохранить образ.');
+      closeModal();await refresh();
+    },true);
+  }
   try {
     const control=await api('/v1/home'), deviceId=profile?.deviceId||control.home.mainNodeId;
     const device=control.devices.find(d=>d.id===deviceId);
@@ -249,15 +257,16 @@ async function openCreateAgent() {
     selector.value=data.primaryId;
   } catch(e) { page.report(e); }
   const creationId=crypto.randomUUID();
+  const editor=appearanceEditor(agentAppearance({id:creationId}));if(state.appearanceVersion===1) page.content.append(editor.root);
   action(page,'Создать',async()=>{
-    const result=await api('/v1/profiles',{method:'POST',headers:{'idempotency-key':creationId},body:JSON.stringify({name:name.value,instructions:description.value,deviceId:selector.value,creationId})});
+    const result=await api('/v1/profiles',{method:'POST',headers:{'idempotency-key':creationId},body:JSON.stringify({name:name.value,instructions:description.value,deviceId:selector.value,creationId,...(state.appearanceVersion===1?{appearance:editor.value()}:{})})});
     if(!result.profile) throw new Error('Создание ещё выполняется. Проверьте список агентов после подключения устройства.');
     closeModal(); await refresh(); await selectAgent(result.profile.id);
   },true);
 }
 function openNavigation() {
   const page=modalPage('OpenStrudel');
-  for(const profile of [{id:null,name:'OpenStrudel'},...state.profiles]) { const button=element('button',profile.name,'secondary'); button.style.cssText='display:block;width:100%;margin:6px 0;text-align:left'; button.onclick=async()=>{closeModal();try{await selectAgent(profile.id);}catch(e){$('status').textContent=e.message;}}; page.content.append(button); }
+  for(const profile of [{id:null,name:'OpenStrudel'},...state.profiles]) { const button=element('button','','secondary'); if(profile.id) button.append(characterImage(agentAppearance(profile),32)); button.append(element('span',profile.name)); button.style.cssText='display:flex;align-items:center;gap:10px;width:100%;margin:6px 0;text-align:left'; button.onclick=async()=>{closeModal();try{await selectAgent(profile.id);}catch(e){$('status').textContent=e.message;}}; page.content.append(button); }
   action(page,'Настройки',openHomeSettings); action(page,'Новый агент',openCreateAgent);
 }
 async function sendDraft(event) {
@@ -332,3 +341,23 @@ function renderExtraMessages() {
   }
 }
 void bootstrapWeb();
+
+async function openDeviceSignOut() {
+  const page=modalPage('Выйти на этом устройстве?','Агенты, переписка, файлы и расписания сохранятся на ваших устройствах. Команда продолжит работать, пока её Mac или сервер включён. Для возвращения понадобится новое приглашение.');
+  page.actions.lastChild.textContent='Отмена';
+  if($('draft').value.trim()) page.content.append(element('p','Черновик останется в этом браузере для повторного подключения к этой команде.'));
+  const leave=action(page,'Выйти',async()=>{ saveDraft(); await api('/auth/logout',{method:'POST'}); clearInterval(state.refreshTimer); location.reload(); });
+  if(state.owner && state.archiveVersion===1) action(page,'Сначала сохранить копию',async()=>{
+    page.box.dataset.busy='true'; leave.disabled=true;
+    try {
+      const devices=(await api('/v1/devices')).devices;
+      const copies=[];
+      for(const device of devices) copies.push({device,data:await api('/v1/agents/archive?deviceId='+encodeURIComponent(device.id),{},true)});
+      page.content.replaceChildren(element('p','Сохраните все файлы ниже. После этого нажмите «Выйти». Если закрыть это окно, вы останетесь подключены.'));
+      copies.forEach(({device,data},index)=>{
+        const button=element('button','Сохранить: '+device.name,'secondary');
+        button.onclick=()=>download(data,'OpenStrudel-'+(index+1)+'.openstrudel'); page.content.append(button);
+      });
+    } finally {page.box.dataset.busy='false';leave.disabled=false;}
+  },true);
+}

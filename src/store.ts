@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Attachment, Channel, Conversation, EmployeeProfile, Message, TelegramChat, HistoryEntry } from "./types.js";
 import { id, jsonArray, nowIso } from "./util.js";
+import { defaultAppearance, parseAppearance, type AgentAppearance } from "./agent-appearance.js";
 
 type Row = Record<string, unknown>;
 
@@ -66,6 +67,7 @@ export class Store {
     const profileColumns = new Set((this.db.prepare("PRAGMA table_info(employee_profiles)").all() as Row[]).map(c => String(c.name)));
     if (!profileColumns.has("domain")) this.db.exec("ALTER TABLE employee_profiles ADD COLUMN domain TEXT NOT NULL DEFAULT 'personal'");
     if (!profileColumns.has("purpose")) this.db.exec("ALTER TABLE employee_profiles ADD COLUMN purpose TEXT NOT NULL DEFAULT ''");
+    if (!profileColumns.has("appearance_json")) this.db.exec("ALTER TABLE employee_profiles ADD COLUMN appearance_json TEXT");
 
     const oldMessages = this.db.prepare("PRAGMA table_info(messages)").all() as Row[];
     const oldNames = new Set(oldMessages.map((column) => String(column.name)));
@@ -343,7 +345,7 @@ export class Store {
     return rows.reverse().map((row) => this.mapMessage(row));
   }
 
-  createProfile(input: { name?: string; instructions?: string; capabilities?: string[]; model?: string; tokenLimit?: number; domain?: EmployeeProfile["domain"]; purpose?: string }): EmployeeProfile {
+  createProfile(input: { name?: string; instructions?: string; capabilities?: string[]; model?: string; tokenLimit?: number; domain?: EmployeeProfile["domain"]; purpose?: string; appearance?: AgentAppearance }): EmployeeProfile {
     let name = input.name?.trim() || "Новый бот";
     if (!input.name?.trim()) { let n = 2; while (this.getProfile(name)) name = `Новый бот ${n++}`; }
     if (name.length > 80 || (input.instructions?.length ?? 0) > 12000) throw new Error("Слишком длинное имя или характер");
@@ -361,7 +363,8 @@ export class Store {
       domain: input.domain ?? "personal",
       purpose: input.purpose?.trim() ?? "",
     };
-    this.db.prepare("INSERT INTO employee_profiles (id, name, instructions, capabilities_json, model, token_limit, created_at, domain, purpose) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+    profile.appearance = input.appearance === undefined ? defaultAppearance(profile.id) : parseAppearance(input.appearance);
+    this.db.prepare("INSERT INTO employee_profiles (id, name, instructions, capabilities_json, model, token_limit, created_at, domain, purpose, appearance_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
       profile.id,
       profile.name,
       profile.instructions,
@@ -371,6 +374,7 @@ export class Store {
       profile.createdAt,
       profile.domain!,
       profile.purpose!,
+      JSON.stringify(profile.appearance),
     );
     // Existing agents keep their explicitly shared legacy workspace. New agents
     // start with separate files and sandbox permissions from the first turn.
@@ -392,17 +396,19 @@ export class Store {
     return row ? this.mapProfile(row) : null;
   }
 
-  updateProfile(profileId: string, input: { name: string; instructions: string; purpose?: string }): EmployeeProfile {
+  updateProfile(profileId: string, input: { name: string; instructions: string; purpose?: string; appearance?: AgentAppearance }): EmployeeProfile {
     const name = input.name.trim();
     const instructions = input.instructions.trim();
     if (!name || name.length > 80 || instructions.length > 12000) throw new Error("Проверьте имя и длину характера");
     if (input.purpose !== undefined && input.purpose.length > 240) throw new Error("Опишите роль короче");
     const named = this.getProfile(name);
     if (named && named.id !== profileId) throw new Error("Сотрудник с таким именем уже есть");
+    const appearance = input.appearance === undefined ? undefined : parseAppearance(input.appearance);
     this.db.prepare("UPDATE employee_profiles SET name = ?, instructions = ? WHERE id = ?").run(name, instructions, profileId);
     if (input.purpose !== undefined) {
       this.db.prepare("UPDATE employee_profiles SET purpose=? WHERE id=?").run(input.purpose.trim(),profileId);
     }
+    if (appearance) this.db.prepare("UPDATE employee_profiles SET appearance_json=? WHERE id=?").run(JSON.stringify(appearance), profileId);
     const profile = this.getProfile(profileId);
     if (!profile) throw new Error(`employee not found: ${profileId}`);
     return profile;
@@ -450,6 +456,7 @@ export class Store {
 
   private mapProfile(row: Row): EmployeeProfile {
     return {
+      appearance: row.appearance_json ? parseAppearance(JSON.parse(String(row.appearance_json))) : defaultAppearance(String(row.id)),
       id: String(row.id),
       name: String(row.name),
       instructions: String(row.instructions),

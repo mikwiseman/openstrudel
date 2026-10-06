@@ -34,6 +34,7 @@ export interface TelegramChat { chatId: string; title: string; conversationId: s
 export interface HistoryEntry { sourceId: string; date: string; author: string; direction: "inbound" | "outbound"; text: string; }
 
 export interface EmployeeProfile {
+  appearance?: import("./agent-appearance.js").AgentAppearance;
   id: string;
   name: string;
   instructions: string;
