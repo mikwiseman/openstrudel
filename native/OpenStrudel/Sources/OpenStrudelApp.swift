@@ -10,8 +10,15 @@ struct OpenStrudelApp: App {
 
     var body: some Scene {
         WindowGroup(id: "home") {
-            OpenStrudelRootView()
-                .id(client.id)
+            Group {
+                #if os(macOS)
+                if library.isErasing { LocalDataResetProgress() }
+                else { OpenStrudelRootView() }
+                #else
+                OpenStrudelRootView()
+                #endif
+            }
+                .id(client.id + "-" + String(library.viewGeneration))
                 .tint(AppTheme.accent)
                 #if os(macOS)
                 .modifier(AppIconAppearance())
@@ -28,6 +35,7 @@ struct OpenStrudelApp: App {
                     }
                 }
                 .onOpenURL { url in
+                    guard !library.isErasing else { return }
                     if url.scheme == "openstrudel" && url.host == "oauth" && url.path == "/digitalocean" {
                         #if os(macOS)
                         DigitalOceanCloud.shared.acceptBrowserCallback(url)
@@ -47,7 +55,7 @@ struct OpenStrudelApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("Новый сотрудник") { library.beginEmployee() }
                     .keyboardShortcut("n", modifiers: .command)
-                    .disabled(client.isCreating)
+                    .disabled(client.isCreating || library.isErasing)
             }
             CommandGroup(after: .appInfo) {
                 Button("Аккаунты и остатки") {
@@ -66,10 +74,16 @@ struct OpenStrudelApp: App {
         #endif
         #if os(macOS)
         Window("Серверы", id: "servers") {
-            HostingStoreView().tint(AppTheme.accent)
+            Group {
+                if library.isErasing { LocalDataResetProgress().environmentObject(library) }
+                else { HostingStoreView() }
+            }.tint(AppTheme.accent)
         }.defaultSize(width: 1000, height: 760)
         Settings {
-            SettingsView()
+            Group {
+                if library.isErasing { LocalDataResetProgress() }
+                else { SettingsView() }
+            }
                 .environmentObject(client)
                 .environmentObject(library)
                 .tint(AppTheme.accent)

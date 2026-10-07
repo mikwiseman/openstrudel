@@ -60,6 +60,9 @@ struct SettingsView: View {
                             #endif
                             Link("Помощь", destination: URL(string: "https://waiwai.is/openstrudel#help")!)
                             Link("Конфиденциальность", destination: URL(string: "https://waiwai.is/openstrudel/privacy")!)
+                            #if os(macOS)
+                            LocalDataResetButton()
+                            #endif
                         }
                     }.padding(24).frame(maxWidth: 640, alignment: .leading).frame(maxWidth: .infinity)
                 }

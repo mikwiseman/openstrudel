@@ -204,6 +204,7 @@ struct DigitalOceanSavedState: Codable {
     private let browser = DigitalOceanWebLogin()
     private var state = DigitalOceanSavedState()
     private var operation: Task<Void, Never>?
+    private var erasing = false
 
     init(store: (any DigitalOceanCredentialStore)? = nil, session: URLSession? = nil, pollingAttempts: Int = 90) {
         self.store = store ?? DigitalOceanKeychain()
@@ -271,6 +272,15 @@ struct DigitalOceanSavedState: Codable {
     }
     func cancel() { operation?.cancel(); browser.cancel() }
 
+    func prepareForLocalErase() async {
+        erasing = true
+        cancel()
+        await operation?.value
+        state = .init(); quote = nil; connection = nil; message = nil; authorizationURL = nil; phase = .idle
+    }
+
+    func finishLocalErase() { erasing = false }
+
     func acceptBrowserCallback(_ url: URL) {
         guard phase == .signingIn, let pending = state.pendingOAuth,
               Date().timeIntervalSince(pending.startedAt) < 900 else { return }
@@ -281,7 +291,7 @@ struct DigitalOceanSavedState: Codable {
     }
 
     private func perform(_ work: @escaping @MainActor () async throws -> Void) async {
-        guard operation == nil else { return }
+        guard operation == nil, !erasing else { return }
         let task = Task { @MainActor in
             defer { self.operation = nil }
             self.message = nil

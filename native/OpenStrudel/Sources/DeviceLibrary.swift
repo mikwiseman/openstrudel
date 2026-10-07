@@ -1,5 +1,8 @@
 import Combine
 import Foundation
+#if os(macOS)
+import WebKit
+#endif
 
 /// The app is a client of independent runtimes. Selecting a device never moves
 /// its employees, copies credentials to another runtime, or changes ownership.
@@ -8,6 +11,11 @@ final class DeviceLibrary: ObservableObject {
     @Published private(set) var clients: [HomeClient]
     @Published private(set) var selectedID: String = "current"
     @Published var invitation: MacPairing?
+    @Published private(set) var isErasing = false
+    @Published private(set) var erasePhase: String?
+    @Published private(set) var eraseError: String?
+    @Published private(set) var erased = false
+    @Published private(set) var viewGeneration = 0
     var fileDrafts: [String: [PickedFile]] = [:]
     private let defaults: UserDefaults
     private var observations: [AnyCancellable] = []
@@ -26,6 +34,9 @@ final class DeviceLibrary: ObservableObject {
         }
         selectedID = defaults.string(forKey: "openstrudel.selectedDevice") ?? clients[0].id
         observeClients()
+        #if os(macOS)
+        if LocalDataReset.current.pending { isErasing = true }
+        #endif
     }
 
     private static func makeClient(id: String) -> HomeClient {
@@ -40,7 +51,7 @@ final class DeviceLibrary: ObservableObject {
     }
 
     func select(_ client: HomeClient) {
-        guard clients.contains(where: { $0 === client }) else { return }
+        guard !isErasing, clients.contains(where: { $0 === client }) else { return }
         selectedID = client.id
         defaults.set(selectedID, forKey: "openstrudel.selectedDevice")
     }
@@ -51,6 +62,7 @@ final class DeviceLibrary: ObservableObject {
     }
 
     func beginEmployee(on client: HomeClient? = nil, deviceID: String? = nil) {
+        guard !isErasing else { return }
         let target = client ?? visibleClients.first(where: \.isLocalConnection) ?? active
         select(target)
         target.beginEmployee()
@@ -58,6 +70,7 @@ final class DeviceLibrary: ObservableObject {
     }
 
     func preparePairing(_ url: URL) {
+        guard !isErasing else { return }
         do { invitation = try MacPairing(url: url) }
         catch { active.errorMessage = error.localizedDescription }
     }
@@ -85,7 +98,7 @@ final class DeviceLibrary: ObservableObject {
     }
 
     func add(_ client: HomeClient, select shouldSelect: Bool = true) {
-        guard client.isConfigured, !client.isSignedOut else { return }
+        guard !isErasing, client.isConfigured, !client.isSignedOut else { return }
         // A refreshed invitation replaces only that device's connection.
         // Existing local/remote devices and their drafts remain untouched.
         if let index = clients.firstIndex(where: { $0.normalizedBaseURL == client.normalizedBaseURL && $0.id != client.id }) {
@@ -98,6 +111,7 @@ final class DeviceLibrary: ObservableObject {
 
     #if os(macOS)
     func openLocal() async {
+        guard !isErasing else { return }
         if let local = clients.first(where: { $0.isLocalConnection && !$0.isSignedOut }) {
             select(local)
             await local.startLocalHome()
@@ -108,9 +122,49 @@ final class DeviceLibrary: ObservableObject {
             else { active.errorMessage = local.errorMessage }
         }
     }
+
+    func eraseThisMac() async {
+        guard erasePhase == nil, !erased else { return }
+        let reset = LocalDataReset.current
+        eraseError = nil
+        do { try reset.begin() }
+        catch { eraseError = error.localizedDescription; return }
+        isErasing = true
+        HomeClient.invalidateForLocalErase()
+        invitation = nil; fileDrafts = [:]
+        for client in clients { client.suspendForLocalErase() }
+        erasePhase = "Останавливаем сотрудников этого Mac…"
+        await LocalHome.prepareForErase()
+        await DigitalOceanCloud.shared.prepareForLocalErase()
+        do {
+            try await Task.detached { try reset.stopManagedService() }.value
+            erasePhase = "Удаляем сотрудников, чаты и файлы…"
+            try await Task.detached { try reset.eraseFiles(stop: { try reset.stopManagedService() }) }.value
+            erasePhase = "Удаляем сохранённые входы и настройки…"
+            try reset.eraseCredentials()
+            await WKWebsiteDataStore.default().removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast)
+            URLCache.shared.removeAllCachedResponses()
+            try reset.erasePreferences(connectionIDs: clients.map(\.id))
+            try reset.finish()
+            erased = true
+        } catch { eraseError = error.localizedDescription }
+        erasePhase = nil
+    }
+
+    func startAfterErase() {
+        guard erased else { return }
+        clients = [HomeClient(defaults: defaults)]
+        selectedID = clients[0].id
+        observeClients()
+        LocalHome.finishErase()
+        DigitalOceanCloud.shared.finishLocalErase()
+        viewGeneration += 1
+        erased = false; isErasing = false
+    }
     #endif
 
     func refresh() async {
+        guard !isErasing else { return }
         // An offline device cannot hold up another device's catalog.
         await withTaskGroup(of: Void.self) { group in
             for client in visibleClients where client.shouldRestoreConnection && !client.isPairing {

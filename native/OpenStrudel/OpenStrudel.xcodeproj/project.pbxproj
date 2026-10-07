@@ -13,10 +13,12 @@
 		088E7C7AA2674D44C3751AE5 /* AgentAppearanceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D96F9460E173BD6E9269AE3 /* AgentAppearanceViews.swift */; };
 		09FDF891ED4D0479E78D39E0 /* LiveCloudPairingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96A2DF3BB4A7D519FA68EA0F /* LiveCloudPairingUITests.swift */; };
 		0E0F3C4329E1EA2E6C689738 /* AgentTransferViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31C9D3DF0BCBDC8DE546D88B /* AgentTransferViews.swift */; };
+		1109A0AEE1C8475E2E3181A3 /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = B9A7842329C25226D34D8B1C /* cloud-init.sh */; };
 		141A8FF96B26F636B9AFAFD3 /* HostingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B99FD977A6DF945EF17152E /* HostingStore.swift */; };
 		19BB73C6174838CCE33D3D0D /* HomeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D671F62812BA20E0AF9CB2FA /* HomeClient.swift */; };
 		1B7D1573EF6D0D4B9743DC03 /* MobileConnectionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41969DD182FE17F98BBEEE17 /* MobileConnectionViews.swift */; };
 		1C77B536C158057E9FE47DA8 /* WaiVDSClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7D69A9EDA344A443227E0B2 /* WaiVDSClient.swift */; };
+		1EB1AE21EA4C3C7C5DF63CD6 /* LocalDataReset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B1CA4A01722F775952B9530 /* LocalDataReset.swift */; };
 		2061E90D9AC95D39DAAA06E8 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38873CBA5B37136CDD8FF91 /* AppTheme.swift */; };
 		25CE0B6159318A64EDD2D1F2 /* PrimaryHomeSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58DAA420A0BE0C62176A43DB /* PrimaryHomeSettings.swift */; };
 		28A9DA1110E1BA1B0F865DEE /* DeviceLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ECDE7BFB212A84C42AEC2A3 /* DeviceLibraryTests.swift */; };
@@ -27,8 +29,10 @@
 		34F7B89438C04109E4B1A946 /* WaiVDSClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7D69A9EDA344A443227E0B2 /* WaiVDSClient.swift */; };
 		35830784DC5290BC03679296 /* AccountRecoveryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 452D1C62E5C23CB46B6FD978 /* AccountRecoveryUITests.swift */; };
 		38670454174D5126BB5A84D1 /* ChatMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3D241925EF81E938247C15 /* ChatMedia.swift */; };
+		38A327481A17BCFCEAC3F116 /* LocalDataResetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F7D53298A142CDF1B276ABC /* LocalDataResetTests.swift */; };
 		396D0DCDA42F07B7B6AD8CDA /* ReleaseScenariosUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 269C829F112500B5E34127F7 /* ReleaseScenariosUITests.swift */; };
 		3A4F31F9396C14C867C86558 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A12DEA162BBC10A8CA136D /* Views.swift */; };
+		3CEEE4913F9C75966E2902EA /* LocalDataReset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B1CA4A01722F775952B9530 /* LocalDataReset.swift */; };
 		405EE709A22DB0AD7D596EF5 /* AgentCharactersUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C156BE0450E7CC24D988FA90 /* AgentCharactersUITests.swift */; };
 		4069A7E903D63727808053A3 /* HomeMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = B49A5A4FE8FCDBCA5997D859 /* HomeMenu.swift */; };
 		4452A1ECB47F859886AD7276 /* WaiVDSClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F4C8D0A80AE9D97821FA98C /* WaiVDSClientTests.swift */; };
@@ -46,11 +50,11 @@
 		5E17805965A351ABB7620CF2 /* MobilePairingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DDBDB4821F4175BB293C35F /* MobilePairingUITests.swift */; };
 		5FD6F6516DA25B7806FBE7A5 /* DeviceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72EEEC73D033EF5BC24DC309 /* DeviceSettingsView.swift */; };
 		605C0ED95C9C79FCD1EACED1 /* AgentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97A6C72C5E00D5723795E8B1 /* AgentTransfer.swift */; };
+		6117E204130547257A2588AE /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = B9A7842329C25226D34D8B1C /* cloud-init.sh */; };
 		6233DE5478EEF12B4815FD6E /* LocalHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96054101E4801A6BCC170C1 /* LocalHome.swift */; };
 		631BE06D25300A0E399F2E28 /* AppIconAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B9B3467FCD3522515AD8F38 /* AppIconAppearance.swift */; };
 		63497E44A5FAA3B8E94C0FF6 /* StorePreviewUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63F40AD948917E9AE1685058 /* StorePreviewUITests.swift */; };
 		64365D840FC1C3F656F9447B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = E29C1F0D3A0FE125E35B565D /* PrivacyInfo.xcprivacy */; };
-		698163891F3C00BC237D6C1C /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = 62EF729943001B623EBE767B /* cloud-init.sh */; };
 		710C9EA301B072949AB43AF4 /* UserFacingErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16302AC88D0BE5545DFBFC7F /* UserFacingErrorTests.swift */; };
 		714657174DCE32C3AD9148AE /* HomeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D671F62812BA20E0AF9CB2FA /* HomeClient.swift */; };
 		76A9DEA63806F5B706E1F523 /* AgentAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A54DEED2D78EBBD77B24825 /* AgentAppearance.swift */; };
@@ -72,7 +76,6 @@
 		954CECC367D15575AF45868F /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38873CBA5B37136CDD8FF91 /* AppTheme.swift */; };
 		96011E8827031FF477E78A0D /* DigitalOceanBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A041EB646E3F285D182418 /* DigitalOceanBootstrap.swift */; };
 		966082403049AA4A4D03B492 /* OpenStrudelApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 680E20C305BC52A853E797DD /* OpenStrudelApp.swift */; };
-		995DAE965F847B99AC0FBD49 /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = 62EF729943001B623EBE767B /* cloud-init.sh */; };
 		99944D193416881E7D8D727B /* DigitalOceanWebLoginTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC5BA14427968F91FEFE9F2F /* DigitalOceanWebLoginTests.swift */; };
 		99F3C8183EE6FE6B2B2A9746 /* LocalHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96054101E4801A6BCC170C1 /* LocalHome.swift */; };
 		9AEBA79A4E9D40E1EE309371 /* MessageContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9FCFCC5FBCE6D6D6D612458 /* MessageContent.swift */; };
@@ -94,11 +97,12 @@
 		BD17762CF52EB077E6C09EC9 /* AppIconAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B9B3467FCD3522515AD8F38 /* AppIconAppearance.swift */; };
 		BD536195DB95EA60861EF9AD /* DeviceLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89E66060821227C1F39AD78 /* DeviceLibrary.swift */; };
 		C1D22A6A95D61EF3973CECE1 /* Sparkle-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = 37B4BD216FB2EDE09E4E16E4 /* Sparkle-LICENSE.txt */; };
+		C44ADEF9A93155D3D5D5B1B5 /* LocalDataResetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B5A8A2A8A51E792A7C05A7F /* LocalDataResetView.swift */; };
 		C8DE0605E64DF75EAD5BA868 /* AttachmentImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 718BE32FAB2706C4D8DB4C86 /* AttachmentImport.swift */; };
 		C8E9F77A1A8A5D66D4211EF5 /* DeviceSignOut.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8709EBB6593952ABF30E9889 /* DeviceSignOut.swift */; };
 		D24C4F8AD7FB5F62D4495C35 /* ChatClockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DA7A5FC9D1A46B7D5486153 /* ChatClockTests.swift */; };
-		D5584A21F55C33689E507922 /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = 62EF729943001B623EBE767B /* cloud-init.sh */; };
 		D8C2A97016900A9F9A658C0B /* DeviceLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89E66060821227C1F39AD78 /* DeviceLibrary.swift */; };
+		DB980F43982F1C793D004B7F /* LocalDataReset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B1CA4A01722F775952B9530 /* LocalDataReset.swift */; };
 		DEA7AE93CC5A847816D864F5 /* WaiVDSContract.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61A4BCF298A1E1126E8D3482 /* WaiVDSContract.swift */; };
 		DEEDEAD2AB25008C3CCAF7D7 /* SetupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A635A0DA48A1D907252A7BCB /* SetupViews.swift */; };
 		E09E082D82D45A7D09421AB8 /* DigitalOceanBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A041EB646E3F285D182418 /* DigitalOceanBootstrap.swift */; };
@@ -107,10 +111,12 @@
 		E881BC2893184397D1A9AFE9 /* DigitalOceanBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A041EB646E3F285D182418 /* DigitalOceanBootstrap.swift */; };
 		EC2C02C1059E79D01E1D9924 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 034974DBF235D1A2CAF70200 /* Sparkle */; };
 		EFD46E79E43C1763A4CF16F6 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A12DEA162BBC10A8CA136D /* Views.swift */; };
+		EFDF18977D160A503A48D5BE /* LocalDataResetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B5A8A2A8A51E792A7C05A7F /* LocalDataResetView.swift */; };
 		F1930037590FB223FEAA6DC3 /* TelegramSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36B92676161A3FD9E3889C48 /* TelegramSetupView.swift */; };
 		F6604979C497258E987E2193 /* AgentAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A54DEED2D78EBBD77B24825 /* AgentAppearance.swift */; };
 		F92751B4CA90257CFDC92A40 /* DesignAccessibilityUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1AB12278F64C5C7247C698 /* DesignAccessibilityUITests.swift */; };
 		FA990FEF4C0EA7D7B16F790C /* PrimaryHomeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6E988F61680172334C63B12 /* PrimaryHomeTests.swift */; };
+		FC61FB4F58F351C111D601E9 /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = B9A7842329C25226D34D8B1C /* cloud-init.sh */; };
 		FE16FE1017F5BA162CF34398 /* AgentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97A6C72C5E00D5723795E8B1 /* AgentTransfer.swift */; };
 		FED472FDDD9D5774F84AD1A4 /* AttachmentImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 718BE32FAB2706C4D8DB4C86 /* AttachmentImport.swift */; };
 /* End PBXBuildFile section */
@@ -131,12 +137,14 @@
 		1132C0F7932A6440305D150A /* iPhoneSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iPhoneSmokeTests.swift; sourceTree = "<group>"; };
 		15270A8B1FADC16CBEE2AB86 /* MobileConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileConnection.swift; sourceTree = "<group>"; };
 		16302AC88D0BE5545DFBFC7F /* UserFacingErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserFacingErrorTests.swift; sourceTree = "<group>"; };
+		1F7D53298A142CDF1B276ABC /* LocalDataResetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalDataResetTests.swift; sourceTree = "<group>"; };
 		25538EEFA0F0470CDF4958CC /* AppUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdater.swift; sourceTree = "<group>"; };
 		269C829F112500B5E34127F7 /* ReleaseScenariosUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseScenariosUITests.swift; sourceTree = "<group>"; };
 		2B99FD977A6DF945EF17152E /* HostingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostingStore.swift; sourceTree = "<group>"; };
 		31C9D3DF0BCBDC8DE546D88B /* AgentTransferViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTransferViews.swift; sourceTree = "<group>"; };
 		36B92676161A3FD9E3889C48 /* TelegramSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelegramSetupView.swift; sourceTree = "<group>"; };
 		37B4BD216FB2EDE09E4E16E4 /* Sparkle-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Sparkle-LICENSE.txt"; sourceTree = "<group>"; };
+		3B1CA4A01722F775952B9530 /* LocalDataReset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalDataReset.swift; sourceTree = "<group>"; };
 		3D8AC19EC197C2FC60EBEB3D /* MobilePairingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePairingTests.swift; sourceTree = "<group>"; };
 		41969DD182FE17F98BBEEE17 /* MobileConnectionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileConnectionViews.swift; sourceTree = "<group>"; };
 		452D1C62E5C23CB46B6FD978 /* AccountRecoveryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountRecoveryUITests.swift; sourceTree = "<group>"; };
@@ -150,9 +158,9 @@
 		5A087F040F8395EFA9DA4306 /* AgentTransferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTransferTests.swift; sourceTree = "<group>"; };
 		5CF338D2C3249DC58392487E /* DigitalOceanCloud.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DigitalOceanCloud.swift; sourceTree = "<group>"; };
 		61A4BCF298A1E1126E8D3482 /* WaiVDSContract.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiVDSContract.swift; sourceTree = "<group>"; };
-		62EF729943001B623EBE767B /* cloud-init.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "cloud-init.sh"; sourceTree = "<group>"; };
 		63F40AD948917E9AE1685058 /* StorePreviewUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorePreviewUITests.swift; sourceTree = "<group>"; };
 		680E20C305BC52A853E797DD /* OpenStrudelApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenStrudelApp.swift; sourceTree = "<group>"; };
+		6B5A8A2A8A51E792A7C05A7F /* LocalDataResetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalDataResetView.swift; sourceTree = "<group>"; };
 		6D1AB12278F64C5C7247C698 /* DesignAccessibilityUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignAccessibilityUITests.swift; sourceTree = "<group>"; };
 		6DA7A5FC9D1A46B7D5486153 /* ChatClockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatClockTests.swift; sourceTree = "<group>"; };
 		701970C42730428CE9DABD8A /* OpenStrudel macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenStrudel macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -172,6 +180,7 @@
 		A6EBF07406C0F7BBD5F47800 /* AttachmentImportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentImportTests.swift; sourceTree = "<group>"; };
 		ACD91A75580ED25308693AB1 /* AgentAppearanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAppearanceTests.swift; sourceTree = "<group>"; };
 		B49A5A4FE8FCDBCA5997D859 /* HomeMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeMenu.swift; sourceTree = "<group>"; };
+		B9A7842329C25226D34D8B1C /* cloud-init.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "cloud-init.sh"; sourceTree = "<group>"; };
 		C156BE0450E7CC24D988FA90 /* AgentCharactersUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCharactersUITests.swift; sourceTree = "<group>"; };
 		C1A041EB646E3F285D182418 /* DigitalOceanBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DigitalOceanBootstrap.swift; sourceTree = "<group>"; };
 		C4EA2EF5DDC9D052A757B498 /* home-certificate.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "home-certificate.json"; sourceTree = "<group>"; };
@@ -211,14 +220,6 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		1DB37080F4CC6F6EC01ACFE2 /* scripts */ = {
-			isa = PBXGroup;
-			children = (
-				62EF729943001B623EBE767B /* cloud-init.sh */,
-			);
-			path = scripts;
-			sourceTree = "<group>";
-		};
 		29E00286E47652BF27B34BFC /* Resources */ = {
 			isa = PBXGroup;
 			children = (
@@ -247,6 +248,8 @@
 				D671F62812BA20E0AF9CB2FA /* HomeClient.swift */,
 				B49A5A4FE8FCDBCA5997D859 /* HomeMenu.swift */,
 				2B99FD977A6DF945EF17152E /* HostingStore.swift */,
+				3B1CA4A01722F775952B9530 /* LocalDataReset.swift */,
+				6B5A8A2A8A51E792A7C05A7F /* LocalDataResetView.swift */,
 				F96054101E4801A6BCC170C1 /* LocalHome.swift */,
 				C9FCFCC5FBCE6D6D6D612458 /* MessageContent.swift */,
 				15270A8B1FADC16CBEE2AB86 /* MobileConnection.swift */,
@@ -290,6 +293,7 @@
 				06FEF9F7FF45A0D9EF5FFC46 /* DigitalOceanCloudTests.swift */,
 				FC5BA14427968F91FEFE9F2F /* DigitalOceanWebLoginTests.swift */,
 				59124750DE089CC23DCB20B9 /* HomeAccountRecoveryTests.swift */,
+				1F7D53298A142CDF1B276ABC /* LocalDataResetTests.swift */,
 				58B7111F287B0C5661239DEB /* MessageContentTests.swift */,
 				3D8AC19EC197C2FC60EBEB3D /* MobilePairingTests.swift */,
 				D6E988F61680172334C63B12 /* PrimaryHomeTests.swift */,
@@ -309,12 +313,12 @@
 			path = Fixtures;
 			sourceTree = "<group>";
 		};
-		BCD9890FCC3B94C016100E56 /* openstrudel */ = {
+		D0FBB4C713A965B14D031306 /* openmagic */ = {
 			isa = PBXGroup;
 			children = (
-				1DB37080F4CC6F6EC01ACFE2 /* scripts */,
+				DE8D5727C568F73772686335 /* scripts */,
 			);
-			name = openstrudel;
+			name = openmagic;
 			path = ../..;
 			sourceTree = "<group>";
 		};
@@ -322,13 +326,21 @@
 			isa = PBXGroup;
 			children = (
 				709BE1A9B19D0468720417CF /* Assets.xcassets */,
-				BCD9890FCC3B94C016100E56 /* openstrudel */,
+				D0FBB4C713A965B14D031306 /* openmagic */,
 				29E00286E47652BF27B34BFC /* Resources */,
 				2C1B064E52E9C728955B5E56 /* Sources */,
 				9332B7FCD8BAD85E05291826 /* Tests */,
 				546851BDDD0611547A254A69 /* UITests */,
 				02AB75132E50BEA37746ADF2 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		DE8D5727C568F73772686335 /* scripts */ = {
+			isa = PBXGroup;
+			children = (
+				B9A7842329C25226D34D8B1C /* cloud-init.sh */,
+			);
+			path = scripts;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -467,7 +479,7 @@
 				AEBC06A730AF2BB81D4BA10A /* Assets.xcassets in Resources */,
 				8948A7997B267280DC592F77 /* PrivacyInfo.xcprivacy in Resources */,
 				C1D22A6A95D61EF3973CECE1 /* Sparkle-LICENSE.txt in Resources */,
-				D5584A21F55C33689E507922 /* cloud-init.sh in Resources */,
+				6117E204130547257A2588AE /* cloud-init.sh in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -475,7 +487,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				995DAE965F847B99AC0FBD49 /* cloud-init.sh in Resources */,
+				1109A0AEE1C8475E2E3181A3 /* cloud-init.sh in Resources */,
 				B5946DFBDF9D76520B6AFCB8 /* home-certificate.json in Resources */,
 				A3A89F6317E0E47EE5AF44AB /* wai-vds-v2.json in Resources */,
 			);
@@ -487,7 +499,7 @@
 			files = (
 				A79D2D5137601CAA6E565304 /* Assets.xcassets in Resources */,
 				64365D840FC1C3F656F9447B /* PrivacyInfo.xcprivacy in Resources */,
-				698163891F3C00BC237D6C1C /* cloud-init.sh in Resources */,
+				FC61FB4F58F351C111D601E9 /* cloud-init.sh in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -516,6 +528,8 @@
 				2F7A1F01537586579154FC86 /* HomeAccountRecoveryTests.swift in Sources */,
 				19BB73C6174838CCE33D3D0D /* HomeClient.swift in Sources */,
 				4A0104CC2C576E467EF78724 /* HostingStore.swift in Sources */,
+				3CEEE4913F9C75966E2902EA /* LocalDataReset.swift in Sources */,
+				38A327481A17BCFCEAC3F116 /* LocalDataResetTests.swift in Sources */,
 				76BF370363AC2C6470E67CBE /* LocalHome.swift in Sources */,
 				4E6B82BD6C972AB6EE32CAFE /* MessageContent.swift in Sources */,
 				80A890128CCD16FCD6ECE3AD /* MessageContentTests.swift in Sources */,
@@ -551,6 +565,8 @@
 				8264AD8368237A515B1B219D /* HomeClient.swift in Sources */,
 				A29435710511A8C352C77D66 /* HomeMenu.swift in Sources */,
 				7CB4918D49632B6169D77921 /* HostingStore.swift in Sources */,
+				1EB1AE21EA4C3C7C5DF63CD6 /* LocalDataReset.swift in Sources */,
+				EFDF18977D160A503A48D5BE /* LocalDataResetView.swift in Sources */,
 				99F3C8183EE6FE6B2B2A9746 /* LocalHome.swift in Sources */,
 				B94227E897A95830CFA06A03 /* MessageContent.swift in Sources */,
 				4DB4F5AB41099807895716B3 /* MobileConnection.swift in Sources */,
@@ -587,6 +603,8 @@
 				714657174DCE32C3AD9148AE /* HomeClient.swift in Sources */,
 				4069A7E903D63727808053A3 /* HomeMenu.swift in Sources */,
 				141A8FF96B26F636B9AFAFD3 /* HostingStore.swift in Sources */,
+				DB980F43982F1C793D004B7F /* LocalDataReset.swift in Sources */,
+				C44ADEF9A93155D3D5D5B1B5 /* LocalDataResetView.swift in Sources */,
 				6233DE5478EEF12B4815FD6E /* LocalHome.swift in Sources */,
 				9AEBA79A4E9D40E1EE309371 /* MessageContent.swift in Sources */,
 				AF175297574377B16061325E /* MobileConnection.swift in Sources */,
@@ -777,7 +795,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 15;
+				CURRENT_PROJECT_VERSION = 16;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -875,7 +893,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 15;
+				CURRENT_PROJECT_VERSION = 16;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

@@ -184,10 +184,14 @@ it("shares account status over the real paired transport but only lets the owner
     const phoneInvite = new URL((await runtime.api.mobile.invite()).url);
     const phone = (await remote(port, "/pair", phoneInvite.searchParams.get("key")!, "POST")).body.token;
     expect((await remote(port, "/v1/account", phone)).body).toMatchObject({ canManage: false, account: { connected: false } });
-    for (const path of ["/v1/account/login", "/v1/account/logout", "/v1/account/login/login/cancel"]) {
+    for (const path of ["/v1/account/login", "/v1/account/logout", "/v1/account/login/login/cancel", "/v1/integrations/telegram/check"]) {
       expect((await remote(port, path, phone, "POST")).status).toBe(403);
     }
     expect(wire.request).not.toHaveBeenCalled();
+    const telegramCheck = vi.spyOn(runtime.telegram, "checkConnection").mockResolvedValue(runtime.telegram.status());
+    expect((await remote(port, "/v1/integrations/telegram/check", owner, "POST")).status).toBe(200);
+    expect(telegramCheck).toHaveBeenCalledTimes(1);
+    telegramCheck.mockRestore();
     const started = await remote(port, "/v1/account/login", owner, "POST", { method: "browser" });
     expect(started.status).toBe(201);
     expect(wire.request).toHaveBeenCalledWith("account/login/start", { type: "chatgptDeviceCode" });

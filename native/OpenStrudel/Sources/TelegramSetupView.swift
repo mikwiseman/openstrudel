@@ -7,6 +7,8 @@ struct TelegramSetupView: View {
     @State private var busy = false
     @State private var error: String?
     @State private var linking = false
+    @State private var checking = false
+    @State private var checked = false
     private var linked: Bool {
         client.telegram?.chats?.contains { !$0.chatId.hasPrefix("-") && $0.allowedSenders.contains($0.chatId) && $0.profileId == client.activeProfile?.id } == true
     }
@@ -15,14 +17,25 @@ struct TelegramSetupView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Telegram на «\(client.executionDeviceName)»").font(.headline)
             if client.telegram?.configured == true {
-                Label(linked ? "Чат подключён" : "Бот подключён", systemImage: "checkmark.circle.fill").foregroundStyle(AppTheme.accent)
+                Label(client.telegram?.connectionError != nil ? "Telegram недоступен" : linked ? "Чат подключён" : "Бот подключён", systemImage: client.telegram?.connectionError != nil ? "wifi.exclamationmark" : "checkmark.circle.fill").foregroundStyle(AppTheme.accent)
                 Text(linked ? "Пишите в Telegram — отвечает «\(client.activeAgentName)»." : "Свяжите личный чат с «\(client.activeAgentName)».")
                     .font(.callout).foregroundStyle(AppTheme.secondaryText)
                 if let problem = client.telegram?.lastError {
                     Text(UserFacingError.text(problem)).font(.callout).foregroundStyle(AppTheme.destructive)
-                    Button("Проверить связь") { Task { await client.loadChatSettings() } }
                 } else if client.telegram?.running != true {
                     Text("Бот остановлен. Проверьте, что OpenStrudel работает на этом устройстве.").font(.callout).foregroundStyle(AppTheme.secondaryText)
+                }
+                HStack {
+                    Button(checking ? "Проверяем…" : "Проверить связь") {
+                        checking = true; checked = false; error = nil
+                        Task {
+                            defer { checking = false }
+                            do { try await client.checkTelegramConnection(); checked = client.telegram?.connectionError == nil }
+                            catch { self.error = UserFacingError.text(error.localizedDescription) }
+                        }
+                    }.disabled(checking).accessibilityIdentifier("checkTelegramConnection")
+                    if checking { ProgressView().controlSize(.small) }
+                    else if checked && client.telegram?.connectionError == nil { Text("Telegram отвечает").font(.caption).foregroundStyle(AppTheme.secondaryText) }
                 }
                 Button(linking ? "Готовим подключение…" : "Открыть чат в Telegram") {
                     linking = true; error = nil
@@ -64,6 +77,12 @@ struct TelegramSetupView: View {
             if let error { Text(error).font(.callout).foregroundStyle(AppTheme.destructive) }
         }
         .task { await client.loadChatSettings() }
+        .task(id: client.normalizedBaseURL) {
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(5)) } catch { return }
+                await client.loadChatSettings()
+            }
+        }
         .task(id: client.telegramLink?.code) {
             guard client.telegramLink != nil else { return }
             for _ in 0..<300 {

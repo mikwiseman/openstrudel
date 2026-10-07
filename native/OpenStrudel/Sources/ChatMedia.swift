@@ -88,10 +88,12 @@ enum ChatMedia {
               response.expectedContentLength <= 25 * 1024 * 1024 else { throw URLError(.badServerResponse) }
         var data = Data()
         for try await byte in bytes {
+            try Task.checkCancellation()
             guard data.count < 25 * 1024 * 1024 else { throw URLError(.dataLengthExceedsMaximum) }
             data.append(byte)
         }
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("OpenStrudelImages")
+        try Task.checkCancellation()
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let ext = ["jpg", "jpeg", "png", "webp", "heic", "gif"].contains(url.pathExtension.lowercased()) ? url.pathExtension : "png"
         let file = folder.appendingPathComponent(UUID().uuidString).appendingPathExtension(ext)

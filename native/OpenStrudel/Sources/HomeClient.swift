@@ -70,10 +70,17 @@ private enum KeychainStore {
 
 @MainActor
 final class HomeClient: ObservableObject, Identifiable {
+    private static var eraseGeneration = 0
+    private let createdBeforeErase: Int
+    private var acceptsOperations: Bool { !suspendedForErase && createdBeforeErase == Self.eraseGeneration }
+    static func invalidateForLocalErase() { eraseGeneration += 1 }
     let id: String
     private var credentialPrefix: String { id == "current" ? "" : id + "." }
     private func readCredential(account: String = "home-api-token") -> String? { KeychainStore.read(account: credentialPrefix + account) }
-    private func saveCredential(_ value: String, account: String = "home-api-token") throws { try KeychainStore.save(value, account: credentialPrefix + account) }
+    private func saveCredential(_ value: String, account: String = "home-api-token") throws {
+        guard acceptsOperations else { throw CancellationError() }
+        try KeychainStore.save(value, account: credentialPrefix + account)
+    }
     private func removeCredential(account: String = "home-api-token") { KeychainStore.remove(account: credentialPrefix + account) }
     @Published var pendingPairing: MacPairing?
     @Published var pairingError: String?
@@ -140,9 +147,11 @@ final class HomeClient: ObservableObject, Identifiable {
     private var relocation: Task<Void, Error>?
     private let decoder = JSONDecoder()
     private var isDrainingSendQueue = false
+    private var suspendedForErase = false
 
     init(defaults: UserDefaults = .standard, session transport: URLSession = .shared, pendingDirectory: URL? = nil, connectionID: String = "current") {
         self.id = connectionID
+        self.createdBeforeErase = Self.eraseGeneration
         self.defaults = defaults
         self.pendingDirectory = pendingDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.appending(path: (Bundle.main.bundleIdentifier ?? "OpenStrudel") + "/Pending")
         self.session = transport
@@ -206,7 +215,7 @@ final class HomeClient: ObservableObject, Identifiable {
     }
 
     var shouldRestoreConnection: Bool {
-        !isSignedOut && isConfigured && (hasToken || defaults.string(forKey: "openstrudel.homeURL") != nil)
+        acceptsOperations && !isSignedOut && isConfigured && (hasToken || defaults.string(forKey: "openstrudel.homeURL") != nil)
     }
 
     var isConnecting: Bool { health == nil && (connectionState == .connecting || isStartingLocalHome) }
@@ -240,14 +249,14 @@ final class HomeClient: ObservableObject, Identifiable {
 
     #if os(macOS)
     func startLocalHome() async {
-        guard !isStartingLocalHome else { return }
+        guard !isStartingLocalHome, acceptsOperations else { return }
         let generation = connectionGeneration
         isStartingLocalHome = true
         connectionState = .connecting
         defer { isStartingLocalHome = false }
         do {
             let connection = try await LocalHome.start()
-            guard generation == connectionGeneration else { return }
+            guard generation == connectionGeneration, acceptsOperations else { return }
             if normalizedBaseURL != connection["url"] {
                 removeCredential(account: "home-connection")
                 resetConnectionState()
@@ -309,7 +318,7 @@ final class HomeClient: ObservableObject, Identifiable {
     }
 
     func connectToMac(_ pairing: MacPairing) async -> Bool {
-        guard !isPairing else { return false }
+        guard !isPairing, acceptsOperations else { return false }
         isPairing = true
         pairingError = nil
         defer { isPairing = false }
@@ -351,7 +360,7 @@ final class HomeClient: ObservableObject, Identifiable {
     /// Cloud setup has already authenticated this installation against its
     /// pre-generated key. Keep the same saved connection used by QR pairing.
     func connectToCloud(_ connection: HomeConnection) async -> Bool {
-        guard !isPairing,
+        guard !isPairing, acceptsOperations,
               let url = URL(string: connection.url), url.scheme == "https",
               let host = url.host, url.user == nil, url.password == nil,
               url.query == nil, url.fragment == nil,
@@ -394,6 +403,13 @@ final class HomeClient: ObservableObject, Identifiable {
         removeCredential(account: "home-connection")
         removeCredential()
         removeCredential(account: "home-certificate-pin")
+    }
+
+    /// Stops this client without sending deletion or logout to any remote host.
+    func suspendForLocalErase() {
+        suspendedForErase = true
+        isSignedOut = true
+        resetConnectionState()
     }
 
     func signOutOnThisDevice() async {
@@ -469,7 +485,7 @@ final class HomeClient: ObservableObject, Identifiable {
 
     /// A quiet load retries in the background without raising an alert.
     func load(quiet: Bool = false) async {
-        guard !isLoading else { return }
+        guard !isLoading, acceptsOperations else { return }
         let generation = connectionGeneration
         guard isConfigured else {
             if !quiet { errorMessage = "Подключитесь к своему Mac или серверу через приглашение." }
@@ -874,6 +890,11 @@ final class HomeClient: ObservableObject, Identifiable {
         telegram = value.telegram
     }
 
+    func checkTelegramConnection() async throws {
+        let value: TelegramEnvelope = try await request("/v1/integrations/telegram/check" + employeeDeviceQuery, method: "POST")
+        telegram = value.telegram
+    }
+
     func disconnectTelegram() async {
         do {
             let response: TelegramEnvelope = try await request("/v1/integrations/telegram" + employeeDeviceQuery, method: "DELETE")
@@ -1033,6 +1054,7 @@ final class HomeClient: ObservableObject, Identifiable {
     }
 
     private func requestData(_ path: String, method: String = "GET", body: Data? = nil, mayRelocate: Bool = true, progress: (@MainActor @Sendable (Int64, Int64?) -> Void)? = nil) async throws -> Data {
+        guard acceptsOperations else { throw CancellationError() }
         let generation = connectionGeneration
         guard let url = URL(string: normalizedBaseURL + path) else { throw HomeClientError.invalidURL }
         guard (url.scheme == "http" && isLocalConnection)
@@ -1055,7 +1077,7 @@ final class HomeClient: ObservableObject, Identifiable {
         if let progress {
             (data, response) = try await Self.receiveArchive(request, session: session, progress: progress)
         } else { (data, response) = try await session.data(for: request) }
-        guard generation == connectionGeneration else { throw CancellationError() }
+        guard generation == connectionGeneration, acceptsOperations else { throw CancellationError() }
         guard let http = response as? HTTPURLResponse else { throw HomeClientError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
             if http.statusCode == 401 { throw HomeClientError.authenticationExpired }

@@ -18,6 +18,19 @@ type TelegramFile = {file_id:string;file_size?:number};
 interface TelegramResponse<T> { ok: boolean; result: T; description?: string; error_code?: number; parameters?: { retry_after?: number } }
 interface TelegramBot { id: number; is_bot: boolean; first_name: string; username?: string }
 
+class TelegramRequestError extends Error {
+  constructor(message: string, readonly code?: number) { super(message); }
+}
+
+function telegramConnectionError(error: unknown): string {
+  if (error instanceof TelegramRequestError) {
+    if (error.code === 401 || error.code === 404) return "Ключ бота больше не действует. Подключите бота заново с ключом из BotFather.";
+    if (error.code === 409) return "Этот бот уже используется другим приложением или устройством. Для OpenStrudel нужен отдельный бот.";
+    if (error.code === 429) return "Telegram просит подождать. Подключимся автоматически.";
+  }
+  return "Нет связи с Telegram. Подключимся автоматически, когда связь восстановится.";
+}
+
 export interface TelegramLink { code: string; expiresAt: string; url: string | null }
 
 export interface TelegramIntegrationStatus {
@@ -28,6 +41,8 @@ export interface TelegramIntegrationStatus {
   linkedChats: string[];
   chats: TelegramChat[];
   lastError: string | null;
+  connectionError: string | null;
+  lastCheckedAt: string | null;
 }
 
 export class TelegramAdapter {
@@ -37,6 +52,9 @@ export class TelegramAdapter {
   private controller: AbortController | null = null;
   private bot: TelegramBot | null = null;
   private lastError: string | null = null;
+  private connectionError: { message: string; code?: number } | null = null;
+  private lastCheckedAt: string | null = null;
+  private checking?: Promise<TelegramIntegrationStatus>;
   private readonly pendingUpdates = new Map<number, Promise<void>>();
   private readonly questionMessages = new Map<string, string>();
   private readonly preparations = new Map<string, Promise<Pick<MessageInput,"text"|"uploads">>>();
@@ -67,8 +85,33 @@ export class TelegramAdapter {
       configured: Boolean(this.token), running: this.running,
       botUsername: this.bot?.username ?? this.store.getSetting("telegram.bot_username"),
       botName: this.bot?.first_name ?? this.store.getSetting("telegram.bot_name"),
-      linkedChats: this.linkedChats(), chats:this.store.telegramChats(), lastError: this.lastError,
+      linkedChats: this.linkedChats(), chats:this.store.telegramChats(), lastError: this.connectionError?.message ?? this.lastError,
+      connectionError: this.connectionError?.message ?? null, lastCheckedAt: this.lastCheckedAt,
     };
+  }
+
+  /** A read-only probe. Never consumes updates or sends a Telegram message. */
+  checkConnection(): Promise<TelegramIntegrationStatus> {
+    if (!this.checking) {
+      const token = this.token;
+      const check = (async () => {
+        if (!token) throw new Error("Сначала подключите бота Telegram.");
+        try {
+          const bot = await this.call<TelegramBot>("getMe", {}, token, 10_000);
+          if (token !== this.token) return this.status();
+          this.bot = bot;
+          this.lastCheckedAt = new Date().toISOString();
+          // getMe proves transport/auth recovery, not that a conflicting poller
+          // or webhook stopped. A successful getUpdates clears that separately.
+          if (this.connectionError?.code !== 409) this.connectionError = null;
+        } catch (error) {
+          if (token === this.token) this.connectionError = { message: telegramConnectionError(error), code: error instanceof TelegramRequestError ? error.code : undefined };
+        }
+        return this.status();
+      })().finally(() => { if (this.checking === check) this.checking = undefined; });
+      this.checking = check;
+    }
+    return this.checking;
   }
 
   async configure(token: string): Promise<TelegramIntegrationStatus> {
@@ -76,7 +119,8 @@ export class TelegramAdapter {
     if (!normalized) throw new Error("Telegram bot token is required");
     const bot = await this.call<TelegramBot>("getMe", {}, normalized);
     if (!bot.is_bot) throw new Error("Telegram token does not belong to a bot");
-    this.token = normalized; this.bot = bot; this.lastError = null;
+    this.token = normalized; this.bot = bot; this.lastError = null; this.connectionError = null;
+    this.lastCheckedAt = new Date().toISOString();
     this.store.setSetting("telegram.bot_token", normalized);
     this.store.setSetting("telegram.bot_name", bot.first_name);
     if (bot.username) this.store.setSetting("telegram.bot_username", bot.username);
@@ -97,7 +141,7 @@ export class TelegramAdapter {
   }
 
   disconnect(): TelegramIntegrationStatus {
-    this.stop(); this.token = undefined; this.bot = null; this.lastError = null;
+    this.stop(); this.token = undefined; this.bot = null; this.lastError = null; this.connectionError = null; this.lastCheckedAt = null;
     for (const key of ["telegram.bot_token", "telegram.bot_name", "telegram.bot_username", "telegram.link_hash", "telegram.link_expires_at", "telegram.linked_chats"]) this.store.deleteSetting(key);
     this.store.db.exec("DELETE FROM telegram_chats; DELETE FROM telegram_inbox;");
     return this.status();
@@ -321,17 +365,21 @@ export class TelegramAdapter {
   }
 
   private async poll(): Promise<void> {
-    while (this.running) {
+    const controller = this.controller;
+    while (this.running && controller === this.controller) {
       try {
         const updates = await this.call<TelegramUpdate[]>("getUpdates", { offset: this.offset, timeout: 20, allowed_updates: ["message", "callback_query", "my_chat_member"] });
+        if (!this.running || controller !== this.controller) return;
+        this.connectionError = null;
+        this.lastCheckedAt = new Date().toISOString();
         for (const update of updates) {
           void this.processUpdate(update).catch(() => { this.lastError = "Входящее сообщение не завершено; оно сохранено для восстановления"; });
           this.offset = Math.max(this.offset, update.update_id + 1); this.store.setSetting("telegram.offset",String(this.offset));
         }
       } catch (error) {
-        if (!this.running) return;
-        this.lastError = error instanceof Error ? error.message : String(error);
-        console.error("[telegram] " + this.lastError); await sleep(2_000).catch(() => undefined);
+        if (!this.running || controller !== this.controller) return;
+        this.connectionError = { message: telegramConnectionError(error), code: error instanceof TelegramRequestError ? error.code : undefined };
+        console.error("[telegram] " + this.connectionError.message); await sleep(2_000, controller?.signal).catch(() => undefined);
       }
     }
   }
@@ -378,19 +426,19 @@ export class TelegramAdapter {
     return target ? this.store.getConversation(String(target.conversation_id)) : null;
   }
 
-  private async call<T = unknown>(method: string, body: Record<string, unknown> | FormData, token = this.token): Promise<T> {
+  private async call<T = unknown>(method: string, body: Record<string, unknown> | FormData, token = this.token, timeoutMs = 35_000): Promise<T> {
     if (!token) throw new Error("Telegram is not configured");
     for (let attempt=0;;attempt++) {
       const multipart = body instanceof FormData;
-      const response = await fetch("https://api.telegram.org/bot" + token + "/" + method, { method: "POST", headers: multipart ? undefined : { "content-type": "application/json" }, body: multipart ? body : JSON.stringify(body), signal: this.controller ? AbortSignal.any([this.controller.signal,AbortSignal.timeout(35_000)]) : AbortSignal.timeout(35_000) });
+      const response = await fetch("https://api.telegram.org/bot" + token + "/" + method, { method: "POST", headers: multipart ? undefined : { "content-type": "application/json" }, body: multipart ? body : JSON.stringify(body), signal: this.controller ? AbortSignal.any([this.controller.signal,AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
       const payload = (await response.json()) as TelegramResponse<T>;
       // A 429 explicitly confirms no send happened. Network failures do not,
       // so only retry this documented rejection, never an ambiguous delivery.
       const retryAfter=payload.parameters?.retry_after;
-      if (!payload.ok && payload.error_code===429 && Number.isFinite(retryAfter) && retryAfter!>=0 && retryAfter!<=60 && attempt<2) {
+      if (!payload.ok && payload.error_code===429 && Number.isFinite(retryAfter) && retryAfter!>=0 && retryAfter!<=60 && attempt<2 && timeoutMs === 35_000) {
         await sleep(Math.max(1,retryAfter!)*1000,this.controller?.signal); continue;
       }
-      if (!response.ok || !payload.ok) throw new Error(payload.description ?? "Telegram " + method + " failed");
+      if (!response.ok || !payload.ok) throw new TelegramRequestError(payload.description ?? "Telegram " + method + " failed", payload.error_code ?? response.status);
       return payload.result;
     }
   }

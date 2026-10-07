@@ -25,6 +25,9 @@ enum UserFacingError {
 
     static func text(_ message: String) -> String {
         let normalized = message.lowercased()
+        if normalized == "fetch failed" || normalized == "the operation was aborted due to timeout" {
+            return "Не удалось связаться с сервисом. Проверьте подключение к интернету и попробуйте ещё раз."
+        }
         if normalized.contains("enospc") || normalized.contains("sqlite_full")
             || normalized.contains("no space left on device") || normalized.contains("database or disk is full") {
             return storageFull

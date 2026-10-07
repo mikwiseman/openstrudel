@@ -2,7 +2,9 @@
 import Foundation
 
 /// The bundled Home is the same runtime used on a server. No terminal setup.
-enum LocalHome {
+@MainActor enum LocalHome {
+    private static var starting: Task<[String: String], Error>?
+    private static var erasing = false
     static var directory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appending(path: "OpenStrudel")
@@ -14,6 +16,23 @@ enum LocalHome {
     }
 
     static func start() async throws -> [String: String] {
+        guard !erasing, !LocalDataReset.current.pending else { throw CancellationError() }
+        if let starting { return try await starting.value }
+        let task = Task { try await startRuntime() }
+        starting = task
+        defer { starting = nil }
+        return try await task.value
+    }
+
+    static func prepareForErase() async {
+        erasing = true
+        // A startup already in flight must finish before its service is stopped.
+        if let starting { _ = try? await starting.value }
+    }
+
+    static func finishErase() { erasing = false }
+
+    private static func startRuntime() async throws -> [String: String] {
         let bundled = Bundle.main.url(forResource: "Runtime", withExtension: nil)
         let target = directory
         try await Task.detached {

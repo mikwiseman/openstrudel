@@ -3,6 +3,13 @@ import Testing
 
 @Suite("Readable operational errors")
 struct UserFacingErrorTests {
+    @Test func transportFailuresHaveAnActionableMessage() {
+        for source in ["fetch failed", "The operation was aborted due to timeout"] {
+            let message = UserFacingError.text(source)
+            #expect(message.contains("подключение к интернету"))
+            #expect(!message.contains("fetch"))
+        }
+    }
     @Test func fullStorageDoesNotExposeInternalPathsOrPromiseSafeReplay() {
         for source in ["ENOSPC: no space left on device, open '/private/history.jsonl.tmp'",
                        "SQLITE_FULL: database or disk is full"] {

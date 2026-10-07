@@ -26,6 +26,7 @@ struct AgentTeamDocument: FileDocument {
 }
 
 struct AgentTransferSettings: View {
+    var localOnly = false
     @EnvironmentObject private var client: HomeClient
     @State private var document: AgentTeamDocument?
     @State private var showingExport = false
@@ -51,7 +52,7 @@ struct AgentTransferSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            if client.devices.count > 1 {
+            if client.devices.count > 1 && !localOnly {
                 Picker("Сотрудники устройства", selection: $deviceID) {
                     ForEach(client.devices) { Text($0.name).tag($0.id) }
                 }.disabled(working)

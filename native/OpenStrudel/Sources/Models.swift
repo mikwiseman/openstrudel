@@ -72,6 +72,8 @@ struct TelegramStatus: Codable {
     let linkedChats: [String]
     let lastError: String?
     let chats: [TelegramChat]?
+    var connectionError: String? = nil
+    var lastCheckedAt: String? = nil
 }
 struct TelegramChat: Codable, Identifiable {
     let chatId: String

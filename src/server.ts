@@ -391,6 +391,11 @@ export class HttpApi {
         this.send(response, 200, { telegram: await this.telegram.configure(String(body.token ?? "")) });
         return;
       }
+      if (request.method === "POST" && path === "/v1/integrations/telegram/check") {
+        if (!canManageAccount) throw new HomeError("Проверить подключение бота может владелец устройства.", 403);
+        this.send(response, 200, { telegram: await this.telegram.checkConnection() });
+        return;
+      }
       if (request.method === "POST" && path === "/v1/integrations/telegram/link") {
         const body=await this.body(request);
         this.send(response, 201, this.telegram.createLink(body.profileId ? String(body.profileId) : undefined));
