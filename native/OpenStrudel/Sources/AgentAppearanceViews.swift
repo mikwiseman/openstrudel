@@ -6,8 +6,9 @@ struct AgentAvatar: View {
     var body: some View {
         if let appearance, appearance.isValid {
             Image("Agent-" + appearance.kind).resizable().scaledToFit()
+                .frame(width: size, height: size)
                 .hueRotation(appearance.hue)
-                .frame(width: size, height: size).accessibilityHidden(true)
+                .clipped().accessibilityHidden(true)
         } else { OpenStrudelMark(size: size) }
     }
 }

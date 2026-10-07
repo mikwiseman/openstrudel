@@ -13,6 +13,13 @@ runtime.api.home.save({ ...runtime.api.home.state, name: "Тестовая ко�
 runtime.account.read = async () => ({ connected: true, email: "qa@example.invalid", managed: true, planType: "plus" });
 for (const [index, name] of ["Редактор", "Исследователь", "Планировщик", "Помощник", "Идеи", "Проверка"].entries()) {
   const profile = runtime.store.createProfile({ name, instructions: "Помогай с задачами. Пиши коротко и понятно.", purpose: "У каждого свой образ", appearance: { version: 1, kind: characterKinds[index]!, tone: [0,4,3,7,6,2][index]! } });
+  if (index === 0 && process.env.OPENSTRUDEL_GROUP_HISTORY_QA === "1") {
+    runtime.store.linkTelegramChat({ chatId: "-100", title: "Тестовая группа", allowedSenders: ["42"] });
+    const group = runtime.store.bindTelegramChat("-100", profile.id);
+    for (let message = 1; message <= 155; message++) {
+      runtime.store.addMessage({ conversationId: group.conversationId!, channel: "telegram", direction: message % 2 ? "inbound" : "outbound", text: `Сообщение ${message}. Тестовая история группы для проверки постраничной загрузки.` });
+    }
+  }
   const chat = runtime.store.profileConversation(profile.id);
   runtime.store.addMessage({ conversationId: chat.id, channel: "api", direction: "outbound", text: "Готов помочь. С чего начнём?" });
 }

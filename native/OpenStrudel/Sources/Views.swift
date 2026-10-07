@@ -465,9 +465,15 @@ private struct ConversationView: View {
                             if client.hasEarlierMessages {
                                 Button {
                                     let anchor = client.messages.first?.id
+                                    let conversation = draftKey
                                     followsLatest = false
-                                    Task {
+                                    Task { @MainActor in
                                         await client.loadEarlierMessages()
+                                        // Let the lazy stack lay out the prepended rows
+                                        // before restoring the original reading position.
+                                        await Task.yield()
+                                        await Task.yield()
+                                        guard conversation == draftKey else { return }
                                         if let anchor { proxy.scrollTo(anchor, anchor: .top) }
                                     }
                                 } label: {
@@ -793,45 +799,42 @@ private struct ConversationTitle: View {
     private var importedChats: [ImportedConversation] { client.importedConversations.filter { $0.profileId == client.selectedProfileID } }
     private var chatName: String { importedChats.first { $0.id == client.selectedChatID }?.title ?? chats.first { $0.conversationId == client.selectedChatID }?.title ?? "Личный чат" }
     var body: some View {
-        if chats.isEmpty && importedChats.isEmpty { title }
-        else {
-            Menu {
-                Button { Task { await client.selectChat(nil) } } label: {
-                    if client.selectedChatID == nil { Label("Личный чат", systemImage: "checkmark") }
-                    else { Text("Личный чат") }
-                }
-                ForEach(chats) { chat in
-                    Button { Task { await client.selectChat(chat.conversationId) } } label: {
-                        if client.selectedChatID == chat.conversationId { Label(chat.title, systemImage: "checkmark") }
-                        else { Text(chat.title) }
-                    }
-                }
-                if !importedChats.isEmpty {
-                    Section("Из экспорта") {
-                        ForEach(importedChats) { chat in
-                            Button { Task { await client.selectChat(chat.id) } } label: {
-                                if client.selectedChatID == chat.id { Label(chat.title, systemImage: "checkmark") }
-                                else { Text(chat.title) }
-                            }
-                        }
-                    }
-                }
-            } label: { title }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden)
-                .accessibilityLabel("Выбрать переписку")
-                .accessibilityValue(client.activeAgentName + ", " + chatName)
-                .accessibilityIdentifier("chooseConversation")
-                .help("Выбрать личный чат или переписку в Telegram")
-        }
-    }
-    private var title: some View {
         HStack(spacing: 7) {
+            // Keep composited artwork outside AppKit's native menu label.
             AgentAvatar(appearance: client.activeAppearance, size: 30)
             VStack(spacing: 2) {
                 Text(client.activeAgentName).font(.headline).lineLimit(1)
-                if !chats.isEmpty { Text(chatName).font(.caption).foregroundStyle(AppTheme.secondaryText).lineLimit(1) }
+                if !chats.isEmpty || !importedChats.isEmpty {
+                    Menu {
+                        Button { Task { await client.selectChat(nil) } } label: {
+                            if client.selectedChatID == nil { Label("Личный чат", systemImage: "checkmark") }
+                            else { Text("Личный чат") }
+                        }
+                        ForEach(chats) { chat in
+                            Button { Task { await client.selectChat(chat.conversationId) } } label: {
+                                if client.selectedChatID == chat.conversationId { Label(chat.title, systemImage: "checkmark") }
+                                else { Text(chat.title) }
+                            }
+                        }
+                        if !importedChats.isEmpty {
+                            Section("Из экспорта") {
+                                ForEach(importedChats) { chat in
+                                    Button { Task { await client.selectChat(chat.id) } } label: {
+                                        if client.selectedChatID == chat.id { Label(chat.title, systemImage: "checkmark") }
+                                        else { Text(chat.title) }
+                                    }
+                                }
+                            }
+                        }
+                    } label: { Text(chatName).lineLimit(1) }
+                        .font(.caption).foregroundStyle(AppTheme.secondaryText)
+                        .menuStyle(.borderlessButton).fixedSize(horizontal: true, vertical: false)
+                        .accessibilityLabel("Выбрать переписку")
+                        .accessibilityValue(client.activeAgentName + ", " + chatName)
+                        .accessibilityIdentifier("chooseConversation")
+                        .help("Выбрать личный чат или переписку в Telegram")
+                }
             }
-            if !chats.isEmpty { Image(systemName: "chevron.down").font(.caption).accessibilityHidden(true) }
         }.frame(minHeight: controlTarget).contentShape(Rectangle())
     }
 }
