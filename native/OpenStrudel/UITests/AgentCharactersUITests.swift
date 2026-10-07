@@ -16,6 +16,7 @@ final class AgentCharactersUITests: XCTestCase {
         app.open(try XCTUnwrap(URL(string: XCTUnwrap(invite["url"] as? String))))
         let pair = app.buttons["confirmMacPairing"]
         XCTAssertTrue(pair.waitForExistence(timeout: 15)); pair.tap()
+        app.finishDevicePairing()
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 3) { consent.tap() }
         let chats = app.buttons["Чаты"]
@@ -36,7 +37,8 @@ final class AgentCharactersUITests: XCTestCase {
         chats.tap()
         let settings = app.buttons["teamSettings"]
         reveal(settings, app); settings.tap()
-        let leave = app.buttons["signOutThisDevice"]
+        app.openFirstDeviceDetails()
+        let leave = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Убрать подключение к")).firstMatch
         reveal(leave, app); leave.tap()
         let confirm = app.buttons["confirmDeviceSignOut"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))

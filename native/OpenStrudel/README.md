@@ -25,7 +25,7 @@ xcodebuild -project OpenStrudel.xcodeproj -scheme "OpenStrudel iOS" -configurati
 xcodebuild -project OpenStrudel.xcodeproj -scheme "OpenStrudel macOS" -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO test
 ```
 
-The Mac app connects to the local Home at `http://127.0.0.1:7788`. In Mac Settings, choose **Другие устройства → Добавить устройство**. Scan the one-use code in the iPhone app, or open the shared connection link. Confirm the Mac and allow local-network access. Home must stay running on an awake Mac on the same network. The code expires after five minutes; creating another code invalidates the old one.
+The Mac app connects to the local Home at `http://127.0.0.1:7788`. In Mac Settings, choose **Устройства**, expand the device and choose **Получить ссылку подключения**. Scan the one-use code in the iPhone app, or open the shared connection link. Confirm the Mac and allow local-network access. Home must stay running on an awake Mac on the same network. The code expires after five minutes; creating another code invalidates the old one.
 
 The code carries a `.local` hostname, port, one-use secret and SHA-256 certificate fingerprint. The iPhone pins that certificate and rejects redirects. A successful pairing replaces the invitation with a random credential stored in Keychain; Home stores only its hash. Mac Settings can revoke all mobile credentials. Signing must remain enabled for simulator connection tests too: an unsigned simulator build cannot reliably exercise Keychain persistence.
 

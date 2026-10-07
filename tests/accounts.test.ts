@@ -22,6 +22,11 @@ function fixture() {
   return { store, accounts, second, pool: new AccountEngines(accounts) };
 }
 describe("per-device Codex subscriptions", () => {
+  it("does not wait for quota checks to open service settings", async () => {
+    const { accounts, pool } = fixture();
+    expect(await pool.forAgent("main", "personal").connections!()).toEqual(["default"]);
+    expect(accounts.get("default").usage).not.toHaveBeenCalled();
+  });
   it("uses ordered allowed accounts and backend quota permission without inferring permission from percentages", async () => {
     const { accounts, second } = fixture();
     vi.mocked(accounts.get("default").usage).mockResolvedValue({ checkedAt: "now", ordinaryUsageAllowed: false, windows: [] });

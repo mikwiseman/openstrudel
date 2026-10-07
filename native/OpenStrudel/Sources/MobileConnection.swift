@@ -21,7 +21,7 @@ enum HomeClientError: LocalizedError {
 }
 
 enum UserFacingError {
-    static let storageFull = "На основном Mac или сервере закончилось место. Освободите место. Перед повторной отправкой проверьте, успел ли сотрудник выполнить задачу."
+    static let storageFull = "На устройстве сотрудника закончилось место. Освободите место. Перед повторной отправкой проверьте, успел ли сотрудник выполнить задачу."
 
     static func text(_ message: String) -> String {
         let normalized = message.lowercased()

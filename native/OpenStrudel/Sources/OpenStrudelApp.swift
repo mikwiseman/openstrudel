@@ -2,7 +2,8 @@ import SwiftUI
 
 @main
 struct OpenStrudelApp: App {
-    @StateObject private var client = HomeClient()
+    @StateObject private var library = DeviceLibrary()
+    private var client: HomeClient { library.active }
     #if os(macOS)
     @StateObject private var updater = AppUpdater.shared
     #endif
@@ -10,13 +11,22 @@ struct OpenStrudelApp: App {
     var body: some Scene {
         WindowGroup(id: "home") {
             OpenStrudelRootView()
-                .environmentObject(client)
+                .id(client.id)
                 .tint(AppTheme.accent)
                 #if os(macOS)
                 .modifier(AppIconAppearance())
                 .modifier(HomeStatusItemAppearance())
-                .environmentObject(client)
                 #endif
+                .sheet(item: $library.invitation) { pairing in
+                    AddDeviceConfirmation(pairing: pairing)
+                        .environmentObject(library)
+                }
+                .task {
+                    while !Task.isCancelled {
+                        await library.refresh()
+                        do { try await Task.sleep(for: .seconds(15)) } catch { break }
+                    }
+                }
                 .onOpenURL { url in
                     if url.scheme == "openstrudel" && url.host == "oauth" && url.path == "/digitalocean" {
                         #if os(macOS)
@@ -24,8 +34,10 @@ struct OpenStrudelApp: App {
                         #endif
                         return
                     }
-                    client.preparePairing(url)
+                    library.preparePairing(url)
                 }
+                .environmentObject(client)
+                .environmentObject(library)
         }
         #if os(macOS)
         .windowStyle(.hiddenTitleBar)
@@ -33,9 +45,9 @@ struct OpenStrudelApp: App {
         .defaultSize(width: 1120, height: 760)
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("Новый сотрудник") { client.beginEmployee() }
+                Button("Новый сотрудник") { library.beginEmployee() }
                     .keyboardShortcut("n", modifiers: .command)
-                    .disabled(client.health == nil || client.isCreating)
+                    .disabled(client.isCreating)
             }
             CommandGroup(after: .appInfo) {
                 Button("Аккаунты и остатки") {
@@ -59,6 +71,7 @@ struct OpenStrudelApp: App {
         Settings {
             SettingsView()
                 .environmentObject(client)
+                .environmentObject(library)
                 .tint(AppTheme.accent)
                 .frame(minWidth: 580, minHeight: 520)
         }

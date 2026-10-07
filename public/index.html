@@ -67,13 +67,13 @@
 <body>
   <main class="app">
     <aside class="sidebar">
-      <div class="brand"><span class="mark"></span><span>OpenStrudel</span><button class="icon" id="new-employee" aria-label="Новый агент" title="Новый сотрудник">＋</button></div>
-      <div class="section-label">Агенты</div>
+      <div class="brand"><span class="mark"></span><span>OpenStrudel</span><button class="icon" id="new-employee" aria-label="Новый сотрудник" title="Новый сотрудник">＋</button></div>
+      <div class="section-label">Сотрудники</div>
       <div class="agent-list" id="agents"></div>
       <div class="side-bottom"><div class="status" id="status">Подключение…</div><button class="icon" id="settings" aria-label="Настройки" title="Настройки">⚙</button></div>
     </aside>
     <section class="conversation">
-      <header class="topbar"><div class="top-title"><span class="mark" id="active-avatar" style="width:30px;height:30px"></span><span id="active-name">OpenStrudel</span><small id="active-state">готов</small><select id="imported-chat" aria-label="Выбрать переписку" hidden style="max-width:180px"></select></div><div class="top-actions"><button class="icon" id="mobile-agents" aria-label="Список агентов" title="Сотрудники">☷</button></div></header>
+      <header class="topbar"><div class="top-title"><span class="mark" id="active-avatar" style="width:30px;height:30px"></span><span id="active-name">OpenStrudel</span><small id="active-state">готов</small><select id="imported-chat" aria-label="Выбрать переписку" hidden style="max-width:180px"></select></div><div class="top-actions"><button class="icon" id="mobile-agents" aria-label="Список сотрудников" title="Сотрудники">☷</button></div></header>
       <div class="messages" id="messages"></div>
       <div id="connection-notice" class="connection-notice" role="status" aria-live="polite"></div><div class="composer-wrap"><div class="suggestions"><button class="chip">Собери план на сегодня</button><button class="chip">Помоги разобраться</button></div><form class="composer" id="composer"><textarea id="draft" rows="1" placeholder="Напишите, что нужно…"></textarea><button class="send" id="send" aria-label="Отправить" disabled>↑</button></form></div>
     </section>
@@ -84,13 +84,21 @@
     const $ = (id) => document.getElementById(id);
     const state = { profiles: [], selected: null, messages: [], telegram: null, loading: false };
     async function api(path, options = {}, binary = false) {
-      const response = await fetch(path, { ...options, credentials:'same-origin', redirect:'error', headers: { 'content-type':'application/json', ...(options.method && options.method !== 'GET' ? {'idempotency-key':crypto.randomUUID()} : {}), ...(state.csrf ? {'x-openstrudel-csrf':state.csrf} : {}), ...(options.headers || {}) } });
-      if (response.ok && binary && response.status!==202) return response.blob();
+      const {onProgress, ...requestOptions} = options;
+      const response = await fetch(path, { ...requestOptions, credentials:'same-origin', redirect:'error', headers: { 'content-type':'application/json', ...(options.method && options.method !== 'GET' ? {'idempotency-key':crypto.randomUUID()} : {}), ...(state.csrf ? {'x-openstrudel-csrf':state.csrf} : {}), ...(options.headers || {}) } });
+      if (response.ok && binary && response.status!==202) {
+        const total=Number(response.headers.get('content-length'))||null, reader=response.body.getReader(), parts=[];
+        let received=0;
+        try { while(true) { const {done,value}=await reader.read(); if(done) break; received+=value.length; if(received>192*1024*1024) throw new Error('Копия больше 192 МБ.'); parts.push(value); onProgress?.(received,total); } }
+        catch(error) { await reader.cancel(); throw error; }
+        return new Blob(parts);
+      }
       const data = await response.json().catch(() => ({}));
       if (!response.ok) { const error = new Error(data.error || ('HTTP ' + response.status)); error.status = response.status; error.moved = data.moved; throw error; }
       if(response.status===202 && data.operationId && path.split('?')[0]!=='/v1/messages') {
         rememberControl(data.operationId,true);
         for(let i=0;i<30;i++) {
+          options.signal?.throwIfAborted();
           await new Promise(r=>setTimeout(r,1000));
           const receipt=await api('/v1/home/requests/'+encodeURIComponent(data.operationId));
           if(receipt.status==='canceled') { rememberControl(data.operationId,false); throw new Error('Действие отменено до передачи устройству.'); }
@@ -108,8 +116,8 @@
       return data;
     }
     function initials(name) { return name.split(/\s+/).map((part) => part[0]).join('').slice(0,2).toUpperCase(); }
-    function renderAgents() { const root = $('agents'); root.replaceChildren(); const main = document.createElement('button'); main.className = 'agent' + (!state.selected ? ' active' : ''); main.innerHTML = '<span class="avatar mark" aria-hidden="true"></span><span class="agent-copy"><span class="agent-name">OpenStrudel</span><span class="agent-sub">Главный собеседник</span></span>'; main.onclick = () => selectAgent(null); root.append(main); for (const profile of state.profiles) { const button = document.createElement('button'); button.className = 'agent' + (state.selected === profile.id ? ' active' : ''); button.innerHTML = `<span class="avatar employee"></span><span class="agent-copy"><span class="agent-name"></span><span class="agent-sub"></span></span>`; paintAgentAvatar(button.querySelector('.avatar'),profile); button.querySelector('.agent-name').textContent = profile.name; button.querySelector('.agent-sub').textContent = profile.instructions; button.onclick = () => selectAgent(profile.id); root.append(button); } }
-    function renderMessages() { const root = $('messages'); root.replaceChildren(); if (!state.messages.length) { root.innerHTML = '<div class="empty"><div><span class="mark" style="width:62px;height:62px;border-radius:21px;display:inline-grid;font-size:28px"></span><h1>Что сделать?</h1><p>Напишите, с чем помочь. Чтобы обратиться к другому агенту, выберите его в списке.</p></div></div>'; const profile=state.profiles.find(p=>p.id===state.selected); if(profile) { paintAgentAvatar(root.querySelector('.mark'),profile,72); root.querySelector('h1').textContent=profile.name; } return; } for (const message of state.messages) { const row = document.createElement('div'); row.className = 'message-row ' + (message.direction === 'inbound' ? 'user' : 'assistant'); const wrap = document.createElement('div'); const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.textContent = message.text; const time = document.createElement('div'); time.className = 'time'; time.textContent = new Date(message.createdAt).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }); wrap.append(bubble,time); row.append(wrap); root.append(row); } root.scrollTop = root.scrollHeight; }
+    function renderAgents() { const root = $('agents'); root.replaceChildren(); const main = document.createElement('button'); main.className = 'agent' + (!state.selected ? ' active' : ''); main.innerHTML = '<span class="avatar mark" aria-hidden="true"></span><span class="agent-copy"><span class="agent-name">OpenStrudel</span><span class="agent-sub">Общий помощник</span></span>'; main.onclick = () => selectAgent(null); root.append(main); for (const profile of state.profiles) { const button = document.createElement('button'); button.className = 'agent' + (state.selected === profile.id ? ' active' : ''); button.innerHTML = `<span class="avatar employee"></span><span class="agent-copy"><span class="agent-name"></span><span class="agent-sub"></span></span>`; paintAgentAvatar(button.querySelector('.avatar'),profile); button.querySelector('.agent-name').textContent = profile.name; button.querySelector('.agent-sub').textContent = profile.instructions; button.onclick = () => selectAgent(profile.id); root.append(button); } }
+    function renderMessages() { const root = $('messages'); root.replaceChildren(); if (!state.messages.length) { root.innerHTML = '<div class="empty"><div><span class="mark" style="width:62px;height:62px;border-radius:21px;display:inline-grid;font-size:28px"></span><h1>Что сделать?</h1><p>Напишите, с чем помочь. Чтобы обратиться к другому сотруднику, выберите его в списке.</p></div></div>'; const profile=state.profiles.find(p=>p.id===state.selected); if(profile) { paintAgentAvatar(root.querySelector('.mark'),profile,72); root.querySelector('h1').textContent=profile.name; } return; } for (const message of state.messages) { const row = document.createElement('div'); row.className = 'message-row ' + (message.direction === 'inbound' ? 'user' : 'assistant'); const wrap = document.createElement('div'); const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.textContent = message.text; const time = document.createElement('div'); time.className = 'time'; time.textContent = new Date(message.createdAt).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }); wrap.append(bubble,time); row.append(wrap); root.append(row); } root.scrollTop = root.scrollHeight; }
     async function loadConversation() {
       const generation=state.conversationGeneration=(state.conversationGeneration||0)+1, selected=state.selected, chat=state.chat;
       const current=()=>generation===state.conversationGeneration && selected===state.selected && chat===state.chat;
@@ -119,10 +127,10 @@
       state.conversationID=data.conversation.id; state.messages=data.messages||[]; state.interactions=data.interactions||[];
       await checkOutbox(); if(!current()) return;
       renderMessages(); renderExtraMessages(); const profile=state.profiles.find(item=>item.id===selected);
-      paintAgentAvatar($('active-avatar'),profile,30); $('active-name').textContent=profile?.name||'OpenStrudel'; $('active-state').textContent=profile?'агент':'готов'; renderImportedChats();
+      paintAgentAvatar($('active-avatar'),profile,30); $('active-name').textContent=profile?.name||'OpenStrudel'; $('active-state').textContent=profile?'сотрудник':'готов'; renderImportedChats();
     }
     async function selectAgent(id) { try { saveDraft(); state.chat = null; state.selected = id; state.messages=[]; state.interactions=[]; $('active-name').textContent=state.profiles.find(p=>p.id===id)?.name||'OpenStrudel';restoreDraft(); renderImportedChats(); renderAgents(); await loadConversation(); } catch(e) { renderMessages(); renderExtraMessages(); $('status').textContent=e.message;$('connection-notice').textContent=e.message; } }
-    async function refresh() { try { const [health, profiles, integrations] = await Promise.all([api('/health'), api('/v1/profiles'), api('/v1/integrations')]); state.homeId=health.homeId; state.hostingOrigin=health.hostingOrigin; state.archiveVersion = health.agentArchiveVersion; state.appearanceVersion=health.agentAppearanceVersion; state.importedChats = profiles.importedConversations || []; state.profiles = profiles.profiles || []; state.telegram = integrations.telegram; $('status').innerHTML = health.ok ? '<b>●</b> готов' : 'ожидает'; renderAgents(); await loadConversation();$('connection-notice').textContent=''; } catch (error) { await checkOutbox();renderMessages();renderExtraMessages();$('status').textContent = error.message;$('connection-notice').textContent=error.message; if(error.moved && !state.showedMoved) { state.showedMoved=true; const page=modalPage('Главное устройство изменилось','Приложения переподключатся автоматически. Для браузера создайте новое приглашение на новом главном устройстве.'); const link=element('a','Открыть новое главное'); const url=new URL(error.moved.url); if(url.protocol==='https:') { link.href=url.href;link.rel='noreferrer';page.content.append(link); } } } }
+    async function refresh() { try { const [health, profiles, integrations] = await Promise.all([api('/health'), api('/v1/profiles'), api('/v1/integrations')]); state.homeId=health.homeId;state.nodeId=health.nodeId;state.archiveEncryption=health.agentArchiveEncryption; state.hostingOrigin=health.hostingOrigin; state.archiveVersion = health.agentArchiveVersion; state.appearanceVersion=health.agentAppearanceVersion; state.importedChats = profiles.importedConversations || []; state.profiles = profiles.profiles || []; state.telegram = integrations.telegram; $('status').innerHTML = health.ok ? '<b>●</b> готов' : 'ожидает'; renderAgents(); await loadConversation();$('connection-notice').textContent=''; } catch (error) { await checkOutbox();renderMessages();renderExtraMessages();$('status').textContent = error.message;$('connection-notice').textContent=error.message; if(error.moved && !state.showedMoved) { state.showedMoved=true; const page=modalPage('Подключение изменилось','Приложения переподключатся автоматически. Для браузера создайте новое приглашение на новом устройстве.'); const link=element('a','Открыть устройство'); const url=new URL(error.moved.url); if(url.protocol==='https:') { link.href=url.href;link.rel='noreferrer';page.content.append(link); } } } }
     $('draft').addEventListener('input', () => { $('send').disabled = !$('draft').value.trim(); $('draft').style.height = 'auto'; $('draft').style.height = Math.min($('draft').scrollHeight, 130) + 'px'; });
     document.querySelectorAll('.chip').forEach((chip) => chip.onclick = () => { $('draft').value = chip.textContent; $('draft').dispatchEvent(new Event('input')); $('draft').focus(); });
     $('composer').onsubmit = event => sendDraft(event);
@@ -141,47 +149,65 @@
     $('imported-chat').onchange = async () => { saveDraft(); state.chat = $('imported-chat').value || null; restoreDraft(); try { await loadConversation(); } catch(e) { $('status').textContent = e.message; } };
     async function openSettings(deviceId) {
       const box = document.createElement('div');
-      box.innerHTML = '<h2>Копия агентов</h2><p>Сохраните агентов выбранного устройства: инструкции, переписку, файлы и расписания.</p><label>Устройство<select id="archive-device" class="field"></select></label><p>При импорте текущая команда сохранится. Новые расписания будут на паузе. Вход в OpenAI и доступ к сервисам не переносятся.</p><div class="modal-actions"><button class="secondary" id="export-team">Сохранить копию</button><button class="primary" id="import-team">Добавить из файла</button></div><p id="transfer-status" role="status" style="margin-top:16px"></p><p id="transfer-error" role="alert" tabindex="-1"></p><div class="modal-actions"><button class="secondary" id="telegram-settings">Telegram</button><button class="secondary" id="cancel">Закрыть</button></div>';
+      box.innerHTML = '<h2>Резервная копия сотрудников</h2><p id="backup-summary">Сотрудники, переписка, файлы и расписания — в одном файле.</p><label>Устройство<select id="archive-device" class="field"></select></label><p>При импорте текущая команда сохранится. Новые расписания будут на паузе. Вход в OpenAI и доступ к сервисам не переносятся.</p><label id="backup-protection"><input type="checkbox" id="protect-backup"> Защитить копию паролем</label><input id="backup-password" type="password" class="field" placeholder="Пароль · не менее 12 символов" autocomplete="new-password" hidden><p id="backup-protection-note">Файл без пароля. Храните его в безопасном месте.</p><progress id="backup-progress" hidden style="width:100%"></progress><div class="modal-actions"><button class="primary" id="export-team">Сохранить копию</button><button class="secondary" id="import-team">Восстановить из копии</button></div><p id="transfer-status" role="status" style="margin-top:16px"></p><p id="transfer-error" role="alert" tabindex="-1"></p><div class="modal-actions"><button class="secondary" id="cancel">Закрыть</button></div>';
       showModal(box);
-      $('cancel').onclick = closeModal;
-      $('telegram-settings').onclick = openTelegramSettings;
-      const devices=state.devices || (await api('/v1/devices')).devices; const picker=$('archive-device'); for(const d of devices){const option=document.createElement('option');option.value=d.id;option.textContent=d.name;picker.append(option);} picker.value=deviceId||devices.find(d=>d.primary)?.id; deviceId=picker.value; picker.onchange=()=>void openSettings(picker.value); const scope='deviceId='+encodeURIComponent(deviceId); const status = $('transfer-status'), error = $('transfer-error');
+      let operation;
+      $('cancel').onclick = () => { if(operation) operation.abort(); else closeModal(); };
+      const devices=state.devices || (await api('/v1/devices')).devices; const picker=$('archive-device'); for(const d of devices){const option=document.createElement('option');option.value=d.id;option.textContent=d.name;picker.append(option);} picker.value=deviceId||state.nodeId||devices[0]?.id; picker.parentElement.hidden=devices.length<2; deviceId=picker.value; $('backup-summary').textContent='Сотрудники «'+picker.selectedOptions[0].textContent+'», их переписка, файлы и расписания — в одном файле.'; picker.onchange=()=>void openSettings(picker.value); const scope='deviceId='+encodeURIComponent(deviceId); const status = $('transfer-status'), error = $('transfer-error');
       const buttons = [...box.querySelectorAll('button')];
       const report = e => { error.textContent = e.message; error.focus(); };
-      const busy = value => { buttons.forEach(button => button.disabled = value); box.dataset.busy = String(value); };
+      const protect=$('protect-backup'), password=$('backup-password'), progress=$('backup-progress');
+      $('backup-protection').hidden=!state.archiveEncryption;
+      const protection=()=>{password.hidden=!protect.checked;$('backup-protection-note').textContent=protect.checked?'Сохраните пароль: без него копию не открыть.':'Файл без пароля. Храните его в безопасном месте.'; $('export-team').disabled=protect.checked&&password.value.length<12;};
+      protect.onchange=protection;password.oninput=protection;
+      const busy = value => { buttons.forEach(button => button.disabled = value&&button.id!=='cancel'); picker.disabled=protect.disabled=password.disabled=value; $('cancel').textContent=value?'Отменить':'Закрыть';box.dataset.busy = String(value);if(!value) protection(); };
       if (state.archiveVersion !== 1) {
         $('export-team').disabled = true; $('import-team').disabled = true;
-        status.textContent = 'Для переноса обновите OpenStrudel на основном Mac или сервере.';
+        status.textContent = 'Для переноса обновите OpenStrudel на Mac или сервере.';
         return;
       }
       $('export-team').onclick = async () => {
-        busy(true); error.textContent = ''; status.textContent = 'Собираем копию команды…';
+        operation=new AbortController();busy(true); error.textContent = ''; status.textContent = 'Готовим копию сотрудников на «'+picker.selectedOptions[0].textContent+'»…';progress.hidden=false;progress.removeAttribute('value');
         try {
-          const data = await api('/v1/agents/archive?'+scope, {}, true);
+          const data = await api('/v1/agents/archive?'+scope, {...(protect.checked?{method:'POST',body:JSON.stringify({password:password.value})}:{}),signal:operation.signal,onProgress:(received,total)=>{if(total){progress.max=total;progress.value=received;status.textContent='Получаем копию: '+Math.floor(received/total*100)+'%';}else status.textContent='Получено '+(received/1024/1024).toFixed(1)+' МБ';}}, true);
+          password.value='';
           const url = URL.createObjectURL(data);
           const link = document.createElement('a'); link.href = url; link.download = 'OpenStrudel-' + new Date().toISOString().slice(0,10) + '.openstrudel'; link.click();
           setTimeout(() => URL.revokeObjectURL(url), 1000);
-          status.textContent = 'Копия готова к сохранению. В файле есть личная переписка и материалы.';
-        } catch(e) { status.textContent = ''; report(e); } finally { busy(false); }
+          status.textContent = (protect.checked?'Защищённая копия':'Копия') + ' передана браузеру. Проверьте её сохранение в загрузках.';
+        } catch(e) { status.textContent = e.name==='AbortError'?'Сохранение отменено.':''; if(e.name!=='AbortError') report(e); } finally { operation=null;progress.hidden=true;busy(false); }
       };
       $('import-team').onclick = () => {
         const picker = document.createElement('input'); picker.type = 'file'; picker.accept = '.openstrudel,.json';
         picker.onchange = async () => {
           const file = picker.files[0]; if (!file) return;
-          busy(true); error.textContent = ''; status.textContent = 'Проверяем файл…';
+          operation=new AbortController();busy(true); error.textContent = ''; status.textContent = 'Проверяем файл…';
           try {
             if (!file.size || file.size > 192*1024*1024) throw new Error('Выберите файл экспорта OpenStrudel размером до 192 МБ.');
             const data = await file.arrayBuffer();
-            const preview = await api('/v1/agents/archive/preview?'+scope, {method:'POST', body:data});
+            operation.signal.throwIfAborted();
+            if(new Uint8Array(data)[0]===123) { let header;try{header=JSON.parse(new TextDecoder().decode(data));}catch{} if(header?.format==='openstrudel.home.backup'){openProtectedBackup(data,deviceId);return;} }
+            const preview = await api('/v1/agents/archive/preview?'+scope, {method:'POST', body:data,signal:operation.signal});
             showTeamImport(data, preview, deviceId);
-          } catch(e) { status.textContent = ''; report(e); } finally { busy(false); }
+          } catch(e) { status.textContent = e.name==='AbortError'?'Проверка отменена.':'';if(e.name!=='AbortError') report(e); } finally { operation=null;if(box.isConnected) busy(false); }
         }; picker.click();
       };
       $('export-team').focus();
     }
+    function openProtectedBackup(data,deviceId) {
+      const page=modalPage('Защищённая копия','Введите пароль, заданный при сохранении копии.');
+      const password=field(page.content,'Пароль копии','password');
+      action(page,'Открыть копию',async()=>{
+        let encoded='';const bytes=new Uint8Array(data);for(let i=0;i<bytes.length;i+=32768) encoded+=String.fromCharCode(...bytes.subarray(i,i+32768));
+        const upload=JSON.stringify({protectedArchive:btoa(encoded),password:password.value});
+        if(upload.length>192*1024*1024) throw new Error('Копия больше 192 МБ.');
+        const preview=await api('/v1/agents/archive/preview?deviceId='+encodeURIComponent(deviceId),{method:'POST',body:upload});
+        password.value='';showTeamImport(upload,preview,deviceId);
+      },true);password.focus();
+    }
     function showTeamImport(data, preview, deviceId) {
       const box = document.createElement('div');
-      box.innerHTML = '<h2>Импорт команды</h2><p id="import-description"></p><ul id="import-names"></ul><p id="import-counts"></p><p id="import-policy"></p><p id="import-error" role="alert" tabindex="-1"></p><div class="modal-actions"><button class="secondary" id="cancel-import">Отмена</button><button class="primary" id="confirm-import">Добавить сотрудников</button></div>';
+      box.innerHTML = '<h2>Восстановить сотрудников</h2><p id="import-description"></p><ul id="import-names"></ul><p id="import-counts"></p><p id="import-policy"></p><p id="import-error" role="alert" tabindex="-1"></p><div class="modal-actions"><button class="secondary" id="cancel-import">Отмена</button><button class="primary" id="confirm-import">Добавить сотрудников</button></div>';
       showModal(box);
       $('cancel-import').onclick = ()=>void openSettings(deviceId);
       if (preview.alreadyImported) {

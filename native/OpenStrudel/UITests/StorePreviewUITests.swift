@@ -15,6 +15,7 @@ final class StorePreviewUITests: XCTestCase {
         app.open(try XCTUnwrap(URL(string: XCTUnwrap(value["url"] as? String))))
         let confirm = app.buttons["confirmMacPairing"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 15)); confirm.tap()
+        app.finishDevicePairing()
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 10) { consent.tap() }
         let signIn = app.buttons["signInOpenAI"]
@@ -56,6 +57,7 @@ final class StorePreviewUITests: XCTestCase {
         let confirm = app.buttons["confirmMacPairing"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 15), app.debugDescription)
         confirm.tap()
+        app.finishDevicePairing()
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 15) { consent.tap() }
         let chats = app.buttons["Чаты"]

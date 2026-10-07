@@ -6,6 +6,7 @@ import QuickLook
 /// The native surface is intentionally small: chats on the left, one calm
 /// composer, and settings only for the two connections a person can act on.
 struct OpenStrudelRootView: View {
+    @EnvironmentObject private var library: DeviceLibrary
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var client: HomeClient
     @State private var showSettings = false
@@ -23,9 +24,9 @@ struct OpenStrudelRootView: View {
     var body: some View {
         ZStack {
             HomeBackground()
-            if client.isConnecting {
+            if client.isConnecting && !library.hasOtherDevices {
                 HomeConnectingView()
-            } else if client.health == nil {
+            } else if client.health == nil && !library.hasOtherDevices {
                 #if os(iOS)
                 MobileWelcomeView()
                 #else
@@ -77,7 +78,7 @@ struct OpenStrudelRootView: View {
             SettingsView().environmentObject(client)
         }
         .sheet(item: $client.pendingPairing) { pairing in
-            ConfirmMacPairingView(pairing: pairing).environmentObject(client)
+            AddDeviceConfirmation(pairing: pairing).environmentObject(library)
         }
         .alert(
             "OpenStrudel",
@@ -118,7 +119,6 @@ private struct HomeUnavailableView: View {
     @State private var showingInvitation = false
     @State private var invitation: MacPairing?
     @State private var starting = false
-    @State private var showingServer = false
     private var reconnecting: Bool { client.shouldRestoreConnection && client.connectionState == .unavailable }
 
     var body: some View {
@@ -131,7 +131,7 @@ private struct HomeUnavailableView: View {
                     .multilineTextAlignment(.center)
                 Text(reconnecting
                      ? "Пока не удаётся подключиться к вашей команде. Ваши чаты сохранены. Подключимся автоматически."
-                     : client.isSignedOut ? "Ваша команда сохранена. Подключитесь к ней снова или выберите другую." : "Создавайте сотрудников для работы и личных дел. Выберите, где они будут работать.")
+                     : client.isSignedOut ? "Сотрудники сохранены на своих устройствах. Подключитесь снова, чтобы продолжить." : "Начните на этом Mac. Создайте сотрудников или восстановите их из копии. Другие устройства можно подключить позже.")
                     .font(.body).foregroundStyle(AppTheme.secondaryText)
                     .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             }
@@ -152,20 +152,13 @@ private struct HomeUnavailableView: View {
                         starting = true
                         Task { await client.startLocalHome(); starting = false }
                     } label: {
-                        SetupChoiceLabel(title: starting ? "Готовим ваш Mac…" : "На этом Mac", subtitle: "Работает, пока Mac включён и подключён к интернету.", icon: "desktopcomputer")
+                        SetupChoiceLabel(title: starting ? "Готовим ваш Mac…" : "Начать на этом Mac", subtitle: "Сотрудники и их файлы будут храниться здесь.", icon: "desktopcomputer")
                     }.buttonStyle(.glassProminent).controlSize(.large)
                         .buttonBorderShape(.roundedRectangle(radius: 22))
                         .disabled(starting).accessibilityIdentifier("setupThisMac")
                 }
-                if !client.isConfigured || client.isLocalConnection {
-                    Button { showingServer = true } label: {
-                        SetupChoiceLabel(title: "В облаке", subtitle: "Работает без включённого Mac. Размещение оплачивается отдельно.", icon: "cloud")
-                    }.buttonStyle(.glass).controlSize(.large)
-                        .buttonBorderShape(.roundedRectangle(radius: 22))
-                        .disabled(starting).accessibilityIdentifier("setupCloud")
-                }
                 Button { showingInvitation = true } label: {
-                    SetupActionLabel(title: "Подключиться по приглашению", icon: "link")
+                    SetupActionLabel(title: "Подключить другое устройство", icon: "link")
                 }.buttonStyle(.plain).foregroundStyle(AppTheme.secondaryText)
                     .disabled(starting).accessibilityIdentifier("setupExisting")
             }
@@ -178,7 +171,6 @@ private struct HomeUnavailableView: View {
         .sheet(isPresented: $showingInvitation, onDismiss: {
             if let invitation { client.pendingPairing = invitation; client.pairingError = nil; self.invitation = nil }
         }) { ConnectionInvitationView { invitation = $0 } }
-        .sheet(isPresented: $showingServer) { ServerSetupView() }
     }
 }
 
@@ -201,6 +193,7 @@ private struct SetupChoiceLabel: View {
 }
 
 private struct Sidebar: View {
+    @EnvironmentObject private var library: DeviceLibrary
     @EnvironmentObject private var client: HomeClient
     @Binding var showSettings: Bool
     @State private var searching = false
@@ -208,11 +201,7 @@ private struct Sidebar: View {
     private var searchTerm: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
     @FocusState private var searchFocused: Bool
 
-    private var results: [EmployeeProfile] {
-        searchTerm.isEmpty ? client.profiles : client.profiles.filter {
-            $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm)
-        }
-    }
+    private var showsMain: Bool { searchTerm.isEmpty || "OpenStrudel".localizedCaseInsensitiveContains(searchTerm) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -256,7 +245,7 @@ private struct Sidebar: View {
 
                 Button {
                     closeSearch()
-                    client.beginEmployee()
+                    library.beginEmployee()
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 17, weight: .medium))
@@ -275,32 +264,34 @@ private struct Sidebar: View {
 
             ScrollView {
                 VStack(spacing: 3) {
-                    if !searchTerm.isEmpty && results.isEmpty && !"OpenStrudel".localizedCaseInsensitiveContains(searchTerm) {
+                    if !showsMain && !library.visibleClients.contains(where: { source in source.profiles.contains { $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) } }) {
                         SearchEmptyState(query: query) { query = "" }
                     }
-                    if searchTerm.isEmpty || "OpenStrudel".localizedCaseInsensitiveContains(searchTerm) {
-                        SidebarRow(
-                            name: "OpenStrudel",
-                            subtitle: "Общий помощник",
-                            selected: client.selectedProfileID == nil,
-                            appearance: nil
-                        ) { select(nil) }
-                    }
-
-                    if client.isEmployeeDraft {
-                        SidebarRow(name: "Новый сотрудник", subtitle: "Опишите его задачу в чате", selected: true, appearance: client.draftAppearance) {}
-                    }
-                    ForEach([false, true], id: \.self) { work in
-                        let people = results.filter { $0.isWork == work }
-                        if !people.isEmpty {
-                            Text(work ? "Работа" : "Личное")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(AppTheme.secondaryText)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 12).padding(.top, 17).padding(.bottom, 5)
+                    ForEach(library.visibleClients) { source in
+                        let people = source.profiles.filter { searchTerm.isEmpty || $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) }
+                        if showsMain || !people.isEmpty {
+                            if library.hasOtherDevices {
+                                HStack(spacing: 5) {
+                                    Text(source.displayName)
+                                    if source.homeUnreachable { Image(systemName: "wifi.slash").accessibilityLabel("Нет связи") }
+                                }.font(.system(size: 11, weight: .medium)).foregroundStyle(AppTheme.secondaryText)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 12).padding(.top, 14).padding(.bottom, 5)
+                            }
+                            if showsMain {
+                                SidebarRow(name: "OpenStrudel", subtitle: library.hasOtherDevices ? source.displayName : "Помощник для ваших задач",
+                                           selected: source === client && source.selectedProfileID == nil, appearance: nil) {
+                                    closeSearch(); Task { await library.select(source, profile: nil) }
+                                }
+                            }
+                            if source.isEmployeeDraft && searchTerm.isEmpty {
+                                SidebarRow(name: "Новый сотрудник", subtitle: "Опишите его задачу", selected: source === client, appearance: source.draftAppearance) { library.select(source) }
+                            }
                             ForEach(people) { profile in
                                 SidebarRow(name: profile.name, subtitle: profile.previewText.isEmpty ? profile.roleText : profile.previewText,
-                                           selected: client.selectedProfileID == profile.id, appearance: profile.resolvedAppearance) { select(profile.id) }
+                                           selected: source === client && source.selectedProfileID == profile.id, appearance: profile.resolvedAppearance) {
+                                    closeSearch(); Task { await library.select(source, profile: profile.id) }
+                                }
                             }
                         }
                     }
@@ -313,7 +304,7 @@ private struct Sidebar: View {
 
             HStack(spacing: 10) {
                 AccountBadge(email: client.openAIAccount?.email, size: 30)
-                Text(client.health?.homeProtocol == 1 ? "Ваша команда" : client.openAIAccount?.email ?? "Аккаунт")
+                Text(library.hasOtherDevices ? "Мои устройства" : client.displayName)
                     .font(.subheadline)
                     .foregroundStyle(AppTheme.secondaryText)
                     .lineLimit(1)
@@ -380,12 +371,12 @@ private struct SidebarRow: View {
 #endif
 
 private struct ConversationView: View {
+    @EnvironmentObject private var library: DeviceLibrary
     @EnvironmentObject private var client: HomeClient
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var showSettings: Bool
     @State private var draft = ""
     @State private var pickedFiles: [PickedFile] = []
-    @State private var fileDrafts: [String: [PickedFile]] = [:]
     @State private var drafts = UserDefaults.standard.dictionary(forKey: "openstrudel.drafts") as? [String: String] ?? [:]
     @State private var showEmployees = false
     @State private var showBotDetails = false
@@ -401,8 +392,19 @@ private struct ConversationView: View {
             ConversationHeader(showSettings: $showSettings, showEmployees: $showEmployees, showBotDetails: $showBotDetails)
             #endif
 
-            if client.openAIAccount?.connected == false {
-                OpenAIRecoveryNotice(showSettings: $showSettings)
+            if client.connectionNeedsPairing || client.homeUnreachable || client.health == nil {
+                HStack(spacing: 10) {
+                    if client.isConnecting { ProgressView().controlSize(.small) }
+                    else { Image(systemName: "wifi.slash") }
+                    Text(client.connectionNeedsPairing ? "Подключите «\(client.displayName)» снова. Переписка сохранена на устройстве." : client.isConnecting ? "Подключаемся к «\(client.displayName)»…" : "«\(client.displayName)» не на связи. Переписка и черновики сохранены. Подключимся автоматически.")
+                        .font(.callout)
+                    Spacer(minLength: 0)
+                    if client.connectionNeedsPairing { Button("Подключить") { showSettings = true } }
+                }.foregroundStyle(AppTheme.secondaryText).padding(.horizontal, chatInset).padding(.vertical, 10)
+            }
+
+            if client.openAIAccount?.connected == false && !client.homeUnreachable && client.health != nil {
+                OpenAIRecoveryNotice()
                     .padding(.horizontal, chatInset).padding(.vertical, 8)
             }
 
@@ -438,7 +440,7 @@ private struct ConversationView: View {
                                             Button("Проверить доставку и повторить") { Task { await client.retry(pending) } }.buttonStyle(.plain).frame(minHeight: controlTarget)
                                         }
                                     } else if let delivery = pending.deliveryState {
-                                        Text(delivery == "waiting_for_device" ? "Сохранено на главном. Ждёт подключения устройства." : "Сохранено на главном. Ожидает доставки агенту.")
+                                        Text(delivery == "waiting_for_device" ? "Сообщение сохранено. Ждём подключения устройства." : "Сообщение сохранено. Передаём сотруднику.")
                                             .font(.caption).foregroundStyle(AppTheme.secondaryText)
                                         if client.canManageOpenAI {
                                             Button("Отменить доставку") { Task { await client.cancelPending(pending) } }.buttonStyle(.plain).frame(minHeight: controlTarget)
@@ -526,8 +528,8 @@ private struct ConversationView: View {
                 }
             }
 
-            Composer(draft: $draft, files: $pickedFiles, focused: $focused, contextID: draftKey, canSend: client.health?.homeProtocol == 1 || client.openAIAccount?.connected != false) {
-                guard client.health?.homeProtocol == 1 || client.openAIAccount?.connected != false else { return }
+            Composer(draft: $draft, files: $pickedFiles, focused: $focused, contextID: draftKey, canSend: client.isConfigured && !client.connectionNeedsPairing && client.openAIAccount?.connected != false) {
+                guard client.openAIAccount?.connected != false else { return }
                 let value = draft.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !value.isEmpty || !pickedFiles.isEmpty else { return }
                 let files = pickedFiles
@@ -539,10 +541,11 @@ private struct ConversationView: View {
             .frame(maxWidth: chatColumn)
             .padding(.horizontal, chatInset)
         }
-        .task { draft = drafts[draftKey] ?? "" }
+        .task { draft = drafts[draftKey] ?? ""; pickedFiles = library.fileDrafts[draftKey] ?? [] }
         .onChange(of: client.openAIAccount?.connected) { _, connected in
             if connected == false { focused = false }
         }
+        .onChange(of: pickedFiles) { _, value in library.fileDrafts[draftKey] = value }
         .onChange(of: draft) { _, value in
             drafts[draftKey] = value.isEmpty ? nil : value
             UserDefaults.standard.set(drafts, forKey: "openstrudel.drafts")
@@ -550,8 +553,8 @@ private struct ConversationView: View {
         .onChange(of: draftKey) { old, new in
             drafts[old] = draft
             draft = drafts[new] ?? ""
-            fileDrafts[old] = pickedFiles
-            pickedFiles = fileDrafts[new] ?? []
+            library.fileDrafts[old] = pickedFiles
+            pickedFiles = library.fileDrafts[new] ?? []
             #if os(macOS)
             focused = true
             #else
@@ -626,7 +629,7 @@ private struct ConversationView: View {
 private struct OpenAIRecoveryNotice: View {
     @EnvironmentObject private var client: HomeClient
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Binding var showSettings: Bool
+    @State private var showAccounts = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -640,15 +643,17 @@ private struct OpenAIRecoveryNotice: View {
             }
             if client.openAIAccount?.isUnavailable == true {
                 Button { Task { await client.refreshOpenAIAccount(force: true) } } label: { SetupActionLabel(title: "Проверить ещё раз") }
-                    .buttonStyle(.glass).disabled(client.isLoading)
+                    .adaptiveActionStyle(.glass).disabled(client.isLoading)
             } else if client.canManageOpenAI {
-                Button { showSettings = true } label: { SetupActionLabel(title: "Войти в OpenAI") }.buttonStyle(.glass)
+                Button { showAccounts = true } label: { SetupActionLabel(title: "Войти в OpenAI") }.adaptiveActionStyle(.glass)
                     .accessibilityIdentifier("recoverOpenAIAccount")
             } else if dynamicTypeSize.isAccessibilitySize {
-                Button { showSettings = true } label: { SetupActionLabel(title: "Как восстановить вход") }.buttonStyle(.glass)
+                Button { showAccounts = true } label: { SetupActionLabel(title: "Как восстановить вход") }.adaptiveActionStyle(.glass)
             }
         }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
             .background(.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+            .fixedSize(horizontal: false, vertical: true)
+            .sheet(isPresented: $showAccounts) { SettingsView(initialSection: .accounts) }
     }
 
     private var explanation: some View {
@@ -775,6 +780,7 @@ private struct ConversationTitle: View {
 }
 
 private struct EmptyChat: View {
+    @EnvironmentObject private var library: DeviceLibrary
     @EnvironmentObject private var client: HomeClient
     @Environment(\.dynamicTypeSize) private var textSize
     var body: some View {
@@ -783,34 +789,30 @@ private struct EmptyChat: View {
             Text(client.isEmployeeDraft ? "Создайте сотрудника" : client.activeProfile?.name ?? "Напишите, что нужно")
                 .font(.system(.title2, design: .serif, weight: .semibold))
             if client.isEmployeeDraft {
-                if client.health?.agentAppearanceVersion == 1 {
-                    DisclosureGroup("Выбрать образ") { AgentAppearancePicker(selection: $client.draftAppearance).padding(.top, 12) }
-                        .frame(maxWidth: 340).padding(.bottom, 4)
-                }
                 Text("Напишите, чем он должен заниматься. Например: «Редактор, который помогает писать короткие посты».")
                     .font(.subheadline)
                     .foregroundStyle(AppTheme.secondaryText)
                     .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: 360)
-                if textSize.isAccessibilitySize {
-                    Picker("Раздел", selection: $client.draftEmployeeDomain) {
-                        Text("Личное").tag("personal")
-                        Text("Работа").tag("work")
-                    }.pickerStyle(.menu).frame(minHeight: controlTarget)
-                } else {
-                Picker("Область", selection: $client.draftEmployeeDomain) {
-                    Text("Личное").tag("personal")
-                    Text("Работа").tag("work")
-                }
-                .pickerStyle(.segmented).frame(width: 210).padding(.top, 8)
-                }
-                if client.devices.count > 1 {
-                    Picker("Где работает", selection: $client.draftDeviceID) {
-                        ForEach(client.devices) { device in
-                            Text(device.name + (device.online ? "" : " · не на связи")).tag(device.id).disabled(!device.online)
+                if library.visibleClients.count > 1 || client.devices.count > 1 {
+                    Menu {
+                        ForEach(library.visibleClients) { source in
+                            if source.devices.count > 1 {
+                                ForEach(source.devices) { device in
+                                    Button(device.name) { library.chooseEmployeeDevice(source, deviceID: device.id) }.disabled(!device.online)
+                                }
+                            } else {
+                                Button(source.displayName) { library.chooseEmployeeDevice(source) }.disabled(source.homeUnreachable)
+                            }
                         }
-                    }.pickerStyle(.menu).frame(maxWidth: 360)
+                    } label: {
+                        Label(client.executionDeviceName, systemImage: "desktopcomputer").font(.callout)
+                    }.menuStyle(.borderlessButton).fixedSize().padding(.top, 8).accessibilityLabel("Где будет работать сотрудник")
                 }
+            } else if client.homeUnreachable || client.connectionNeedsPairing {
+                Text("История появится после подключения к устройству.")
+                    .font(.subheadline).foregroundStyle(AppTheme.secondaryText).multilineTextAlignment(.center)
+                    .frame(maxWidth: 360)
             } else if let profile = client.activeProfile {
                 Text(profile.roleText.isEmpty ? "Напишите, что нужно." : profile.roleText)
                     .font(.subheadline).foregroundStyle(AppTheme.secondaryText).multilineTextAlignment(.center)
@@ -971,6 +973,7 @@ private struct ThinkingBubble: View {
 
 private struct Composer: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var textSize
     @Binding var draft: String
     @Binding var files: [PickedFile]
     @FocusState.Binding var focused: Bool
@@ -1028,7 +1031,7 @@ private struct Composer: View {
                 .accessibilityLabel("Сообщение").accessibilityIdentifier("messageComposer")
                 .textFieldStyle(.plain)
                 .font(ChatTypography.body)
-                .lineLimit(1...6)
+                .lineLimit(1...(textSize.isAccessibilitySize ? 2 : 6))
                 .padding(.vertical, 8)
                 .frame(minHeight: controlTarget)
                 .focused($focused)
@@ -1141,36 +1144,36 @@ private struct Composer: View {
 }
 
 private struct EmployeePicker: View {
+    @EnvironmentObject private var library: DeviceLibrary
     @EnvironmentObject private var client: HomeClient
     @Environment(\.dismiss) private var dismiss
 
     @State private var query = ""
     @State private var showingSettings = false
     private var searchTerm: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var results: [EmployeeProfile] {
-        client.profiles.filter { searchTerm.isEmpty || $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) }
-    }
     private var showsMain: Bool { searchTerm.isEmpty || "OpenStrudel".localizedCaseInsensitiveContains(searchTerm) }
 
     var body: some View {
         NavigationStack {
             List {
-                if showsMain {
-                EmployeePickerRow(name: "OpenStrudel", subtitle: "Общий помощник", selected: client.selectedProfileID == nil, appearance: nil) {
-                    Task { await client.selectProfile(nil); dismiss() }
+                if !showsMain && !library.visibleClients.contains(where: { source in source.profiles.contains { $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) } }) {
+                    SearchEmptyState(query: query) { query = "" }
                 }
-                }
-                if !showsMain && results.isEmpty { SearchEmptyState(query: query) { query = "" } }
-                ForEach([false, true], id: \.self) { work in
-                    let people = results.filter { $0.isWork == work }
-                    if !people.isEmpty {
-                        Section {
-                            ForEach(people) { profile in
-                                EmployeePickerRow(name: profile.name, subtitle: profile.previewText.isEmpty ? profile.roleText : profile.previewText, selected: client.selectedProfileID == profile.id, appearance: profile.resolvedAppearance) {
-                                    Task { await client.selectProfile(profile.id); dismiss() }
-                                }
+                ForEach(library.visibleClients) { source in
+                    let people = source.profiles.filter { searchTerm.isEmpty || $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) }
+                    if showsMain || !people.isEmpty {
+                    Section {
+                        if showsMain {
+                            EmployeePickerRow(name: "OpenStrudel", subtitle: source.displayName, selected: source === client && source.selectedProfileID == nil, appearance: nil) {
+                                Task { await library.select(source, profile: nil); dismiss() }
                             }
-                        } header: { Text(work ? "Работа" : "Личное").foregroundStyle(AppTheme.secondaryText) }
+                        }
+                        ForEach(people) { profile in
+                            EmployeePickerRow(name: profile.name, subtitle: profile.previewText.isEmpty ? profile.roleText : profile.previewText, selected: source === client && source.selectedProfileID == profile.id, appearance: profile.resolvedAppearance) {
+                                Task { await library.select(source, profile: profile.id); dismiss() }
+                            }
+                        }
+                    } header: { if library.hasOtherDevices { Text(source.displayName) } }
                     }
                 }
             }
@@ -1183,7 +1186,7 @@ private struct EmployeePicker: View {
                     HStack(spacing: 16) {
                         Button { showingSettings = true } label: { Image(systemName: "gearshape") }
                             .accessibilityLabel("Настройки").accessibilityIdentifier("teamSettings")
-                        Button { client.beginEmployee(); dismiss() } label: { Image(systemName: "plus") }
+                        Button { library.beginEmployee(); dismiss() } label: { Image(systemName: "plus") }
                             .accessibilityLabel("Новый сотрудник")
                     }
                 }
@@ -1266,7 +1269,6 @@ private struct BotDetailsView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Имя").font(.caption).foregroundStyle(AppTheme.secondaryText)
                         TextField("Имя сотрудника", text: $name).textFieldStyle(.plain).font(.title2.weight(.semibold))
-                        Text(profile.isWork ? "Рабочий сотрудник" : "Личный сотрудник").font(.caption).foregroundStyle(AppTheme.secondaryText)
                     }
                 }
                 if client.health?.agentAppearanceVersion == 1 {
@@ -1369,118 +1371,6 @@ private struct BotDetailsView: View {
     }
 }
 
-struct SettingsView: View {
-    @EnvironmentObject private var client: HomeClient
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
-    @Environment(\.dynamicTypeSize) private var textSize
-    #if os(macOS)
-    @AppStorage("openstrudel.showMenuBar") private var showMenuBar = true
-    #endif
-    #if os(iOS)
-    @State private var showingMobileHelp = false
-    #endif
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    if client.health?.homeProtocol == 1 { PrimaryHomeSettings() }
-                    #if os(macOS)
-                    HostingStoreSettings()
-                    Toggle("Показывать OpenStrudel в строке меню", isOn: $showMenuBar)
-                        .padding(.vertical, 8)
-                    #endif
-                    if client.health?.homeProtocol != 1 {
-                        SectionTitle(title: "OpenAI", subtitle: "Вход на устройстве, где работает помощник")
-                        OpenAISettingsCard()
-                    }
-                    SectionTitle(title: "Telegram", subtitle: "Пишите OpenStrudel из Telegram")
-                    TelegramSettingsCard()
-                    MobilePairingSettings()
-                    SectionTitle(title: "Перенос команды", subtitle: "Сотрудники, настройки и накопленные материалы")
-                    AgentTransferSettings()
-                    if client.isConfigured { DeviceSignOutButton { closeSettings() } }
-                    #if os(macOS)
-                    SectionTitle(title: "Обновления", subtitle: "Новые версии OpenStrudel")
-                    UpdateSettings()
-                    #endif
-                    #if os(iOS)
-                    Text("Подключено к «\(client.connectionName)». Здесь доступны те же чаты и сотрудники.")
-                        .font(.footnote).foregroundStyle(AppTheme.secondaryText).padding(.top, 12)
-                    #endif
-                    #if os(macOS)
-                    if let url = DigitalOceanCloud.managementURL(for: client.normalizedBaseURL) {
-                        Link(destination: url) { Label("Управлять облаком", systemImage: "arrow.up.right") }
-                            .buttonStyle(.plain).foregroundStyle(AppTheme.accent)
-                            .font(.callout).padding(.top, 12)
-                        Text("Оплатой и размещением управляет DigitalOcean. Закрытие приложения не прекращает оплату.")
-                            .font(.caption).foregroundStyle(AppTheme.secondaryText)
-                    }
-                    #endif
-                    Group {
-                        if textSize.isAccessibilitySize {
-                            VStack(alignment: .leading, spacing: 4) { helpLinks }
-                        } else {
-                            ViewThatFits(in: .horizontal) {
-                                HStack(spacing: 20) { helpLinks.fixedSize(horizontal: true, vertical: false) }
-                                VStack(alignment: .leading, spacing: 4) { helpLinks }
-                            }
-                        }
-                    }.font(.caption).buttonStyle(.plain).foregroundStyle(AppTheme.secondaryText).padding(.top, 16)
-                }
-                .padding(22)
-                .frame(minWidth: 0, maxWidth: 620, alignment: .leading)
-            }
-            .background(HomeBackground())
-            .navigationTitle("Настройки")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { closeSettings() } } }
-        }
-        #if os(iOS)
-        .sheet(isPresented: $showingMobileHelp) { MobileConnectionHelpView() }
-        #endif
-        .onChange(of: client.openAILogin) { _, login in
-            guard let url = login?.url else { return }
-            openURL(url)
-        }
-        .task(id: client.openAILogin?.loginId) {
-            guard client.openAILogin != nil else { return }
-            while !Task.isCancelled && client.openAILogin != nil {
-                try? await Task.sleep(for: .seconds(1))
-                await client.pollOpenAILogin()
-            }
-        }
-    }
-
-    private func closeSettings() {
-        dismiss()
-        #if os(macOS)
-        // The Settings scene is a window, so SwiftUI's sheet dismiss alone does not close it.
-        NSApp.windows.first { $0.identifier?.rawValue == "com_apple_SwiftUI_Settings_window" }?.close()
-        #endif
-    }
-
-    private var helpLinks: some View {
-        Group {
-            #if os(iOS)
-            Button { showingMobileHelp = true } label: {
-                Text("Помощь").frame(minHeight: controlTarget).contentShape(Rectangle())
-            }.accessibilityIdentifier("connectionHelp")
-            #else
-            Link(destination: URL(string: "https://waiwai.is/openstrudel#help")!) {
-                Text("Помощь").frame(minHeight: controlTarget).contentShape(Rectangle())
-            }
-            #endif
-            Link(destination: URL(string: "https://waiwai.is/openstrudel/privacy")!) {
-                Text("Конфиденциальность").frame(minHeight: controlTarget).contentShape(Rectangle())
-            }
-        }
-    }
-}
-
 struct SectionTitle: View {
     let title: String
     let subtitle: String
@@ -1543,7 +1433,7 @@ private struct OpenAISettingsCard: View {
                     .accessibilityIdentifier("retryOpenAIAccount")
             } else if !client.canManageOpenAI {
                 if showIdentity {
-                Text(connected ? "Используется аккаунт основного Mac или сервера. Отдельный вход на этом устройстве не нужен."
+                Text(connected ? "Используется аккаунт устройства, на котором работает сотрудник."
                      : client.openAIRecoveryMessage)
                     .font(.callout).foregroundStyle(AppTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                 }
@@ -1624,8 +1514,8 @@ private struct OpenAIWelcomeView: View {
                      ? "Проверьте подключение к интернету и попробуйте ещё раз. Ваши чаты и сотрудники сохранены."
                      : !client.canManageOpenAI ? client.openAIRecoveryMessage
                      : client.openAIAccount?.needsSignInAgain == true
-                     ? "Сохранённый вход больше не действует. Войдите один раз для этого Mac или сервера. Подключённые устройства продолжат использовать тот же аккаунт."
-                     : "Войдите в свой аккаунт на сайте OpenAI. Он будет использоваться всеми вашими сотрудниками. На других устройствах повторный вход не нужен.")
+                     ? "Сохранённый вход больше не действует. Войдите снова для сотрудников этого устройства."
+                     : "Войдите на сайте OpenAI. Этот аккаунт будут использовать сотрудники на «\(client.displayName)».")
                     .font(.body).foregroundStyle(AppTheme.secondaryText).multilineTextAlignment(.center)
             }
             OpenAISettingsCard(showIdentity: false)
@@ -1657,8 +1547,7 @@ private struct TelegramChatsView: View {
             ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 if client.telegram?.configured != true {
-                    Text("Telegram пока не подключён. Настройка доступна в настройках приложения.")
-                        .foregroundStyle(AppTheme.secondaryText)
+                    TelegramSetupView()
                 } else {
                     Section {
                         if paired, let name = client.telegram?.botUsername, let url = URL(string: "https://t.me/" + name + "?startgroup=choose&admin=manage_chat") {
@@ -1773,8 +1662,7 @@ private struct TelegramSettingsCard: View {
                     }
                 }
             } else {
-                Text("Подключение Telegram пока недоступно. Продолжайте общение в приложении.")
-                    .font(.callout).foregroundStyle(AppTheme.secondaryText)
+                TelegramSetupView()
             }
         }
         .settingsCard()
@@ -1940,91 +1828,118 @@ private struct ConnectionsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.dynamicTypeSize) private var textSize
     @State private var query = ""
-    private var searchTerm: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
     @State private var loading = true
     @State private var error: String?
     @State private var connecting: String?
+    @State private var waiting: ServiceConnection?
+    @State private var authorizationURL: URL?
+    @State private var notice: String?
     private var results: [ServiceConnection] {
-        client.connections.filter { searchTerm.isEmpty || $0.name.localizedCaseInsensitiveContains(searchTerm) }
-            .sorted {
-                if $0.connected != $1.connected { return $0.connected }
-                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
-            }
+        client.connections.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
+            .sorted { $0.connected != $1.connected ? $0.connected : $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
     var body: some View {
         NavigationStack {
-            Group {
-                if loading && client.connections.isEmpty {
-                    ProgressView("Загружаем подключения…")
-                        .controlSize(.small)
-                        .foregroundStyle(AppTheme.secondaryText)
-                }
-                else {
-                    List {
-                        if let error { Text(UserFacingError.text(error)).font(.caption).foregroundStyle(AppTheme.warning) }
-                        ForEach(results) { connection in
-                            let layout = textSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 12))
-                            layout {
-                                Image(systemName: connection.icon)
-                                    .foregroundStyle(AppTheme.secondaryText).frame(width: 26)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(connection.name)
-                                    if let detail = connection.detail { Text(detail).font(.caption).foregroundStyle(AppTheme.secondaryText) }
-                                }.frame(maxWidth: .infinity, alignment: .leading)
-                                if connection.connected {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(AppTheme.secondaryText)
-                                        .accessibilityLabel("Подключено")
-                                }
-                                else {
-                                    Button {
-                                        connecting = connection.id
-                                        Task {
-                                            do { if let url = try await client.connectService(connection.id) { openURL(url) } }
-                                            catch { self.error = error.localizedDescription }
-                                            connecting = nil
-                                        }
-                                    } label: { Text(connecting == connection.id ? "Открываем…" : "Подключить").frame(minHeight: controlTarget) }
-                                    .disabled(connecting != nil)
-                                }
-                            }.padding(.vertical, 5)
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Для «\(client.activeAgentName)» · \(client.executionDeviceName)")
+                        .font(.callout).foregroundStyle(AppTheme.secondaryText)
+                    if loading { HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Проверяем доступ к сервисам…").font(.callout) } }
+                    if let waiting {
+                        Text("Завершите подключение \(waiting.name) в браузере. Здесь появится подтверждение.")
+                            .font(.callout).fixedSize(horizontal: false, vertical: true)
+                        HStack {
+                            if let authorizationURL { Link("Открыть ещё раз", destination: authorizationURL) }
+                            Button("Проверить подключение") { Task { await refresh() } }.disabled(loading)
                         }
-                        if let notice = client.connectionNotice { Text(notice).font(.caption).foregroundStyle(AppTheme.secondaryText) }
-                        if results.isEmpty && !searchTerm.isEmpty { SearchEmptyState(query: query) { query = "" } }
-                        else if results.isEmpty { Text("Сейчас нет доступных сервисов. Попробуйте обновить список позже.").foregroundStyle(AppTheme.secondaryText) }
                     }
-                    .scrollContentBackground(.hidden)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(HomeBackground())
-            .navigationTitle("Сервисы")
+                    if let notice { Label(notice, systemImage: "checkmark.circle").font(.callout) }
+                    if let error {
+                        Text(UserFacingError.text(error)).font(.callout).foregroundStyle(AppTheme.warning)
+                        Button("Повторить") { Task { await refresh() } }.disabled(loading)
+                    }
+                    if let notice = client.connectionNotice { Text(notice).font(.caption).foregroundStyle(AppTheme.secondaryText) }
+                }.padding(20)
+                List {
+                    ForEach(results) { connection in
+                        HStack(spacing: 12) {
+                            Image(systemName: connection.icon).foregroundStyle(AppTheme.secondaryText).frame(width: 26)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(connection.name)
+                                if let detail = connection.detail { Text(detail).font(.caption).foregroundStyle(AppTheme.secondaryText) }
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                            if connection.connected {
+                                Label("Подключён", systemImage: "checkmark").font(.caption).foregroundStyle(AppTheme.secondaryText)
+                            } else {
+                                Button(connecting == connection.id ? "Подключаем…" : waiting?.id == connection.id ? "Ожидаем входа" : "Подключить") {
+                                    Task { await connect(connection) }
+                                }.disabled(connecting != nil || waiting?.id == connection.id)
+                                    .accessibilityLabel("Подключить \(connection.name)")
+                                    .accessibilityIdentifier("connect-service-" + connection.id)
+                            }
+                        }.padding(.vertical, 8)
+                    }
+                    if results.isEmpty && !query.isEmpty { SearchEmptyState(query: query) { query = "" } }
+                    else if results.isEmpty && !loading && error == nil {
+                        Text("Список сервисов пока недоступен. Обновите его или проверьте вход в OpenAI на этом устройстве.")
+                            .foregroundStyle(AppTheme.secondaryText)
+                    }
+                }.scrollContentBackground(.hidden)
+            }.background(HomeBackground()).navigationTitle("Сервисы")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .searchable(text: $query, prompt: "Найти сервис")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Готово") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button { Task { await refresh() } } label: { Image(systemName: "arrow.clockwise") }
-                        .accessibilityLabel("Обновить").help("Обновить сервисы").disabled(loading)
+                        .accessibilityLabel("Обновить сервисы").disabled(loading)
                 }
             }
         }
         #if os(macOS)
-        .frame(width: 520, height: 570)
+        .frame(width: 560, height: 570)
         #endif
         .task { await refresh(force: false) }
-        .onChange(of: scenePhase) { old, phase in
-            if old != .active && phase == .active { Task { await refresh() } }
+        .task(id: waiting?.id) {
+            guard waiting != nil else { return }
+            for _ in 0..<30 {
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                if !loading { await refresh() }
+                if waiting == nil { return }
+            }
         }
+        .onChange(of: scenePhase) { old, phase in
+            if old != .active && phase == .active && !loading { Task { await refresh() } }
+        }
+    }
+    private func connect(_ connection: ServiceConnection) async {
+        connecting = connection.id; error = nil; notice = nil
+        defer { connecting = nil }
+        do {
+            if let url = try await client.connectService(connection.id) {
+                waiting = connection; authorizationURL = url
+                openURL(url) { accepted in if !accepted { error = "Не удалось открыть браузер. Используйте ссылку «Открыть ещё раз»." } }
+            } else {
+                await refresh()
+                if client.connections.contains(where: { $0.id == connection.id && $0.connected }) { notice = "Подключено: " + connection.name }
+                else { error = "Сервис ещё не подтвердил подключение. Нажмите «Обновить сервисы»." }
+            }
+        } catch is CancellationError { }
+        catch { self.error = error.localizedDescription }
     }
     private func refresh(force: Bool = true) async {
         loading = true; error = nil
-        do { try await client.loadConnections(refresh: force) } catch { self.error = error.localizedDescription }
-        loading = false
+        defer { loading = false }
+        do {
+            try await client.loadConnections(refresh: force)
+            if let waiting, client.connections.contains(where: { $0.id == waiting.id && $0.connected }) {
+                notice = "Подключено: " + waiting.name; self.waiting = nil; authorizationURL = nil
+            }
+        } catch is CancellationError { }
+        catch { self.error = error.localizedDescription }
     }
 }
 

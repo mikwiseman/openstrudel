@@ -15,6 +15,7 @@ final class AccountRecoveryUITests: XCTestCase {
         app.open(try XCTUnwrap(URL(string: XCTUnwrap(invitation["url"] as? String))))
         let pair = app.buttons["confirmMacPairing"]
         XCTAssertTrue(pair.waitForExistence(timeout: 15)); pair.tap()
+        openConnectedDevice(app)
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 3) { consent.tap() }
         XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 15))
@@ -30,6 +31,12 @@ final class AccountRecoveryUITests: XCTestCase {
         for _ in 0..<12 where !signIn.isHittable { scrollPresentedContent(app) }
         XCTAssertTrue(signIn.isHittable)
         capture("largest-type-sign-in", app)
+        signIn.tap(); app.activate()
+        XCTAssertTrue(app.staticTexts["openAIDeviceCode"].waitForExistence(timeout: 15))
+        let cancel = app.buttons["cancelOpenAILogin"]
+        for _ in 0..<12 where !cancel.isHittable { scrollPresentedContent(app) }
+        XCTAssertTrue(cancel.isHittable); cancel.tap()
+        XCTAssertTrue(signIn.waitForExistence(timeout: 15))
     }
 
     @MainActor func testSharedHomeAccountLossRecoveryAndDraft() async throws {
@@ -44,6 +51,7 @@ final class AccountRecoveryUITests: XCTestCase {
         app.open(try XCTUnwrap(URL(string: XCTUnwrap(invitation["url"] as? String))))
         let pair = app.buttons["confirmMacPairing"]
         XCTAssertTrue(pair.waitForExistence(timeout: 15)); pair.tap()
+        openConnectedDevice(app)
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 5) { consent.tap() }
         let signIn = app.buttons["signInOpenAI"]
@@ -69,6 +77,7 @@ final class AccountRecoveryUITests: XCTestCase {
         _ = try await read(fixture + "/mode?value=connected")
         XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 20))
         XCTAssertTrue(app.staticTexts["openAIRecoveryNotice"].waitForNonExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Эта история остаётся")).firstMatch.waitForExistence(timeout: 15))
         let composer = app.textFields.firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 5)); composer.tap()
         composer.typeText("Черновик должен сохраниться")
@@ -94,6 +103,7 @@ final class AccountRecoveryUITests: XCTestCase {
         let clientInvitation = try await read(fixture + "/invite")
         app.open(try XCTUnwrap(URL(string: XCTUnwrap(clientInvitation["url"] as? String))))
         XCTAssertTrue(pair.waitForExistence(timeout: 15)); pair.tap()
+        openConnectedDevice(app)
         XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 15))
         _ = try await read(fixture + "/mode?value=expired")
         XCTAssertTrue(app.staticTexts["openAIRecoveryNotice"].waitForExistence(timeout: 20))
@@ -108,6 +118,13 @@ final class AccountRecoveryUITests: XCTestCase {
         XCTAssertEqual(finalState["loginStarts"] as? Int, 2)
     }
 
+    @MainActor private func openConnectedDevice(_ app: XCUIApplication) {
+        let open = app.buttons.matching(NSPredicate(format: "label == %@", "Открыть сотрудников")).firstMatch
+        let appeared = open.waitForExistence(timeout: 25)
+        if !appeared { print(app.debugDescription) }
+        XCTAssertTrue(appeared); open.tap()
+    }
+
     @MainActor private func read(_ value: String) async throws -> [String: Any] {
         let (data, _) = try await URLSession.shared.data(from: XCTUnwrap(URL(string: value)))
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
@@ -120,5 +137,19 @@ final class AccountRecoveryUITests: XCTestCase {
         // iPad sheets leave the underlying conversation in the AX hierarchy.
         let scroller = app.scrollViews.allElementsBoundByIndex.last(where: \.isHittable) ?? app
         scroller.swipeUp()
+    }
+}
+
+@MainActor extension XCUIApplication {
+    func openFirstDeviceDetails() {
+        let details = buttons["deviceDetails"].firstMatch
+        XCTAssertTrue(details.waitForExistence(timeout: 10))
+        details.tap()
+    }
+
+    func finishDevicePairing() {
+        let open = buttons.matching(NSPredicate(format: "label == %@", "Открыть сотрудников")).firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 25))
+        open.tap()
     }
 }

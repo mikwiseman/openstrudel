@@ -17,7 +17,9 @@ async function node(name: string, previousRoot?: string, port = 0) {
   const home = runtime.api.home; home.save({ ...home.state, name });
   const address = await runtime.api.listen("127.0.0.1", port), url = `http://127.0.0.1:${address.port}`; home.setEndpoint({ url });
   const api = async (path: string, method = "GET", body?: unknown) => {
-    const response = await fetch(url + path, { method, headers: { authorization: "Bearer test-owner", "content-type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    // This fixture rebinds the same port after shutdown. Do not reuse undici's
+    // idle socket from the previous server incarnation for the recovery write.
+    const response = await fetch(url + path, { method, headers: { authorization: "Bearer test-owner", "content-type": "application/json", connection: "close" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return { status: response.status, value: await response.json() as any };
   };
   return { runtime, api, url, home, root };

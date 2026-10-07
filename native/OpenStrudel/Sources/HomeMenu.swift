@@ -21,11 +21,9 @@ struct HomeMenu: View {
                 Spacer()
                 if busy { ProgressView().controlSize(.small).accessibilityLabel("Обновляем состояние") }
             }
-            if let primary = devices.first(where: \.primary) {
-                Label(primary.name + " · главное", systemImage: "network").font(.callout)
-            }
+            Label(client.displayName, systemImage: "desktopcomputer").font(.callout)
             if devices.count > 1 {
-                Picker("Где работают агенты", selection: $deviceID) {
+                Picker("Устройство", selection: $deviceID) {
                     ForEach(devices) { Text($0.name).tag($0.id) }
                 }.onChange(of: deviceID) { _, _ in Task { await reloadAccounts() } }
             }
@@ -36,13 +34,7 @@ struct HomeMenu: View {
                             Text(account.account.email ?? account.name).font(.callout.weight(.medium)).textSelection(.enabled)
                             Text(account.account.connected ? (index == 0 ? "Первый для новых поручений" : "Резервный по приоритету") : "Нужен вход в OpenAI")
                                 .font(.caption).foregroundStyle(.secondary)
-                            ForEach(account.usage.windows) { window in
-                                if let left = window.remainingPercent {
-                                    HStack { Text(window.name); Spacer(); Text("Осталось \(Int(left))%").monospacedDigit() }.font(.caption)
-                                    ProgressView(value: min(100, max(0, left)), total: 100).accessibilityLabel(window.name).accessibilityValue("Осталось \(Int(left)) процентов")
-                                } else { Text(window.name + ": пока неизвестно").font(.caption) }
-                            }
-                            if account.usage.windows.isEmpty { Text("Остатки пока неизвестны").font(.caption).foregroundStyle(.secondary) }
+                            UsageSummary(usage: account.usage)
                             if account.activeRuns > 0 { Text("В работе: \(account.activeRuns)").font(.caption) }
                             if canManage && index > 0 && account.account.connected {
                                 Button("Использовать первым") { Task {
@@ -71,9 +63,9 @@ struct HomeMenu: View {
         do {
             let value: HomeDevices = try await client.management("/v1/devices")
             devices = value.devices
-            if !devices.contains(where: { $0.id == deviceID }) { deviceID = value.primaryId }
+            if !devices.contains(where: { $0.id == deviceID }) { deviceID = client.health?.nodeId ?? value.devices.first?.id ?? "" }
             await reloadAccounts()
-        } catch { self.error = "Главное пока не отвечает. Подключимся, когда оно появится в сети." }
+        } catch { self.error = "Устройство пока не отвечает. Данные появятся после восстановления связи." }
     }
     private func reloadAccounts() async {
         guard !deviceID.isEmpty else { return }

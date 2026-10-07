@@ -29,6 +29,15 @@ struct AgentImportResult: Decodable {
 
 enum AgentTransferFile {
     static let byteLimit = 192 * 1024 * 1024
+    static func isProtected(_ data: Data) -> Bool {
+        guard data.first == 123, let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        return value["format"] as? String == "openstrudel.home.backup"
+    }
+    static func protectedUpload(_ data: Data, password: String) throws -> Data {
+        let upload = try JSONSerialization.data(withJSONObject: ["protectedArchive": data.base64EncodedString(), "password": password])
+        guard upload.count <= byteLimit else { throw Failure.tooLarge }
+        return upload
+    }
     enum Failure: LocalizedError {
         case tooLarge, invalidFile
         var errorDescription: String? {

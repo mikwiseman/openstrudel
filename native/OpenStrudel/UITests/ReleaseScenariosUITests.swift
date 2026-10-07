@@ -22,33 +22,24 @@ final class ReleaseScenariosUITests: XCTestCase {
         app.open(try XCTUnwrap(URL(string: XCTUnwrap(invite["url"] as? String))))
         let confirm = app.buttons["confirmMacPairing"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 15)); confirm.tap()
+        app.finishDevicePairing()
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 8) { capture("consent", app); consent.tap() }
         XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 20), app.debugDescription)
         capture("empty-conversation", app)
 
         app.buttons["Настройки"].tap()
-        XCTAssertTrue(app.staticTexts["openAIAccountIdentity"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["addDevice"].waitForExistence(timeout: 10))
         capture("settings-account-telegram", app)
-        let pair = app.buttons["Добавить устройство"]
+        app.openFirstDeviceDetails()
+        let pair = app.buttons["Получить ссылку подключения"].firstMatch
         try reveal(pair, in: app); pair.tap()
         XCTAssertTrue(app.staticTexts["Продолжите на другом устройстве"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["Новое приглашение"].exists)
+        XCTAssertTrue(app.buttons["Новая ссылка"].exists)
         capture("owner-qr-invitation", app)
         app.buttons["closeMobileInvitation"].tap()
-        let switchAccount = app.buttons["Сменить аккаунт"]
-        try reveal(switchAccount, in: app); switchAccount.tap()
-        _ = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari").wait(for: .runningForeground, timeout: 10)
-        app.activate()
-        XCTAssertTrue(app.staticTexts["openAIDeviceCode"].waitForExistence(timeout: 10))
-        capture("account-change", app)
-        let copyCode = app.buttons["copyOpenAICode"]
-        try reveal(copyCode, in: app); copyCode.tap()
-        XCTAssertTrue(app.buttons["Код скопирован"].exists || copyCode.label.contains("Код скопирован"))
-        let cancelLogin = app.buttons["cancelOpenAILogin"]
-        try reveal(cancelLogin, in: app); cancelLogin.tap()
-        XCTAssertTrue(switchAccount.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["openAIAccountIdentity"].exists)
+        // Explicit sign-in, cancellation and expired-account recovery are
+        // exercised by AccountRecoveryUITests, including the settings route.
         try done(app)
 
         app.buttons["Чаты"].tap()
@@ -80,12 +71,15 @@ final class ReleaseScenariosUITests: XCTestCase {
         app.buttons["Сервисы"].tap()
         XCTAssertTrue(app.staticTexts["Документы"].waitForExistence(timeout: 10), app.debugDescription)
         capture("services", app)
-        app.buttons["Подключить"].tap()
-        _ = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari").wait(for: .runningForeground, timeout: 10)
-        app.activate(); app.buttons["Обновить"].tap()
-        XCTAssertTrue(app.images["Подключено"].waitForExistence(timeout: 10), app.debugDescription)
+        let connectService = app.buttons["connect-service-qa-documents"]
+        if connectService.exists {
+            connectService.tap()
+            _ = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari").wait(for: .runningForeground, timeout: 10)
+            app.activate(); app.buttons["Обновить сервисы"].tap()
+        }
+        XCTAssertTrue(app.staticTexts["Подключён"].waitForExistence(timeout: 10), app.debugDescription)
         capture("service-connected", app)
-        app.buttons["Закрыть"].tap()
+        try done(app)
         let telegram = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Telegram")).firstMatch
         try reveal(telegram, in: app); telegram.tap()
         XCTAssertTrue(app.staticTexts["Личный чат"].waitForExistence(timeout: 10))
@@ -122,7 +116,7 @@ final class ReleaseScenariosUITests: XCTestCase {
         app.buttons["Утром"].tap()
         XCTAssertTrue(app.staticTexts["Выбрано: Утром"].waitForExistence(timeout: 20))
         input.tap(); input.typeText("Проверка свободного места"); app.buttons["Отправить"].tap()
-        let storageError = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "На основном Mac или сервере закончилось место.")).firstMatch
+        let storageError = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "На устройстве сотрудника закончилось место.")).firstMatch
         XCTAssertTrue(storageError.waitForExistence(timeout: 20))
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "ENOSPC:")).firstMatch.exists)
         capture("readable-storage-error", app)
@@ -133,14 +127,17 @@ final class ReleaseScenariosUITests: XCTestCase {
 
         _ = try await read(fixture + "/offline?value=1")
         app.terminate(); app.launch()
-        XCTAssertTrue(app.staticTexts["Нет связи с OpenStrudel"].waitForExistence(timeout: 15))
+        let offlineNotice = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "не на связи")).firstMatch
+        XCTAssertTrue(offlineNotice.waitForExistence(timeout: 15))
         capture("offline", app)
         _ = try await read(fixture + "/offline?value=0")
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 25))
+        XCTAssertTrue(offlineNotice.waitForNonExistence(timeout: 25))
+        input.tap(); input.typeText("После восстановления связи"); app.buttons["Отправить"].tap()
+        XCTAssertTrue(app.staticTexts["Принято: После восстановления связи"].waitForExistence(timeout: 20))
         capture("reconnected", app)
         let state = try await read(fixture + "/state")
-        XCTAssertEqual(state["loginStarts"] as? Int, (initial["loginStarts"] as? Int ?? 0) + 1)
-        XCTAssertEqual(state["loginCanceled"] as? Int, (initial["loginCanceled"] as? Int ?? 0) + 1)
+        XCTAssertEqual(state["loginStarts"] as? Int, (initial["loginStarts"] as? Int ?? 0))
+        XCTAssertEqual(state["loginCanceled"] as? Int, (initial["loginCanceled"] as? Int ?? 0))
         XCTAssertEqual(state["serviceConnected"] as? Bool, true)
         XCTAssertFalse(app.alerts["OpenStrudel"].exists)
     }

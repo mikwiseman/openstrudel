@@ -39,6 +39,7 @@ struct HomeHealth: Decodable {
     let time: String?
     let telegram: TelegramStatus?
     let agentArchiveVersion: Int?
+    var agentArchiveEncryption: Bool? = nil
     var homeProtocol: Int? = nil
     var homeId: String? = nil
     var nodeId: String? = nil
@@ -287,7 +288,12 @@ struct ManagedCodexAccount: Decodable, Identifiable {
         struct Window: Decodable, Identifiable {
             let name: String; let remainingPercent: Double?; let windowDurationMins: Int?; let resetsAt: Double?
             var id: String { name }
+            var displayName: String {
+                switch windowDurationMins { case 300: return "5 часов"; case 10080: return "Неделя"; case 1440: return "Сутки"; default: return name }
+            }
         }
+        struct Credits: Decodable { let hasCredits: Bool; let unlimited: Bool; let balance: String? }
+        var credits: Credits? = nil
         let checkedAt: String; let ordinaryUsageAllowed: Bool?; let windows: [Window]; let unavailable: Bool?
     }
     let id: String; let name: String; let account: OpenAIAccount; let usage: Usage; let activeRuns: Int; let loginPending: Bool
@@ -333,6 +339,16 @@ struct OpenAIAccount: Decodable, Equatable {
     let managed: Bool
     var issue: String? = nil
 
+    var planLabel: String {
+        switch planType?.lowercased() {
+        case "plus": return "ChatGPT Plus"
+        case "pro": return "ChatGPT Pro"
+        case "team", "business": return "ChatGPT Business"
+        case "enterprise": return "ChatGPT Enterprise"
+        case "free": return "ChatGPT Free"
+        default: return "OpenAI подключён"
+        }
+    }
     var needsSignInAgain: Bool { issue == "sign_in_required" }
     var isUnavailable: Bool { issue == "unavailable" }
 }

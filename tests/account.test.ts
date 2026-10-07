@@ -52,6 +52,15 @@ afterEach(() => {
 });
 
 describe("one explicitly authorized Home account", () => {
+  it("keeps credit balance separate from subscription windows and labels their real duration", async () => {
+    store.setSetting("codex.auth.mode", "managed");
+    wire.request.mockResolvedValue({ rateLimits: { primary: { usedPercent: 31, windowDurationMins: 300, resetsAt: 1800000000 }, secondary: { usedPercent: 52, windowDurationMins: 10080, resetsAt: 1800100000 }, credits: { hasCredits: true, unlimited: false, balance: "27.50" } } });
+    const usage = await account.usage();
+    expect(usage.windows.map(w => w.name)).toEqual(["5 часов", "Неделя"]);
+    expect(usage.windows.map(w => w.remainingPercent)).toEqual([69, 48]);
+    expect(usage.credits).toEqual({ hasCredits: true, unlimited: false, balance: "27.50" });
+    expect(wire.request).not.toHaveBeenCalledWith(expect.stringMatching(/purchase|reset/), expect.anything());
+  });
   it("recognizes rejected refresh credentials without calling a network outage a logout", () => {
     for (const message of ["Your refresh token has expired. Please sign in again.", "Refresh token was already used", "invalid access token", "refresh_token_invalidated", "workspace routing discovery unauthorized (401)"]) {
       expect(isOpenAIAuthenticationError(new Error(message)), message).toBe(true);
@@ -149,6 +158,7 @@ describe("one explicitly authorized Home account", () => {
     engine.forContext("personal");
     expect(() => readFileSync(join(root, ".data/contexts/personal/auth.json"))).toThrow();
     expect(readFileSync(join(root, ".data/contexts/personal/config.toml"), "utf8")).toContain('cli_auth_credentials_store = "ephemeral"');
+    expect(readFileSync(join(root, ".data/contexts/personal/config.toml"), "utf8")).toContain('[features]\napps = true');
     engine.close();
   });
 });

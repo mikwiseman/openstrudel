@@ -1,5 +1,8 @@
 import SwiftUI
 import UniformTypeIdentifiers
+#if os(macOS)
+import AppKit
+#endif
 
 extension UTType {
     static let openStrudelTeam = UTType(exportedAs: "is.openstrudel.team", conformingTo: .data)
@@ -16,7 +19,7 @@ struct AgentTeamDocument: FileDocument {
     }
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         let file = FileWrapper(regularFileWithContents: data)
-        file.preferredFilename = filename
+        if let filename, !filename.isEmpty { file.preferredFilename = filename }
         file.fileAttributes[FileAttributeKey.posixPermissions.rawValue] = 0o600
         return file
     }
@@ -24,58 +27,85 @@ struct AgentTeamDocument: FileDocument {
 
 struct AgentTransferSettings: View {
     @EnvironmentObject private var client: HomeClient
-    @Environment(\.dynamicTypeSize) private var textSize
     @State private var document: AgentTeamDocument?
     @State private var showingExport = false
     @State private var showingImport = false
     @State private var pending: PendingAgentImport?
     @State private var busy: String?
+    @State private var received: Int64 = 0
+    @State private var total: Int64?
+    @State private var operation: Task<Void, Never>?
     @State private var error: String?
     @State private var notice: String?
+    @State private var savedURL: URL?
     @State private var deviceID = ""
-    @AccessibilityFocusState private var errorFocused: Bool
+    @State private var protected = false
+    @State private var password = ""
+    @State private var importData: Data?
+    @State private var importPassword = ""
+    @State private var askingPassword = false
+    @State private var unlockedImport: PendingAgentImport?
+    private var targetName: String { deviceID == client.health?.nodeId ? client.displayName : client.devices.first(where: { $0.id == deviceID })?.name ?? client.displayName }
+    private var targetID: String? { deviceID.isEmpty ? nil : deviceID }
+    private var working: Bool { busy != nil || showingExport || pending != nil }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Сохраните агентов выбранного устройства вместе с инструкциями, перепиской, файлами и расписаниями. Из этого файла можно добавить их на другой Mac или сервер.")
+        VStack(alignment: .leading, spacing: 18) {
+            if client.devices.count > 1 {
+                Picker("Сотрудники устройства", selection: $deviceID) {
+                    ForEach(client.devices) { Text($0.name).tag($0.id) }
+                }.disabled(working)
+            }
+            Text("Сотрудники «\(targetName)», их переписка, файлы и расписания — в одном файле.")
                 .font(.callout).fixedSize(horizontal: false, vertical: true)
-            Text("Текущие сотрудники при импорте сохранятся. Новые расписания будут на паузе. Доступ к OpenAI и подключённым сервисам в файл не входит.")
-                .font(.caption).foregroundStyle(AppTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+            Text("Вход в OpenAI и сервисы в копию не входит.")
+                .font(.caption).foregroundStyle(AppTheme.secondaryText)
             if client.canTransferAgents {
-                if client.devices.count > 1 {
-                    Picker("Устройство", selection: $deviceID) {
-                        Text("Главное устройство").tag("")
-                        ForEach(client.devices) { device in Text(device.name).tag(device.id) }
-                    }.disabled(busy != nil || showingImport || pending != nil)
+                if client.health?.agentArchiveEncryption == true {
+                    Toggle("Защитить копию паролем", isOn: $protected).disabled(working)
+                    if protected {
+                        SecureField("Пароль · не менее 12 символов", text: $password).textFieldStyle(.roundedBorder).disabled(working)
+                        Text("Сохраните пароль: без него копию не открыть.").font(.caption).foregroundStyle(AppTheme.secondaryText)
+                    } else { Text("Файл без пароля. Храните его в безопасном месте.").font(.caption).foregroundStyle(AppTheme.secondaryText) }
+                } else { Text("Файл без пароля. Для защищённых копий обновите OpenStrudel на этом устройстве.").font(.caption).foregroundStyle(AppTheme.secondaryText) }
+                HStack(spacing: 12) {
+                    Button("Сохранить копию…", action: export).buttonStyle(.borderedProminent)
+                        .disabled(working || protected && password.count < 12).accessibilityIdentifier("exportAgents")
+                    Button("Восстановить из копии…") { error = nil; notice = nil; showingImport = true }
+                        .disabled(working).accessibilityIdentifier("importAgents")
                 }
-                if textSize.isAccessibilitySize {
-                    VStack(alignment: .leading, spacing: 8) { actions }
-                } else {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 12) { actions }
-                        VStack(alignment: .leading, spacing: 8) { actions }
-                    }
-                }
-                if let busy { HStack(spacing: 10) { ProgressView().controlSize(.small); Text(busy).font(.callout) } }
             } else {
-                Text(client.canManageOpenAI
-                     ? "Для переноса обновите OpenStrudel на Mac или сервере, где работает команда."
-                     : "Перенос доступен владельцу команды на основном Mac или устройстве, с которого настроили сервер.")
-                    .font(.caption).foregroundStyle(AppTheme.secondaryText)
+                Text(client.health == nil || client.homeUnreachable ? "Для копии нужно подключение к устройству с сотрудниками." : "Копии доступны владельцу устройства. Проверьте доступ и версию OpenStrudel.")
+                    .font(.callout).foregroundStyle(AppTheme.secondaryText)
             }
-            if let error {
-                Text(error).font(.callout).foregroundStyle(AppTheme.destructive)
-                    .accessibilityFocused($errorFocused).accessibilityIdentifier("agentTransferError")
+            if let busy {
+                VStack(alignment: .leading, spacing: 10) {
+                    if let total, total > 0 {
+                        HStack {
+                            Text("Получаем копию с «\(targetName)»")
+                            Spacer()
+                            Text("\(Int(min(1, Double(received) / Double(total)) * 100))%").monospacedDigit()
+                        }.font(.callout)
+                        ProgressView(value: Double(received), total: Double(total))
+                        Text("\(ByteCountFormatter.string(fromByteCount: received, countStyle: .file)) из \(ByteCountFormatter.string(fromByteCount: total, countStyle: .file))")
+                            .font(.caption).foregroundStyle(AppTheme.secondaryText)
+                    } else { HStack(spacing: 10) { ProgressView().controlSize(.small); Text(busy).font(.callout) } }
+                    Button("Отменить") { operation?.cancel() }
+                }.padding(.vertical, 6)
             }
-            if let notice { Text(notice).font(.callout).accessibilityIdentifier("agentTransferNotice") }
+            if let error { Text(error).font(.callout).foregroundStyle(AppTheme.destructive).accessibilityIdentifier("agentTransferError") }
+            if let notice { Text(notice).font(.callout).textSelection(.enabled).accessibilityIdentifier("agentTransferNotice") }
+            #if os(macOS)
+            if let savedURL { Button("Показать в Finder") { NSWorkspace.shared.activateFileViewerSelecting([savedURL]) } }
+            #endif
         }
-        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .onAppear { deviceID = client.health?.nodeId ?? "" }
+        .onDisappear { operation?.cancel(); password = ""; importPassword = "" }
         .fileExporter(isPresented: $showingExport, document: document, contentType: .openStrudelTeam,
-                      defaultFilename: "OpenStrudel-" + Date().formatted(.iso8601.year().month().day().dateSeparator(.dash))) { result in
+                      defaultFilename: "OpenStrudel-" + targetName + "-" + Date().formatted(.iso8601.year().month().day().dateSeparator(.dash))) { result in
             document = nil
             switch result {
-            case .success: notice = "Копия команды сохранена. В файле есть личная переписка и материалы."
+            case .success(let url): savedURL = url; notice = (protected ? "Защищённая копия сохранена: " : "Копия сохранена: ") + url.lastPathComponent + "\n" + url.deletingLastPathComponent().path
             case .failure(let value): report(value)
             }
         }
@@ -83,52 +113,68 @@ struct AgentTransferSettings: View {
             switch result {
             case .success(let urls):
                 guard let url = urls.first else { return }
-                Task {
-                    busy = "Проверяем файл…"; error = nil; notice = nil
-                    defer { busy = nil }
-                    do { pending = try await client.previewAgentImport(AgentTransferFile.read(url), deviceID: deviceID.isEmpty ? nil : deviceID) }
-                    catch { report(error) }
+                operation = Task {
+                    busy = "Читаем «\(url.lastPathComponent)»…"; error = nil; notice = nil; total = nil
+                    defer { busy = nil; operation = nil }
+                    do {
+                        let data = try await AgentTransferFile.read(url)
+                        if AgentTransferFile.isProtected(data) { importData = data; importPassword = ""; askingPassword = true }
+                        else { pending = try await client.previewAgentImport(data, deviceID: targetID) }
+                    } catch { report(error) }
                 }
             case .failure(let value): report(value)
             }
         }
+        .sheet(isPresented: $askingPassword, onDismiss: { importPassword = ""; importData = nil; pending = unlockedImport; unlockedImport = nil }) {
+            NavigationStack {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Введите пароль, заданный при сохранении копии.").font(.callout)
+                    SecureField("Пароль копии", text: $importPassword).textFieldStyle(.roundedBorder)
+                    if let error { Text(error).font(.callout).foregroundStyle(AppTheme.destructive) }
+                    Button(busy == nil ? "Открыть копию" : "Проверяем…") {
+                        operation = Task {
+                            busy = "Открываем копию…"; error = nil
+                            defer { busy = nil; operation = nil }
+                            do {
+                                guard let importData else { return }
+                                let data = try AgentTransferFile.protectedUpload(importData, password: importPassword)
+                                unlockedImport = try await client.previewAgentImport(data, deviceID: targetID)
+                                askingPassword = false
+                            } catch { report(error) }
+                        }
+                    }.buttonStyle(.borderedProminent).disabled(importPassword.isEmpty || busy != nil)
+                }.padding(24).navigationTitle("Защищённая копия")
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Отмена") { operation?.cancel(); askingPassword = false } } }
+            }
+            #if os(macOS)
+            .frame(width: 440, height: 270)
+            #endif
+        }
         .sheet(item: $pending) { item in
             AgentImportReview(pending: item) { result in
-                notice = result.preview.alreadyImported ? "Этот файл уже импортирован. Дубликаты не добавлены." : "Добавлено сотрудников: \(result.profileIds.count). Они уже в списке команды."
+                notice = result.preview.alreadyImported ? "Эта копия уже восстановлена. Дубликатов нет." : "Восстановлено сотрудников: \(result.profileIds.count). Они появились в списке чатов."
                 pending = nil
             }.environmentObject(client)
         }
     }
-
-    @ViewBuilder private var actions: some View {
-        Button {
-            Task {
-                busy = "Собираем копию команды…"; error = nil; notice = nil
-                defer { busy = nil }
-                do { document = AgentTeamDocument(data: try await client.exportAgents(deviceID: deviceID.isEmpty ? nil : deviceID)); showingExport = true }
-                catch { report(error) }
-            }
-        } label: { transferLabel("Сохранить копию", icon: "square.and.arrow.up") }
-            .buttonStyle(.bordered).buttonBorderShape(textSize.isAccessibilitySize ? .roundedRectangle(radius: 14) : .capsule)
-            .disabled(busy != nil || showingExport).accessibilityIdentifier("exportAgents")
-        Button { error = nil; notice = nil; showingImport = true } label: {
-            transferLabel("Добавить из файла", icon: "square.and.arrow.down")
-        }.buttonStyle(.bordered).buttonBorderShape(textSize.isAccessibilitySize ? .roundedRectangle(radius: 14) : .capsule)
-            .disabled(busy != nil || showingExport).accessibilityIdentifier("importAgents")
+    private func export() {
+        operation = Task {
+            busy = "Готовим копию сотрудников на «\(targetName)»…"; total = nil; received = 0; error = nil; notice = nil; savedURL = nil
+            defer { busy = nil; operation = nil }
+            do {
+                let data = try await client.exportAgents(deviceID: targetID, password: protected ? password : nil) { received, total in
+                    self.received = received; self.total = total
+                }
+                try Task.checkCancellation()
+                document = AgentTeamDocument(data: data); password = ""; showingExport = true
+            } catch { report(error) }
+        }
     }
-
-    @ViewBuilder private func transferLabel(_ title: String, icon: String) -> some View {
-        if textSize.isAccessibilitySize {
-            VStack(alignment: .leading, spacing: 8) {
-                Image(systemName: icon).accessibilityHidden(true)
-                Text(title).fixedSize(horizontal: false, vertical: true)
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
-        } else { Label(title, systemImage: icon).frame(minHeight: 32) }
-    }
-
     private func report(_ value: Error) {
-        guard !AttachmentImport.isCancellation(value) else { return }
-        error = UserFacingError.text(value.localizedDescription); errorFocused = true
+        guard !(value is CancellationError), !AttachmentImport.isCancellation(value), (value as? URLError)?.code != .cancelled else {
+            notice = "Операция отменена."; return
+        }
+        error = UserFacingError.text(value.localizedDescription)
     }
 }
 
@@ -189,7 +235,7 @@ private struct AgentImportReview: View {
                     }
                 }.padding(24).frame(maxWidth: 580, alignment: .leading).frame(maxWidth: .infinity)
             }
-            .navigationTitle("Импорт команды")
+            .navigationTitle("Восстановление сотрудников")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif

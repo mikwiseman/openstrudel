@@ -21,14 +21,16 @@ final class DesignAccessibilityUITests: XCTestCase {
         app.open(try XCTUnwrap(URL(string: XCTUnwrap(invite["url"] as? String))))
         let pair = app.buttons["confirmMacPairing"]
         XCTAssertTrue(pair.waitForExistence(timeout: 15)); pair.tap()
+        app.finishDevicePairing()
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 5) { reveal(consent, app); audit("consent", app, &issues); consent.tap() }
         XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 15))
         audit("conversation", app, &issues)
         app.buttons["Настройки"].tap()
-        XCTAssertTrue(app.staticTexts["openAIAccountIdentity"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["addDevice"].waitForExistence(timeout: 10))
         audit("settings", app, &issues)
-        let connect = app.buttons["Добавить устройство"]
+        app.openFirstDeviceDetails()
+        let connect = app.buttons["Получить ссылку подключения"].firstMatch
         reveal(connect, app)
         try assertFitsHorizontally(connect, in: app)
         audit("settings-bottom", app, &issues)
@@ -41,6 +43,15 @@ final class DesignAccessibilityUITests: XCTestCase {
         let editor = app.buttons["Редактор"]
         reveal(editor, app)
         audit("employee-list", app, &issues)
+        let search = app.searchFields["Найти сотрудника"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap(); search.typeText("OpenStrudel")
+        XCTAssertTrue(app.buttons["OpenStrudel"].waitForExistence(timeout: 5))
+        XCTAssertFalse(editor.exists)
+        search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "OpenStrudel".count) + "Несуществующий сотрудник")
+        let clear = app.buttons["Очистить поиск"]
+        XCTAssertTrue(clear.waitForExistence(timeout: 5)); clear.tap()
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
         editor.tap()
         let settings = app.buttons["Настройки сотрудника"]
         XCTAssertTrue(settings.waitForExistence(timeout: 10)); settings.tap()

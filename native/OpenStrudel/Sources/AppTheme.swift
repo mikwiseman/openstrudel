@@ -44,6 +44,7 @@ private struct ReadableActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let color = configuration.role == .destructive ? AppTheme.destructive : AppTheme.accent
         configuration.label
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 8)
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, minHeight: 44)

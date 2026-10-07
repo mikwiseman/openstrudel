@@ -40,12 +40,11 @@ export class Accounts {
     this.store.setSetting("codex.accounts", JSON.stringify([...this.entries(), entry])); return entry;
   }
   async list(refresh = false) {
-    const entries = [];
-    for (const entry of this.entries()) {
+    return Promise.all(this.entries().map(async entry => {
       const service = this.get(entry.id);
-      entries.push({ ...entry, account: await service.read(refresh), usage: await service.usage(refresh), activeRuns: this.active.get(entry.id) ?? 0, loginPending: service.loginPending });
-    }
-    return entries;
+      const [account, usage] = await Promise.all([service.read(refresh), service.usage(refresh)]);
+      return { ...entry, account, usage, activeRuns: this.active.get(entry.id) ?? 0, loginPending: service.loginPending };
+    }));
   }
   async statusFor(agent: string, refresh = false) {
     const ids = this.policy(agent) ?? this.entries().map(a => a.id);
@@ -65,7 +64,7 @@ export class Accounts {
     if (ids !== null && (!Array.isArray(ids) || ids.length < 1 || ids.length > 12 || ids.some(id => typeof id !== "string" || !this.entries().some(a => a.id === id)) || new Set(ids).size !== ids.length)) throw new HomeError("Выберите подключённые аккаунты.");
     this.store.setSetting("agent.accounts." + agent, JSON.stringify(ids));
   }
-  async choose(agent: string): Promise<{ id: string; service: CodexAccountService }> {
+  async choose(agent: string, checkQuota = true): Promise<{ id: string; service: CodexAccountService }> {
     const ids = this.policy(agent) ?? this.entries().map(a => a.id);
     for (const id of ids) {
       const service = this.get(id);
@@ -73,10 +72,10 @@ export class Accounts {
       const account = await service.read();
       if (account.issue === "unavailable") throw new HomeError("OpenAI пока не отвечает. Аккаунт сохранён, повторный вход не нужен.", 503);
       if (!account.connected) continue;
-      const usage = await service.usage();
+      const usage = checkQuota ? await service.usage() : null;
       // Only backend permission can block ordinary usage. A local clock and a
       // percentage are not proof of quota recovery or permission to spend credits.
-      if (usage.ordinaryUsageAllowed === false) continue;
+      if (usage?.ordinaryUsageAllowed === false) continue;
       if (this.changing.has(id) || service.loginPending) continue;
       return { id, service };
     }
@@ -102,6 +101,8 @@ export class Accounts {
 /** Account choice is fixed for a whole turn. No retry of a partly executed turn. */
 export class AccountEngines implements CodexEngine {
   private engines = new Map<string, ScopedCodexEngine>();
+  private directoryEngine?: CodexEngine;
+  get connectionNotice() { return this.directoryEngine?.connectionNotice; }
   constructor(private readonly accounts: Accounts) { accounts.onChange = id => { this.engines.get(id)?.close(); this.engines.delete(id); }; }
   private scoped(id: string, service: CodexAccountService): ScopedCodexEngine {
     const existing = this.engines.get(id);
@@ -112,7 +113,8 @@ export class AccountEngines implements CodexEngine {
   }
   forAgent(agent: string, context: string): CodexEngine {
     let locked: { id: string; service: CodexAccountService } | undefined;
-    const selection = () => locked ? Promise.resolve(locked) : this.accounts.choose(agent);
+    let connectionEngine: CodexEngine | undefined;
+    const selection = () => locked ? Promise.resolve(locked) : this.accounts.choose(agent, false);
     return {
       run: async (input, options) => {
         const { id, service } = await this.accounts.choose(agent);
@@ -138,14 +140,18 @@ export class AccountEngines implements CodexEngine {
         } catch (error) { if (isOpenAIAuthenticationError(error)) service.invalidate(); throw error; }
         finally { locked = undefined; this.accounts.active.set(id, Math.max(0, (this.accounts.active.get(id) ?? 1) - 1)); }
       },
-      connections: async refresh => { const selected = await selection(); return this.scoped(selected.id, selected.service).forContext(context).connections?.(refresh) ?? []; },
+      get connectionNotice() { return connectionEngine?.connectionNotice; },
+      connections: async refresh => { const selected = await selection(); connectionEngine = this.scoped(selected.id, selected.service).forContext(context); return connectionEngine.connections?.(refresh) ?? []; },
       connect: async name => { const selected = await selection(); return this.scoped(selected.id, selected.service).forContext(context).connect!(name); },
       isConnected: async name => { const selected = await selection(); return this.scoped(selected.id, selected.service).forContext(context).isConnected!(name); },
     };
   }
   forContext(context: string): CodexEngine { return this.forAgent("main", context); }
   run: CodexEngine["run"] = (input, options) => this.forAgent("main", "personal").run(input, options);
-  connections: NonNullable<CodexEngine["connections"]> = refresh => this.forAgent("main", "personal").connections!(refresh);
+  connections: NonNullable<CodexEngine["connections"]> = refresh => {
+    this.directoryEngine = this.forAgent("main", "personal");
+    return this.directoryEngine.connections!(refresh);
+  };
   connect: NonNullable<CodexEngine["connect"]> = id => this.forAgent("main", "personal").connect!(id);
   close() { for (const engine of this.engines.values()) engine.close(); this.engines.clear(); }
 }

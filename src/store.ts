@@ -346,8 +346,8 @@ export class Store {
   }
 
   createProfile(input: { name?: string; instructions?: string; capabilities?: string[]; model?: string; tokenLimit?: number; domain?: EmployeeProfile["domain"]; purpose?: string; appearance?: AgentAppearance }): EmployeeProfile {
-    let name = input.name?.trim() || "Новый бот";
-    if (!input.name?.trim()) { let n = 2; while (this.getProfile(name)) name = `Новый бот ${n++}`; }
+    let name = input.name?.trim() || "Новый сотрудник";
+    if (!input.name?.trim()) { let n = 2; while (this.getProfile(name)) name = `Новый сотрудник ${n++}`; }
     if (name.length > 80 || (input.instructions?.length ?? 0) > 12000) throw new Error("Слишком длинное имя или характер");
     if (this.getProfile(name)) throw new Error("Сотрудник с таким именем уже есть");
     if (input.domain && !["personal", "work"].includes(input.domain)) throw new Error("Выберите личного или рабочего сотрудника");

@@ -10,7 +10,7 @@ import { MobileAccess } from "./mobile.js";
 import { MAX_FILE_BYTES } from "./files.js";
 import {randomBytes} from "node:crypto";
 import { AgentArchives, MAX_TRANSFER_BYTES, encodeArchive, decodeArchive } from "./agent-archive.js";
-import { Home, HomeError, digest, type WireResponse } from "./home.js";
+import { Home, HomeError, digest, encryptBackup, decryptBackup, type WireResponse } from "./home.js";
 import { HomeLink } from "./home-link.js";
 import { LocalAgentMoves, assertAgentWritable } from "./agent-move.js";
 import { HomeApi, isPeerRoute, readBody } from "./home-api.js";
@@ -212,14 +212,22 @@ export class HttpApi {
         }
       }
       if (path.startsWith("/v1/agents/archive")) {
-        if (!canManageAccount) { this.send(response, 403, { error: "Перенос команды доступен владельцу на основном Mac или устройстве, с которого настроили сервер." }); return; }
+        if (!canManageAccount) { this.send(response, 403, { error: "Резервные копии доступны владельцу устройства." }); return; }
         response.setHeader("cache-control", "no-store");
         const archives = new AgentArchives(this.store, this.messages);
-        if (request.method === "GET" && path === "/v1/agents/archive") {
+        if (["GET", "POST"].includes(request.method ?? "") && path === "/v1/agents/archive") {
+          const password = request.method === "POST" ? String((await this.body(request)).password ?? "") : undefined;
+          if (password !== undefined && (password.length < 12 || password.length > 1024)) throw new HomeError("Для копии нужен пароль от 12 символов.");
           const archive = archives.export();
-          const encoded = encodeArchive(archive);
+          const compressed = encodeArchive(archive);
+          const encoded = password === undefined ? compressed : Buffer.from(encryptBackup({ format: "openstrudel.team.protected", version: 1, archive: compressed.toString("base64") }, password));
+          // Protected imports include a base64 envelope and a password. Never
+          // offer a backup that exceeds the same endpoint's restore limit.
+          const uploadBytes = password === undefined ? encoded.length : Math.ceil(encoded.length / 3) * 4 + 8192;
+          if (uploadBytes > MAX_TRANSFER_BYTES) throw new HomeError("Копия слишком большая для одного файла.");
           response.setHeader("content-disposition", `attachment; filename="OpenStrudel-${archive.createdAt.slice(0,10)}.openstrudel"`);
-          response.setHeader("content-type", "application/vnd.openstrudel.team+gzip");
+          response.setHeader("content-type", password === undefined ? "application/vnd.openstrudel.team+gzip" : "application/vnd.openstrudel.team+json");
+          response.setHeader("content-length", encoded.length);
           response.writeHead(200).end(encoded); return;
         }
         if (request.method === "POST" && path === "/v1/agents/archive/preview") {
@@ -253,7 +261,7 @@ export class HttpApi {
         }
       }
       if (request.method === "GET" && path === "/health") {
-        this.send(response, 200, { ok: true, service: "openstrudel", platform: process.platform, arch: process.arch, time: new Date().toISOString(), telegram: this.telegram.status(), agentArchiveVersion: 1, agentAppearanceVersion: 1, deviceLogoutVersion: 1, homeProtocol: 1, homeId: this.home.state.id, primaryId: this.home.state.primaryId, nodeId: this.home.state.nodeId, hostingOrigin: hostingOrigin(process.env.OPENSTRUDEL_HOSTING_ORIGIN) });
+        this.send(response, 200, { ok: true, service: "openstrudel", platform: process.platform, arch: process.arch, time: new Date().toISOString(), telegram: this.telegram.status(), agentArchiveVersion: 1, agentArchiveEncryption: true, agentAppearanceVersion: 1, deviceLogoutVersion: 1, homeProtocol: 1, homeId: this.home.state.id, primaryId: this.home.state.primaryId, nodeId: this.home.state.nodeId, hostingOrigin: hostingOrigin(process.env.OPENSTRUDEL_HOSTING_ORIGIN) });
         return;
       }
       if (request.method === "GET" && path === "/v1/integrations") {
@@ -474,7 +482,19 @@ export class HttpApi {
   }
 
   private async archiveBody(request: IncomingMessage): Promise<unknown> {
-    return decodeArchive(await readBody(request, MAX_TRANSFER_BYTES));
+    const bytes = await readBody(request, MAX_TRANSFER_BYTES);
+    if (bytes[0] === 123) {
+      let upload: any;
+      try { upload = JSON.parse(bytes.toString()); } catch { /* decodeArchive reports damaged files. */ }
+      if (typeof upload?.protectedArchive === "string") {
+        const value = decryptBackup(Buffer.from(upload.protectedArchive, "base64").toString(), String(upload.password ?? "")) as any;
+        if (value?.format !== "openstrudel.team.protected" || value?.version !== 1 || typeof value?.archive !== "string") {
+          throw new HomeError("Этот файл содержит подключения устройств, а не сотрудников. Выберите резервную копию сотрудников.");
+        }
+        return decodeArchive(Buffer.from(value.archive, "base64"));
+      }
+    }
+    return decodeArchive(bytes);
   }
 
   private async body(request: IncomingMessage, limit = MAX_BODY_BYTES): Promise<Record<string, unknown>> {
@@ -489,7 +509,8 @@ export class HttpApi {
     response.writeHead(status).end(JSON.stringify(value));
   }
   private sendWire(response: ServerResponse, value: WireResponse) {
-    response.writeHead(value.status, { "content-type": value.contentType, "cache-control": "no-store" }).end(Buffer.from(value.body, "base64"));
+    const body = Buffer.from(value.body, "base64");
+    response.writeHead(value.status, { "content-type": value.contentType, "content-length": body.length, "cache-control": "no-store" }).end(body);
   }
 
   private async asset(response: ServerResponse, name: string, contentType: string): Promise<void> {

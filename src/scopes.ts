@@ -33,7 +33,7 @@ export class ScopedCodexEngine implements CodexEngine {
     const binaries = dirname(dirname(createRequire(import.meta.url).resolve("@openai/codex/package.json")));
     const helpers = process.platform === "linux" ? `${JSON.stringify(resolve(home, "tmp"))} = "read"\n${JSON.stringify(binaries)} = "read"\n` : "";
     const authStorage = this.authTokens ? 'cli_auth_credentials_store = "ephemeral"\n' : "";
-    const settings = `${authStorage}default_permissions = "openstrudel"\n[permissions.openstrudel.filesystem]\n":minimal" = "read"\n${JSON.stringify(cwd)} = "write"\n${helpers}[permissions.openstrudel.network]\nenabled = true\n[apps._default]\nenabled = false\n`;
+    const settings = `${authStorage}default_permissions = "openstrudel"\n[features]\napps = true\n[permissions.openstrudel.filesystem]\n":minimal" = "read"\n${JSON.stringify(cwd)} = "write"\n${helpers}[permissions.openstrudel.network]\nenabled = true\n[apps._default]\nenabled = false\n`;
     writeFileSync(configPath,settings + granted.map(id=>`\n[apps.${id}]\nenabled = true\n`).join("") + (existsSync(connections) ? "\n" + readFileSync(connections,"utf8") : ""),{mode:0o600});
     const options: CodexEngineOptions = { workingDirectory:cwd,codexHome:home,scoped:true,authTokens:this.authTokens };
     const engine = new CodexEngineAdapter(options);

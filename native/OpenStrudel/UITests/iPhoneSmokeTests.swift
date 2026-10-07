@@ -26,6 +26,7 @@ final class iPhoneSmokeTests: XCTestCase {
         let confirm = app.buttons["confirmMacPairing"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 15))
         confirm.tap()
+        app.finishDevicePairing()
         XCTAssertTrue(confirm.waitForNonExistence(timeout: 30))
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 5) { consent.tap() }
@@ -147,6 +148,7 @@ final class iPhoneSmokeTests: XCTestCase {
             // Dismiss the system's first local-network prompt if present.
             let allow = springboard.alerts.buttons.matching(NSPredicate(format: "label IN %@", ["Allow", "Разрешить", "OK", "ОК"]))
             if allow.firstMatch.waitForExistence(timeout: 3) { allow.firstMatch.tap() }
+            app.finishDevicePairing()
             XCTAssertTrue(connect.waitForNonExistence(timeout: 25), app.debugDescription)
             XCTAssertFalse(app.alerts["OpenStrudel"].exists, app.debugDescription)
         }

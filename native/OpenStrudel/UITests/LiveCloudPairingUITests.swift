@@ -32,6 +32,7 @@ final class LiveCloudPairingUITests: XCTestCase {
         let confirm = app.buttons["confirmMacPairing"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 15))
         confirm.tap()
+        app.finishDevicePairing()
         XCTAssertTrue(confirm.waitForNonExistence(timeout: 30))
         XCTAssertFalse(app.alerts["OpenStrudel"].exists)
 

@@ -1,14 +1,22 @@
 # OpenStrudel
 
-OpenStrudel connects your agents and conversations through a primary Mac or server that you choose. Native Mac and iOS apps, Telegram, your Home's own web interface and the OpenStrudel CLI use that connection.
+OpenStrudel is a team of AI employees on your own devices. Each employee runs on one Mac or server, where its conversations, files and accounts stay. The native app opens local employees and employees from several connected devices together. There is no primary device.
 
-The primary-device, multi-account and integrated-hosting changes in this branch are in local acceptance, not yet in the downloadable release. See [the implementation and release boundaries](docs/primary-home.md).
+The independent-device redesign is in local acceptance, not yet in the downloadable release. See [the device model and acceptance results](docs/device-first-review.md). The [older primary-device protocol](docs/primary-home.md) remains supported for existing installations.
 
 This repository contains the public source. Local credentials, chat histories and personal migration scripts are excluded. Downloads and current iOS availability are listed at [waiwai.is/openstrudel](https://waiwai.is/openstrudel).
 
-The product has three concepts: one Home process, named employees, and conversations. Codex owns the work and its thread history. OpenStrudel keeps channel bindings, messages and delivery receipts, employee instructions, connection state and the clock for recurring requests. There is no task dashboard or second agent loop.
+The product has three concepts: devices, employees, and conversations. Each device runs the same Home runtime. Codex owns the work and its thread history. OpenStrudel keeps channel bindings, messages and delivery receipts, employee instructions, connection state and the clock for recurring requests. There is no task dashboard or second agent loop.
 
-## Choose where Home runs
+## Start on this Mac
+
+Open the app, start on the current Mac and sign in to OpenAI. Create an employee by describing its job, or restore employees from a backup. Personal/work classification and appearance are not required during creation. Appearance and instructions can be edited later.
+
+To add another device, open **Settings → Devices → Get connection link** on that device. Paste the link in **Connect device** on your laptop and confirm the device shown. The app confirms the connection before opening its employees. When creating an employee, choose where it will run; the current Mac is the default. An unavailable device does not block other devices.
+
+**Settings → Accounts** shows the selected device's OpenAI accounts, remaining usage windows, reset times and separate credit balance. **Settings → Backups** saves that device's employees, conversations, files and schedules in one `.openstrudel` file, optionally protected by a password. Account and service credentials are excluded. Restore previews the contents and adds employees without replacing existing ones; restored schedules start paused. Removing a device connection leaves its employees and history on the device.
+
+## Optional servers
 
 The native Mac app can run Home on your Mac. For access away from the Mac or while it is asleep, cloud setup on Mac supports your own DigitalOcean account. Review the current price and confirm before a server is created. You pay DigitalOcean directly; OpenStrudel adds no hosting charge. iOS connects to an existing Home by invitation and does not offer hosting signup or payment.
 
@@ -16,7 +24,7 @@ The optional hosting service imported from WAI VDS is in `services/hosting`. Its
 
 The cloud plan uses 2 vCPU and 4 GB RAM in Frankfurt, with Amsterdam as the same-plan fallback. Installation retries are bounded and reuse the same server and data volume. If setup is interrupted, reopen the app to check the existing installation rather than create another one. The app checks the server's generated identity before sending the owner credential.
 
-Cloud management remains available from the connection screen when Home is offline. To stop hosting charges, delete the server in DigitalOcean after saving any data you need. Closing the app or powering off the server does not end billing.
+To stop hosting charges, delete the server in DigitalOcean after saving any data you need. Closing the app or powering off the server does not end billing.
 
 ## Run locally
 
@@ -46,7 +54,7 @@ The checked-in Codex default is `gpt-6-astra`; set `OPENSTRUDEL_CODEX_MODEL` to 
 - `GET /v1/agents/<id>/conversation` loads an employee chat.
 - `GET /health` and `GET /v1/integrations` provide connection status.
 
-“New bot” opens a chat immediately. Tell it its name, role and permanent rules in conversation, or edit those rules in its profile. A real Codex tool saves the character and displays a receipt.
+“New employee” opens a chat immediately. Tell it its name, role and permanent rules in conversation, or edit those rules in its profile. A real Codex tool saves the character and displays a receipt.
 
 A Telegram chat can be pinned to an employee in that employee's settings, or with `/bind Full Name`. Messages then go to that employee without a prefix. An explicit `@Name` addresses another employee without changing that default. Private bot messages share the employee's native conversation when it is not already assigned to another Telegram chat; additional groups keep separate histories. The employee header's menu switches between them. Unbound messages without a name go to the main assistant. Replying to a delivered digest returns to its original employee even if the Telegram chat is now pinned to someone else.
 
@@ -84,7 +92,7 @@ The script checks Node 22+, builds the runtime, creates a private `.data` direct
 
 On macOS, install the native app with `scripts/install-mac-app.sh`. The SwiftUI project in `native/OpenStrudel` builds the Mac and iOS clients with the Liquid Glass interface.
 
-On iPhone, open the app and scan the code from **Mac Settings → Подключить iPhone**. A shared connection link also works. Confirm the Mac shown on the phone. Both devices must be on the same Wi-Fi network, with Home running on the awake Mac. This connects to the existing employees, history, Telegram and schedules; it does not create another Home. Access away from that network is not supported by this connection.
+On iPhone, scan the code or paste the link from **Settings → Devices → Get connection link** on the device running your employees. Confirm the device shown on the phone. The phone must be able to reach its address: a local Mac normally needs the same network; a server needs an independently reachable HTTPS endpoint. OpenStrudel does not add a relay. This connects to the existing employees, history, Telegram and schedules; iOS does not run another Home.
 
 The code is single-use and expires after five minutes. The phone checks the Mac's certificate against the fingerprint in the code, then keeps its credential in Keychain. Mac Settings can revoke mobile access. The existing HTTP API stays on localhost; paired phones use a separate HTTPS listener on port 7789.
 

@@ -7,14 +7,14 @@ final class MobilePairingUITests: XCTestCase {
         app.launch()
         let help = app.buttons["invitationHelp"]
         XCTAssertTrue(help.waitForExistence(timeout: 15))
-        XCTAssertTrue(app.staticTexts["Подключите свою команду"].exists)
+        XCTAssertTrue(app.staticTexts["Подключите устройство"].exists)
         XCTAssertFalse(app.buttons["setupCloud"].exists)
         XCTAssertFalse(app.buttons["cloudSignIn"].exists)
         XCTAssertFalse(app.buttons["cloudConfirmCost"].exists)
         XCTAssertFalse(app.links["Управлять облаком"].exists)
         for _ in 0..<4 where !help.isHittable { app.swipeUp() }
         help.tap()
-        XCTAssertTrue(app.staticTexts["Где взять приглашение"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Где получить ссылку"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.links.count, 0, "Connection help must not lead to signup or payment")
         capture("12-connection-help", app)
         app.buttons["closeConnectionHelp"].tap()
@@ -25,7 +25,7 @@ final class MobilePairingUITests: XCTestCase {
         XCTAssertFalse(app.buttons["cloudSignIn"].exists)
         #if targetEnvironment(simulator)
         app.buttons["scanInvitation"].tap()
-        XCTAssertTrue(app.staticTexts["На этом устройстве используйте приглашение вместо камеры."].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["На этом устройстве вставьте ссылку подключения."].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["pasteInvitation"].exists)
         #endif
     }
@@ -65,7 +65,7 @@ final class MobilePairingUITests: XCTestCase {
         for _ in 0..<4 where !help.isHittable { app.swipeUp() }
         XCTAssertTrue(help.isHittable)
         help.tap()
-        XCTAssertTrue(app.staticTexts["Где взять приглашение"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Где получить ссылку"].waitForExistence(timeout: 5))
         let close = app.buttons["closeConnectionHelp"]
         XCTAssertTrue(close.isHittable)
         XCTAssertEqual(app.links.count, 0)
@@ -118,6 +118,7 @@ final class MobilePairingUITests: XCTestCase {
         XCTAssertTrue(confirm.waitForExistence(timeout: 10), app.debugDescription)
         capture("04-confirm", app)
         confirm.tap()
+        app.finishDevicePairing()
         XCTAssertTrue(confirm.waitForNonExistence(timeout: 20), app.debugDescription)
         // Initial load can fail after the one-use invitation has been consumed.
         // The saved connection must recover without a second redemption.
@@ -139,15 +140,15 @@ final class MobilePairingUITests: XCTestCase {
         capture("06-relaunch", app)
 
         app.buttons["Настройки"].tap()
-        let help = app.buttons["connectionHelp"]
-        XCTAssertTrue(help.waitForExistence(timeout: 10))
-        for _ in 0..<6 where !help.isHittable { app.swipeUp() }
+        let addDevice = app.buttons["addDevice"]
+        XCTAssertTrue(addDevice.waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["Управлять облаком"].exists)
-        help.tap()
-        XCTAssertTrue(app.buttons["closeConnectionHelp"].waitForExistence(timeout: 5))
+        addDevice.tap()
+        XCTAssertTrue(app.secureTextFields["connectionInvitation"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Получить ссылку подключения")).firstMatch.exists)
         XCTAssertEqual(app.links.count, 0)
         capture("06-settings-help", app)
-        app.buttons["closeConnectionHelp"].tap()
+        app.buttons["Отмена"].tap()
         app.buttons["Готово"].tap()
 
         app.open(valid)

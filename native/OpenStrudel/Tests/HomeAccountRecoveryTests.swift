@@ -3,6 +3,15 @@ import Testing
 
 @Suite(.serialized)
 @MainActor struct HomeAccountRecoveryTests {
+    @Test func deviceStatusAcceptsTheClientListAndInvitesTheOwnersOtherDevice() async throws {
+        let state = AccountFixtureState()
+        let (client, session) = makeClient(state)
+        defer { session.invalidateAndCancel() }
+        await client.refreshMobileStatus()
+        #expect(client.canManageConnections)
+        await client.inviteMobile()
+        #expect(state.invitedOwner)
+    }
     @Test func signOutSurvivesRelaunchAndPreservesUnsentMessages() async throws {
         let suite = "OpenStrudel.signout-test." + UUID().uuidString
         let defaults = try #require(UserDefaults(suiteName: suite))
@@ -227,6 +236,7 @@ import Testing
     var accountBody = #"{"account":{"connected":true,"email":"owner@example.invalid","planType":"plus","managed":true},"canManage":true,"loginPending":false}"#
     var loginStatus = "pending"
     var loginStarts = 0
+    var invitedOwner = false
     func respond(_ request: URLRequest) -> (Int, Data) {
         let status: Int
         let body: String
@@ -235,7 +245,20 @@ import Testing
         case "/v1/profiles": status = 200; body = #"{"profiles":[]}"#
         case "/v1/integrations": status = 200; body = #"{"telegram":{"configured":false,"running":false,"linkedChats":[]}}"#
         case "/v1/account": status = accountStatus; body = accountBody
-        case "/v1/mobile": status = 200; body = #"{"connections":0}"#
+        case "/v1/mobile": status = 200; body = #"{"connections":0,"clients":[]}"#
+        case "/v1/mobile/pairing":
+            var data = request.httpBody ?? Data()
+            if data.isEmpty, let stream = request.httpBodyStream {
+                stream.open(); defer { stream.close() }
+                var buffer = [UInt8](repeating: 0, count: 1024)
+                while stream.hasBytesAvailable {
+                    let count = stream.read(&buffer, maxLength: buffer.count)
+                    guard count > 0 else { break }
+                    data.append(contentsOf: buffer.prefix(count))
+                }
+            }
+            if let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Bool] { invitedOwner = payload["owner"] == true }
+            status = 503; body = #"{"error":"Test invitation: no network access"}"#
         case "/v1/account/login":
             loginStarts += 1; status = 201
             body = #"{"type":"browser","loginId":"test-login","authUrl":"https://auth.openai.com/test"}"#

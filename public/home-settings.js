@@ -38,12 +38,37 @@ async function checkControls(page) {
   }
   page.content.append(element('p',`Завершено: ${completed}. Ожидают устройства: ${waiting}.`));
 }
-function openTelegramSettings() {
-  const page=modalPage('Telegram','Подключите своего бота к главному устройству.');
-  page.content.append(element('p',state.telegram?.configured?'Подключён '+(state.telegram.botUsername?'@'+state.telegram.botUsername:'бот'):'Telegram ещё не подключён.'));
-  if(!state.owner) return;
-  const token=field(page.content,'Токен Telegram-бота','password');
-  action(page,'Подключить',async()=>{ if(!token.value.trim()) throw new Error('Введите токен бота.'); await api('/v1/integrations/telegram',{method:'POST',body:JSON.stringify({token:token.value.trim()})}); token.value=''; closeModal(); await refresh(); },true);
+async function openTelegramSettings() {
+  const page=modalPage('Telegram','Пишите сотруднику через своего бота.');
+  const profile=state.profiles.find(p=>p.id===state.selected), suffix=profile?.deviceId?'?deviceId='+encodeURIComponent(profile.deviceId):'';
+  const status=element('p','Проверяем подключение…');status.setAttribute('role','status');page.content.append(status);
+  try {
+    const read=async()=>{const result=await api('/v1/integrations'+suffix);return result.telegram;};
+    const telegram=await read();
+    status.textContent=telegram.configured?'Бот @'+telegram.botUsername+' подключён':'1. Создайте бота в BotFather командой /newbot.';
+    if(!state.owner) return;
+    if(!telegram.configured) {
+      const help=element('a','Открыть BotFather');help.href='https://t.me/BotFather';help.target='_blank';help.rel='noreferrer';page.content.append(help);
+      const token=field(page.content,'2. Вставьте ключ бота','password');
+      action(page,'Подключить бота',async()=>{
+        status.textContent='Проверяем ключ…';
+        try {await api('/v1/integrations/telegram'+suffix,{method:'POST',body:JSON.stringify({token:token.value.trim()})});token.value='';await openTelegramSettings();}
+        catch(e){status.textContent='Подключение не завершено.';throw e;}
+      },true);
+    } else {
+      if(telegram.lastError) page.error.textContent=telegram.lastError;
+      const paired=(telegram.chats||[]).some(chat=>!chat.chatId.startsWith('-')&&chat.profileId===(state.selected||null));
+      if(paired) status.textContent='Чат подключён к «'+(profile?.name||'OpenStrudel')+'».';
+      action(page,paired?'Открыть Telegram':'Связать личный чат',async()=>{
+        const result=paired?{url:'https://t.me/'+telegram.botUsername}:await api('/v1/integrations/telegram/link'+suffix,{method:'POST',body:JSON.stringify({profileId:state.selected||undefined})});
+        const link=element('a','Открыть чат в Telegram');link.href=result.url;link.target='_blank';link.rel='noreferrer';page.content.replaceChildren(link,element('p','Нажмите «Начать» в Telegram.'));
+        for(let i=0;!paired&&i<300&&$('modal-content').contains(page.box);i++) {
+          await new Promise(resolve=>setTimeout(resolve,2000));
+          const value=await read();if((value.chats||[]).some(chat=>!chat.chatId.startsWith('-')&&chat.profileId===(state.selected||null))){page.content.append(element('p','Чат подключён. Можно писать боту.'));break;}
+        }
+      },true);
+    }
+  } catch(e) {status.textContent='';page.report(e);}
 }
 async function bootstrapWeb() {
   clearInterval(state.refreshTimer);
@@ -58,7 +83,7 @@ async function bootstrapWeb() {
     state.refreshTimer=setInterval(()=>{ if(!document.hidden && !state.loading) void refresh(); },5000);
   } catch(e) {
     $('status').textContent='Нужно приглашение';
-    const page=modalPage('Подключитесь к своей команде','Откройте приглашение для браузера из настроек OpenStrudel на главном Mac или сервере.');
+    const page=modalPage('Подключитесь к своей команде','Откройте приглашение для браузера из настроек OpenStrudel на Mac или сервере с вашими сотрудниками.');
     const input=field(page.content,'Ссылка с приглашением');
     if(key) page.report(e);
     action(page,'Подключиться',async()=>{
@@ -72,8 +97,8 @@ async function bootstrapWeb() {
 }
 window.addEventListener('hashchange',()=>{ if(new URLSearchParams(location.hash.slice(1)).has('invite')) void bootstrapWeb(); });
 async function openHomeSettings() {
-  const page=modalPage('Настройки','Ваша команда работает на выбранном вами устройстве.');
-    const entries=state.owner ? [['Устройства',openDevices],['Настройки этого агента',openCurrentAgent],['Аккаунты Codex',openAccounts],['Экспорт и импорт агентов',openSettings],['Резервная копия управления',openBackup],['Telegram',openTelegramSettings]] : [['Аккаунты Codex',openAccounts]];
+  const page=modalPage('Настройки','Сотрудники и переписка находятся на этом устройстве.');
+    const entries=state.owner ? [['Устройства',openDevices],['Настройки сотрудника',openCurrentAgent],['Аккаунты и лимиты',openAccounts],['Резервная копия',openSettings],['Telegram',openTelegramSettings]] : [['Аккаунты и лимиты',openAccounts]];
   for(const [label,fn] of entries) { const button=element('button',label,'secondary'); button.style.cssText='display:block;width:100%;text-align:left;margin:6px 0'; button.onclick=()=>void fn(); page.content.append(button); }
   if(state.hostingOrigin) {
     const link=element('a','Серверы: создание и продление','secondary');
@@ -83,31 +108,25 @@ async function openHomeSettings() {
   action(page,'Выйти на этом устройстве',openDeviceSignOut);
 }
 async function openDevices() {
-  const page=modalPage('Устройства','Главное хранит каталог и соединяет ваши приложения с агентами.');
+  const page=modalPage('Устройства','Сотрудники остаются на устройстве, где созданы. Для работы с несколькими устройствами откройте приложение OpenStrudel.');
   try {
     const data=await api('/v1/devices'); state.devices=data.devices;
     if(JSON.parse(localStorage.getItem(controlsKey())||'[]').length) action(page,'Проверить сохранённые действия',()=>checkControls(page));
     const control=await api('/v1/home');
     for(const operation of control.operations||[]) {
-      const button=element('button','Проверить перенос агента','secondary'); button.onclick=()=>void watchAgentMove(operation.id); page.content.append(button);
+      const button=element('button','Проверить перенос сотрудника','secondary'); button.onclick=()=>void watchAgentMove(operation.id); page.content.append(button);
     }
     for(const device of data.devices) {
       const row=element('div'); row.style.cssText='padding:14px 0;border-bottom:1px solid var(--line)';
-      row.append(element('strong',device.name)); row.append(element('p',`${device.primary?'Главное · ':''}${device.online?'На связи':'Не на связи'} · Агентов: ${device.agents}`));
-      if(state.owner && !device.primary && device.online && device.endpoint) { const b=element('button','Сделать главным','secondary'); b.onclick=()=>openTransfer(device); row.append(b); }
+      row.append(element('strong',device.name)); row.append(element('p',`${device.online?'На связи':'Не на связи'} · Сотрудников: ${device.agents}`));
       page.content.append(row);
     }
     if(state.owner) {
-      action(page,'Добавить Mac или сервер',async()=>{
-        const invite=await api('/v1/devices/invitation',{method:'POST',body:'{}'});
-        const next=modalPage('Добавить устройство','Откройте настройки OpenStrudel на новом устройстве и передайте это приглашение. Оно действует пять минут.');
-        const text=element('textarea','','field'); text.value=JSON.stringify(invite); text.rows=6; text.readOnly=true; next.content.append(text);
-        action(next,'Сохранить приглашение',()=>download(JSON.stringify(invite),'OpenStrudel-device.json','application/json'));
-      });
-      action(page,'Подключить приложение',async()=>{
-        const invite=await api('/v1/mobile/pairing',{method:'POST',body:JSON.stringify({owner:false})});
-        const next=modalPage('Подключить приложение','Откройте эту личную ссылку в OpenStrudel на Mac или iPhone. Она действует пять минут.');
-        const text=element('textarea','','field'); text.value=invite.url; text.readOnly=true; text.rows=4; next.content.append(text);
+      action(page,'Открыть на другом устройстве',async()=>{
+        const invite=await api('/v1/mobile/pairing',{method:'POST',body:JSON.stringify({owner:true})});
+        const next=modalPage('Подключение устройства','На другом Mac откройте Настройки → Устройства → Подключить устройство и вставьте эту ссылку. Она действует пять минут.');
+        const text=field(next.content,'Личная ссылка подключения','password'); text.value=invite.url; text.readOnly=true;
+        action(next,'Скопировать ссылку',async()=>{await navigator.clipboard.writeText(invite.url);next.error.textContent='Ссылка скопирована. Продолжите на другом устройстве.';},true);
       });
     }
   } catch(e) { page.report(e); }
@@ -119,7 +138,7 @@ async function openCurrentAgent() {
     const editor=appearanceEditor(agentAppearance(profile)); page.content.append(editor.root);
     action(page,'Сохранить образ',async()=>{
       const result=await api('/v1/profiles/'+encodeURIComponent(profile.id),{method:'PATCH',body:JSON.stringify({name:profile.name,instructions:profile.instructions,appearance:editor.value()})});
-      if(JSON.stringify(result.profile?.appearance)!==JSON.stringify(editor.value())) throw new Error('Обновите OpenStrudel на устройстве этого агента, чтобы сохранить образ.');
+      if(JSON.stringify(result.profile?.appearance)!==JSON.stringify(editor.value())) throw new Error('Обновите OpenStrudel на устройстве этого сотрудника, чтобы сохранить образ.');
       closeModal();await refresh();
     },true);
   }
@@ -128,31 +147,19 @@ async function openCurrentAgent() {
     const device=control.devices.find(d=>d.id===deviceId);
     page.content.append(element('p','Работает на «'+(device?.name||'вашем устройстве')+'».'));
     const data=await api('/v1/accounts?deviceId='+encodeURIComponent(deviceId)), policy=await api('/v1/agents/'+agent+'/accounts');
-    const label=element('label','Аккаунт Codex'), select=element('select','','field'); label.append(select); page.content.append(label);
-    const defaultOption=element('option','Порядок аккаунтов устройства'); defaultOption.value=''; select.append(defaultOption);
+    const label=element('label','Аккаунт OpenAI'), select=element('select','','field'); label.append(select); page.content.append(label);
+    const defaultOption=element('option','По умолчанию'); defaultOption.value=''; select.append(defaultOption);
     for(const account of data.accounts) { const option=element('option',account.account.email||account.name); option.value=account.id; select.append(option); }
     if(policy.accountIds?.length===1) select.value=policy.accountIds[0];
-    else if(policy.accountIds?.length>1) page.content.append(element('p','В CLI задан отдельный порядок. Выбор здесь заменит его.'));
+    else if(policy.accountIds?.length>1) page.content.append(element('p','Выбран отдельный порядок аккаунтов. Новый выбор заменит его.'));
     action(page,'Сохранить аккаунт',async()=>{ await api('/v1/agents/'+agent+'/accounts',{method:'POST',body:JSON.stringify({accountIds:select.value?[select.value]:null})}); closeModal(); },true);
-    action(page,'Переместить на другое устройство…',()=>{
-      const move=modalPage('Переместить «'+name+'»','Переписка, файлы и расписания переедут вместе с агентом. Прежняя копия перестанет работать. Главное устройство не изменится.');
-      move.content.append(element('p','На новом устройстве нужно проверить вход в OpenAI и доступы к сервисам. Расписания с неподключёнными сервисами останутся на паузе.'));
-      const label=element('label','Новое устройство'), target=element('select','','field'); label.append(target); move.content.append(label);
-      for(const device of control.devices.filter(d=>d.id!==deviceId&&d.online)) { const option=element('option',device.name); option.value=device.id; target.append(option); }
-      const operationId=crypto.randomUUID();
-      action(move,'Переместить агента',async()=>{
-        if(!target.value) throw new Error('Добавьте другое устройство и дождитесь подключения.');
-        try { await api('/v1/agents/'+agent+'/move',{method:'POST',body:JSON.stringify({deviceId:target.value,operationId})}); }
-        catch(e) { try { await api('/v1/home/operations/'+operationId); } catch { throw e; } }
-        await watchAgentMove(operationId);
-      },true);
-    });
+
   } catch(e) { page.report(e); }
 }
 async function watchAgentMove(id) {
-  const page=modalPage('Перенос агента','Можно закрыть окно. Главное устройство сохранит состояние переноса.');
+  const page=modalPage('Перенос сотрудника','Можно закрыть окно. Состояние операции сохранено.');
   let retry;
-  const labels={waiting:'Ждём завершения принятых поручений',preparing:'Готовим копию',staging:'Проверяем копию',releasing:'Останавливаем прежнюю копию',activating:'Включаем новую копию',canceling:'Отменяем подготовку',canceled:'Подготовка отменена',completed:'Агент перенесён',attention:'Нужна проверка устройств'};
+  const labels={waiting:'Ждём завершения принятых поручений',preparing:'Готовим копию',staging:'Проверяем копию',releasing:'Останавливаем прежнюю копию',activating:'Включаем новую копию',canceling:'Отменяем подготовку',canceled:'Подготовка отменена',completed:'Сотрудник перенесён',attention:'Нужна проверка устройств'};
   const check=async()=>{
     const result=await api('/v1/home/operations/'+encodeURIComponent(id));
     page.content.replaceChildren(element('p',labels[result.phase]||'Проверяем перенос'));
@@ -166,31 +173,14 @@ async function watchAgentMove(id) {
   action(page,'Проверить состояние',check);
   try { for(let n=0;n<30 && $('modal-content').contains(page.box);n++) { if(await check()) break; await new Promise(r=>setTimeout(r,1000)); } } catch(e) { page.report(e); }
 }
-async function openTransfer(device) {
-  const page=modalPage('Сделать главным: '+device.name,'Перенесётся управление. Агенты и их история останутся на своих устройствах. На время передачи новые изменения будут приостановлены.');
-  const password=field(page.content,'Пароль резервной копии, от 12 символов','password');
-  const operationId=crypto.randomUUID();
-  action(page,'Сохранить копию и передать',async()=>{
-    if(password.value.length<12) throw new Error('Введите пароль от 12 символов.');
-    const backup=await api('/v1/home/backup',{method:'POST',body:JSON.stringify({password:password.value})});
-    download(backup.archive,'OpenStrudel-control-before.homebackup');
-    page.box.dataset.busy='true';
-    localStorage.setItem('openstrudel.transfer',JSON.stringify({operationId,url:device.endpoint.url}));
-    try {
-      const result=await api('/v1/home/transfer',{method:'POST',body:JSON.stringify({deviceId:device.id,operationId,backupPassword:password.value})});
-      if(result.backup) download(result.backup,'OpenStrudel-control-final.homebackup');
-      await watchTransfer({ operationId, url: device.endpoint.url });
-    } finally { page.box.dataset.busy='false'; password.value=''; }
-  },true);
-}
 async function watchTransfer(value) {
-  const page = modalPage('Передача управления','Проверяем подтверждение нового главного устройства. Закрытие окна не отменяет передачу.');
+  const page = modalPage('Передача управления','Проверяем подтверждение нового подключения. Закрытие окна не отменяет передачу.');
   const check = async () => {
     const result = await api('/v1/home/operations/' + encodeURIComponent(value.operationId));
     if (result.phase === 'completed' || result.phase === 'active') {
       localStorage.removeItem('openstrudel.transfer');
-      page.content.replaceChildren(element('p','Новое главное подтвердило работу. Для входа в браузере создайте приглашение на нём.'));
-      const link=element('a','Открыть новое главное'); link.href=value.url; link.rel='noreferrer'; page.content.append(link);
+      page.content.replaceChildren(element('p','Подключение изменилось. Создайте ссылку для браузера на новом устройстве.'));
+      const link=element('a','Открыть устройство'); link.href=value.url; link.rel='noreferrer'; page.content.append(link);
       return true;
     }
     if (result.phase === 'canceled' || result.phase === 'activation_failed') throw new Error(result.error || 'Передача не завершена. Проверьте состояние устройств.');
@@ -200,30 +190,24 @@ async function watchTransfer(value) {
   try { for(let i=0;i<20;i++) { if(await check()) return; if(!$('modal-content').contains(page.box)) return; await new Promise(r=>setTimeout(r,1000)); } }
   catch(e) { page.report(e); }
 }
-function openBackup() {
-  const page=modalPage('Резервная копия управления','Копия хранит каталог и доступы. Файлы и историю агентов сохраняйте отдельно через экспорт на каждом устройстве. Храните копию вне главного устройства.');
-  const password=field(page.content,'Пароль копии, от 12 символов','password');
-  if(state.owner) action(page,'Сохранить копию',async()=>{
-    const value=await api('/v1/home/backup',{method:'POST',body:JSON.stringify({password:password.value})});
-    download(value.archive,'OpenStrudel-control-'+new Date().toISOString().slice(0,10)+'.homebackup'); password.value='';
-  },true);
-}
 async function openAccounts(deviceId) {
-  const page=modalPage('Аккаунты Codex','На каждом устройстве свои аккаунты. Они используются по приоритету для новых поручений. Уже начатая работа продолжится со своим аккаунтом.');
+  const page=modalPage('Аккаунты и лимиты','Подписка OpenAI и отдельный баланс кредитов.');
+  const loading=element('p','Загружаем аккаунты и лимиты…');loading.setAttribute('role','status');page.content.append(loading);
   try {
     const devices=state.devices || (await api('/v1/devices')).devices;
     const selector=element('select','','field'); selector.setAttribute('aria-label','Устройство');
-    for(const device of devices) { const option=element('option',device.name+(device.primary?' · главное':'')); option.value=device.id; selector.append(option); }
-    selector.value=deviceId || devices.find(d=>d.primary)?.id; deviceId=selector.value;
+    for(const device of devices) { const option=element('option',device.name); option.value=device.id; selector.append(option); }
+    selector.value=deviceId || state.nodeId||devices[0]?.id; deviceId=selector.value;
     selector.onchange=()=>void openAccounts(selector.value); page.content.append(selector);
     const suffix='?deviceId='+encodeURIComponent(deviceId);
-    const data=await api('/v1/accounts'+suffix);
+    const data=await api('/v1/accounts'+suffix+'&refresh=true');loading.remove();
     for(const [i,entry] of data.accounts.entries()) {
       const row=element('div'); row.style.cssText='padding:14px 0;border-bottom:1px solid var(--line)';
       row.append(element('strong',entry.account.email || entry.name));
-      row.append(element('p',`${i===0?'Первый по приоритету · ':''}${entry.account.connected?entry.account.planType || 'Подключён':'Нужен вход'}`));
-      if(entry.usage.windows.length) for(const window of entry.usage.windows) row.append(element('p',`${window.name}: ${window.remainingPercent==null?'пока неизвестно':'осталось '+Math.round(window.remainingPercent)+'%'}${window.resetsAt?' · обновится '+new Date(window.resetsAt*1000).toLocaleString('ru-RU'):''}`));
-      else row.append(element('p','Остатки пока неизвестны'));
+      row.append(element('p',`${i===0?'Первый по приоритету · ':''}${entry.account.connected?({plus:'ChatGPT Plus',pro:'ChatGPT Pro',business:'ChatGPT Business',team:'ChatGPT Business',enterprise:'ChatGPT Enterprise',free:'ChatGPT Free'})[entry.account.planType] || 'OpenAI подключён':'Нужен вход'}`));
+      if(entry.usage.windows.length) for(const window of entry.usage.windows) row.append(element('p',`${window.name}: ${window.remainingPercent==null?'пока неизвестно':'осталось '+Math.round(window.remainingPercent)+'%'}${window.resetsAt?' · сброс '+new Date(window.resetsAt*1000).toLocaleString('ru-RU'):''}`));
+      else row.append(element('p',entry.usage.unavailable?'Не удалось получить остатки. Обновите список.':'OpenAI не передал лимиты подписки.'));
+      const credits=entry.usage.credits;row.append(element('p','Кредиты: '+(credits?.unlimited?'без ограничений':credits?.balance??(credits?.hasCredits?'доступны, баланс не передан':'баланс не передан'))));
       if(entry.usage.checkedAt) row.append(element('small','Проверено '+new Date(entry.usage.checkedAt).toLocaleTimeString()));
       if(data.canManage) {
         const login=element('button',entry.account.connected?'Войти заново':'Войти в OpenAI','secondary');
@@ -232,8 +216,10 @@ async function openAccounts(deviceId) {
       }
       page.content.append(row);
     }
+    action(page,'Обновить остатки',()=>openAccounts(deviceId));
     if(data.canManage) action(page,'Добавить аккаунт',async()=>{ const entry=await api('/v1/accounts'+suffix,{method:'POST',body:JSON.stringify({name:'Аккаунт'})}); await startAccountLogin(entry.id,deviceId); });
-  } catch(e) { page.report(e); }
+  } catch(e) { page.report(e); action(page,'Повторить',()=>openAccounts(deviceId)); }
+  finally { loading.remove(); }
 }
 async function startAccountLogin(accountId,deviceId) {
   const page=modalPage('Вход в OpenAI','Войдите в свой аккаунт на сайте OpenAI и подтвердите подключение этого устройства.');
@@ -248,26 +234,26 @@ async function startAccountLogin(accountId,deviceId) {
   } catch(e) { page.report(e); }
 }
 async function openCreateAgent() {
-  const page=modalPage('Новый агент','Дайте имя и опишите, чем он будет заниматься.');
+  const page=modalPage('Новый сотрудник','Дайте имя и опишите его задачу.');
   const name=field(page.content,'Имя'); const description=element('textarea','','field'); description.rows=4; description.setAttribute('aria-label','Инструкции'); page.content.append(description);
   const selector=element('select','','field'); selector.setAttribute('aria-label','Где работает'); page.content.append(selector);
   try {
     const data=await api('/v1/devices'); state.devices=data.devices;
-    for(const device of data.devices) { const option=element('option',device.name+(device.primary?' · главное':'')); option.value=device.id; option.disabled=!device.online; selector.append(option); }
-    selector.value=data.primaryId;
+    for(const device of data.devices) { const option=element('option',device.name); option.value=device.id; option.disabled=!device.online; selector.append(option); }
+    selector.value=state.nodeId||data.devices[0]?.id;
   } catch(e) { page.report(e); }
   const creationId=crypto.randomUUID();
-  const editor=appearanceEditor(agentAppearance({id:creationId}));if(state.appearanceVersion===1) page.content.append(editor.root);
+
   action(page,'Создать',async()=>{
-    const result=await api('/v1/profiles',{method:'POST',headers:{'idempotency-key':creationId},body:JSON.stringify({name:name.value,instructions:description.value,deviceId:selector.value,creationId,...(state.appearanceVersion===1?{appearance:editor.value()}:{})})});
-    if(!result.profile) throw new Error('Создание ещё выполняется. Проверьте список агентов после подключения устройства.');
+    const result=await api('/v1/profiles',{method:'POST',headers:{'idempotency-key':creationId},body:JSON.stringify({name:name.value,instructions:description.value,deviceId:selector.value,creationId})});
+    if(!result.profile) throw new Error('Создание ещё выполняется. Проверьте список сотрудников после подключения устройства.');
     closeModal(); await refresh(); await selectAgent(result.profile.id);
   },true);
 }
 function openNavigation() {
   const page=modalPage('OpenStrudel');
   for(const profile of [{id:null,name:'OpenStrudel'},...state.profiles]) { const button=element('button','','secondary'); if(profile.id) button.append(characterImage(agentAppearance(profile),32)); button.append(element('span',profile.name)); button.style.cssText='display:flex;align-items:center;gap:10px;width:100%;margin:6px 0;text-align:left'; button.onclick=async()=>{closeModal();try{await selectAgent(profile.id);}catch(e){$('status').textContent=e.message;}}; page.content.append(button); }
-  action(page,'Настройки',openHomeSettings); action(page,'Новый агент',openCreateAgent);
+  action(page,'Настройки',openHomeSettings); action(page,'Новый сотрудник',openCreateAgent);
 }
 async function sendDraft(event) {
   event.preventDefault(); const text=$('draft').value.trim(); if(!text||state.loading) return;
@@ -327,7 +313,7 @@ function renderExtraMessages() {
   }
   for(const item of readOutbox().filter(p=>(p.profile||null)===(state.selected||null)&&(p.conversationId||null)===(state.chat||null))) {
     const row=element('div','','message-row user'), bubble=element('div',item.text,'bubble');
-    bubble.append(element('p',item.error || 'Сохранено на главном. Ждёт доставки устройству.'));
+    bubble.append(element('p',item.error || 'Сообщение сохранено. Ждём подключения устройства.'));
     if(!item.error && state.owner) {
       const cancel=element('button','Отменить доставку','secondary'); cancel.onclick=async()=>{try{await api('/v1/home/requests/'+encodeURIComponent(item.operationId),{method:'DELETE'});await checkOutbox();renderMessages();renderExtraMessages();}catch(e){$('status').textContent=e.message;}}; bubble.append(cancel);
     }
@@ -343,21 +329,9 @@ function renderExtraMessages() {
 void bootstrapWeb();
 
 async function openDeviceSignOut() {
-  const page=modalPage('Выйти на этом устройстве?','Агенты, переписка, файлы и расписания сохранятся на ваших устройствах. Команда продолжит работать, пока её Mac или сервер включён. Для возвращения понадобится новое приглашение.');
+  const page=modalPage('Выйти на этом устройстве?','Сотрудники, переписка, файлы и расписания сохранятся на ваших устройствах. Команда продолжит работать, пока её Mac или сервер включён. Для возвращения понадобится новое приглашение.');
   page.actions.lastChild.textContent='Отмена';
   if($('draft').value.trim()) page.content.append(element('p','Черновик останется в этом браузере для повторного подключения к этой команде.'));
   const leave=action(page,'Выйти',async()=>{ saveDraft(); await api('/auth/logout',{method:'POST'}); clearInterval(state.refreshTimer); location.reload(); });
-  if(state.owner && state.archiveVersion===1) action(page,'Сначала сохранить копию',async()=>{
-    page.box.dataset.busy='true'; leave.disabled=true;
-    try {
-      const devices=(await api('/v1/devices')).devices;
-      const copies=[];
-      for(const device of devices) copies.push({device,data:await api('/v1/agents/archive?deviceId='+encodeURIComponent(device.id),{},true)});
-      page.content.replaceChildren(element('p','Сохраните все файлы ниже. После этого нажмите «Выйти». Если закрыть это окно, вы останетесь подключены.'));
-      copies.forEach(({device,data},index)=>{
-        const button=element('button','Сохранить: '+device.name,'secondary');
-        button.onclick=()=>download(data,'OpenStrudel-'+(index+1)+'.openstrudel'); page.content.append(button);
-      });
-    } finally {page.box.dataset.busy='false';leave.disabled=false;}
-  },true);
+  if(state.owner && state.archiveVersion===1) action(page,'Сначала сохранить копию…',openSettings);
 }

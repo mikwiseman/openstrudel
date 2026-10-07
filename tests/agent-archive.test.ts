@@ -243,6 +243,27 @@ describe("additive team transfer", () => {
     expect(() => source.archive.export()).toThrow("повреждён");
   });
 
+  it("saves a password-protected employee copy with measurable download size and restores it additively", async () => {
+    const source = populated();
+    const address = await source.api.listen("127.0.0.1", 0), base = `http://127.0.0.1:${address.port}`;
+    const password = "test-backup-password";
+    const response = await fetch(base + "/v1/agents/archive", { method: "POST", body: JSON.stringify({ password }) });
+    expect(response.status).toBe(200);
+    const file = Buffer.from(await response.arrayBuffer());
+    expect(Number(response.headers.get("content-length"))).toBe(file.length);
+    expect(file.toString()).not.toContain("Сохраняй мой голос");
+    const upload = (pass: string) => JSON.stringify({ protectedArchive: file.toString("base64"), password: pass });
+    const wrong = await fetch(base + "/v1/agents/archive/preview", { method: "POST", body: upload("wrong") });
+    expect(wrong.status).toBe(400);
+    expect((await wrong.json()).error).toContain("пароль");
+    const before = source.store.listProfiles().length;
+    const previewResponse = await fetch(base + "/v1/agents/archive/preview", { method: "POST", body: upload(password) });
+    expect(previewResponse.status).toBe(200);
+    const preview = await previewResponse.json();
+    expect((await fetch(base + "/v1/agents/archive/import?plan=" + preview.planToken, { method: "POST", body: upload(password) })).status).toBe(200);
+    expect(source.store.listProfiles().length).toBeGreaterThan(before);
+    expect(source.store.listProfiles().filter(p => p.instructions.includes("Сохраняй мой голос"))).toHaveLength(2);
+  });
   it("serves the file only to authenticated owners and exposes imported extra chats", async () => {
     const source = populated();
     const address = await source.api.listen("127.0.0.1", 0), base = `http://127.0.0.1:${address.port}`;

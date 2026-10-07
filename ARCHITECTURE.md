@@ -4,18 +4,28 @@ A native chat app with named employees. Codex does the work.
 
 ```mermaid
 flowchart LR
-  Mac[Mac] --> Home[OpenStrudel]
-  iOS[iPhone] --> Home
-  Telegram[Telegram] --> Home
-  Home --> Codex[Codex App Server]
-  Codex --> Tools[Codex apps, MCP, skills and memory]
-  Clock[Recurring requests] --> Home
-  Home --> State[(Chats, profiles, schedules, delivery receipts)]
+  Mac[Native Mac / iPhone client] --> Local[Current Mac runtime]
+  Mac --> Mini[Connected Mac runtime]
+  Mac --> Server[Connected server runtime]
+  Local --> LocalState[(Local employees and accounts)]
+  Mini --> MiniState[(Mini employees and accounts)]
+  Server --> ServerState[(Server employees and accounts)]
+  Telegram[Device's Telegram bot] --> Server
 ```
 
 ## Employees
 
-“New bot” immediately opens an empty chat. Name and character develop in dialogue. The employee has a compact SOUL in its existing `instructions` field: ongoing role, style, preferences and boundaries. This field is the single source of truth, not a second memory database or a periodically rewritten file.
+“New employee” immediately opens an empty chat on the chosen device, defaulting to the current Mac. Name and character develop in dialogue. The employee has a compact SOUL in its existing `instructions` field: ongoing role, style, preferences and boundaries. This field is the single source of truth, not a second memory database or a periodically rewritten file.
+
+## Devices
+
+`DeviceLibrary` holds independent `HomeClient` connections and the selected device. Each connection has its own settings, Keychain credential namespace, catalog, account state and HTTP session. Refreshes run concurrently. Choosing another device while creating an employee transfers the unsent prompt and attachments and removes the old draft. Sending, service authorization, Telegram and backups use the selected employee's device. No credentials or running employees move because the user changes the selection.
+
+Pairing uses an expiring owner invitation and pinned TLS. The UI confirms the device and then shows a saved-connection result. Re-pairing replaces only that endpoint's connection. Disconnecting removes that client's access without deleting runtime data; a failed remote revocation cannot trap the interface indefinitely.
+
+The previous primary/executor protocol is a compatibility path for existing installations and in-flight receipts. Its databases, routes and CLI operations are retained. New native connections do not require that topology, elect a primary or migrate an old cluster automatically. A device's web interface and CLI remain scoped to that device; the native client aggregates independent devices.
+
+Backups contain employees, messages, files and schedules, not account credentials. Password protection uses the existing scrypt/AES-GCM envelope around the full archive. Restore validates before mutation, previews the additions and preserves idempotent import receipts. Native downloads count received bytes against Content-Length; preparation has no invented percentage. Byte collection runs outside MainActor and cancellation remains available. See [acceptance results](docs/device-first-review.md).
 
 Codex receives `update_employee` as a dynamic tool. Only its actual successful execution updates the profile and creates a “Характер сохранён” receipt. Assistant prose is never parsed as a write. Updates preserve identity and reject a stale concurrent edit. Temporary tasks and text from external sources must not become personality. The profile editor remains available for direct correction or clearing the SOUL.
 

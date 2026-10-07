@@ -48,11 +48,11 @@ export class CodexRpc {
     this.write({ method: "initialized" });
   }
 
-  request<T = any>(method: string, params?: unknown): Promise<T> {
+  request<T = any>(method: string, params?: unknown, timeoutMs = 60_000): Promise<T> {
     if (this.closed) return Promise.reject(new Error("Codex отключён"));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(`Codex не ответил на ${method}`)); }, 60_000);
+      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(`Codex не ответил на ${method}`)); }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
       this.write({ method, id, params: params ?? {} });
     });

@@ -14,7 +14,7 @@ export type OpenAIAccount = {
 
 export type CodexAuthTokens = { accessToken: string; chatgptAccountId: string; chatgptPlanType?: string };
 export type UsageWindow = { usedPercent: number; windowDurationMins: number | null; resetsAt: number | null };
-export type AccountUsage = { checkedAt: string; ordinaryUsageAllowed: boolean | null; windows: Array<UsageWindow & { name: string; remainingPercent: number }>; unavailable?: boolean };
+export type AccountUsage = { checkedAt: string; ordinaryUsageAllowed: boolean | null; windows: Array<UsageWindow & { name: string; remainingPercent: number }>; credits?: { hasCredits: boolean; unlimited: boolean; balance: string | null } | null; unavailable?: boolean };
 
 export type LoginStart =
   | { type: "browser"; loginId: string; authUrl: string }
@@ -125,10 +125,14 @@ export class CodexAccountService {
         for (const [kind, window] of Object.entries({ primary: bucket?.primary, secondary: bucket?.secondary })) {
           const w = window as any;
           if (!w || typeof w.usedPercent !== "number" || !Number.isFinite(w.usedPercent)) continue;
-          windows.push({ name: `${bucket.limitName ?? id} · ${kind === "primary" ? "основной лимит" : "дополнительный лимит"}`, usedPercent: w.usedPercent, remainingPercent: Math.max(0, Math.min(100, 100 - w.usedPercent)), windowDurationMins: w.windowDurationMins ?? null, resetsAt: w.resetsAt ?? null });
+          const duration = w.windowDurationMins;
+          const label = duration === 300 ? "5 часов" : duration === 10080 ? "Неделя" : duration === 1440 ? "Сутки" : typeof duration === "number" ? `${duration} мин.` : kind === "primary" ? "Текущий лимит" : "Дополнительный лимит";
+          windows.push({ name: id === "codex" ? label : `${bucket.limitName ?? id} · ${label}`, usedPercent: w.usedPercent, remainingPercent: Math.max(0, Math.min(100, 100 - w.usedPercent)), windowDurationMins: duration ?? null, resetsAt: w.resetsAt ?? null });
         }
       }
-      return { checkedAt: new Date().toISOString(), ordinaryUsageAllowed: typeof result.ordinaryUsageAllowed === "boolean" ? result.ordinaryUsageAllowed : null, windows };
+      const raw = result.rateLimits?.credits ?? (Object.values(buckets).find((b: any) => b?.credits) as any)?.credits;
+      const credits = raw && typeof raw.hasCredits === "boolean" ? { hasCredits: raw.hasCredits, unlimited: raw.unlimited === true, balance: typeof raw.balance === "string" || typeof raw.balance === "number" ? String(raw.balance) : null } : null;
+      return { checkedAt: new Date().toISOString(), ordinaryUsageAllowed: typeof result.ordinaryUsageAllowed === "boolean" ? result.ordinaryUsageAllowed : null, windows, credits };
     }).catch(() => ({ checkedAt: new Date().toISOString(), ordinaryUsageAllowed: null, windows: [], unavailable: true })).then(value => {
       this.usageCache = { until: Date.now() + 30_000, value }; return value;
     }).finally(() => { this.usageReading = undefined; });

@@ -138,28 +138,42 @@ export class CodexEngineAdapter implements CodexEngine {
     this.connectionNotice = undefined;
     // app/installed is stronger evidence than a catalog's isAccessible flag.
     const threadId = [...this.loaded.keys()].at(-1);
-    try {
-    const installed = await rpc.request("app/installed", { forceRefresh: refresh, threadId });
-    const callable = new Set((installed.apps ?? []).filter((a: any) => a.callable).map((a: any) => a.id));
-    if (!this.appCatalog) {
-      const catalog: Array<{ id: string; name: string; installUrl: string | null }> = [];
-      let cursor: string | null = null;
-      do {
-        const page: any = await rpc.request("app/list", { limit: 500, cursor, threadId });
-        catalog.push(...(page.data ?? []).filter((a: any) => callable.has(a.id) || /^(Gmail|Google Calendar|Google Drive|Outlook Email|Outlook Calendar|Microsoft Outlook|Notion|Slack|GitHub|Dropbox|Linear)$/i.test(a.name)));
-        cursor = page.nextCursor;
-      } while (cursor);
-      this.appCatalog = catalog;
-    }
-    result.push(...this.appCatalog.map(a => ({ id: a.id, name: a.name, kind: "app" as const, connected: callable.has(a.id), url: a.installUrl })));
-    } catch {
-      // A provider's app directory can fail while native MCP integrations work.
-      this.connectionNotice = "Каталог приложений Codex пока недоступен. Уже подключённые данные продолжают работать.";
-    }
+    const apps = async () => {
+      // The installed snapshot is independent of the public catalog. A failed
+      // catalog must not hide apps already authorized on the account.
+      const installedRequest = rpc.request("app/installed", { forceRefresh: refresh, threadId }, 12_000)
+        .catch(() => { this.connectionNotice = "Не удалось проверить доступ к сервисам. Обновите список."; return {apps: []}; });
+      const catalogRequest = async () => {
+        if (this.appCatalog && !refresh) return this.appCatalog;
+        const catalog: Array<{id: string; name: string; installUrl: string | null}> = [];
+        let cursor: string | null = null;
+        do {
+          const page: any = await rpc.request("app/list", { limit: 500, cursor, threadId, forceRefetch: refresh }, 4_000);
+          catalog.push(...(page.data ?? [])); cursor = page.nextCursor;
+        } while (cursor);
+        this.appCatalog = catalog;
+        return catalog;
+      };
+      const [installed, catalog] = await Promise.all([installedRequest, catalogRequest().catch(() => {
+        this.connectionNotice = "Каталог новых сервисов пока недоступен. Сервисы вашего аккаунта доступны ниже.";
+        return this.appCatalog ?? [];
+      })]);
+      const callable = new Set((installed.apps ?? []).filter((a: any) => a.callable).map((a: any) => a.id));
+      const names: Record<string,string> = {google_calendar:"Google Calendar",google_drive:"Google Drive",gmail:"Gmail",github:"GitHub",notion:"Notion",slack:"Slack"};
+      const available = new Map<string, {id:string; name:string; installUrl:string|null}>();
+      for (const app of installed.apps ?? []) {
+        if (app.runtimeName) available.set(app.id, {id:app.id,name:names[app.runtimeName] ?? app.runtimeName,installUrl:null});
+      }
+      for (const app of catalog) {
+        if (available.has(app.id) || /^(Gmail|Google Calendar|Google Drive|Outlook Email|Outlook Calendar|Microsoft Outlook|Notion|Slack|GitHub|Dropbox|Linear)$/i.test(app.name)) available.set(app.id,app);
+      }
+      result.push(...[...available.values()].map(a => ({id:a.id,name:a.name,kind:"app" as const,connected:callable.has(a.id),url:a.installUrl})));
+    };
+    const native = async () => {
     let cursor: string | null = null;
     try {
     do {
-      const page: any = await rpc.request("mcpServerStatus/list", { limit: 100, cursor, detail: "toolsAndAuthOnly", threadId });
+      const page: any = await rpc.request("mcpServerStatus/list", { limit: 100, cursor, detail: "toolsAndAuthOnly", threadId }, 12_000);
       const names:Record<string,string>={cua_repl:"Компьютер",wai_company:"WAI",wai_personal:"WAI",wai_telegram:"Telegram",wai_marketplaces:"WAI Marketplaces",creative_production_mcp:"Creative Production"};
       const details:Record<string,string>={cua_repl:"Разрешения на приложения задаются в Codex",wai_company:"Рабочие документы и встречи",wai_personal:"Личные документы",creative_production_mcp:"Создание изображений, видео и звука"};
       result.push(...(page.data ?? []).filter((a: any) => !["codex_apps", "codex_app", "node_repl", "event-stream", "openai-api-key-local-confirmation"].includes(a.name) && ((!a.toolsError && Object.keys(a.tools ?? {}).length > 0) || a.authStatus === "notLoggedIn")).map((a: any) => ({ id: "mcp:" + a.name, name: names[a.name] ?? a.serverInfo?.title ?? a.name, detail: details[a.name] ?? null, kind: "mcp" as const, connected: !a.toolsError && Object.keys(a.tools ?? {}).length > 0, url: null })));
@@ -168,6 +182,8 @@ export class CodexEngineAdapter implements CodexEngine {
     } catch {
       this.connectionNotice = "Не удалось проверить часть подключений. Нажмите «Обновить», чтобы проверить ещё раз.";
     }
+    };
+    await Promise.all([apps(), native()]);
     return result;
   }
 
