@@ -217,14 +217,14 @@ struct AIDataConsentView: View {
         ScrollView {
             VStack(spacing: 24) {
                 OpenStrudelMark(size: 76)
-                Text("Как используются ваши данные")
+                Text("Ваши данные")
                     .font(.system(.largeTitle, design: .serif, weight: .medium))
-                Text("Чтобы ответить вам, OpenStrudel передаёт сообщения, выбранные файлы и нужные сведения из переписки в OpenAI. История хранится на вашем Mac или личном сервере.")
+                Text("Чаты хранятся на вашем Mac или сервере. Для ответов OpenAI получает сообщения, нужную часть переписки и выбранные файлы.")
                     .font(.body).foregroundStyle(AppTheme.secondaryText)
-                Text("Подключённые сервисы получают данные только при использовании их инструментов. Добавляйте только то, чем готовы поделиться.")
+                Text("Другие сервисы получают данные только при обращении к ним.")
                     .font(.callout).foregroundStyle(AppTheme.secondaryText)
                 Link(destination: URL(string: "https://waiwai.is/openstrudel/privacy")!) {
-                    Text("Как используются данные").frame(minHeight: 44).contentShape(Rectangle())
+                    Text("Подробнее о данных").frame(minHeight: 44).contentShape(Rectangle())
                 }
                     .font(.callout)
                     .buttonStyle(.plain).foregroundStyle(AppTheme.accent)
