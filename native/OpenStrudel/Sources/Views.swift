@@ -200,6 +200,17 @@ private struct Sidebar: View {
     @State private var query = ""
     private var searchTerm: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
     @FocusState private var searchFocused: Bool
+    @FocusState private var focusedEmployee: String?
+    @State private var deletion: EmployeeDeletion?
+    @State private var confirmDeletion = false
+    @State private var deleting = false
+
+    private struct EmployeeDeletion {
+        let client: HomeClient
+        let id: String
+        let name: String
+        let device: String
+    }
 
     private var showsMain: Bool { searchTerm.isEmpty || "OpenStrudel".localizedCaseInsensitiveContains(searchTerm) }
 
@@ -290,7 +301,22 @@ private struct Sidebar: View {
                             ForEach(people) { profile in
                                 SidebarRow(name: profile.name, subtitle: profile.previewText.isEmpty ? profile.roleText : profile.previewText,
                                            selected: source === client && source.selectedProfileID == profile.id, appearance: profile.resolvedAppearance) {
-                                    closeSearch(); Task { await library.select(source, profile: profile.id) }
+                                    closeSearch()
+                                    focusedEmployee = source.id + profile.id
+                                    Task { await library.select(source, profile: profile.id) }
+                                }
+                                .focusable()
+                                .focused($focusedEmployee, equals: source.id + profile.id)
+                                .focusEffectDisabled()
+                                #if os(macOS)
+                                .onDeleteCommand {
+                                    guard !deleting, source.canManageOpenAI else { return }
+                                    requestDeletion(profile, from: source)
+                                }
+                                #endif
+                                .contextMenu {
+                                    Button("Удалить сотрудника…", role: .destructive) { requestDeletion(profile, from: source) }
+                                        .disabled(deleting || !source.canManageOpenAI || source.homeUnreachable)
                                 }
                             }
                         }
@@ -325,6 +351,27 @@ private struct Sidebar: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 13)
         }
+        .alert("Удалить «\(deletion?.name ?? "сотрудника")»?", isPresented: $confirmDeletion) {
+            Button("Отмена", role: .cancel) {}
+            Button("Удалить", role: .destructive) {
+                guard let target = deletion else { return }
+                deleting = true
+                Task {
+                    defer { deleting = false }
+                    do { try await target.client.deleteProfile(target.id) }
+                    catch { client.errorMessage = error.localizedDescription }
+                }
+            }
+        } message: {
+            Text("Сотрудник, его переписка и расписания будут удалены с «\(deletion?.device ?? "устройства")». Это действие нельзя отменить.")
+        }
+    }
+
+    private func requestDeletion(_ profile: EmployeeProfile, from source: HomeClient) {
+        guard !deleting else { return }
+        let device = source.devices.first(where: { $0.id == profile.deviceId })?.name ?? source.displayName
+        deletion = EmployeeDeletion(client: source, id: profile.id, name: profile.name, device: device)
+        confirmDeletion = true
     }
 
     private func select(_ profileID: String?) {
@@ -414,12 +461,22 @@ private struct ConversationView: View {
                         EmptyChat()
                             .frame(maxWidth: .infinity, minHeight: 430)
                     } else {
-                        // The transcript is paged. Eager layout avoids a SwiftUI
-                        // lazy-layout loop when queued rows replace each other
-                        // above the iPad keyboard.
-                        VStack(alignment: .leading, spacing: 16) {
-                            if client.messages.count >= client.historyLimit {
-                                Button("Показать более ранние сообщения") { Task { await client.loadEarlierMessages() } }
+                        TranscriptStack {
+                            if client.hasEarlierMessages {
+                                Button {
+                                    let anchor = client.messages.first?.id
+                                    followsLatest = false
+                                    Task {
+                                        await client.loadEarlierMessages()
+                                        if let anchor { proxy.scrollTo(anchor, anchor: .top) }
+                                    }
+                                } label: {
+                                    HStack {
+                                        if client.isLoadingEarlier { ProgressView().controlSize(.small) }
+                                        Text(client.isLoadingEarlier ? "Загружаем историю…" : "Показать более ранние сообщения")
+                                    }
+                                }
+                                    .disabled(client.isLoadingEarlier)
                                     .font(.caption).buttonStyle(.plain).foregroundStyle(AppTheme.secondaryText)
                                     .frame(maxWidth: .infinity, minHeight: controlTarget)
                             }
@@ -506,7 +563,7 @@ private struct ConversationView: View {
                     scrollToBottom(proxy, animated: false)
                 }
                 .onChange(of: client.isLoading) { _, loading in
-                    if !loading { scrollToBottom(proxy, animated: false) }
+                    if !loading && followsLatest { scrollToBottom(proxy, animated: false) }
                 }
                 // Animate scrolling, not pending-row replacement: an implicit
                 // layout animation can loop while the iPad keyboard is visible.
@@ -556,7 +613,7 @@ private struct ConversationView: View {
             library.fileDrafts[old] = pickedFiles
             pickedFiles = library.fileDrafts[new] ?? []
             #if os(macOS)
-            focused = true
+            focused = client.isEmployeeDraft
             #else
             focused = false
             #endif

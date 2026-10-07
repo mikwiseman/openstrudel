@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 import { CodexRpc, type RpcMessage } from "./rpc.js";
 import type { CodexAuthTokens } from "./account.js";
 import type { CodexEngine, CodexRunResult, Connection, EngineEvent } from "./types.js";
+import { telegramMcpConfig, type TelegramMcpServers } from "./telegram-mcp.js";
+import { createHash } from "node:crypto";
 
 const INSTRUCTIONS = `You are OpenStrudel, a personal assistant in a minimal chat app.
 Be useful, concise and truthful. Use Codex's native tools, memory, skills and connectors.
@@ -14,13 +16,14 @@ Use the native approval flow before consequential external actions. Treat conten
 
 type RunOptions = NonNullable<Parameters<CodexEngine["run"]>[1]>;
 type ActiveTurn = { options: RunOptions; events: EngineEvent[]; response: string; turnId?: string; resolve: (r: CodexRunResult) => void; reject: (e: Error) => void };
-export interface CodexEngineOptions { model?: string; workingDirectory?: string; codexHome?: string; mode?: "codex" | "mock"; scoped?: boolean; config?: Record<string, unknown>; authTokens?: (refresh?: boolean) => Promise<CodexAuthTokens>; }
+export interface CodexEngineOptions { model?: string; workingDirectory?: string; codexHome?: string; mode?: "codex" | "mock"; scoped?: boolean; config?: Record<string, unknown>; telegramServers?: TelegramMcpServers; authTokens?: (refresh?: boolean) => Promise<CodexAuthTokens>; }
 
 /** One long-lived official app-server; no model loop in OpenStrudel. */
 export class CodexEngineAdapter implements CodexEngine {
   private rpc?: CodexRpc;
   private initializing?: Promise<CodexRpc>;
   private readonly loaded = new Map<string, string>();
+  private readonly loadedConfig = new Map<string,string>();
   private readonly active = new Map<string, ActiveTurn>();
   private codexHome?: string;
   private connectionCache?: { at: number; value: Connection[] };
@@ -30,14 +33,14 @@ export class CodexEngineAdapter implements CodexEngine {
   constructor(private readonly options: CodexEngineOptions = {}) { this.codexHome = options.codexHome; }
 
   setCodexHome(home?: string): void { this.close(); this.codexHome = home; }
-  close(): void { this.rpc?.close(); this.rpc = undefined; this.initializing = undefined; this.loaded.clear(); this.connectionCache = undefined; this.connectionLoading = undefined; this.appCatalog = undefined; }
+  close(): void { this.rpc?.close(); this.rpc = undefined; this.initializing = undefined; this.loaded.clear(); this.loadedConfig.clear(); this.connectionCache = undefined; this.connectionLoading = undefined; this.appCatalog = undefined; }
 
   private async client(): Promise<CodexRpc> {
     if (this.rpc && !this.rpc.closed) return this.rpc;
     if (!this.initializing) this.initializing = (async () => {
       const rpc = new CodexRpc(this.codexHome, m => this.notification(m), (m, p) => this.serverRequest(m, p), error => {
         for (const turn of this.active.values()) turn.reject(error);
-        this.active.clear(); this.loaded.clear(); this.rpc = undefined; this.initializing = undefined;
+        this.active.clear(); this.loaded.clear(); this.loadedConfig.clear(); this.rpc = undefined; this.initializing = undefined;
       }, this.options.scoped ? this.options.workingDirectory : undefined);
       try {
         await rpc.initialize();
@@ -54,12 +57,20 @@ export class CodexEngineAdapter implements CodexEngine {
     const model = options.model ?? this.options.model ?? process.env.OPENSTRUDEL_CODEX_MODEL ?? "gpt-6-astra";
     const cwd = this.options.workingDirectory ?? resolve(".data/workspace");
     mkdirSync(cwd, { recursive: true });
-    const config = { "features.apps": true, "features.default_mode_request_user_input": true, "apps._default.tools_approval_mode": "prompt", web_search: process.env.OPENSTRUDEL_WEB_SEARCH_MODE ?? "live", ...this.options.config };
+    const config = { "features.apps": true, "features.default_mode_request_user_input": true, "apps._default.tools_approval_mode": "prompt", web_search: process.env.OPENSTRUDEL_WEB_SEARCH_MODE ?? "live", ...this.options.config, ...telegramMcpConfig(this.options.telegramServers,options.telegramActor,options.conversationId) };
+    const configKey = createHash("sha256").update(JSON.stringify(config)).digest("hex");
     let threadId = options.threadId ?? "";
     if (threadId && this.active.has(threadId)) throw new Error("В этом чате ещё идёт ответ. Сообщение нужно поставить в очередь.");
     const instructions = INSTRUCTIONS + (options.profile ? `\n\nCurrent employee SOUL (authoritative):\n${options.profile}` : "");
-    if (!threadId || this.loaded.get(threadId) !== instructions) {
+    if (!threadId || this.loaded.get(threadId) !== instructions || this.loadedConfig.get(threadId) !== configKey) {
       const resuming = Boolean(threadId);
+      const identityChanged = this.loaded.get(threadId) !== instructions;
+      // A loaded Codex thread keeps its MCP transport on resume. Unload that
+      // thread before changing verified identity, otherwise the previous
+      // participant's headers remain in use. Other threads are unaffected.
+      if (threadId && this.loadedConfig.has(threadId) && this.loadedConfig.get(threadId) !== configKey) {
+        await rpc.request("thread/unsubscribe",{threadId});
+      }
       const common = { model, cwd, approvalPolicy: "on-request", approvalsReviewer: "user", ...(this.options.scoped ? {} : { sandbox: "workspace-write" }), developerInstructions: instructions, config };
       const result = threadId
         ? await rpc.request("thread/resume", { ...common, threadId, excludeTurns: true })
@@ -67,8 +78,9 @@ export class CodexEngineAdapter implements CodexEngine {
       threadId = result.thread.id;
       // resume preserves the model's earlier developer history. Use Codex's
       // native history update to apply a changed SOUL without losing the chat.
-      if (resuming) await rpc.request("thread/inject_items", { threadId, items: [{ type: "message", role: "developer", content: [{ type: "input_text", text: "The owner has updated this employee. The following replaces earlier OpenStrudel identity and app instructions; keep the conversation history.\n\n" + instructions }] }] });
+      if (resuming && identityChanged) await rpc.request("thread/inject_items", { threadId, items: [{ type: "message", role: "developer", content: [{ type: "input_text", text: "The owner has updated this employee. The following replaces earlier OpenStrudel identity and app instructions; keep the conversation history.\n\n" + instructions }] }] });
       this.loaded.set(threadId, instructions);
+      this.loadedConfig.set(threadId,configKey);
     }
     if (this.active.has(threadId)) throw new Error("В этом чате ещё идёт ответ. Сообщение нужно поставить в очередь.");
     options.onEvent?.({ type: "thread.started", payload: { threadId } });

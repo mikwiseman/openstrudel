@@ -11,6 +11,7 @@ const operationKey = (id: string) => "agent.move." + id;
 export const agentTransfer = (store: Store, agent: string): any => JSON.parse(store.getSetting(lockKey(agent)) ?? "null");
 export const hiddenAgent = (store: Store, agent: string) => ["moved", "staged"].includes(agentTransfer(store, agent)?.phase);
 export function assertAgentWritable(store: Store, agent: string) {
+  if (store.getSetting("employee.deleted." + agent)) throw new HomeError("Сотрудник удалён.", 410);
   const lock = agentTransfer(store, agent);
   if (lock) throw new HomeError(lock.phase === "moved" ? "Агент перенесён на другое устройство. Обновите подключение к главному." : "Агент переносится. Новое поручение можно отправить после завершения.", 423);
 }

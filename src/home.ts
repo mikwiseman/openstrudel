@@ -169,18 +169,25 @@ export class Home {
       for (const [kind, id, data] of entries) {
         const previous = this.nodeFor(kind, id);
         if (previous && previous !== nodeId) throw new HomeError("Идентификаторы устройств пересекаются. Подключение остановлено.", 409);
-        this.store.db.prepare("INSERT INTO home_resources(kind,id,node_id,data) VALUES(?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data").run(kind, id, nodeId, JSON.stringify(data));
+        this.store.db.prepare("INSERT INTO home_resources(kind,id,node_id,data) VALUES(?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data WHERE home_resources.data!=excluded.data").run(kind, id, nodeId, JSON.stringify(data));
       }
       const profiles = new Set(value.profiles.map(p => p.id));
       for (const old of this.store.db.prepare("SELECT id FROM home_resources WHERE kind='profile' AND node_id=?").all(nodeId) as Row[]) {
         if (!profiles.has(old.id)) this.store.db.prepare("DELETE FROM home_resources WHERE kind='profile' AND id=? AND node_id=?").run(old.id, nodeId);
       }
-      // Retain routes for old message/file IDs: an in-flight request can still refer to them.
+      // Keep old routes for in-flight requests, but never advertise deleted chats
+      // or files as current inventory. A later request receives the owner's 404.
+      for (const kind of ["conversation", "file"]) {
+        const present = new Set(entries.filter(e => e[0] === kind).map(e => e[1]));
+        for (const old of this.store.db.prepare("SELECT id FROM home_resources WHERE kind=? AND node_id=? AND data!='{\"deleted\":true}'").all(kind, nodeId) as Row[]) {
+          if (!present.has(old.id)) this.store.db.prepare("UPDATE home_resources SET data='{\"deleted\":true}' WHERE kind=? AND id=? AND node_id=?").run(kind, old.id, nodeId);
+        }
+      }
     });
   }
   resources(kind: string, nodeId?: string): Record<string, any>[] {
     const rows = this.store.db.prepare("SELECT * FROM home_resources WHERE kind=?" + (nodeId ? " AND node_id=?" : ""));
-    return (nodeId ? rows.all(kind, nodeId) : rows.all(kind) as Row[]).map((r: any) => ({ ...JSON.parse(r.data), deviceId: r.node_id }));
+    return (nodeId ? rows.all(kind, nodeId) : rows.all(kind) as Row[]).map((r: any) => ({ ...JSON.parse(r.data), deviceId: r.node_id })).filter(r => !r.deleted);
   }
   nodeFor(kind: string, id: string): string | undefined { return (this.store.db.prepare("SELECT node_id FROM home_resources WHERE kind=? AND id=?").get(kind, id) as Row | undefined)?.node_id; }
   touch(nodeId: string, info: NodeInfo) {

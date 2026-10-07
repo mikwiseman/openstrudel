@@ -4,12 +4,15 @@ import AppKit
 
 /// A view of the selected execution device; there is no invented global account.
 struct HomeMenu: View {
-    @EnvironmentObject private var client: HomeClient
+    @EnvironmentObject private var library: DeviceLibrary
+    private var client: HomeClient { library.active }
     let openApplication: () -> Void
     let openPreferences: () -> Void
-    @State private var devices: [HomeDevice] = []
     @State private var deviceID = ""
+    @State private var requestID = UUID()
+    private var connectionKey: String { client.id + "|" + client.normalizedBaseURL + "|" + String(describing: client.connectionState) }
     @State private var accounts: [ManagedCodexAccount] = []
+    @State private var accountContentHeight: CGFloat = 180
     @State private var canManage = false
     @State private var busy = false
     @State private var error: String?
@@ -22,11 +25,14 @@ struct HomeMenu: View {
                 if busy { ProgressView().controlSize(.small).accessibilityLabel("Обновляем состояние") }
             }
             Label(client.displayName, systemImage: "desktopcomputer").font(.callout)
-            if devices.count > 1 {
-                Picker("Устройство", selection: $deviceID) {
-                    ForEach(devices) { Text($0.name).tag($0.id) }
-                }.onChange(of: deviceID) { _, _ in Task { await reloadAccounts() } }
+            if library.visibleClients.count > 1 {
+                Picker("Устройство", selection: Binding(get: { client.id }, set: { id in
+                    if let selected = library.visibleClients.first(where: { $0.id == id }) { library.select(selected) }
+                })) {
+                    ForEach(library.visibleClients) { Text($0.displayName).tag($0.id) }
+                }
             }
+            if !accounts.isEmpty {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     ForEach(Array(accounts.enumerated()), id: \.element.id) { index, account in
@@ -47,7 +53,13 @@ struct HomeMenu: View {
                         }
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
-            }.frame(maxHeight: 330)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { accountContentHeight = $0 }
+            }.frame(height: min(accountContentHeight, 330))
+            } else if busy {
+                Text("Загружаем аккаунты…").font(.callout).foregroundStyle(.secondary)
+            } else if error == nil {
+                Text("Подключите аккаунт OpenAI в настройках, чтобы видеть остатки.").font(.callout).foregroundStyle(.secondary)
+            }
             if let error { Text(error).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
             Divider()
             HStack {
@@ -57,30 +69,32 @@ struct HomeMenu: View {
                 Button { Task { await refresh() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Обновить остатки").disabled(busy)
             }
         }.padding(18).frame(width: 350)
-        .task { await refresh() }
-    }
-    private func refresh() async {
-        do {
-            let value: HomeDevices = try await client.management("/v1/devices")
-            devices = value.devices
-            if !devices.contains(where: { $0.id == deviceID }) { deviceID = client.health?.nodeId ?? value.devices.first?.id ?? "" }
-            await reloadAccounts()
-        } catch { self.error = "Устройство пока не отвечает. Данные появятся после восстановления связи." }
-    }
-    private func reloadAccounts() async {
-        guard !deviceID.isEmpty else { return }
-        let selected = deviceID
-        busy = true
-        defer { busy = false }
-        do {
-            let value: ManagedCodexAccounts = try await client.management("/v1/accounts?deviceId=" + selected)
-            guard selected == deviceID else { return }
-            accounts = value.accounts; canManage = value.canManage; error = nil
-        } catch {
-            guard selected == deviceID else { return }
-            accounts = []; self.error = error.localizedDescription
+        .task(id: connectionKey) {
+            accounts = []; error = nil
+            while !Task.isCancelled {
+                await refresh()
+                do { try await Task.sleep(for: .seconds(15)) } catch { break }
+            }
         }
     }
+    private func refresh() async {
+        let source = client, key = connectionKey, token = UUID()
+        requestID = token; busy = true
+        defer { if requestID == token { busy = false } }
+        do {
+            let value: HomeDevices = try await source.management("/v1/devices")
+            guard !Task.isCancelled, key == connectionKey, requestID == token else { return }
+            deviceID = source.health?.nodeId ?? value.devices.first?.id ?? ""
+            let query = deviceID.isEmpty ? "" : "?deviceId=" + deviceID
+            let result: ManagedCodexAccounts = try await source.management("/v1/accounts" + query)
+            guard !Task.isCancelled, key == connectionKey, requestID == token else { return }
+            accounts = result.accounts; canManage = result.canManage; error = nil
+        } catch {
+            guard !Task.isCancelled, key == connectionKey, requestID == token else { return }
+            self.error = "Не удалось обновить остатки. Повторим автоматически."
+        }
+    }
+    private func reloadAccounts() async { await refresh() }
 }
 
 /// An AppKit status item keeps menu lifetime separate from the SwiftUI scene
@@ -91,12 +105,12 @@ final class HomeStatusItem: NSObject, NSPopoverDelegate {
     static let shared = HomeStatusItem()
     private var item: NSStatusItem?
     private let popover = NSPopover()
-    private var client: HomeClient?
+    private var library: DeviceLibrary?
     private var openApplication: (() -> Void)?
     private var openPreferences: (() -> Void)?
 
-    func configure(client: HomeClient, enabled: Bool, openApplication: @escaping () -> Void, openPreferences: @escaping () -> Void) {
-        self.client = client
+    func configure(library: DeviceLibrary, enabled: Bool, openApplication: @escaping () -> Void, openPreferences: @escaping () -> Void) {
+        self.library = library
         self.openApplication = openApplication
         self.openPreferences = openPreferences
         setEnabled(enabled)
@@ -127,14 +141,16 @@ final class HomeStatusItem: NSObject, NSPopoverDelegate {
     }
 
     func showAccounts() {
-        guard let button = item?.button, let client else { openPreferences?(); return }
+        guard let button = item?.button, let library else { openPreferences?(); return }
         let content = HomeMenu(openApplication: { [weak self] in
             self?.popover.close(); self?.openApplication?(); NSApp.activate(ignoringOtherApps: true)
         }, openPreferences: { [weak self] in
             self?.popover.close(); self?.openPreferences?(); NSApp.activate(ignoringOtherApps: true)
-        }).environmentObject(client)
-        popover.contentViewController = NSHostingController(rootView: content)
-        popover.contentSize = NSSize(width: 350, height: 500)
+        }).environmentObject(library)
+        let controller = NSHostingController(rootView: content)
+        controller.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = controller
+        popover.contentSize = controller.view.fittingSize
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
     }
@@ -143,14 +159,15 @@ final class HomeStatusItem: NSObject, NSPopoverDelegate {
 }
 
 struct HomeStatusItemAppearance: ViewModifier {
-    @EnvironmentObject private var client: HomeClient
+    @EnvironmentObject private var library: DeviceLibrary
+    private var client: HomeClient { library.active }
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
     @AppStorage("openstrudel.showMenuBar") private var enabled = true
 
     func body(content: Content) -> some View {
         content.onAppear {
-            HomeStatusItem.shared.configure(client: client, enabled: enabled,
+            HomeStatusItem.shared.configure(library: library, enabled: enabled,
                 openApplication: { openWindow(id: "home") }, openPreferences: { openSettings() })
         }.onChange(of: enabled) { _, value in HomeStatusItem.shared.setEnabled(value) }
     }

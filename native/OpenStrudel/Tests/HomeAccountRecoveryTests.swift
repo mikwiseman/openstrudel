@@ -3,6 +3,58 @@ import Testing
 
 @Suite(.serialized)
 @MainActor struct HomeAccountRecoveryTests {
+    @Test func chatPagesOnlyFetchOlderMessagesOnDemandAndKeepPendingStatusCurrent() async throws {
+        let state = AccountFixtureState()
+        var queries: [URLComponents] = []
+        state.customResponse = { request in
+            guard request.url!.path.hasSuffix("/conversation") || request.url!.path == "/v1/conversations/chat" else { return nil }
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
+            queries.append(query)
+            if query.queryItems?.contains(where: { $0.name == "before" }) == true {
+                return (200, historyPage(Array(0..<50), older: nil, newer: "m49"))
+            }
+            if query.queryItems?.contains(where: { $0.name == "after" }) == true {
+                return (200, historyPage([100], older: nil, newer: "m100", updates: [historyMessage(99)]))
+            }
+            return (200, historyPage(Array(50..<100), older: "m50", newer: "m99", running: 99))
+        }
+        let (client, session) = makeClient(state)
+        defer { session.invalidateAndCancel() }
+        await client.refreshConversation()
+        #expect(client.messages.count == 50)
+        #expect(client.hasEarlierMessages)
+        await client.loadEarlierMessages()
+        #expect(client.messages.map(\.id) == (0..<100).map { "m\($0)" })
+        #expect(!client.hasEarlierMessages)
+        await client.refreshConversation()
+        #expect(client.messages.count == 101)
+        #expect(client.messages.first?.id == "m0")
+        #expect(client.messages.first(where: { $0.id == "m99" })?.status == "completed")
+        #expect(queries.last?.queryItems?.contains(URLQueryItem(name: "after", value: "m99")) == true)
+        #expect(queries.last?.queryItems?.contains(URLQueryItem(name: "watch", value: "m99")) == true)
+        #expect(queries.allSatisfy { $0.queryItems?.contains(URLQueryItem(name: "limit", value: "50")) == true })
+    }
+
+    @Test func changingEmployeeDiscardsAnOlderPageThatArrivesLate() async throws {
+        let state = AccountFixtureState()
+        state.customResponse = { request in
+            if request.url!.path == "/v1/agents/new/conversation" { return (200, historyPage([500], older: nil, newer: "m500")) }
+            if request.url!.path.contains("conversation") { return (200, historyPage([1], older: "m1", newer: "m1")) }
+            return nil
+        }
+        let (client, session) = makeClient(state)
+        defer { session.invalidateAndCancel() }
+        await client.refreshConversation()
+        state.delay = .milliseconds(100)
+        let earlier = Task { await client.loadEarlierMessages() }
+        while !client.isLoadingEarlier { await Task.yield() }
+        await client.selectProfile("new")
+        await earlier.value
+        #expect(client.selectedProfileID == "new")
+        #expect(client.messages.map(\.id) == ["m500"])
+        #expect(!client.isLoadingEarlier)
+        #expect(!client.hasEarlierMessages)
+    }
     @Test func deviceStatusAcceptsTheClientListAndInvitesTheOwnersOtherDevice() async throws {
         let state = AccountFixtureState()
         let (client, session) = makeClient(state)
@@ -230,6 +282,7 @@ import Testing
 }
 
 @MainActor private final class AccountFixtureState {
+    var customResponse: ((URLRequest) -> (Int, Data)?)?
     var delay: Duration?
     var healthStatus = 200
     var accountStatus = 200
@@ -238,6 +291,7 @@ import Testing
     var loginStarts = 0
     var invitedOwner = false
     func respond(_ request: URLRequest) -> (Int, Data) {
+        if let response = customResponse?(request) { return response }
         let status: Int
         let body: String
         switch request.url?.path {
@@ -270,6 +324,17 @@ import Testing
         }
         return (status, Data(body.utf8))
     }
+}
+
+private func historyMessage(_ index: Int, running: Bool = false) -> [String: Any] {
+    ["id": "m\(index)", "conversationId": "chat", "channel": "api", "direction": "inbound", "text": "Message \(index)", "createdAt": "2026-10-07T12:00:00.000Z", "status": running ? "running" : "completed"]
+}
+private func historyPage(_ indices: [Int], older: String?, newer: String, running: Int? = nil, updates: [[String: Any]] = []) -> Data {
+    try! JSONSerialization.data(withJSONObject: [
+        "conversation": ["id": "chat", "channel": "api", "createdAt": "2026-10-07T12:00:00.000Z", "updatedAt": "2026-10-07T12:00:00.000Z"],
+        "messages": indices.map { historyMessage($0, running: $0 == running) }, "updates": updates, "interactions": [],
+        "pagination": ["olderCursor": older as Any? ?? NSNull(), "newerCursor": newer, "hasMore": false]
+    ])
 }
 
 private final class AccountTestURLProtocol: URLProtocol, @unchecked Sendable {

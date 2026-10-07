@@ -38,3 +38,26 @@ it("sends identity as developer instructions and refreshes it when the employee 
     expect(update.items[0].content[0].text).toContain("Новая роль: редактор.");
   } finally { engine.close(); }
 });
+
+it("refreshes native MCP credentials for each group delivery without rewriting personality",async()=>{
+ wire.request.mockImplementation(async(method:string,params:any)=>{
+  if(method==="thread/start" || method==="thread/resume")return {thread:{id:"group"}};
+  if(method==="thread/unsubscribe")return {status:"unsubscribed"};
+  if(method==="turn/start"){
+   queueMicrotask(()=>wire.notify?.({method:"turn/completed",params:{threadId:params.threadId,turn:{status:"completed"}}}));
+   return {turn:{id:"turn"}};
+  }
+  throw new Error(method);
+ });
+ const engine=new CodexEngineAdapter({telegramServers:{company:{url:"https://example.test/mcp",http_headers:{Authorization:"Bearer fixture"}}}});
+ try{
+  await engine.run("First",{profile:"Core",telegramActor:{userId:"7",chatId:"-100",messageId:"-100:1"}});
+  await engine.run("Second",{threadId:"group",profile:"Core",telegramActor:{userId:"8",chatId:"-100",messageId:"-100:2"}});
+  const resumed=wire.request.mock.calls.find(([method])=>method==="thread/resume")![1];
+  expect(resumed.config["mcp_servers.company"].http_headers).toMatchObject({"x-hermes-user-id":"8","x-hermes-chat-id":"-100","x-hermes-message-id":"-100:2"});
+  expect(wire.request.mock.calls.findIndex(([method])=>method==="thread/unsubscribe")).toBeLessThan(wire.request.mock.calls.findIndex(([method])=>method==="thread/resume"));
+  expect(wire.request.mock.calls.some(([method])=>method==="thread/inject_items")).toBe(false);
+  await engine.run("UI",{threadId:"group",profile:"Core"});
+  expect(wire.request.mock.calls.filter(([method])=>method==="thread/resume").at(-1)![1].config["mcp_servers.company"].enabled).toBe(false);
+ }finally{engine.close();}
+});

@@ -58,10 +58,18 @@ struct HomeConversation: Decodable {
     let updatedAt: String
 }
 
+struct MessagePagination: Decodable {
+    let olderCursor: String?
+    let newerCursor: String?
+    let hasMore: Bool
+}
+
 struct ConversationEnvelope: Decodable {
     let conversation: HomeConversation
     let messages: [HomeMessage]
     let interactions: [ChatInteraction]?
+    var pagination: MessagePagination? = nil
+    var updates: [HomeMessage]? = nil
 }
 
 struct TelegramStatus: Codable {

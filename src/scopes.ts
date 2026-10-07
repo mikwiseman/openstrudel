@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { CodexEngineAdapter, type CodexEngineOptions } from "./codex.js";
 import type { CodexEngine } from "./types.js";
 import type { CodexAuthTokens } from "./account.js";
+import type { TelegramMcpServers } from "./telegram-mcp.js";
 
 /** One lazy Codex runtime per audience, never one always-on process per employee. */
 export class ScopedCodexEngine implements CodexEngine {
@@ -35,7 +36,9 @@ export class ScopedCodexEngine implements CodexEngine {
     const authStorage = this.authTokens ? 'cli_auth_credentials_store = "ephemeral"\n' : "";
     const settings = `${authStorage}default_permissions = "openstrudel"\n[features]\napps = true\n[permissions.openstrudel.filesystem]\n":minimal" = "read"\n${JSON.stringify(cwd)} = "write"\n${helpers}[permissions.openstrudel.network]\nenabled = true\n[apps._default]\nenabled = false\n`;
     writeFileSync(configPath,settings + granted.map(id=>`\n[apps.${id}]\nenabled = true\n`).join("") + (existsSync(connections) ? "\n" + readFileSync(connections,"utf8") : ""),{mode:0o600});
-    const options: CodexEngineOptions = { workingDirectory:cwd,codexHome:home,scoped:true,authTokens:this.authTokens };
+    const telegramPath = resolve(this.root,".data/connections",context + ".telegram.json");
+    const telegramServers:TelegramMcpServers | undefined = existsSync(telegramPath) ? JSON.parse(readFileSync(telegramPath,"utf8")) : undefined;
+    const options: CodexEngineOptions = { workingDirectory:cwd,codexHome:home,scoped:true,authTokens:this.authTokens,telegramServers };
     const engine = new CodexEngineAdapter(options);
     this.contexts.set(context,engine);
     return engine;

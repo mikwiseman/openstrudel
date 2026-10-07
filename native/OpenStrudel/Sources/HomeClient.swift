@@ -118,6 +118,13 @@ final class HomeClient: ObservableObject, Identifiable {
     @Published private(set) var scheduleRuns: [ScheduleRun] = []
     @Published private(set) var selectedChatID: String?
     @Published private(set) var historyLimit = 100
+    @Published private(set) var hasEarlierMessages = false
+    @Published private(set) var isLoadingEarlier = false
+    private var olderCursor: String?
+    private var newerCursor: String?
+    private var pagedHistory = false
+    private var refreshingConversation: Int?
+    private var catalogueGeneration = 0
     @Published var syncError: String?
     @Published private(set) var isCreating = false
     @Published var draftEmployeeDomain = "personal"
@@ -437,7 +444,7 @@ final class HomeClient: ObservableObject, Identifiable {
         connectionState = .idle
         importedConversations = []
         connectionGeneration += 1
-        refreshGeneration += 1
+        resetHistory()
         if session !== URLSession.shared { session.invalidateAndCancel() }
         session = .shared
         token = nil
@@ -487,6 +494,7 @@ final class HomeClient: ObservableObject, Identifiable {
     func load(quiet: Bool = false) async {
         guard !isLoading, acceptsOperations else { return }
         let generation = connectionGeneration
+        let catalogue = catalogueGeneration
         guard isConfigured else {
             if !quiet { errorMessage = "Подключитесь к своему Mac или серверу через приглашение." }
             return
@@ -506,16 +514,19 @@ final class HomeClient: ObservableObject, Identifiable {
             }
             guard generation == connectionGeneration else { return }
             connectionState = .connected
-            if profiles != loadedProfiles.profiles {
-                profiles = loadedProfiles.profiles
-                defaults.set(try? JSONEncoder().encode(profiles), forKey: "openstrudel.employeeCatalog")
+            if catalogue == catalogueGeneration {
+                if profiles != loadedProfiles.profiles {
+                    profiles = loadedProfiles.profiles
+                    defaults.set(try? JSONEncoder().encode(profiles), forKey: "openstrudel.employeeCatalog")
+                }
+                importedConversations = loadedProfiles.importedConversations ?? []
             }
-            importedConversations = loadedProfiles.importedConversations ?? []
             // Publish employees before waiting for provider state.
             async let integrations: TelegramEnvelope? = try? request("/v1/integrations")
             async let account = loadOpenAIAccount()
             if let selectedProfileID, !isEmployeeDraft, !profiles.contains(where: { $0.id == selectedProfileID }) {
                 self.selectedProfileID = nil
+                resetHistory(); messages = []; selectedChatID = nil; conversationID = nil
                 defaults.removeObject(forKey: "openstrudel.profileID")
             }
             homeUnreachable = false
@@ -676,20 +687,32 @@ final class HomeClient: ObservableObject, Identifiable {
 
     func refreshConversation() async {
         guard !isEmployeeDraft else { return }
-        await checkPendingRequests()
         let profileID = selectedProfileID
-        refreshGeneration += 1
         let generation = refreshGeneration
+        guard refreshingConversation != generation else { return }
+        refreshingConversation = generation
+        defer { if refreshingConversation == generation { refreshingConversation = nil } }
+        await checkPendingRequests()
+        guard generation == refreshGeneration else { return }
         do {
             let path = selectedChatID.map { "/v1/conversations/" + $0 } ?? profileID.map { "/v1/agents/" + $0 + "/conversation" } ?? "/v1/conversation"
-            async let chat: ConversationEnvelope = request(path + "?limit=" + String(historyLimit))
-            async let people: ProfilesEnvelope = request("/v1/profiles")
-            let (envelope, loadedProfiles) = try await (chat, people)
+            let limit = pagedHistory || messages.isEmpty ? 50 : historyLimit
+            var query = "?page=true&limit=" + String(limit)
+            if pagedHistory, let newerCursor { query += "&after=" + newerCursor }
+            let pending = messages.filter { $0.status == "queued" || $0.status == "running" }.map(\.id)
+            if !pending.isEmpty { query += "&watch=" + pending.prefix(200).joined(separator: ",") }
+            let envelope: ConversationEnvelope = try await request(path + query)
             guard generation == refreshGeneration, profileID == selectedProfileID else { return }
-            profiles = loadedProfiles.profiles
-            importedConversations = loadedProfiles.importedConversations ?? []
             conversationID = envelope.conversation.id
-            if messages != envelope.messages { messages = envelope.messages }
+            if let page = envelope.pagination {
+                if !pagedHistory { olderCursor = page.olderCursor; hasEarlierMessages = olderCursor != nil }
+                messages = MessagePages.merge(existing: pagedHistory ? messages : [], page: envelope.messages, updates: envelope.updates ?? [])
+                newerCursor = page.newerCursor
+                pagedHistory = true
+            } else {
+                if messages != envelope.messages { messages = envelope.messages }
+                hasEarlierMessages = messages.count >= limit
+            }
             let pendingCount = pendingMessages.count
             let delivered = Set(envelope.messages.compactMap(\.externalId))
             pendingMessages.removeAll { delivered.contains($0.id.uuidString) }
@@ -756,13 +779,38 @@ final class HomeClient: ObservableObject, Identifiable {
 
     func selectChat(_ id: String?) async {
         selectedChatID = id
-        historyLimit = 100
+        resetHistory()
         messages = []
         await refreshConversation()
     }
     func loadEarlierMessages() async {
-        historyLimit += 100
-        await refreshConversation()
+        guard hasEarlierMessages, !isLoadingEarlier else { return }
+        let generation = refreshGeneration
+        isLoadingEarlier = true
+        defer { if generation == refreshGeneration { isLoadingEarlier = false } }
+        if !pagedHistory {
+            historyLimit += 100
+            await refreshConversation()
+            return
+        }
+        guard let olderCursor, let conversationID else { return }
+        do {
+            let envelope: ConversationEnvelope = try await request("/v1/conversations/" + conversationID + "?page=true&limit=50&before=" + olderCursor)
+            guard generation == refreshGeneration else { return }
+            messages = MessagePages.merge(existing: messages, page: envelope.messages, prepend: true)
+            self.olderCursor = envelope.pagination?.olderCursor
+            hasEarlierMessages = self.olderCursor != nil
+            syncError = nil
+        } catch {
+            guard generation == refreshGeneration else { return }
+            syncError = "Не удалось загрузить ранние сообщения. Попробуйте ещё раз."
+        }
+    }
+
+    private func resetHistory() {
+        refreshGeneration += 1
+        historyLimit = 100; olderCursor = nil; newerCursor = nil; pagedHistory = false
+        hasEarlierMessages = false; isLoadingEarlier = false
     }
 
     func bindTelegram(chatID: String, profileID: String?) async {
@@ -801,8 +849,7 @@ final class HomeClient: ObservableObject, Identifiable {
     func selectProfile(_ profileID: String?) async {
         selectedChatID = nil
         conversationID = nil; connections = []; connectionNotice = nil; schedules = []; telegramLink = nil
-        historyLimit = 100
-        refreshGeneration += 1
+        resetHistory()
         messages = []
         interactions = []
         selectedProfileID = profileID
@@ -815,8 +862,17 @@ final class HomeClient: ObservableObject, Identifiable {
         await refreshOpenAIAccount()
     }
 
+    func deleteProfile(_ profileID: String) async throws {
+        let _: HomeActionResult = try await management("/v1/profiles/" + profileID, method: "DELETE")
+        catalogueGeneration += 1
+        profiles.removeAll { $0.id == profileID }
+        importedConversations.removeAll { $0.profileId == profileID }
+        defaults.set(try? JSONEncoder().encode(profiles), forKey: "openstrudel.employeeCatalog")
+        if selectedProfileID == profileID { await selectProfile(nil) }
+    }
+
     func beginEmployee() {
-        refreshGeneration += 1
+        resetHistory()
         selectedProfileID = "draft:" + UUID().uuidString
         selectedChatID = nil; conversationID = nil
         messages = []; interactions = []; schedules = []

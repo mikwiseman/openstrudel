@@ -25,6 +25,27 @@ it("does not resend a delivery whose response was lost",async()=>{
  await expect(a.sendMessage(-100,"Hello","same-reply")).rejects.toThrow();
  expect(fetch).toHaveBeenCalledTimes(1);
 });
+it("keeps NO_REPLY internal in groups, including replay after restart", async () => {
+ const {s,m,a,run}=setup();
+ s.bindTelegramChat("-100",s.createProfile({name:"Core",instructions:"In the group, stay silent unless addressed."}).id);
+ run.mockResolvedValue({threadId:"one",response:"NO_REPLY",events:[]});
+ const update={update_id:42,message:{message_id:42,from:{id:7,first_name:"Dasha"},chat:{id:-100,type:"group",title:"Core"},text:"See you on Monday"}};
+ await a.processUpdate(update);
+ expect(fetch).not.toHaveBeenCalled();
+ expect(s.listMessages(s.getTelegramChat("-100")!.conversationId!).map(m=>m.text)).toEqual(["See you on Monday"]);
+ await a.processUpdate(update);
+ expect(run).toHaveBeenCalledTimes(1); expect(fetch).not.toHaveBeenCalled();
+ expect(run.mock.calls[0]?.[1]).toMatchObject({profile:expect.stringContaining('Telegram group "Core"')});
+ await m.close();
+});
+it("recognizes a reply to the same bot from before the migration", async () => {
+ const {s,m,a,run}=setup(); s.setSetting("telegram.bot_username","core_bot");
+ s.bindTelegramChat("-100",s.createProfile({name:"Core"}).id);
+ await a.processUpdate({update_id:43,message:{message_id:43,from:{id:7},chat:{id:-100,type:"group"},text:"Yes",reply_to_message:{message_id:11,from:{id:123,is_bot:true,username:"core_bot"}}}});
+ expect(run.mock.calls[0]?.[0]).toContain('"replyToAssistant":true');
+ expect(run.mock.calls[0]?.[1]).toMatchObject({telegramActor:{userId:"7",chatId:"-100",messageId:"-100:43"}});
+ expect(fetch).toHaveBeenCalledTimes(1); await m.close();
+});
 it("retries a confirmed Telegram rate rejection after retry_after",async()=>{
  const {a,s}=setup();vi.useFakeTimers();
  const send=vi.fn()
@@ -51,16 +72,16 @@ it("routes replies to a delivered digest back to that employee",async()=>{
  expect(s.listConversations().filter(c=>c.externalId===`-100::employee::${baby.id}`)).toHaveLength(1);
  expect(s.getTelegramChat("-100")?.profileId).toBe(news.id);await m.close();
 });
-it("transcribes voice before submitting later text in the same chat",async()=>{
+it.each(["voice", "video_note"] as const)("transcribes %s before later text in the same chat",async(kind)=>{
  const {a,run,m,s}=setup();let finish!:(v:string)=>void;
  s.bindTelegramChat("-100",s.createProfile({name:"Voice"}).id);
  a.transcribe=()=>new Promise(r=>{finish=r;});
- vi.stubGlobal("fetch",vi.fn(async(url:string)=>url.includes("/file/") ? new Response(new Uint8Array([1,2])) : Response.json({ok:true,result:url.endsWith("getFile")?{file_path:"voice/file.ogg",file_size:2}:{message_id:99}})));
- const first=a.processUpdate({update_id:3,message:{message_id:3,from:{id:7},chat:{id:-100,type:"group"},voice:{file_id:"voice",file_size:2}}});
+ vi.stubGlobal("fetch",vi.fn(async(url:string)=>url.includes("/file/") ? new Response(new Uint8Array([1,2])) : Response.json({ok:true,result:url.endsWith("getFile")?{file_path:"voice/file.mp4",file_size:2}:{message_id:99}})));
+ const first=a.processUpdate({update_id:3,message:{message_id:3,from:{id:7},chat:{id:-100,type:"group"},[kind]:{file_id:"voice",file_size:2}}});
  await vi.waitFor(()=>expect(finish).toBeDefined());
  const second=a.processUpdate({update_id:4,message:{message_id:4,from:{id:7},chat:{id:-100,type:"group"},text:"Second"}});
  finish("First");await Promise.all([first,second]);
- expect(run.mock.calls.map(c=>c[0])).toEqual(["First","Second"]);await m.close();
+ expect(run.mock.calls.map(c=>c[0])).toEqual([expect.stringContaining("\n\nFirst"),expect.stringContaining("\n\nSecond")]);await m.close();
 });
 
 it("delivers an addressed employee's approval to its originating private chat", async () => {

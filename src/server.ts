@@ -1,3 +1,4 @@
+import { deleteEmployee } from "./employee-delete.js";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { isIP, type AddressInfo } from "node:net";
@@ -304,7 +305,7 @@ export class HttpApi {
       }
       if (request.method === "GET" && path === "/v1/conversation") {
         const conversation = this.store.primaryConversation();
-        this.send(response, 200, { conversation, messages: this.store.listMessages(conversation.id, messageLimit), interactions: this.messages.interactions.list(conversation.id) });
+        this.send(response, 200, { conversation, ...(url.searchParams.get("page") === "true" ? this.store.messagePage(conversation.id, url.searchParams) : { messages: this.store.listMessages(conversation.id, messageLimit) }), interactions: this.messages.interactions.list(conversation.id) });
         return;
       }
       const agentConversationMatch = path.match(/^\/v1\/agents\/([^/]+)\/conversation$/);
@@ -315,7 +316,7 @@ export class HttpApi {
           return;
         }
         const conversation = this.store.profileConversation(profile.id);
-        this.send(response, 200, { conversation, messages: this.store.listMessages(conversation.id, messageLimit), interactions: this.messages.interactions.list(conversation.id) });
+        this.send(response, 200, { conversation, ...(url.searchParams.get("page") === "true" ? this.store.messagePage(conversation.id, url.searchParams) : { messages: this.store.listMessages(conversation.id, messageLimit) }), interactions: this.messages.interactions.list(conversation.id) });
         return;
       }
       if (request.method === "GET" && path === "/v1/conversations") {
@@ -378,6 +379,11 @@ export class HttpApi {
         return;
       }
       const profileMatch = path.match(/^\/v1\/profiles\/([^/]+)$/);
+      if (request.method === "DELETE" && profileMatch) {
+        if (!canManageAccount) throw new HomeError("Удалить сотрудника может владелец устройства.", 403);
+        deleteEmployee(this.store, decodeURIComponent(profileMatch[1]!));
+        this.send(response, 200, { ok: true }); return;
+      }
       if (request.method === "PATCH" && profileMatch) {
         const body = await this.body(request);
         const name = String(body.name ?? "").trim();
@@ -429,7 +435,7 @@ export class HttpApi {
       if(request.method==="GET" && singleConversation) {
         const conversation=this.store.getConversation(singleConversation[1]!);
         if(!conversation) throw new Error("Чат не найден");
-        this.send(response,200,{conversation,messages:this.store.listMessages(conversation.id,messageLimit),interactions:this.messages.interactions.list(conversation.id)});return;
+        this.send(response,200,{conversation,...(url.searchParams.get("page") === "true" ? this.store.messagePage(conversation.id, url.searchParams) : { messages: this.store.listMessages(conversation.id, messageLimit) }),interactions:this.messages.interactions.list(conversation.id)});return;
       }
       if (request.method === "DELETE" && path === "/v1/integrations/telegram") {
         this.send(response, 200, { telegram: this.telegram.disconnect() });

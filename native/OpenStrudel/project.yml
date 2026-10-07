@@ -16,7 +16,7 @@ settings:
   SWIFT_VERSION: "6.0"
   DEVELOPMENT_TEAM: R4A779QVVY
   MARKETING_VERSION: "1.0"
-  CURRENT_PROJECT_VERSION: 16
+  CURRENT_PROJECT_VERSION: 17
   ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
 targets:
   OpenStrudel iOS:
@@ -144,6 +144,7 @@ targets:
     platform: macOS
     sources:
       - path: Tests
+      - path: Sources/MessagePages.swift
       - path: Sources/MessageContent.swift
       - path: Sources/AppTheme.swift
       - path: Sources/ChatMedia.swift

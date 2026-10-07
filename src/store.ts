@@ -105,6 +105,7 @@ export class Store {
     if (!columns.has("imported")) this.db.exec("ALTER TABLE messages ADD COLUMN imported INTEGER NOT NULL DEFAULT 0");
     if (!columns.has("attachments_json")) this.db.exec("ALTER TABLE messages ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]'");
     if (!columns.has("hidden")) this.db.exec("ALTER TABLE messages ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0");
+    this.db.exec("CREATE INDEX IF NOT EXISTS messages_page_idx ON messages(conversation_id, hidden, created_at)");
     const conversationColumns = new Set((this.db.prepare("PRAGMA table_info(conversations)").all() as Row[]).map(r => String(r.name)));
     if (!conversationColumns.has("profile_id")) this.db.exec("ALTER TABLE conversations ADD COLUMN profile_id TEXT REFERENCES employee_profiles(id)");
     this.db.exec(`CREATE TABLE IF NOT EXISTS telegram_chats (
@@ -343,6 +344,32 @@ export class Store {
   listMessages(conversationId: string, limit = 50): Message[] {
     const rows = this.db.prepare("SELECT * FROM messages WHERE conversation_id = ? AND hidden=0 ORDER BY created_at DESC, rowid DESC LIMIT ?").all(conversationId, limit) as Row[];
     return rows.reverse().map((row) => this.mapMessage(row));
+  }
+
+  /** Keyset pagination: identical timestamps are disambiguated by SQLite's rowid. */
+  messagePage(conversationId: string, query: URLSearchParams) {
+    const limit = Math.min(100, Math.max(1, Math.trunc(Number(query.get("limit")) || 50)));
+    const before = query.get("before"), after = query.get("after");
+    if (before && after) throw new Error("Выберите одно направление истории");
+    const cursor = before || after;
+    const edge = cursor ? this.db.prepare("SELECT rowid,created_at FROM messages WHERE id=? AND conversation_id=? AND hidden=0").get(cursor, conversationId) as Row | undefined : undefined;
+    if (cursor && !edge) throw new Error("История изменилась. Откройте чат заново.");
+    const direction = after ? "ASC" : "DESC";
+    const rows = this.db.prepare(`SELECT * FROM messages WHERE conversation_id=? AND hidden=0
+      ${edge ? `AND (created_at,rowid) ${after ? ">" : "<"} (?,?)` : ""}
+      ORDER BY created_at ${direction},rowid ${direction} LIMIT ?`)
+      .all(conversationId, ...(edge ? [String(edge.created_at), Number(edge.rowid)] : []), limit + 1) as Row[];
+    const hasMore = rows.length > limit;
+    const page = rows.slice(0, limit);
+    if (!after) page.reverse();
+    // Pending rows may finish after they scroll out of the latest page.
+    const watch = [...new Set((query.get("watch") ?? "").split(",").filter(Boolean))].slice(0, 200);
+    const updates = watch.length ? (this.db.prepare(`SELECT * FROM messages WHERE conversation_id=? AND hidden=0 AND id IN (${watch.map(() => "?").join(",")})`).all(conversationId, ...watch) as Row[]).map(row => this.mapMessage(row)) : [];
+    return { messages: page.map(row => this.mapMessage(row)), updates, pagination: {
+      olderCursor: !after && hasMore ? String(page[0]!.id) : null,
+      newerCursor: page.length ? String(page.at(-1)!.id) : after ?? null,
+      hasMore: after ? hasMore : false,
+    } };
   }
 
   createProfile(input: { name?: string; instructions?: string; capabilities?: string[]; model?: string; tokenLimit?: number; domain?: EmployeeProfile["domain"]; purpose?: string; appearance?: AgentAppearance }): EmployeeProfile {

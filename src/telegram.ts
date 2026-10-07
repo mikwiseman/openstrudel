@@ -11,7 +11,7 @@ export interface TelegramUpdate {
   update_id: number;
   my_chat_member?: { chat: { id: number | string; title?: string; type?: string }; from: { id: number }; date: number; old_chat_member: { status: string }; new_chat_member: { status: string; is_member?: boolean } };
   callback_query?: { id: string; from?: { id:number }; data?: string; message?: { message_id: number; chat: { id: number | string } } };
-  message?: { from?: { id:number; first_name?:string; last_name?:string }; date?:number; migrate_to_chat_id?:number|string; migrate_from_chat_id?:number|string; voice?:TelegramFile; audio?:TelegramFile; document?:TelegramFile & {file_name?:string;mime_type?:string}; photo?:TelegramFile[]; caption?:string; reply_to_message?: { message_id: number }; message_id: number; text?: string; chat: { id: number | string; title?: string; type?: string } };
+  message?: { from?: { id:number; first_name?:string; last_name?:string }; date?:number; migrate_to_chat_id?:number|string; migrate_from_chat_id?:number|string; voice?:TelegramFile; audio?:TelegramFile; video_note?:TelegramFile; document?:TelegramFile & {file_name?:string;mime_type?:string}; photo?:TelegramFile[]; caption?:string; reply_to_message?: { message_id: number; from?: { id: number; is_bot?: boolean; username?: string } }; message_id: number; text?: string; chat: { id: number | string; title?: string; type?: string } };
 }
 type TelegramFile = {file_id:string;file_size?:number};
 
@@ -258,7 +258,7 @@ export class TelegramAdapter {
       this.store.migrateTelegramGroup(oldId, newId);
       this.store.markTelegramUpdate(update.update_id); return;
     }
-    if (!message || (!message.text?.trim() && !message.voice && !message.audio && !message.document && !message.photo?.length)) { this.store.markTelegramUpdate(update.update_id); return; }
+    if (!message || (!message.text?.trim() && !message.voice && !message.audio && !message.video_note && !message.document && !message.photo?.length)) { this.store.markTelegramUpdate(update.update_id); return; }
     const chatId = String(message.chat.id); let text = (message.text ?? message.caption)?.trim() ?? "";
     const groupStart = text.match(/^\/start@([\w]+)\s+choose$/i);
     if (groupStart && Number(chatId) < 0 && groupStart[1]!.toLowerCase() === (this.bot?.username ?? this.store.getSetting("telegram.bot_username"))?.toLowerCase()) {
@@ -307,7 +307,7 @@ export class TelegramAdapter {
     const replyConversation=message.reply_to_message ? this.replyConversation(chatId,message.reply_to_message.message_id) : null;
     const conversation = replyConversation ?? this.store.getOrCreateConversation({ channel: "telegram", externalId: chatId, title: message.chat.title ?? "Telegram " + chatId });
     const prepared=(this.preparations.get(chatId) ?? Promise.resolve({text:""})).catch(()=>({text:""})).then(async()=>{
-      const media=message.voice ?? message.audio ?? message.document ?? message.photo?.at(-1);
+      const media=message.voice ?? message.audio ?? message.video_note ?? message.document ?? message.photo?.at(-1);
       if(!media) return {text};
       if((media.file_size ?? 0)>20_000_000) throw new Error("Отправьте файл до 20 МБ.");
       const file=await this.call<{file_path:string;file_size?:number}>("getFile",{file_id:media.file_id});
@@ -316,7 +316,7 @@ export class TelegramAdapter {
       if(!response.ok) throw new Error("Не удалось скачать вложение");
       const bytes=new Uint8Array(await response.arrayBuffer());
       if(bytes.length>20_000_000) throw new Error("Отправьте файл до 20 МБ.");
-      if(message.voice || message.audio) return {text:[text,await this.transcribe(bytes,file.file_path.split(".").at(-1))].filter(Boolean).join("\n")};
+      if(message.voice || message.audio || message.video_note) return {text:[text,await this.transcribe(bytes,file.file_path.split(".").at(-1))].filter(Boolean).join("\n")};
       const hex=sha256(`${chatId}:${message.message_id}:${media.file_id}`).slice(0,32);
       const id=`${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
       return {text,uploads:[{id,name:message.document?.file_name ?? "photo.jpg",mimeType:message.document ? message.document.mime_type ?? "application/octet-stream" : "image/jpeg",contentBase64:Buffer.from(bytes).toString("base64")}]};
@@ -324,8 +324,10 @@ export class TelegramAdapter {
     this.preparations.set(chatId,prepared);
     try {
     const input = await prepared;text=input.text;
-    const result: MessageResult = await this.messages.handle({ channel: "telegram", conversationId: conversation.id, text, uploads:input.uploads, author:[message.from?.first_name,message.from?.last_name].filter(Boolean).join(" ") || undefined, externalId: chatId + ":" + String(message.message_id), externalChatId: chatId, title: message.chat.title ?? "Telegram " + chatId });
-    try { await this.sendMessage(message.chat.id, result.text,`reply:${result.messageId}`); await this.sendFiles(message.chat.id,result.attachments,`reply:${result.messageId}`); }
+    const replyAuthor = message.reply_to_message?.from;
+    const replyToAssistant = Boolean(replyConversation || replyAuthor && (replyAuthor.id === this.bot?.id || replyAuthor.is_bot && replyAuthor.username?.toLowerCase() === (this.bot?.username ?? this.store.getSetting("telegram.bot_username"))?.toLowerCase()));
+    const result: MessageResult = await this.messages.handle({ channel: "telegram", conversationId: conversation.id, text, uploads:input.uploads, replyToAssistant, telegramSenderId:message.from ? String(message.from.id) : undefined, author:[message.from?.first_name,message.from?.last_name].filter(Boolean).join(" ") || undefined, externalId: chatId + ":" + String(message.message_id), externalChatId: chatId, title: message.chat.title ?? "Telegram " + chatId });
+    try { if (Number(chatId) >= 0 || result.text.trim() !== "NO_REPLY") { await this.sendMessage(message.chat.id, result.text,`reply:${result.messageId}`); await this.sendFiles(message.chat.id,result.attachments,`reply:${result.messageId}`); } }
     catch { this.lastError="Ответ сохранён в приложении; доставку в Telegram нужно проверить"; }
     } catch (error) {
       await this.sendMessage(message.chat.id, error instanceof Error ? error.message : "Не удалось завершить ответ",`error:${update.update_id}`);

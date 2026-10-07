@@ -71,6 +71,8 @@ export interface CodexEngine {
       profile?: string | null;
       model?: string | null;
       images?: string[];
+      /** Verified channel identity, supplied only by the Telegram adapter. */
+      telegramActor?: { userId: string; chatId: string; messageId: string };
       tools?: { definitions: DynamicTool[]; call: (name: string, args: Record<string, unknown>) => Promise<unknown> };
       onRequest?: (method: string, params: Record<string, any>) => Promise<unknown>;
     },
@@ -96,6 +98,9 @@ export interface MessageInput {
   /** Native clients may pin a message to an employee. Telegram uses the router. */
   profile?: string;
   author?: string;
+  /** Trusted Telegram delivery metadata, not accepted from the public message API. */
+  replyToAssistant?: boolean;
+  telegramSenderId?: string;
   /** Background runs cannot wait forever for an interactive approval. */
   scheduled?: boolean;
   attachments?: string[];
