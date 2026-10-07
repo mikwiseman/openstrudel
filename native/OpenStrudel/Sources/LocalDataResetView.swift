@@ -57,7 +57,7 @@ struct LocalDataResetConfirmation: View {
         }.frame(width: 550)
         .sheet(item: $backup) { client in
             NavigationStack {
-                ScrollView { AgentTransferSettings(localOnly: true).environmentObject(client).padding(24) }
+                ScrollView { AgentTransferSettings(localBackupOnly: true).environmentObject(client).padding(24) }
                     .navigationTitle("Копия сотрудников этого Mac")
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { backup = nil } } }
             }.frame(width: 560, height: 450)

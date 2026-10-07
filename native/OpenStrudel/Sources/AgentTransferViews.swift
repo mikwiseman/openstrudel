@@ -26,7 +26,7 @@ struct AgentTeamDocument: FileDocument {
 }
 
 struct AgentTransferSettings: View {
-    var localOnly = false
+    var localBackupOnly = false
     @EnvironmentObject private var client: HomeClient
     @State private var document: AgentTeamDocument?
     @State private var showingExport = false
@@ -52,7 +52,7 @@ struct AgentTransferSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            if client.devices.count > 1 && !localOnly {
+            if client.devices.count > 1 && !localBackupOnly {
                 Picker("Сотрудники устройства", selection: $deviceID) {
                     ForEach(client.devices) { Text($0.name).tag($0.id) }
                 }.disabled(working)
@@ -72,8 +72,10 @@ struct AgentTransferSettings: View {
                 HStack(spacing: 12) {
                     Button("Сохранить копию…", action: export).buttonStyle(.borderedProminent)
                         .disabled(working || protected && password.count < 12).accessibilityIdentifier("exportAgents")
-                    Button("Восстановить из копии…") { error = nil; notice = nil; showingImport = true }
-                        .disabled(working).accessibilityIdentifier("importAgents")
+                    if !localBackupOnly {
+                        Button("Восстановить из копии…") { error = nil; notice = nil; showingImport = true }
+                            .disabled(working).accessibilityIdentifier("importAgents")
+                    }
                 }
             } else {
                 Text(client.health == nil || client.homeUnreachable ? "Для копии нужно подключение к устройству с сотрудниками." : "Копии доступны владельцу устройства. Проверьте доступ и версию OpenStrudel.")
