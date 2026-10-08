@@ -20,6 +20,7 @@ import { WebAccess, sameOrigin } from "./web-access.js";
 import type { Accounts } from "./accounts.js";
 import { hostingOrigin } from "./hosting-origin.js";
 import { previewExtension } from "./extensions.js";
+import { approvalSetting, isApprovalMode, readApprovalMode } from "./approval-mode.js";
 
 const MAX_BODY_BYTES = 1_048_576;
 
@@ -153,6 +154,7 @@ export class HttpApi {
       const localExecution = request.headers["x-openstrudel-executor"] === this.executorKey && ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(request.socket.remoteAddress ?? "");
       const canManageAccount = localExecution ? request.headers["x-openstrudel-owner"] === "1" : webSession ? webSession.owner : !paired || owner;
       if (path.startsWith("/v1/extensions") && request.method !== "GET" && !canManageAccount) throw new HomeError("Расширения подключает владелец устройства.",403);
+      if (path === "/v1/settings/approvals" && request.method !== "GET" && !canManageAccount) throw new HomeError("Режим действий меняет владелец устройства.",403);
       if (!localExecution && request.method !== "GET" && path !== "/v1/home/transfer" && path !== "/v1/home/poll") {
         if (this.home.state.role === "primary" && this.store.getSetting("home.transfer")) throw new HomeError("Передаём управление. Изменения будут доступны после завершения.", 409);
         this.activeWrites++; counted = true;
@@ -185,6 +187,16 @@ export class HttpApi {
       if (mobileClient && request.method === "DELETE") {
         if (!canManageAccount) throw new HomeError("Управление доступом доступно владельцу.", 403);
         this.mobile.revokeClient(mobileClient[1]!); this.send(response, 200, this.mobile.status()); return;
+      }
+      if (path === "/v1/settings/approvals" && ["GET", "POST"].includes(request.method ?? "")) {
+        if (request.method === "POST") {
+          const input = await this.body(request);
+          if (!isApprovalMode(input.mode)) throw new HomeError("Выберите режим действий.");
+          if (input.mode === "approve_all" && readApprovalMode(this.store.getSetting(approvalSetting)) !== "approve_all" && input.confirm !== true)
+            throw new HomeError("Подтвердите выполнение действий без дополнительных разрешений.",409);
+          this.store.setSetting(approvalSetting, input.mode);
+        }
+        this.send(response,200,{mode:readApprovalMode(this.store.getSetting(approvalSetting)),canManage:canManageAccount}); return;
       }
       if (path === "/v1/accounts" && request.method === "GET") {
         this.send(response, 200, { accounts: await this.accounts?.list(url.searchParams.get("refresh") === "true") ?? [], canManage: canManageAccount }); return;
@@ -417,7 +429,8 @@ export class HttpApi {
       const bindingMatch=path.match(/^\/v1\/integrations\/telegram\/chats\/(-?\d+)$/);
       if(request.method==="PATCH" && bindingMatch) {
         const body=await this.body(request);
-        this.telegram.bindChat(bindingMatch[1]!,body.profileId == null ? null : String(body.profileId));
+        if (typeof body.enabled === "boolean") this.telegram.setGroupEnabled(bindingMatch[1]!, body.enabled);
+        else this.telegram.bindChat(bindingMatch[1]!,body.profileId == null ? null : String(body.profileId));
         this.send(response,200,{telegram:this.telegram.status()}); return;
       }
       const historyMatch=path.match(/^\/v1\/conversations\/([^/]+)\/history$/);
@@ -459,8 +472,8 @@ export class HttpApi {
         if (request.method === "GET" && path === "/v1/extensions/contexts") {
           const context=this.messages.contextFor(conversationId);
           const peers=new Set(this.store.listConversations().filter(c=>this.messages.contextFor(c.id)===context).map(c=>c.profileId ?? "main"));
-          const sharedNotice=peers.size>1 ? "Возможности общие для " + peers.size + " сотрудников с этой рабочей папкой." : undefined;
-          const contexts = [{id:conversation.id,title:conversation.channel === "telegram" ? conversation.title ?? "Группа Telegram" : "Личный чат",isGroup:conversation.channel === "telegram",sharedNotice}];
+          const sharedNotice=peers.size>1 ? "Общие подключения: " + peers.size + " сотрудников. Изменения будут доступны каждому из них." : undefined;
+          const contexts = [{id:conversation.id,title:context.startsWith("group-") ? conversation.title ?? "Группа Telegram" : "В приложении",isGroup:context.startsWith("group-"),sharedNotice}];
           for (const chat of this.store.telegramChats()) if (Number(chat.chatId)<0 && chat.profileId===conversation.profileId && chat.conversationId && !contexts.some(c=>c.id===chat.conversationId)) contexts.push({id:chat.conversationId,title:chat.title,isGroup:true,sharedNotice:undefined});
           this.send(response,200,{contexts}); return;
         }

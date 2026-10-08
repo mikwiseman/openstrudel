@@ -43,6 +43,15 @@ it("previews a plugin's referenced MCP file and rejects manifest paths outside t
   }
 });
 
+it("uses plugin MCP identifiers rather than display descriptions in approval defaults",()=>{
+  const {home,cwd}=fixture();
+  writeFileSync(join(home,"config.toml"),'[plugins."office@openstrudel-local"]\nenabled = true\n[plugins."external@official"]\nenabled = true\n');
+  const record=join(home,"openstrudel-packages/plugins/office");mkdirSync(record,{recursive:true});
+  writeFileSync(join(record,".openstrudel-package.json"),JSON.stringify({services:["calendar · calendar.example","local-probe · программа на устройстве"]}));
+  const manager=new CodexExtensions({home,cwd,client:async()=>{throw new Error("No RPC needed");},changed:async()=>{},idle:()=>true});
+  expect(manager.pluginServers()).toEqual({"office@openstrudel-local":["calendar","local-probe"]});
+});
+
 it("keeps MCP credentials private, persists explicit config, blocks built-ins and rolls back failed reloads",async()=>{
   const {home,cwd}=fixture(),rpc={request:vi.fn(async()=>({}))},changed=vi.fn(async()=>{});
   const manager=new CodexExtensions({home,cwd,client:async()=>rpc as unknown as CodexRpc,changed,idle:()=>true,reservedServers:["company"]});

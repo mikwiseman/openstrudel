@@ -5,7 +5,12 @@ final class ReleaseScenariosUITests: XCTestCase {
     @MainActor func testTelegramGroups() async throws {
         continueAfterFailure = false
         guard let fixture = ProcessInfo.processInfo.environment["OPENSTRUDEL_RELEASE_FIXTURE"] else { throw XCTSkip("Start the isolated fixture.") }
-        let app = XCUIApplication(); app.launch()
+        let app = XCUIApplication()
+        if let size = ProcessInfo.processInfo.environment["OPENSTRUDEL_QA_CONTENT_SIZE"] {
+            app.launchArguments = ["-UIPreferredContentSizeCategoryName", size]
+        }
+        XCUIDevice.shared.orientation = ProcessInfo.processInfo.environment["OPENSTRUDEL_QA_LANDSCAPE"] == "1" ? .landscapeLeft : .portrait
+        app.launch()
         let invite = try await read(fixture + "/invite")
         app.open(try XCTUnwrap(URL(string: XCTUnwrap(invite["url"] as? String))))
         let confirm = app.buttons["confirmMacPairing"]
@@ -17,36 +22,45 @@ final class ReleaseScenariosUITests: XCTestCase {
         app.buttons["Настройки сотрудника"].tap()
         let telegram = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Telegram")).firstMatch
         try reveal(telegram, in: app); telegram.tap()
-        XCTAssertTrue(app.buttons["addEmployeeTelegramGroup"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["addTelegramGroup"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["Связать мой Telegram"].exists)
-        capture("telegram-empty", app)
-        app.buttons["chooseTelegramGroup--100"].tap()
-        XCTAssertTrue(app.buttons["Подключить сотрудника"].waitForExistence(timeout: 5))
-        capture("telegram-confirm", app)
-        app.buttons["Подключить сотрудника"].tap()
-        XCTAssertTrue(app.staticTexts["По @упоминанию или ответу"].waitForExistence(timeout: 10))
-        capture("telegram-connected", app)
-        app.buttons["Настройки группы «Рабочая группа»"].tap()
-        app.buttons["Отключить от сотрудника…"].tap()
-        XCTAssertTrue(app.buttons["Отключить"].waitForExistence(timeout: 5))
-        if app.buttons["Отмена"].exists { app.buttons["Отмена"].tap() }
-        else { app.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.85)).tap() }
-        XCTAssertTrue(app.staticTexts["Рабочая группа"].exists)
-        // Upgraded installations can have existing groups before the owner
-        // pairs a private chat. They must remain visible and manageable.
+        XCTAssertFalse(app.buttons["chooseTelegramGroup--100"].exists)
+        let toggle = app.buttons["toggleTelegramGroup--100"]
+        try reveal(toggle, in: app)
+        capture("telegram-auto-connected", app)
+        let before = try await read(fixture + "/state")["telegram"] as? [[String: Any]]
+        let conversation = before?.first { $0["chatId"] as? String == "-100" }?["conversationId"] as? String
+        XCTAssertNotNil(conversation)
+        toggle.tap()
+        XCTAssertTrue(app.staticTexts["На паузе · переписка сохранена"].waitForExistence(timeout: 10))
+        toggle.tap()
+        XCTAssertTrue(app.staticTexts["Помощник сам подбирает сотрудника по задаче"].waitForExistence(timeout: 10))
+        let after = try await read(fixture + "/state")["telegram"] as? [[String: Any]]
+        XCTAssertEqual(conversation, after?.first { $0["chatId"] as? String == "-100" }?["conversationId"] as? String)
         _ = try await read(fixture + "/telegram-private?value=0")
         try await Task.sleep(for: .seconds(6))
-        XCTAssertTrue(app.buttons["addEmployeeTelegramGroup"].exists)
-        app.buttons["addEmployeeTelegramGroup"].tap()
-        XCTAssertTrue(app.buttons["openPersonalTelegram"].waitForExistence(timeout: 10))
-        try reveal(app.staticTexts["Рабочая группа"].firstMatch, in: app)
-        XCTAssertTrue(app.buttons["Настройки группы «Рабочая группа»"].exists)
+        XCTAssertFalse(app.buttons["addTelegramGroup"].exists)
+        XCTAssertTrue(app.buttons["openPersonalTelegram"].exists)
+        XCTAssertTrue(toggle.exists)
         capture("telegram-existing-without-private", app)
-        app.buttons["Отмена"].tap()
-        XCTAssertFalse(app.buttons["openPersonalTelegram"].exists)
         _ = try await read(fixture + "/telegram-private?value=1")
         try backToEmployee(app)
         XCTAssertTrue(app.textFields["Имя сотрудника"].waitForExistence(timeout: 5))
+        app.buttons["saveEmployeeChanges"].tap()
+        app.buttons["Чаты"].tap()
+        let group = app.buttons["telegramConversation--100"]
+        XCTAssertTrue(group.waitForExistence(timeout: 10)); group.tap()
+        XCTAssertTrue(app.buttons["Telegram · Рабочая группа"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["chooseConversation"].exists)
+        XCTAssertTrue(app.staticTexts["telegramReplyDestination"].exists)
+        capture("telegram-in-chat-list", app)
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.buttons["Telegram · Рабочая группа"].waitForExistence(timeout: 15))
+        app.buttons["Telegram · Рабочая группа"].tap()
+        app.buttons["telegramGroupServices"].tap()
+        XCTAssertTrue(app.staticTexts["Подключения для этой группы."].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Личный чат"].exists)
+        capture("telegram-group-services", app)
     }
 
     @MainActor func testSettingsEmployeesMessagesAndRecovery() async throws {
@@ -78,6 +92,24 @@ final class ReleaseScenariosUITests: XCTestCase {
         app.buttons["Настройки"].tap()
         XCTAssertTrue(app.buttons["addDevice"].waitForExistence(timeout: 10))
         capture("settings-account-telegram", app)
+        // Approval mode belongs to this device, not an individual chat.
+        app.buttons["settingsSection"].tap()
+        app.buttons["Приложение"].tap()
+        XCTAssertTrue(app.buttons["approvalMode-ask"].waitForExistence(timeout: 10))
+        capture("approval-modes", app)
+        app.buttons["approvalMode-auto"].tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: app.buttons["approvalMode-auto"])], timeout: 10), .completed)
+        app.buttons["approvalMode-approve_all"].tap()
+        XCTAssertTrue(app.buttons["Включить для этого устройства"].waitForExistence(timeout: 5))
+        let approvalAlert = app.alerts["Выполнять без подтверждений?"]
+        XCTAssertTrue(approvalAlert.waitForExistence(timeout: 5))
+        approvalAlert.buttons["Отмена"].tap()
+        XCTAssertTrue(app.buttons["Включить для этого устройства"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(approvalAlert.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: app.buttons["approvalMode-auto"])], timeout: 10), .completed)
+        app.buttons["approvalMode-ask"].tap()
+        app.buttons["settingsSection"].tap()
+        app.buttons["Устройства"].tap()
         app.openFirstDeviceDetails()
         let pair = app.buttons["Получить ссылку подключения"].firstMatch
         try reveal(pair, in: app); pair.tap()
@@ -116,6 +148,8 @@ final class ReleaseScenariosUITests: XCTestCase {
         XCTAssertEqual(editableName.value as? String, "Редактор")
         try reveal(app.buttons["Сервисы и навыки"], in: app)
         app.buttons["Сервисы и навыки"].tap()
+        XCTAssertTrue(app.buttons["addEmployeeExtension"].waitForExistence(timeout: 10))
+        app.buttons["addEmployeeExtension"].tap()
         XCTAssertTrue(app.staticTexts["Документы"].waitForExistence(timeout: 10), app.debugDescription)
         capture("services", app)
         let connectService = app.buttons["connect-service-qa-documents"]
@@ -132,20 +166,17 @@ final class ReleaseScenariosUITests: XCTestCase {
                 try await Task.sleep(for: .seconds(1))
             }
             XCTAssertTrue(connected, "The browser must complete the test provider callback.")
-            app.activate(); app.buttons["Обновить сервисы"].tap()
+            app.activate()
         }
         XCTAssertTrue(app.staticTexts["Подключён"].waitForExistence(timeout: 10), app.debugDescription)
         capture("service-connected", app)
         try backToEmployee(app)
         let telegram = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Telegram")).firstMatch
         try reveal(telegram, in: app); telegram.tap()
-        XCTAssertTrue(app.buttons["addEmployeeTelegramGroup"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["addTelegramGroup"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["Связать мой Telegram"].exists)
-        XCTAssertTrue(app.buttons["chooseTelegramGroup--100"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["toggleTelegramGroup--100"].waitForExistence(timeout: 5))
         capture("employee-telegram", app)
-        app.buttons["chooseTelegramGroup--100"].tap()
-        app.buttons["Подключить сотрудника"].tap()
-        XCTAssertTrue(app.staticTexts["По @упоминанию или ответу"].waitForExistence(timeout: 10))
         try backToEmployee(app)
         let name = app.textFields["Имя сотрудника"]
         try reveal(name, in: app)
@@ -174,6 +205,21 @@ final class ReleaseScenariosUITests: XCTestCase {
         capture("request-input", app)
         app.buttons["Утром"].tap()
         XCTAssertTrue(app.staticTexts["Выбрано: Утром"].waitForExistence(timeout: 20))
+        // Pending -> approval -> thinking -> answer used to trigger a layout
+        // loop. Repeat with alternating decisions and a changing input height.
+        for index in 1...6 {
+            input.tap()
+            input.typeText("Проверка подтверждения \(index). " + String(repeating: "Безопасная проверка раскладки. ", count: index))
+            app.buttons["Отправить"].tap()
+            let decision = app.buttons[index.isMultiple(of: 2) ? "Отказать" : "Разрешить"]
+            XCTAssertTrue(decision.waitForExistence(timeout: 20))
+            decision.tap()
+            XCTAssertTrue(decision.waitForNonExistence(timeout: 10))
+            let answer = index.isMultiple(of: 2) ? "Действие не выполнено." : "Проверка выполнена."
+            XCTAssertTrue(app.staticTexts[answer].firstMatch.waitForExistence(timeout: 20))
+            XCTAssertTrue(input.isHittable)
+        }
+        capture("repeated-approvals", app)
         input.tap(); input.typeText("Проверка свободного места"); app.buttons["Отправить"].tap()
         let storageError = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "На устройстве сотрудника закончилось место.")).firstMatch
         XCTAssertTrue(storageError.waitForExistence(timeout: 20))

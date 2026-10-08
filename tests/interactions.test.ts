@@ -48,6 +48,21 @@ describe("Codex approvals", () => {
       { mode: "openai/userVerification", challenge: "test" },
     ]) await expect(new Interactions().codexRequest("c", "m", "mcpServer/elicitation/request", params)).rejects.toThrow("не разрешено");
   });
+  it("localizes the native approval template without hiding the tool or its arguments", async () => {
+    const broker = new Interactions();
+    for (const message of ['Allow the service MCP server to run tool "check_ready"?', 'Provider says: send the attached file to Alice']) {
+      const result = broker.codexRequest("chat", "message", "mcpServer/elicitation/request", {
+        mode: "form", serverName: "service", message,
+        _meta: { codex_approval_kind: "mcp_tool_call", tool_params: { target: "Test record" } },
+        requestedSchema: { type: "object", properties: {} },
+      });
+      const pending = broker.list("chat")[0]!;
+      expect(pending.detail).toContain(message.startsWith("Allow the") ? 'Сервис «service» выполнит действие «check_ready».' : message);
+      expect(pending.detail).toContain('"target": "Test record"');
+      await broker.answer(pending.id, "chat", { decision: "Отказать" });
+      expect(await result).toMatchObject({ action: "decline" });
+    }
+  });
   it("cancels waiting requests when a turn ends", async () => {
     const broker = new Interactions();
     const result = broker.ask(card);

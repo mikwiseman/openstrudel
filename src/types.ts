@@ -30,7 +30,7 @@ export interface Message {
 
 export interface Attachment { id: string; conversationId: string; name: string; mimeType: string; size: number; }
 
-export interface TelegramChat { chatId: string; title: string; conversationId: string | null; profileId: string | null; allowedSenders: string[]; access: "approved" | "members"; replies: "instructions" | "mentions"; }
+export interface TelegramChat { chatId: string; title: string; conversationId: string | null; profileId: string | null; allowedSenders: string[]; access: "approved" | "members"; replies: "instructions" | "mentions"; enabled?: boolean; }
 export interface HistoryEntry { sourceId: string; date: string; author: string; direction: "inbound" | "outbound"; text: string; }
 
 export interface EmployeeProfile {
@@ -70,7 +70,12 @@ export interface CodexEngine {
       onEvent?: (event: EngineEvent) => void;
       profile?: string | null;
       model?: string | null;
+      /** Permanent employees offered as native Codex roles on this device. */
+      employees?: EmployeeProfile[];
       images?: string[];
+      /** Snapshotted when the queued turn starts on its execution device. */
+      approvalMode?: import("./approval-mode.js").ApprovalMode;
+      groupContext?: boolean;
       /** Verified channel identity, supplied only by the Telegram adapter. */
       telegramActor?: { userId: string; chatId: string; messageId: string };
       tools?: { definitions: DynamicTool[]; call: (name: string, args: Record<string, unknown>) => Promise<unknown> };
@@ -86,7 +91,7 @@ export interface CodexEngine {
 }
 
 export interface DynamicTool { type: "function"; name: string; description: string; inputSchema: Record<string, unknown> }
-export interface Connection { id: string; name: string; kind: "app" | "mcp"; detail?: string | null; connected: boolean; url: string | null; status?: "ready" | "sign_in" | "unavailable" | "disabled"; toolCount?: number; removable?: boolean; }
+export interface Connection { id: string; name: string; kind: "app" | "mcp"; detail?: string | null; connected: boolean; url: string | null; status?: "ready" | "sign_in" | "unavailable" | "disabled" | "available" | "unknown"; toolCount?: number; removable?: boolean; }
 export interface Interaction { id: string; conversationId: string; messageId: string; title: string; detail?: string; url?: string; requestedBy?: string; questions: Array<{ id: string; question: string; options: string[] }>; }
 
 export interface MessageInput {
@@ -96,7 +101,7 @@ export interface MessageInput {
   externalId?: string;
   externalChatId?: string;
   title?: string;
-  /** Native clients may pin a message to an employee. Telegram uses the router. */
+  /** Explicit employee chat. Delegation never changes the conversation's owner. */
   profile?: string;
   author?: string;
   /** Trusted Telegram delivery metadata, not accepted from the public message API. */
@@ -114,6 +119,6 @@ export interface MessageResult {
   messageId: string;
   text: string;
   attachments?: Attachment[];
-  /** The employee that answered, when the router selected one. */
+  /** The employee whose conversation is open, not a delegated helper. */
   profileId?: string;
 }

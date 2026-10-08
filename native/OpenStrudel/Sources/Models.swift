@@ -91,6 +91,7 @@ struct TelegramChat: Codable, Identifiable {
     let allowedSenders: [String]
     var access: String? = nil
     var replies: String? = nil
+    var enabled: Bool? = nil
     var id: String { chatId }
     var isGroup: Bool { chatId.hasPrefix("-") }
     var isPairedOwner: Bool { !isGroup && allowedSenders.contains(chatId) }
@@ -424,6 +425,12 @@ struct OpenAILoginStatus: Decodable, Equatable {
 }
 
 struct ServiceConnection: Decodable, Identifiable {
+    var isAvailableToAdd: Bool { kind == "app" && !connected && (status == "available" || status == "sign_in") }
+    var actionTitle: String {
+        if status == "available" { return "Добавить" }
+        if status == "unknown" || status == "unavailable" { return "Проверить" }
+        return "Подключить"
+    }
     var icon: String {
         switch id {
         case "mcp:cua_repl": return "desktopcomputer"

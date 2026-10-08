@@ -19,10 +19,27 @@ it("keeps installed apps available when the public app catalog fails", async () 
   });
   const engine = new CodexEngineAdapter({scoped:true});
   try {
-    expect(await engine.connections()).toEqual([{id:"calendar",name:"Google Calendar",kind:"app",connected:false,url:null}]);
+    expect(await engine.connections()).toEqual([{id:"calendar",name:"Google Calendar",kind:"app",connected:false,url:null,status:"available"}]);
     expect(await engine.connect("calendar")).toEqual({url:null});
     expect(await engine.isConnected("calendar")).toBe(true);
   } finally {engine.close();}
+});
+it("does not mistake a failed installed-app check for a missing connection or grant access",async()=>{
+  let failed=false;
+  request.mockImplementation(async(method:string)=>{
+    if(method==="app/installed"){if(failed)throw new Error("timeout");return {apps:[{id:"calendar",runtimeName:"Google Calendar",enabled:true,callable:true}]};}
+    if(method==="app/list")return {data:[{id:"calendar",name:"Google Calendar",installUrl:"https://example.test/oauth"}]};
+    if(method==="mcpServerStatus/list")return {data:[]};
+    throw new Error(method);
+  });
+  const engine=new CodexEngineAdapter();
+  try {
+    expect((await engine.connections())[0]).toMatchObject({connected:true,status:"ready"});
+    failed=true;
+    expect((await engine.connections(true))[0]).toMatchObject({connected:false,status:"unknown"});
+    await expect(engine.connect("calendar")).rejects.toThrow("Не удалось проверить подключение");
+    expect(request.mock.calls.some(([method])=>method==="config/value/write")).toBe(false);
+  }finally{engine.close();}
 });
 it("bounds directory checks and discovers native connections concurrently", async () => {
   let finish!: (value: unknown) => void;

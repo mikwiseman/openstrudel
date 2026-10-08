@@ -3,11 +3,27 @@ import SwiftUI
 /// Shared semantic colors adapt independently to light, dark and increased contrast.
 /// Navigation stays neutral; the muted accent identifies links and primary actions.
 enum AppTheme {
+    static let canvas = Color("CanvasColor")
     static let accent = Color("AccentColor")
     static let secondaryText = Color("SecondaryText")
     static let metadataText = Color("MetadataText")
     static let warning = Color("WarningText")
     static let destructive = Color("DestructiveText")
+}
+
+/// SF carries the interface. New York adds warmth only to short welcome states.
+enum AppTypography {
+    static let welcome: Font = .system(.largeTitle, design: .serif, weight: .medium)
+    static let emptyTitle: Font = .system(.title2, design: .serif, weight: .medium)
+    static let sidebarTitle: Font = .system(size: 15, weight: .medium)
+    static let sidebarDetail: Font = .system(size: 12)
+    static var chat: Font {
+        #if os(macOS)
+        .system(size: 15)
+        #else
+        .body
+        #endif
+    }
 }
 
 /// Give large text the full row instead of letting a capsule squeeze each word.

@@ -12,6 +12,32 @@ import { MockCodexEngine } from "../src/codex.js";
 import { hostingOrigin } from "../src/hosting-origin.js";
 
 describe("CLI recovery after a lost response", () => {
+  it("selects approval mode on the intended device and requires an explicit approve-all flag", async () => {
+    const root = await mkdtemp(join(tmpdir(), "strudel-cli-approvals-"));
+    const requests: {path:string;body:unknown}[]=[];
+    const server=createServer(async(req,res)=>{
+      let raw="";for await(const chunk of req)raw+=chunk;
+      const body=raw?JSON.parse(raw):undefined;requests.push({path:req.url!,body});
+      res.setHeader("content-type","application/json");res.end(JSON.stringify({mode:body?.mode??"ask",canManage:true}));
+    });
+    await new Promise<void>(done=>server.listen(0,"127.0.0.1",done));
+    const config=join(root,"connection.json");
+    await writeFile(config,JSON.stringify({url:`http://127.0.0.1:${(server.address() as any).port}`,token:"test-owner"}),{mode:0o600});
+    const cli=(args:string[])=>new Promise<{code:number|null;out:string;err:string}>((resolve,reject)=>{
+      const child=spawn(process.execPath,["--import",import.meta.resolve("tsx"),fileURLToPath(new URL("../src/cli.ts",import.meta.url)),"approvals",...args],{cwd:root,env:{...process.env,OPENSTRUDEL_CLIENT_CONFIG:config},stdio:"pipe"});
+      let out="",err="";child.stdout.on("data",b=>out+=b);child.stderr.on("data",b=>err+=b);child.once("error",reject);child.once("exit",code=>resolve({code,out,err}));child.stdin.end();
+    });
+    try {
+      expect((await cli(["set","invalid"])).code).toBe(1);
+      expect((await cli(["set","approve_all"])).code).toBe(1);expect(requests).toHaveLength(0);
+      const saved=await cli(["set","auto","--device","mini"]);expect(saved.code,saved.err).toBe(0);
+      expect(requests.at(-1)).toEqual({path:"/v1/settings/approvals?deviceId=mini",body:{mode:"auto",confirm:false}});
+      expect((await cli(["set","approve_all","--yes"])).code).toBe(0);
+      expect(requests.at(-1)?.body).toEqual({mode:"approve_all",confirm:true});
+      const status=await cli(["status","--json"]);expect(status.code,status.err).toBe(0);expect(JSON.parse(status.out).mode).toBe("ask");
+    }finally{await new Promise<void>(done=>server.close(()=>done()));await rm(root,{recursive:true,force:true});}
+  });
+
   it("keeps Telegram group links distinct from personal pairing, including older devices", async () => {
     const root = await mkdtemp(join(tmpdir(), "strudel-cli-telegram-"));
     const requests: { path: string; body: Record<string, string> }[] = [];

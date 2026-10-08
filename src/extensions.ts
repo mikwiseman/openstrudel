@@ -122,6 +122,15 @@ export class CodexExtensions {
   private get configPath() { return resolve(this.options.home, "config.toml"); }
   private get skillRoot() { return resolve(this.options.cwd, ".agents/skills"); }
   private get packageRoot() { return resolve(this.options.sharedConfigPath ? dirname(this.options.sharedConfigPath) : this.options.home, "openstrudel-packages"); }
+  pluginServers(): Record<string, string[]> {
+    const config = readToml(this.configPath), result: Record<string, string[]> = {};
+    for (const id of Object.keys(config.plugins ?? {})) {
+      if (!id.endsWith("@openstrudel-local")) continue;
+      const name = slug(id.split("@")[0]), record = resolve(this.packageRoot,"plugins",name,".openstrudel-package.json");
+      if (existsSync(record)) result[id] = (JSON.parse(readFileSync(record,"utf8")).services ?? []).map((service: string) => slug(service.split(" · ")[0]));
+    }
+    return result;
+  }
   async prepare() {
     // Codex keeps plugin caches per CODEX_HOME. Reinstall the same local,
     // owner-selected package when a different subscription opens this scope.
@@ -182,7 +191,9 @@ export class CodexExtensions {
     const value: Record<string, any> = { enabled:true, default_tools_approval_mode:"prompt" };
     if (input.url) {
       let url: URL; try { url = new URL(input.url); } catch { throw new HomeError("Введите полный адрес сервиса, начиная с https://."); }
-      if (url.username || url.password || url.hash || (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost","127.0.0.1","[::1]"].includes(url.hostname)))) throw new HomeError("Нужен HTTPS-адрес без логина, пароля и фрагмента.");
+      if (url.username || url.password) throw new HomeError("Уберите логин и пароль из адреса. Ключ сервиса можно указать в отдельном поле.");
+      if (url.hash) throw new HomeError("Уберите из адреса знак # и всё после него.");
+      if (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost","127.0.0.1","[::1]"].includes(url.hostname))) throw new HomeError("Вставьте адрес сервиса, начинающийся с https://.");
       value.url = url.toString();
       if (input.token) { if (typeof input.token !== "string" || /[\r\n]/.test(input.token) || input.token.length > 16000) throw new HomeError("Проверьте ключ сервиса."); value.http_headers={Authorization:"Bearer "+input.token}; }
     } else {

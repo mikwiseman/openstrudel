@@ -3,15 +3,17 @@ import { MockCodexEngine } from "../src/codex.js";
 import { OpenStrudelRuntime } from "../src/runtime.js";
 
 describe("OpenStrudel runtime", () => {
-  it("keeps the main chat and routes addressed messages to an employee", async () => {
+  it("keeps addressed employee requests in the main conversation and permits a direct employee chat", async () => {
     const runtime = new OpenStrudelRuntime({ dbPath: ":memory:", engine: new MockCodexEngine(), startTelegram: false });
     const chat = await runtime.messages.handle({ channel: "api", externalChatId: "home", text: "Привет" });
     expect(chat.text).toContain("Принял задачу");
     const profile = runtime.store.createProfile({ name: "Исследователь", instructions: "Ищи факты и новости" });
     const routed = await runtime.messages.handle({ channel: "api", externalChatId: "home", text: "@Исследователь собери факты" });
-    expect(routed.profileId).toBe(profile.id);
-    expect(routed.conversationId).not.toBe(chat.conversationId);
-    expect(runtime.store.getOrCreateConversation({ channel: "api", externalId: `home::employee::${profile.id}` }).id).toBe(routed.conversationId);
+    expect(routed.profileId).toBeUndefined();
+    expect(routed.conversationId).toBe(chat.conversationId);
+    const direct = await runtime.messages.handle({ channel: "api", externalChatId: "home", profile: profile.id, text: "Собери факты" });
+    expect(direct.profileId).toBe(profile.id);
+    expect(direct.conversationId).not.toBe(chat.conversationId);
     const help = await runtime.messages.handle({ channel: "api", externalChatId: "home", text: "/help" });
     expect(help.text).toContain("обычными словами");
     await runtime.stop();

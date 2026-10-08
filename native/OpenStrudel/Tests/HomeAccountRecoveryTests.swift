@@ -4,6 +4,38 @@ import Testing
 
 @Suite(.serialized)
 @MainActor struct HomeAccountRecoveryTests {
+    @Test func groupSelectionSurvivesRelaunchAndClearsWhenOpeningAnEmployee() async throws {
+        let suite = "OpenStrudel.chat-selection-test." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let state = AccountFixtureState()
+        let telegram = TelegramStatus(configured: true, running: true, botUsername: "test_bot", botName: nil, linkedChats: ["-100"], lastError: nil,
+            chats: [TelegramChat(chatId: "-100", title: "Рабочая группа", conversationId: "chat", profileId: nil, allowedSenders: [])])
+        let integration = try JSONSerialization.data(withJSONObject: ["telegram": JSONSerialization.jsonObject(with: JSONEncoder().encode(telegram))])
+        state.customResponse = { request in
+            if request.url!.path == "/v1/integrations" { return (200, integration) }
+            guard request.url!.path.contains("conversation") else { return nil }
+            return (200, historyPage([42], older: nil, newer: "m42"))
+        }
+        let (client, session) = makeClient(state, defaults: defaults)
+        defer { session.invalidateAndCancel() }
+        await client.selectProfile("old-employee")
+        await client.loadChatSettings()
+        await client.selectChat("chat")
+        let reopened = HomeClient(defaults: defaults, session: session)
+        #expect(reopened.selectedChatID == "chat")
+        #expect(reopened.selectedProfileID == nil)
+        await reopened.refreshConversation()
+        #expect(reopened.messages.map(\.id) == ["m42"])
+        await reopened.selectProfile("another-employee")
+        let employee = HomeClient(defaults: defaults, session: session)
+        #expect(employee.selectedChatID == nil)
+        #expect(employee.selectedProfileID == "another-employee")
+        await employee.selectChat("chat")
+        employee.beginEmployee()
+        #expect(HomeClient(defaults: defaults, session: session).selectedChatID == nil)
+    }
+
     @Test func chatPagesOnlyFetchOlderMessagesOnDemandAndKeepPendingStatusCurrent() async throws {
         let state = AccountFixtureState()
         var queries: [URLComponents] = []
@@ -330,8 +362,8 @@ import Testing
         } catch { #expect(error.localizedDescription.contains("Обновите OpenStrudel")) }
     }
 
-    private func makeClient(_ state: AccountFixtureState) -> (HomeClient, URLSession) {
-        let defaults = UserDefaults(suiteName: "OpenStrudel.account-test." + UUID().uuidString)!
+    private func makeClient(_ state: AccountFixtureState, defaults supplied: UserDefaults? = nil) -> (HomeClient, URLSession) {
+        let defaults = supplied ?? UserDefaults(suiteName: "OpenStrudel.account-test." + UUID().uuidString)!
         defaults.set("http://127.0.0.1:57575", forKey: "openstrudel.homeURL")
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [AccountTestURLProtocol.self]

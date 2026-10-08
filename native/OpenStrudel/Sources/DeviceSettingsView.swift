@@ -18,13 +18,33 @@ struct SettingsView: View {
     @State private var expandedDeviceID: String?
     @AppStorage("openstrudel.showMenuBar") private var showMenuBar = true
     private var selected: HomeClient { library.clients.first { $0.id == selectedID } ?? client }
+    private let standalone: Bool
 
-    init(initialSection: Section = .devices) {
+    init(initialSection: Section = .devices, standalone: Bool = false) {
         _section = State(initialValue: initialSection)
+        self.standalone = standalone
     }
 
     var body: some View {
-        NavigationStack {
+        Group {
+            #if os(macOS)
+            if standalone { settingsContent }
+            else { settingsNavigation }
+            #else
+            settingsNavigation
+            #endif
+        }
+        #if os(macOS)
+        .frame(width: 620, height: 600)
+        #endif
+        .onAppear { selectedID = client.id }
+        .sheet(isPresented: $adding, onDismiss: {
+            if let pairing { confirmingPairing = pairing; self.pairing = nil }
+        }) { ConnectionInvitationView { pairing = $0 } }
+        .sheet(item: $confirmingPairing) { AddDeviceConfirmation(pairing: $0).environmentObject(library) }
+    }
+
+    private var settingsContent: some View {
             VStack(spacing: 0) {
                 Picker("Настройки", selection: $section) {
                     ForEach(Section.allCases, id: \.self) { Text($0.rawValue) }
@@ -53,6 +73,13 @@ struct SettingsView: View {
                             Text("Резервная копия сотрудников").font(.title3.weight(.semibold))
                             AgentTransferSettings().environmentObject(selected).id(selected.id)
                         case .application:
+                            if library.visibleClients.count > 1 {
+                                Picker("Сотрудники на устройстве", selection: $selectedID) {
+                                    ForEach(library.visibleClients) { Text($0.displayName).tag($0.id) }
+                                }
+                            }
+                            ApprovalSettingsView().environmentObject(selected).id("approvals-" + selected.id)
+                            Divider()
                             #if os(macOS)
                             Toggle("Показывать в строке меню", isOn: $showMenuBar)
                             UpdateSettings()
@@ -67,6 +94,11 @@ struct SettingsView: View {
                     }.padding(24).frame(maxWidth: 640, alignment: .leading).frame(maxWidth: .infinity)
                 }
             }.background(HomeBackground())
+    }
+
+    private var settingsNavigation: some View {
+        NavigationStack {
+            settingsContent
                 .navigationTitle("Настройки")
                 #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
@@ -79,14 +111,6 @@ struct SettingsView: View {
                     #endif
                 } } }
         }
-        #if os(macOS)
-        .frame(width: 620, height: 600)
-        #endif
-        .onAppear { selectedID = client.id }
-        .sheet(isPresented: $adding, onDismiss: {
-            if let pairing { confirmingPairing = pairing; self.pairing = nil }
-        }) { ConnectionInvitationView { pairing = $0 } }
-        .sheet(item: $confirmingPairing) { AddDeviceConfirmation(pairing: $0).environmentObject(library) }
     }
 
     private var deviceList: some View {

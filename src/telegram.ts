@@ -130,7 +130,7 @@ export class TelegramAdapter {
       // Update IDs and membership events belong to the bot. Product history
       // remains intact; a different bot starts its own transport cursor.
       this.offset = 0; this.store.deleteSetting("telegram.offset");
-      this.store.db.exec("DELETE FROM telegram_updates; DELETE FROM telegram_inbox; DELETE FROM telegram_links; DELETE FROM settings WHERE key LIKE 'telegram.membership.%';");
+      this.store.db.exec("DELETE FROM telegram_updates; DELETE FROM telegram_inbox; DELETE FROM telegram_links; DELETE FROM settings WHERE key LIKE 'telegram.membership.%' OR key LIKE 'telegram.removed.%' OR key LIKE 'telegram.paused.%';");
     }
     this.token = normalized; this.bot = bot; this.lastError = null; this.connectionError = null;
     this.lastCheckedAt = new Date().toISOString();
@@ -145,7 +145,6 @@ export class TelegramAdapter {
   createLink(profileId?: string, kind: "private" | "group" = "private"): TelegramLink {
     if (!this.token) throw new Error("Connect Telegram before creating a link");
     if (profileId && !this.store.getProfile(profileId)) throw new Error("Сотрудник не найден");
-    if (kind === "group" && !profileId) throw new Error("Выберите сотрудника для группы.");
     if (kind === "group" && !this.store.telegramChats().some(c => this.isOwner(Number(c.chatId)))) throw new Error("Сначала свяжите свой личный Telegram в настройках устройства.");
     const username = this.bot?.username ?? this.store.getSetting("telegram.bot_username");
     if (!username && kind === "group") throw new Error("Проверьте связь с ботом и попробуйте ещё раз.");
@@ -161,7 +160,16 @@ export class TelegramAdapter {
     if (this.activeChats.has(chatId)) throw new Error("Сотрудник ещё отвечает в этой группе. Дождитесь ответа и повторите.");
     const previous = this.store.getTelegramChat(chatId);
     this.store.bindTelegramChat(chatId, profileId);
+    if (profileId) this.store.deleteSetting("telegram.paused." + chatId);
+    else this.store.setSetting("telegram.paused." + chatId, "true");
     if (Number(chatId) < 0 && profileId && !previous?.profileId) this.store.db.prepare("UPDATE telegram_chats SET access='members',replies='mentions' WHERE chat_id=?").run(chatId);
+  }
+
+  setGroupEnabled(chatId: string, enabled: boolean): void {
+    if (Number(chatId) >= 0 || !this.store.getTelegramChat(chatId)) throw new Error("Группа Telegram не найдена");
+    if (this.activeChats.has(chatId)) throw new Error("Дождитесь текущего ответа и повторите.");
+    if (enabled) { this.store.connectTelegramGroup(chatId); this.store.deleteSetting("telegram.paused." + chatId); }
+    else this.store.setSetting("telegram.paused." + chatId, "true");
   }
 
   linkStatus(code: string): { status: "waiting" | "connected" | "expired"; error?: string } {
@@ -260,7 +268,11 @@ export class TelegramAdapter {
           this.store.setSetting(key, JSON.stringify({date:member.date,id:update.update_id}));
           const active = ["member", "administrator", "creator"].includes(member.new_chat_member.status)
             || (member.new_chat_member.status === "restricted" && member.new_chat_member.is_member === true);
-          if (!active) this.store.db.prepare("DELETE FROM telegram_chats WHERE chat_id=?").run(chatId);
+          if (!active) {
+            const chat = this.store.getTelegramChat(chatId);
+            if (chat) this.store.setSetting("telegram.removed." + chatId, JSON.stringify(chat));
+            this.store.db.prepare("DELETE FROM telegram_chats WHERE chat_id=?").run(chatId);
+          }
           else await this.discoverGroup(chatId, member.chat.title ?? "Группа", member.from.id, update.update_id);
         }
       }
@@ -323,12 +335,13 @@ export class TelegramAdapter {
     }
     if (!this.authorizedSender(chatId,message.from?.id)) { this.store.markTelegramUpdate(update.update_id); return; }
     if (/^\/bind(?:@\w+)?(?:\s|$)/i.test(text)) {
-      if (this.isOwner(message.from?.id)) await this.sendMessage(chatId, "Выберите сотрудника в OpenStrudel → Сотрудник → Telegram.", `bind-help:${update.update_id}`);
+      if (this.isOwner(message.from?.id)) await this.sendMessage(chatId, "Опишите задачу: помощник ответит сам или подключит подходящего сотрудника.", `bind-help:${update.update_id}`);
       this.store.markTelegramUpdate(update.update_id); return;
     }
     const binding = this.store.getTelegramChat(chatId);
+    if (binding?.enabled === false) { this.store.markTelegramUpdate(update.update_id); return; }
     const accountNoticeKey = `telegram.accountNotice.${chatId}.${binding?.profileId ?? "main"}`;
-    if (Number(chatId) < 0 && !binding?.profileId) {
+    if (Number(chatId) < 0 && !binding?.conversationId) {
       this.store.markTelegramUpdate(update.update_id); return;
     }
     const replyAuthor = message.reply_to_message?.from;
@@ -348,7 +361,7 @@ export class TelegramAdapter {
       }
     }
     const replyConversation=message.reply_to_message ? this.replyConversation(chatId,message.reply_to_message.message_id) : null;
-    const conversation = replyConversation ?? this.store.getOrCreateConversation({ channel: "telegram", externalId: chatId, title: message.chat.title ?? "Telegram " + chatId });
+    const conversation = replyConversation ?? (binding?.conversationId ? this.store.getConversation(binding.conversationId) : null) ?? this.store.getOrCreateConversation({ channel: "telegram", externalId: chatId, title: message.chat.title ?? "Telegram " + chatId });
     this.activeChats.set(chatId, (this.activeChats.get(chatId) ?? 0) + 1);
     const prepared=(this.preparations.get(chatId) ?? Promise.resolve({text:""})).catch(()=>({text:""})).then(async()=>{
       const media=message.voice ?? message.audio ?? message.video_note ?? message.document ?? message.photo?.at(-1);
@@ -475,7 +488,7 @@ export class TelegramAdapter {
     const previous = this.membershipEvent(chatId);
     if (link.kind === "group" && message.date && (message.date < previous.date || message.date === previous.date && update.update_id < previous.id)) return;
     const existing = this.store.getTelegramChat(chatId);
-    if (link.kind === "group" && existing?.profileId && existing.profileId !== link.profileId) {
+    if (link.kind === "group" && link.profileId && existing?.profileId && existing.profileId !== link.profileId) {
       await fail(`В группе «${existing.title}» уже отвечает другой сотрудник. Заменить его можно в OpenStrudel → Сотрудник → Telegram → Выбрать подключённую группу.`); return;
     }
     if (this.activeChats.has(chatId)) { await fail("Сотрудник ещё отвечает. Дождитесь ответа и снова откройте ссылку."); return; }
@@ -484,6 +497,7 @@ export class TelegramAdapter {
       this.store.linkTelegramChat({ chatId, title: message.chat.title ?? message.from?.first_name ?? "Личный Telegram", allowedSenders: [...new Set([...(existing?.allowedSenders ?? []), String(sender)])] });
       // Reconnecting an established private chat never changes its employee.
       if (link.profileId && (link.kind === "group" || !existing)) this.store.bindTelegramChat(chatId, link.profileId);
+      if (link.kind === "group" && !link.profileId && !existing?.profileId) this.store.connectTelegramGroup(chatId);
       if (link.kind === "group" && !existing?.profileId) this.store.db.prepare("UPDATE telegram_chats SET access='members',replies='mentions' WHERE chat_id=?").run(chatId);
       this.store.db.prepare("UPDATE telegram_links SET payload=? WHERE hash=?").run(JSON.stringify({ ...link, chatId, error: undefined }), sha256(code));
       this.store.db.exec("COMMIT");
@@ -503,11 +517,22 @@ export class TelegramAdapter {
     const existing = this.store.getTelegramChat(chatId);
     if (existing) {
       this.store.linkTelegramChat({ chatId, title, allowedSenders: existing.allowedSenders });
+      if (!this.store.getSetting("telegram.paused." + chatId)) this.store.connectTelegramGroup(chatId);
       return;
     }
     this.store.linkTelegramChat({ chatId, title, allowedSenders: [String(sender)] });
-    if (this.store.db.prepare("SELECT 1 FROM telegram_links WHERE expires_at > ? AND json_extract(payload,'$.kind')='group' LIMIT 1").get(new Date().toISOString())) return;
-    await this.sendMessage(String(sender), `Группа «${title}» появилась в OpenStrudel. Откройте нужного сотрудника → Telegram и выберите эту группу. До привязки бот в ней молчит.`, "group-added:" + updateId);
+    // Re-adding the same bot restores the group's established character and
+    // participation policy, never another group's or an employee's private chat.
+    const removed = this.store.getSetting("telegram.removed." + chatId);
+    const previous = removed ? JSON.parse(removed) as TelegramChat : null;
+    const conversation = previous?.conversationId ? this.store.getConversation(previous.conversationId) : null;
+    if (previous && conversation && conversation.channel === "telegram" && conversation.externalId?.split("::")[0] === chatId && (!previous.profileId || this.store.getProfile(previous.profileId))) {
+      this.store.db.prepare("UPDATE telegram_chats SET conversation_id=?,profile_id=?,allowed_senders_json=?,access=?,replies=? WHERE chat_id=?")
+        .run(conversation.id, previous.profileId, JSON.stringify([...new Set([...previous.allowedSenders,String(sender)])]),previous.access,previous.replies,chatId);
+    } else this.store.connectTelegramGroup(chatId);
+    this.store.deleteSetting("telegram.removed." + chatId);
+    // Membership alone starts no model run and sends no unsolicited group post.
+    // The next @mention or reply is the first actual request.
   }
 
   private membershipEvent(chatId: string): {date:number;id:number} {

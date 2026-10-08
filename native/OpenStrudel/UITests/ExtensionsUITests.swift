@@ -25,6 +25,8 @@ final class ExtensionsUITests: XCTestCase {
         try openServices(app)
         XCTAssertTrue(app.buttons["addEmployeeExtension"].waitForExistence(timeout: 15))
         app.buttons["addEmployeeExtension"].tap()
+        XCTAssertTrue(app.buttons["addMCPService"].waitForExistence(timeout: 10))
+        app.buttons["addMCPService"].tap()
         let address = app.textFields["mcpAddress"]
         guard address.waitForExistence(timeout: 10) else {
             XCTFail(app.debugDescription)
@@ -34,7 +36,7 @@ final class ExtensionsUITests: XCTestCase {
         hideKeyboard(app)
         try reveal(app.buttons["Добавить сервис"], in: app)
         app.buttons["Добавить сервис"].tap()
-        let failure = app.staticTexts.matching(NSPredicate(format:"label CONTAINS %@", "HTTPS")).firstMatch
+        let failure = app.staticTexts.matching(NSPredicate(format:"label CONTAINS[c] %@", "https")).firstMatch
         try reveal(failure, in: app)
         try reveal(address, in: app, upwards: false)
         address.tap()

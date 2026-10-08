@@ -189,7 +189,7 @@ struct MessageContent: View, Equatable {
         switch block.kind {
         case "heading":
             Text(styled(block.content))
-                .font(block.level <= 2 ? .system(block.level == 1 ? .title2 : .title3, design: .serif, weight: .semibold) : ChatTypography.body.weight(.semibold))
+                .font(block.level <= 2 ? .system(block.level == 1 ? .title2 : .title3, design: .default, weight: .semibold) : ChatTypography.body.weight(.semibold))
                 .padding(.top, first ? 0 : 5)
                 .accessibilityAddTraits(.isHeader)
         case "list":
@@ -240,13 +240,7 @@ struct MessageContent: View, Equatable {
 }
 
 enum ChatTypography {
-    static var body: Font {
-        #if os(macOS)
-        .system(size: 15)
-        #else
-        .body
-        #endif
-    }
+    static var body: Font { AppTypography.chat }
     static var code: Font { body.monospaced() }
 }
 

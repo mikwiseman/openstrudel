@@ -125,14 +125,14 @@ describe("iPhone pairing", () => {
   it("expires invitations and invalidates a previous QR when a new one is created", async () => {
     const directory = await mkdtemp(join(tmpdir(), "strudel-mobile-"));
     const store = new Store(":memory:");
-    let now = Date.now();
-    const mobile = new MobileAccess(store, (_req, res) => res.end("{}"), { directory, port: 0, host: "127.0.0.1", hostname: "test.local", now: () => now });
+    let offset = 0;
+    const mobile = new MobileAccess(store, (_req, res) => res.end("{}"), { directory, port: 0, host: "127.0.0.1", hostname: "test.local", now: () => Date.now() + offset });
     try {
       const first = new URL((await mobile.invite()).url);
       const second = new URL((await mobile.invite()).url);
       const port = Number(second.searchParams.get("port"));
       expect((await call(port, "/pair", first.searchParams.get("key")!)).status).toBe(401);
-      now += 301_000;
+      offset += 301_000;
       expect((await call(port, "/pair", second.searchParams.get("key")!)).status).toBe(401);
     } finally { await mobile.close(); store.close(); await rm(directory, { recursive: true, force: true }); }
   });

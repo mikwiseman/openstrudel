@@ -68,7 +68,7 @@ export class Interactions {
       // Codex uses an empty MCP form for a one-time tool-call approval.
       // This is not OAuth and is not permission to approve later calls.
       const parameters = params._meta.tool_params;
-      const detail = [params.message, parameters && Object.keys(parameters).length ? JSON.stringify(parameters, null, 2) : null].filter(Boolean).join("\n\n");
+      const detail = [mcpApprovalMessage(params.message, params.serverName), parameters && Object.keys(parameters).length ? JSON.stringify(parameters, null, 2) : null].filter(Boolean).join("\n\n");
       const answers = await this.ask({ ...base, requestedBy, title: "Разрешить действие сервиса?", detail,
         questions: [{ id: "decision", question: "Только это действие", options: ["Разрешить", "Отказать"] }] });
       return { action: answers.decision === "Разрешить" ? "accept" : "decline", content: answers.decision === "Разрешить" ? {} : null, _meta: null };
@@ -80,6 +80,17 @@ export class Interactions {
     // Never silently accept unfamiliar permissions or guess a provider's schema.
     throw new Error("Этот тип запроса пока не поддерживается OpenStrudel; действие не разрешено");
   }
+}
+
+// Translate only Codex's known UI template. Keep unfamiliar provider text intact;
+// never infer or hide which action the owner is being asked to approve.
+function mcpApprovalMessage(message: unknown, server: unknown): unknown {
+  if (typeof message !== "string" || typeof server !== "string") return message;
+  const prefix = `Allow the ${server} MCP server to run tool "`;
+  if (!message.startsWith(prefix) || !message.endsWith('"?')) return message;
+  const tool = message.slice(prefix.length, -2);
+  if (!/^[A-Za-z0-9_.:-]+$/.test(tool)) return message;
+  return `Сервис «${server}» выполнит действие «${tool}».`;
 }
 
 export function safeURL(value: unknown): string {

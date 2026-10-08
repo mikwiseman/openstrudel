@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		020E702A765279E48B7039CD /* TelegramLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4AA20BE764618BEE63AF68D /* TelegramLinkTests.swift */; };
 		0273A3B12C532A6C897E1E4D /* AttachmentImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 718BE32FAB2706C4D8DB4C86 /* AttachmentImport.swift */; };
 		02C59B29F2AB08336EF37F25 /* ExtensionSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75DCFF9D5E311EA2C0891A41 /* ExtensionSetupView.swift */; };
 		066029DEC026A68A1379F314 /* MobilePairingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8AC19EC197C2FC60EBEB3D /* MobilePairingTests.swift */; };
@@ -32,14 +33,17 @@
 		2F84019800922A922C82B1CE /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38873CBA5B37136CDD8FF91 /* AppTheme.swift */; };
 		33E5289AE4FCC51707985917 /* AgentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97A6C72C5E00D5723795E8B1 /* AgentTransfer.swift */; };
 		34F7B89438C04109E4B1A946 /* WaiVDSClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7D69A9EDA344A443227E0B2 /* WaiVDSClient.swift */; };
+		355DA3CE6FDC4903C7A38DC3 /* ApprovalSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E0150A7686260E33ABC51F9 /* ApprovalSettingsView.swift */; };
 		35830784DC5290BC03679296 /* AccountRecoveryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 452D1C62E5C23CB46B6FD978 /* AccountRecoveryUITests.swift */; };
 		38670454174D5126BB5A84D1 /* ChatMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3D241925EF81E938247C15 /* ChatMedia.swift */; };
 		38A327481A17BCFCEAC3F116 /* LocalDataResetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F7D53298A142CDF1B276ABC /* LocalDataResetTests.swift */; };
 		396D0DCDA42F07B7B6AD8CDA /* ReleaseScenariosUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 269C829F112500B5E34127F7 /* ReleaseScenariosUITests.swift */; };
 		3A4F31F9396C14C867C86558 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A12DEA162BBC10A8CA136D /* Views.swift */; };
+		3B7C53804164BE37DA226B4D /* ApprovalSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E0150A7686260E33ABC51F9 /* ApprovalSettingsView.swift */; };
 		3CEEE4913F9C75966E2902EA /* LocalDataReset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B1CA4A01722F775952B9530 /* LocalDataReset.swift */; };
 		405EE709A22DB0AD7D596EF5 /* AgentCharactersUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C156BE0450E7CC24D988FA90 /* AgentCharactersUITests.swift */; };
 		4069A7E903D63727808053A3 /* HomeMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = B49A5A4FE8FCDBCA5997D859 /* HomeMenu.swift */; };
+		432170F591B888A7AAE071E6 /* TelegramLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31C40E4BEA4DD9523E6ADCA1 /* TelegramLink.swift */; };
 		4452A1ECB47F859886AD7276 /* WaiVDSClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F4C8D0A80AE9D97821FA98C /* WaiVDSClientTests.swift */; };
 		4A0104CC2C576E467EF78724 /* HostingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B99FD977A6DF945EF17152E /* HostingStore.swift */; };
 		4DB4F5AB41099807895716B3 /* MobileConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15270A8B1FADC16CBEE2AB86 /* MobileConnection.swift */; };
@@ -86,6 +90,7 @@
 		99944D193416881E7D8D727B /* DigitalOceanWebLoginTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC5BA14427968F91FEFE9F2F /* DigitalOceanWebLoginTests.swift */; };
 		99F3C8183EE6FE6B2B2A9746 /* LocalHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96054101E4801A6BCC170C1 /* LocalHome.swift */; };
 		9AEBA79A4E9D40E1EE309371 /* MessageContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9FCFCC5FBCE6D6D6D612458 /* MessageContent.swift */; };
+		9E26129063311A8AF124A802 /* TelegramLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31C40E4BEA4DD9523E6ADCA1 /* TelegramLink.swift */; };
 		A164C5DB09FEADCF6861BF35 /* SetupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A635A0DA48A1D907252A7BCB /* SetupViews.swift */; };
 		A29435710511A8C352C77D66 /* HomeMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = B49A5A4FE8FCDBCA5997D859 /* HomeMenu.swift */; };
 		A3A89F6317E0E47EE5AF44AB /* wai-vds-v2.json in Resources */ = {isa = PBXBuildFile; fileRef = 4AF0B9DD514B9520C3BB378E /* wai-vds-v2.json */; };
@@ -93,6 +98,7 @@
 		A5ED93D474C0137C8436C94A /* WaiVDSClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7D69A9EDA344A443227E0B2 /* WaiVDSClient.swift */; };
 		A71AEB032AAB4C5DA49D5497 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9234E96C15CA694F0A31099 /* Models.swift */; };
 		A789FE50A71BA8F813390382 /* DigitalOceanCloud.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CF338D2C3249DC58392487E /* DigitalOceanCloud.swift */; };
+		A79B998AC283916B7DEAB006 /* TelegramLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31C40E4BEA4DD9523E6ADCA1 /* TelegramLink.swift */; };
 		A79D2D5137601CAA6E565304 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 709BE1A9B19D0468720417CF /* Assets.xcassets */; };
 		A9E99DD5DF279B319C5FCE1A /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9234E96C15CA694F0A31099 /* Models.swift */; };
 		AAE26D83AD3BF442576953F8 /* DeviceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72EEEC73D033EF5BC24DC309 /* DeviceSettingsView.swift */; };
@@ -150,6 +156,8 @@
 		25538EEFA0F0470CDF4958CC /* AppUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdater.swift; sourceTree = "<group>"; };
 		269C829F112500B5E34127F7 /* ReleaseScenariosUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseScenariosUITests.swift; sourceTree = "<group>"; };
 		2B99FD977A6DF945EF17152E /* HostingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostingStore.swift; sourceTree = "<group>"; };
+		2E0150A7686260E33ABC51F9 /* ApprovalSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalSettingsView.swift; sourceTree = "<group>"; };
+		31C40E4BEA4DD9523E6ADCA1 /* TelegramLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelegramLink.swift; sourceTree = "<group>"; };
 		31C9D3DF0BCBDC8DE546D88B /* AgentTransferViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTransferViews.swift; sourceTree = "<group>"; };
 		36B92676161A3FD9E3889C48 /* TelegramSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelegramSetupView.swift; sourceTree = "<group>"; };
 		37B4BD216FB2EDE09E4E16E4 /* Sparkle-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Sparkle-LICENSE.txt"; sourceTree = "<group>"; };
@@ -203,6 +211,7 @@
 		D6E988F61680172334C63B12 /* PrimaryHomeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryHomeTests.swift; sourceTree = "<group>"; };
 		E29C1F0D3A0FE125E35B565D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		E38873CBA5B37136CDD8FF91 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
+		E4AA20BE764618BEE63AF68D /* TelegramLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelegramLinkTests.swift; sourceTree = "<group>"; };
 		F852C55F4C0DB4D5D58D578F /* OpenStrudel iOS UI Tests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = "OpenStrudel iOS UI Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		F9234E96C15CA694F0A31099 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		F96054101E4801A6BCC170C1 /* LocalHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHome.swift; sourceTree = "<group>"; };
@@ -248,6 +257,7 @@
 				97A6C72C5E00D5723795E8B1 /* AgentTransfer.swift */,
 				31C9D3DF0BCBDC8DE546D88B /* AgentTransferViews.swift */,
 				4B9B3467FCD3522515AD8F38 /* AppIconAppearance.swift */,
+				2E0150A7686260E33ABC51F9 /* ApprovalSettingsView.swift */,
 				E38873CBA5B37136CDD8FF91 /* AppTheme.swift */,
 				25538EEFA0F0470CDF4958CC /* AppUpdater.swift */,
 				718BE32FAB2706C4D8DB4C86 /* AttachmentImport.swift */,
@@ -273,6 +283,7 @@
 				58DAA420A0BE0C62176A43DB /* PrimaryHomeSettings.swift */,
 				E29C1F0D3A0FE125E35B565D /* PrivacyInfo.xcprivacy */,
 				A635A0DA48A1D907252A7BCB /* SetupViews.swift */,
+				31C40E4BEA4DD9523E6ADCA1 /* TelegramLink.swift */,
 				36B92676161A3FD9E3889C48 /* TelegramSetupView.swift */,
 				BEB733894E124793EDA9ACA3 /* TranscriptStack.swift */,
 				A4A12DEA162BBC10A8CA136D /* Views.swift */,
@@ -313,6 +324,7 @@
 				58B7111F287B0C5661239DEB /* MessageContentTests.swift */,
 				3D8AC19EC197C2FC60EBEB3D /* MobilePairingTests.swift */,
 				D6E988F61680172334C63B12 /* PrimaryHomeTests.swift */,
+				E4AA20BE764618BEE63AF68D /* TelegramLinkTests.swift */,
 				16302AC88D0BE5545DFBFC7F /* UserFacingErrorTests.swift */,
 				0F4C8D0A80AE9D97821FA98C /* WaiVDSClientTests.swift */,
 				A6CAB181CBBF978C846EC21E /* Fixtures */,
@@ -554,6 +566,8 @@
 				066029DEC026A68A1379F314 /* MobilePairingTests.swift in Sources */,
 				A9E99DD5DF279B319C5FCE1A /* Models.swift in Sources */,
 				FA990FEF4C0EA7D7B16F790C /* PrimaryHomeTests.swift in Sources */,
+				432170F591B888A7AAE071E6 /* TelegramLink.swift in Sources */,
+				020E702A765279E48B7039CD /* TelegramLinkTests.swift in Sources */,
 				710C9EA301B072949AB43AF4 /* UserFacingErrorTests.swift in Sources */,
 				34F7B89438C04109E4B1A946 /* WaiVDSClient.swift in Sources */,
 				4452A1ECB47F859886AD7276 /* WaiVDSClientTests.swift in Sources */,
@@ -572,6 +586,7 @@
 				631BE06D25300A0E399F2E28 /* AppIconAppearance.swift in Sources */,
 				2061E90D9AC95D39DAAA06E8 /* AppTheme.swift in Sources */,
 				523AFBBC3F4EB9C2769483F3 /* AppUpdater.swift in Sources */,
+				355DA3CE6FDC4903C7A38DC3 /* ApprovalSettingsView.swift in Sources */,
 				FED472FDDD9D5774F84AD1A4 /* AttachmentImport.swift in Sources */,
 				5785006166AD53761DA29454 /* ChatMedia.swift in Sources */,
 				E57438BBC88134F35C3EA734 /* DeviceLibrary.swift in Sources */,
@@ -594,6 +609,7 @@
 				85C1C1D5EA678B5643F6884B /* OpenStrudelApp.swift in Sources */,
 				25CE0B6159318A64EDD2D1F2 /* PrimaryHomeSettings.swift in Sources */,
 				DEEDEAD2AB25008C3CCAF7D7 /* SetupViews.swift in Sources */,
+				A79B998AC283916B7DEAB006 /* TelegramLink.swift in Sources */,
 				5B5A34FD1B9C22C5A8BD6238 /* TelegramSetupView.swift in Sources */,
 				8C0B60605D75DD5E9713446C /* TranscriptStack.swift in Sources */,
 				3A4F31F9396C14C867C86558 /* Views.swift in Sources */,
@@ -613,6 +629,7 @@
 				BD17762CF52EB077E6C09EC9 /* AppIconAppearance.swift in Sources */,
 				2F84019800922A922C82B1CE /* AppTheme.swift in Sources */,
 				BA4C2329101E4E5D8C2EABD1 /* AppUpdater.swift in Sources */,
+				3B7C53804164BE37DA226B4D /* ApprovalSettingsView.swift in Sources */,
 				0273A3B12C532A6C897E1E4D /* AttachmentImport.swift in Sources */,
 				38670454174D5126BB5A84D1 /* ChatMedia.swift in Sources */,
 				BD536195DB95EA60861EF9AD /* DeviceLibrary.swift in Sources */,
@@ -635,6 +652,7 @@
 				966082403049AA4A4D03B492 /* OpenStrudelApp.swift in Sources */,
 				929A1EC7F6CC34C5382DBE52 /* PrimaryHomeSettings.swift in Sources */,
 				A164C5DB09FEADCF6861BF35 /* SetupViews.swift in Sources */,
+				9E26129063311A8AF124A802 /* TelegramLink.swift in Sources */,
 				F1930037590FB223FEAA6DC3 /* TelegramSetupView.swift in Sources */,
 				0A357D80F9C3C9AB33B86C93 /* TranscriptStack.swift in Sources */,
 				EFD46E79E43C1763A4CF16F6 /* Views.swift in Sources */,
@@ -677,7 +695,7 @@
 				CODE_SIGN_ENTITLEMENTS = iOS.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 27;
 				INFOPLIST_FILE = "iOS-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = OpenStrudel;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -718,7 +736,7 @@
 				CODE_SIGN_ENTITLEMENTS = iOS.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 27;
 				INFOPLIST_FILE = "iOS-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = OpenStrudel;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -819,7 +837,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 27;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -917,7 +935,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 27;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

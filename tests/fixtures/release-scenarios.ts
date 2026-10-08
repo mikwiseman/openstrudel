@@ -22,6 +22,17 @@ const engine: CodexEngine = {
     if (message.includes("Проверка свободного места")) {
       throw new Error("ENOSPC: no space left on device, open '/private/qa/history.jsonl.tmp'");
     }
+    if (message.includes("Проверка подтверждения")) {
+      await new Promise(done => setTimeout(done, 900));
+      const answer = await options!.onRequest!("mcpServer/elicitation/request", {
+        mode: "form", serverName: "qa-service",
+        message: 'Allow the qa-service MCP server to run tool "check_ready"?',
+        _meta: { codex_approval_kind: "mcp_tool_call", tool_params: {} },
+        requestedSchema: { type: "object", properties: {} },
+      }) as { action: string };
+      await new Promise(done => setTimeout(done, 400));
+      return { threadId: options?.threadId ?? "qa-thread", response: answer.action === "accept" ? "Проверка выполнена." : "Действие не выполнено.", events: [] };
+    }
     if (message.includes("Проверка выбора")) {
       const answer = await options!.onRequest!("item/tool/requestUserInput", {
         questions: [{ id: "choice", question: "Когда подготовить черновик?", options: [{ label: "Утром" }, { label: "Вечером" }] }],
@@ -32,7 +43,7 @@ const engine: CodexEngine = {
     return { threadId: options?.threadId ?? "qa-thread", response: `Принято: ${message}`, events: [] };
   },
   async connections() {
-    return [{ id: "qa-documents", name: "Документы", connected: serviceConnected, kind: "app", detail: "Тестовое подключение", url: `${controlURL}/connect` }];
+    return [{ id: "qa-documents", name: "Документы", connected: serviceConnected, status: serviceConnected ? "ready" : "sign_in", kind: "app", detail: "Тестовое подключение", url: `${controlURL}/connect` }];
   },
   async connect() { return { url: `${controlURL}/connect` }; },
 };
@@ -72,6 +83,7 @@ if (process.env.OPENSTRUDEL_QA_LONG_HISTORY === "1") {
 }
 runtime.store.linkTelegramChat({ chatId: "42", title: "Личный чат", allowedSenders: ["42"] });
 runtime.store.linkTelegramChat({ chatId: "-100", title: "Рабочая группа", allowedSenders: ["42"] });
+runtime.store.connectTelegramGroup("-100");
 runtime.telegram.status = () => ({ configured: true, running: true, botUsername: "openstrudel_preview_bot", linkedChats: ["42", "-100"], chats: runtime.store.telegramChats().filter(chat => privateTelegramLinked || chat.chatId.startsWith("-")), lastError: null });
 runtime.telegram.createLink = () => ({ code: "preview", expiresAt: new Date(Date.now() + 600_000).toISOString(), url: `${controlURL}/telegram` });
 
@@ -87,7 +99,7 @@ const control = createServer(async (req, res) => {
   if (path.pathname === "/offline") offline = path.searchParams.get("value") === "1";
   if (path.pathname === "/connect") serviceConnected = true;
   if (path.pathname === "/telegram-private") privateTelegramLinked = path.searchParams.get("value") !== "0";
-  res.end(JSON.stringify({ loginStarts, loginCanceled, serviceConnected, offline, profiles: runtime.store.listProfiles() }));
+  res.end(JSON.stringify({ loginStarts, loginCanceled, serviceConnected, offline, profiles: runtime.store.listProfiles(), telegram: runtime.store.telegramChats() }));
 });
 await new Promise<void>(done => control.listen(0, "127.0.0.1", done));
 controlURL = `http://127.0.0.1:${(control.address() as { port: number }).port}`;

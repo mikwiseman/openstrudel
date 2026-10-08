@@ -21,6 +21,7 @@ struct TelegramSetupView: View {
                 Spacer()
                 if client.telegram?.configured == true && !contextual {
                     Menu {
+                        Button("Проверить связь", action: checkConnection).disabled(checking)
                         Button("Отключить бота…", role: .destructive) { confirmDisconnect = true }
                     } label: { Image(systemName: "ellipsis.circle") }.menuIndicator(.hidden).accessibilityLabel("Настройки бота Telegram")
                 }
@@ -33,10 +34,10 @@ struct TelegramSetupView: View {
                 if linked {
                     ForEach(privateChats) { chat in
                         let name = client.profiles.first(where: { $0.id == chat.profileId })?.name ?? "Общий помощник"
-                        Text("Личный чат: \(name)").font(.callout).foregroundStyle(AppTheme.secondaryText)
+                        Text("В Telegram отвечает \(name)").font(.callout).foregroundStyle(AppTheme.secondaryText)
                     }
                 } else if !contextual {
-                    Text("Свяжите свой Telegram, чтобы писать общему помощнику и добавлять сотрудников в группы.")
+                    Text("Подтвердите свой Telegram, чтобы писать боту и добавлять его в группы.")
                         .font(.callout).foregroundStyle(AppTheme.secondaryText)
                 }
                 if let problem = client.telegram?.lastError {
@@ -44,33 +45,32 @@ struct TelegramSetupView: View {
                 } else if client.telegram?.running != true {
                     Text("Бот остановлен. Проверьте, что OpenStrudel работает на этом устройстве.").font(.callout).foregroundStyle(AppTheme.secondaryText)
                 }
-                if !contextual { HStack {
-                    Button(checking ? "Проверяем…" : "Проверить связь") {
-                        checking = true; checked = false; error = nil
-                        Task {
-                            defer { checking = false }
-                            do { try await client.checkTelegramConnection(); checked = client.telegram?.connectionError == nil }
-                            catch { self.error = UserFacingError.text(error.localizedDescription) }
-                        }
-                    }.disabled(checking).accessibilityIdentifier("checkTelegramConnection")
+                if !contextual && (checking || checked || client.telegram?.connectionError != nil || client.telegram?.lastError != nil || client.telegram?.running != true) { HStack {
+                    Button(checking ? "Проверяем…" : "Проверить связь", action: checkConnection)
+                        .disabled(checking).accessibilityIdentifier("checkTelegramConnection")
                     if checking { ProgressView().controlSize(.small) }
                     else if checked && client.telegram?.connectionError == nil { Text("Telegram отвечает").font(.caption).foregroundStyle(AppTheme.secondaryText) }
                 } }
-                Button(linking ? "Готовим подключение…" : linked ? "Открыть личный чат" : "Связать мой Telegram") {
+                Button(linking ? "Открываем Telegram…" : linked ? "Написать боту" : "Связать мой Telegram") {
                     linking = true; error = nil
                     Task {
                         if linked, let name = client.telegram?.botUsername, let url = URL(string: "https://t.me/" + name) {
-                            openURL(url)
+                            openTelegram(url)
                         } else {
                             await client.createTelegramLink()
-                            if let url = client.telegramLink?.url { openURL(url) }
+                            if let url = client.telegramLink?.url { openTelegram(url) }
                             else { error = client.errorMessage; client.errorMessage = nil }
                         }
                         linking = false
                     }
                 }.buttonStyle(.borderedProminent).disabled(linking).accessibilityIdentifier("openPersonalTelegram")
                 if linked && !contextual {
-                    Text("Для группы откройте сотрудника → Telegram → Добавить в группу.").font(.caption).foregroundStyle(AppTheme.secondaryText)
+                    if let name = client.telegram?.botUsername, let url = URL(string: "https://t.me/" + name + "?startgroup=choose") {
+                        Button { openTelegram(url) } label: { Label("Добавить бота в группу", systemImage: "person.2.badge.plus") }
+                            .buttonStyle(.bordered).accessibilityIdentifier("addTelegramGroup")
+                    }
+                    Text("Добавьте бота в группу и упомяните его. Он ответит сам или подключит подходящего сотрудника.")
+                        .font(.callout).foregroundStyle(AppTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                 }
                 if client.telegramLink != nil && !linked {
                     Text("Нажмите «Начать» в Telegram. Здесь появится подтверждение подключения.").font(.caption).foregroundStyle(AppTheme.secondaryText)
@@ -78,7 +78,7 @@ struct TelegramSetupView: View {
             } else {
                 Text("1. Откройте BotFather и создайте бота командой /newbot.")
                     .font(.callout).fixedSize(horizontal: false, vertical: true)
-                Link("Открыть BotFather", destination: URL(string: "https://t.me/BotFather")!)
+                Button("Открыть BotFather") { openTelegram(URL(string: "https://t.me/BotFather")!) }
                 Text("2. Скопируйте выданный ключ и вставьте сюда.").font(.callout)
                 SecureField("Ключ бота из BotFather", text: $token).textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("telegramBotToken")
@@ -114,6 +114,34 @@ struct TelegramSetupView: View {
                 do { try await Task.sleep(for: .seconds(5)) } catch { return }
                 await client.loadChatSettings()
             }
+        }
+    }
+
+    private func openTelegram(_ webURL: URL) {
+        let openInBrowser: @MainActor @Sendable () -> Void = {
+            openURL(webURL) { @Sendable accepted in
+                Task { @MainActor in
+                    if !accepted { error = "Не удалось открыть Telegram. Попробуйте ещё раз." }
+                }
+            }
+        }
+        if let nativeURL = TelegramLink.nativeURL(for: webURL) {
+            // Launch Services calls back on its own queue on macOS. Keep the
+            // callback nonisolated, then return to the UI actor explicitly.
+            openURL(nativeURL) { @Sendable accepted in
+                Task { @MainActor in if !accepted { openInBrowser() } }
+            }
+        } else {
+            openInBrowser()
+        }
+    }
+
+    private func checkConnection() {
+        checking = true; checked = false; error = nil
+        Task {
+            defer { checking = false }
+            do { try await client.checkTelegramConnection(); checked = client.telegram?.connectionError == nil }
+            catch { self.error = UserFacingError.text(error.localizedDescription) }
         }
     }
 }
