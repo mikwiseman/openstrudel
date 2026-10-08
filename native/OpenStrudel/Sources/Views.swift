@@ -1612,10 +1612,12 @@ private struct TelegramChatsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    if client.telegram?.configured != true || !paired {
+                    if client.telegram?.configured != true {
                         TelegramSetupView()
                     } else {
-                        if let profile {
+                        if !paired {
+                            TelegramSetupView()
+                        } else if let profile {
                             Text("«\(profile.name)» в Telegram").font(.headline)
                             Text("Добавьте сотрудника в группу, чтобы общаться с ним вместе с коллегами.")
                                 .font(.callout).foregroundStyle(AppTheme.secondaryText)

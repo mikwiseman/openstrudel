@@ -32,6 +32,15 @@ final class ReleaseScenariosUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Отключить"].waitForExistence(timeout: 5))
         app.buttons["Отмена"].tap()
         XCTAssertTrue(app.staticTexts["Рабочая группа"].exists)
+        // Upgraded installations can have existing groups before the owner
+        // pairs a private chat. They must remain visible and manageable.
+        _ = try await read(fixture + "/telegram-private?value=0")
+        XCTAssertTrue(app.buttons["openPersonalTelegram"].waitForExistence(timeout: 12))
+        XCTAssertFalse(app.buttons["addEmployeeTelegramGroup"].exists)
+        try reveal(app.staticTexts["Рабочая группа"].firstMatch, in: app)
+        XCTAssertTrue(app.buttons["Настройки группы «Рабочая группа»"].exists)
+        capture("telegram-existing-without-private", app)
+        _ = try await read(fixture + "/telegram-private?value=1")
     }
 
     @MainActor func testSettingsEmployeesMessagesAndRecovery() async throws {
