@@ -39,7 +39,7 @@ async function checkControls(page) {
   page.content.append(element('p',`Завершено: ${completed}. Ожидают устройства: ${waiting}.`));
 }
 async function openTelegramSettings() {
-  const page=modalPage('Telegram','Пишите сотруднику через своего бота.');
+  const page=modalPage('Telegram','Один бот для личного чата и групп сотрудников на этом устройстве.');
   const profile=state.profiles.find(p=>p.id===state.selected), suffix=profile?.deviceId?'?deviceId='+encodeURIComponent(profile.deviceId):'';
   const status=element('p','Проверяем подключение…');status.setAttribute('role','status');page.content.append(status);
   try {
@@ -57,16 +57,30 @@ async function openTelegramSettings() {
       },true);
     } else {
       if(telegram.lastError) page.error.textContent=telegram.lastError;
-      const paired=(telegram.chats||[]).some(chat=>!chat.chatId.startsWith('-')&&chat.profileId===(state.selected||null));
-      if(paired) status.textContent='Чат подключён к «'+(profile?.name||'OpenStrudel')+'».';
+      for (const chat of (telegram.chats||[]).filter(c=>c.chatId.startsWith('-')&&(!profile||c.profileId===profile.id))) {
+        page.content.append(element('p',chat.title+' · '+(chat.replies==='mentions'?'По @упоминанию или ответу':'По правилам сотрудника')));
+      }
+      const paired=(telegram.chats||[]).some(chat=>!chat.chatId.startsWith('-')&&chat.allowedSenders.includes(chat.chatId));
+      if(paired) page.content.append(element('p','Личный Telegram подключён.'));
       action(page,paired?'Открыть Telegram':'Связать личный чат',async()=>{
-        const result=paired?{url:'https://t.me/'+telegram.botUsername}:await api('/v1/integrations/telegram/link'+suffix,{method:'POST',body:JSON.stringify({profileId:state.selected||undefined})});
+        const result=paired?{url:'https://t.me/'+telegram.botUsername}:await api('/v1/integrations/telegram/link'+suffix,{method:'POST',body:JSON.stringify({})});
         const link=element('a','Открыть чат в Telegram');link.href=result.url;link.target='_blank';link.rel='noreferrer';page.content.replaceChildren(link,element('p','Нажмите «Начать» в Telegram.'));
         for(let i=0;!paired&&i<300&&$('modal-content').contains(page.box);i++) {
           await new Promise(resolve=>setTimeout(resolve,2000));
-          const value=await read();if((value.chats||[]).some(chat=>!chat.chatId.startsWith('-')&&chat.profileId===(state.selected||null))){page.content.append(element('p','Чат подключён. Можно писать боту.'));break;}
+          const value=await read();if((value.chats||[]).some(chat=>!chat.chatId.startsWith('-')&&chat.allowedSenders.includes(chat.chatId))){page.content.append(element('p','Чат подключён. Можно писать боту.'));break;}
         }
       },true);
+      if(paired&&profile) {
+        page.content.append(element('p','Добавьте «'+profile.name+'» в группу. Все участники смогут обращаться к сотруднику через @упоминание бота или ответ ему. Личная переписка останется отдельно.'));
+        action(page,'Добавить в группу…',async()=>{
+          const invite=await api('/v1/integrations/telegram/link'+suffix,{method:'POST',body:JSON.stringify({kind:'group',profileId:profile.id})});
+          const url=invite.url?new URL(invite.url):null;
+          if(url?.origin!=='https://t.me'||url.searchParams.get('startgroup')!==invite.code) throw new Error('Обновите OpenStrudel на устройстве этого сотрудника, чтобы подключить группу.');
+          const link=element('a','Выбрать группу в Telegram');link.href=invite.url;link.target='_blank';link.rel='noreferrer';page.content.append(link);
+          page.content.append(element('p','Ссылка действует 10 минут. После выбора группы нажмите «Обновить».'));
+        },true);
+        action(page,'Обновить',()=>openTelegramSettings());
+      }
     }
   } catch(e) {status.textContent='';page.report(e);}
 }

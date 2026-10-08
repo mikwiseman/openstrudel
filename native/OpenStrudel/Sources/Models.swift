@@ -89,7 +89,11 @@ struct TelegramChat: Codable, Identifiable {
     let conversationId: String?
     let profileId: String?
     let allowedSenders: [String]
+    var access: String? = nil
+    var replies: String? = nil
     var id: String { chatId }
+    var isGroup: Bool { chatId.hasPrefix("-") }
+    var isPairedOwner: Bool { !isGroup && allowedSenders.contains(chatId) }
 }
 struct ChatSchedule: Codable, Identifiable {
     let id: String
@@ -131,6 +135,15 @@ struct TelegramLinkResponse: Decodable {
     let code: String
     let expiresAt: String
     let url: URL?
+    var expiryDate: Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: expiresAt) ?? ISO8601DateFormatter().date(from: expiresAt)
+    }
+}
+struct TelegramLinkState: Decodable {
+    let status: String
+    let error: String?
 }
 
 struct HomeMessage: Codable, Identifiable, Hashable {

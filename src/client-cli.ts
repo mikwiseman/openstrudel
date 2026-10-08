@@ -37,7 +37,7 @@ export async function clientCommand(command: string, args: string[]): Promise<bo
   if (requestedId && command !== "message" && !(command === "agents" && ["create", "move"].includes(clean[0] ?? ""))) throw new HomeError("--request-id доступен для message, agents create и agents move.");
   const output = (value: unknown) => console.log(typeof value === "string" && !json ? value : JSON.stringify(value, null, 2));
   if (command === "help" || command === "--help") {
-    output("OpenStrudel\n\nstart · doctor · connect · web · servers help\ndevices list | invite | join\nhome status | backup --output FILE | restore | transfer DEVICE\nhome operation ID | retry ID | request ID | cancel ID | attempts\nagents list | create | accounts AGENT | move AGENT DEVICE\nagents export --output FILE | preview FILE | import FILE\naccounts list | add NAME | login ID | status ID LOGIN_ID | use ID | logout ID\nmessage [--agent ID] ТЕКСТ\n\n--device ID выбирает устройство для аккаунтов, создания и копии агентов.\nНастройки и секреты передаются через stdin в JSON. --json включает JSON для скриптов.\nДля message, agents create и agents move сохраняется request-id. После обрыва повторите ту же команду с --request-id UUID; список: home attempts.\nИмпорт добавляет копии. move сохраняет идентичность агента и одну работающую копию.\nРезервная копия управления и экспорт агентов — разные файлы."); return true;
+    output("OpenStrudel\n\nstart · doctor · connect · web · servers help\ndevices list | invite | join\nhome status | backup --output FILE | restore | transfer DEVICE\nhome operation ID | retry ID | request ID | cancel ID | attempts\nagents list | create | accounts AGENT | move AGENT DEVICE\nagents export --output FILE | preview FILE | import FILE\naccounts list | add NAME | login ID | status ID LOGIN_ID | use ID | logout ID\ntelegram status | pair | group AGENT\nmessage [--agent ID] ТЕКСТ\n\n--device ID выбирает устройство для аккаунтов, создания и копии агентов.\nНастройки и секреты передаются через stdin в JSON. --json включает JSON для скриптов.\nДля message, agents create и agents move сохраняется request-id. После обрыва повторите ту же команду с --request-id UUID; список: home attempts.\nИмпорт добавляет копии. move сохраняет идентичность агента и одну работающую копию.\nРезервная копия управления и экспорт агентов — разные файлы."); return true;
   }
   if (command === "connect") {
     const raw = await readInput();
@@ -63,7 +63,7 @@ export async function clientCommand(command: string, args: string[]): Promise<bo
     connection.homeId = health.homeId;
     await saveConnection(connection); output({ connected: true, url: connection.url }); return true;
   }
-  if (!["devices", "home", "agents", "accounts", "web", "message"].includes(command)) return false;
+  if (!["devices", "home", "agents", "accounts", "web", "message", "telegram"].includes(command)) return false;
   let connection = await readClientConnection();
   const attempt = async (operation: string, payload: unknown, id = requestedId) => {
     const requestId = await recordClientAttempt(path() + ".attempts", { requestId: id, operation, payload, deviceId, home: connection.homeId ?? connection.url + "#" + (connection.pin ?? "") });
@@ -134,6 +134,16 @@ export async function clientCommand(command: string, args: string[]): Promise<bo
     else if (action === "request" && id) output(await call("/v1/home/requests/" + encodeURIComponent(id)));
     else if (action === "cancel" && id) output(await call("/v1/home/requests/" + encodeURIComponent(id), "DELETE"));
     else throw new HomeError("Используйте home status, backup, restore, transfer, operation, request или cancel.");
+  } else if (command === "telegram") {
+    if (action === "status" || action === "list") output((await call("/v1/integrations")).telegram);
+    else if (action === "pair") output(await call("/v1/integrations/telegram/link", "POST", {}));
+    else if (action === "group" && id) {
+      const link = await call("/v1/integrations/telegram/link", "POST", { kind: "group", profileId: id });
+      const url = link.url ? new URL(link.url) : null;
+      if (url?.origin !== "https://t.me" || url.searchParams.get("startgroup") !== link.code) throw new HomeError("Обновите OpenStrudel на устройстве этого сотрудника, чтобы подключить группу.");
+      output(link);
+    }
+    else throw new HomeError("Используйте telegram status, pair или group ID_СОТРУДНИКА. --device выбирает устройство.");
   } else if (command === "accounts") {
     if (action === "list") output(await call("/v1/accounts"));
     else if (action === "add") output(await call("/v1/accounts", "POST", { name: clean.slice(1).join(" ") }));

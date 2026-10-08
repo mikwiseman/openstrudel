@@ -8,7 +8,7 @@ afterEach(() => { for (const store of stores.splice(0)) store.close(); });
 const setup = () => { const s = new Store(":memory:"); stores.push(s); return s; };
 
 describe("linked conversations", () => {
-  it("honors a direct employee address in a pinned private chat without changing its default", async () => {
+  it("keeps the explicit private binding even when another employee is mentioned", async () => {
     const store = setup();
     const news = store.createProfile({ name: "News" });
     const baby = store.createProfile({ name: "Baby" });
@@ -22,8 +22,9 @@ describe("linked conversations", () => {
     } });
     const addressed = await service.handle({ channel: "telegram", externalChatId: "42", text: "@Baby Найди прошлые пожелания" });
     const ordinary = await service.handle({ channel: "telegram", externalChatId: "42", text: "Свежие новости" });
-    expect(addressed).toMatchObject({ profileId: baby.id, conversationId: babyChat.id });
-    expect(calls[0]).toMatchObject({ threadId: "baby-history", profile: expect.stringContaining("Baby") });
+    expect(addressed).toMatchObject({ profileId: news.id, conversationId: bound.conversationId });
+    expect(store.listMessages(babyChat.id)).toHaveLength(0);
+    expect(calls[0]).toMatchObject({ threadId: null, profile: expect.stringContaining("News") });
     expect(ordinary.conversationId).toBe(bound.conversationId);
     expect(store.getTelegramChat("42")?.profileId).toBe(news.id);
     await service.close();
@@ -38,9 +39,9 @@ describe("linked conversations", () => {
     const personal = store.profileConversation(baby.id);
     const service = new MessageService(store, { async run() { return { threadId: "group-only", response: "done", events: [] }; } });
     const addressed = await service.handle({ channel: "telegram", externalChatId: "-100", text: "@Baby Привет" });
-    expect(addressed.profileId).toBe(baby.id);
+    expect(addressed.profileId).toBe(news.id);
     expect(addressed.conversationId).not.toBe(personal.id);
-    expect(store.getConversation(addressed.conversationId)?.externalId).toBe(`-100::employee::${baby.id}`);
+    expect(store.getConversation(addressed.conversationId)?.externalId).toBe(`-100::employee::${news.id}`);
     await service.close();
   });
 

@@ -30,6 +30,9 @@ it("requires a Home invitation, protects cookie mutations with CSRF, and revokes
     expect((await call("/v1/home/requests/" + command, "GET", undefined, { cookie: secondCookie })).status).toBe(403);
     expect((await call("/v1/home/requests/" + command, "GET", undefined, { cookie })).status).toBe(200);
     expect((await call("/v1/devices/invitation", "POST", {}, { cookie: secondCookie, "x-openstrudel-csrf": access.csrf })).status).toBe(403);
+    for (const [path, method, body] of [["", "POST", {token:"synthetic"}], ["/link", "POST", {}], ["/chats/-100", "PATCH", {profileId:null}], ["", "DELETE", {}]] as const) {
+      expect((await call("/v1/integrations/telegram" + path, method, body, { cookie: secondCookie, "x-openstrudel-csrf": access.csrf })).status).toBe(403);
+    }
     const sessions = runtime.api.web.list(); expect(sessions).toHaveLength(2);
     runtime.api.web.revoke(sessions.find(s => !s.owner)!.id);
     expect((await call("/v1/profiles", "GET", undefined, { cookie: secondCookie })).status).toBe(401);

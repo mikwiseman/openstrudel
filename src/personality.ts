@@ -36,6 +36,7 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
     if (name === "save_schedule" || name === "pause_schedule") {
       if (context.scheduled) throw new Error("A scheduled edition cannot create or modify schedules");
       if (name === "pause_schedule") { context.scheduler!.remove(String(args.id),context.conversationId); return { paused:true }; }
+      if (context.scope?.startsWith("group-") && args.telegramChatId != null && store.getTelegramChat(String(args.telegramChatId))?.conversationId !== context.conversationId) throw new Error("Из группы можно настроить доставку только в эту же группу.");
       return context.scheduler!.save({ conversationId:context.conversationId,id:args.id == null ? undefined : String(args.id),name:String(args.name ?? ""),prompt:String(args.prompt ?? ""),cron:String(args.cron ?? ""),timezone:String(args.timezone ?? ""),enabled:args.enabled !== false,telegramChatId:args.telegramChatId == null ? null : String(args.telegramChatId) });
     }
     if (name === "update_employee" || name === "create_employee") {

@@ -58,7 +58,7 @@ it("retries a confirmed Telegram rate rejection after retry_after",async()=>{
  expect(send).toHaveBeenCalledTimes(2);
  expect(s.db.prepare("SELECT status FROM telegram_outbox").get()?.status).toBe("delivered");
 });
-it("routes replies to a delivered digest back to that employee",async()=>{
+it("keeps group replies with its bound employee even when an old digest came from another",async()=>{
  const {s,m,a,run}=setup();const scheduler=new Scheduler(s,m);
  const baby=s.createProfile({name:"Baby"});const news=s.createProfile({name:"News"});
  s.bindTelegramChat("-100",news.id);
@@ -67,9 +67,9 @@ it("routes replies to a delivered digest back to that employee",async()=>{
  s.db.prepare("INSERT INTO schedule_runs(id,schedule_id,conversation_id,scheduled_for,status,created_at) VALUES(?,?,?,?,?,?)").run("baby-run",schedule.id,babyChat.id,"2026-09-27T03:00:00.000Z","completed","2026-09-27T03:00:00.000Z");
  await a.sendMessage(-100,"Baby edition","schedule:baby-run");
  await a.processUpdate({update_id:5,message:{message_id:5,from:{id:7},chat:{id:-100,type:"group"},reply_to_message:{message_id:99},text:"Continue that edition"}});
- expect(run.mock.calls[0]?.[1]).toMatchObject({profile:expect.stringContaining("Baby")});
+ expect(run.mock.calls[0]?.[1]).toMatchObject({profile:expect.stringContaining("News")});
  expect(s.listMessages(babyChat.id)).toHaveLength(0);
- expect(s.listConversations().filter(c=>c.externalId===`-100::employee::${baby.id}`)).toHaveLength(1);
+ expect(s.listConversations().filter(c=>c.externalId===`-100::employee::${baby.id}`)).toHaveLength(0);
  expect(s.getTelegramChat("-100")?.profileId).toBe(news.id);await m.close();
 });
 it.each(["voice", "video_note"] as const)("transcribes %s before later text in the same chat",async(kind)=>{
@@ -84,7 +84,7 @@ it.each(["voice", "video_note"] as const)("transcribes %s before later text in t
  expect(run.mock.calls.map(c=>c[0])).toEqual([expect.stringContaining("\n\nFirst"),expect.stringContaining("\n\nSecond")]);await m.close();
 });
 
-it("delivers an addressed employee's approval to its originating private chat", async () => {
+it("delivers the bound employee's approval to its originating private chat", async () => {
  const s=new Store(":memory:");stores.push(s);
  const news=s.createProfile({name:"News"});const editor=s.createProfile({name:"Editor"});
  s.linkTelegramChat({chatId:"42",title:"Personal",allowedSenders:["42"]});s.bindTelegramChat("42",news.id);
@@ -101,7 +101,7 @@ it("delivers an addressed employee's approval to its originating private chat", 
  await vi.waitFor(()=>expect(sent.some(s=>s.reply_markup?.inline_keyboard)).toBe(true));
  const card=sent.find(s=>s.reply_markup?.inline_keyboard);
  expect(card.chat_id).toBe("42");
- expect(m.interactions.list(s.profileConversation(editor.id).id)).toHaveLength(1);
+ expect(m.interactions.list(s.profileConversation(news.id).id)).toHaveLength(1);
  await a.processUpdate({update_id:81,callback_query:{id:"decline",from:{id:42},data:card.reply_markup.inline_keyboard[1][0].callback_data,message:{message_id:99,chat:{id:42}}}});
  await turn;
  expect(sent.some(s=>s.text==="decline")).toBe(true);
