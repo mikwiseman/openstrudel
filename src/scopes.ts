@@ -5,6 +5,9 @@ import { CodexEngineAdapter, type CodexEngineOptions } from "./codex.js";
 import type { CodexEngine } from "./types.js";
 import type { CodexAuthTokens } from "./account.js";
 import type { TelegramMcpServers } from "./telegram-mcp.js";
+import { extensionConfig, readToml, atomicText } from "./extensions.js";
+import { parse, stringify } from "smol-toml";
+import { HomeError } from "./home.js";
 
 /** One lazy Codex runtime per audience, never one always-on process per employee. */
 export class ScopedCodexEngine implements CodexEngine {
@@ -16,16 +19,22 @@ export class ScopedCodexEngine implements CodexEngine {
   forContext(context: string): CodexEngine {
     if (!/^(personal|work|group-[a-f0-9]{64}|(?:import|agent)-[a-f0-9]{32})$/.test(context)) throw new Error("Область не найдена");
     if (!this.sourceHome) throw new Error("Войдите в OpenAI в приложении OpenStrudel.");
-    const current = this.contexts.get(context);
-    if (current) return current;
     const cwd = resolve(this.root, ".data/workspace",context);
     const home = resolve(this.contextsRoot ?? resolve(this.root, ".data/contexts"), context);
+    const sharedExtensionsPath=resolve(this.root,".data/extensions",context,"config.toml");
+    const current = this.contexts.get(context);
+    const extensions = existsSync(sharedExtensionsPath) ? readToml(sharedExtensionsPath) : extensionConfig(home);
+    if (current) {
+      if (JSON.stringify(extensions) === JSON.stringify(extensionConfig(home))) return current;
+      if (current.busy) throw new HomeError("Сервисы обновлены. Дождитесь текущего ответа, чтобы продолжить.",409);
+      current.close(); this.contexts.delete(context);
+    }
     mkdirSync(cwd,{recursive:true,mode:0o700}); mkdirSync(home,{recursive:true,mode:0o700});
     const source = resolve(this.sourceHome,"auth.json");
     if (!this.authTokens && existsSync(source)) { copyFileSync(source,resolve(home,"auth.json")); chmodSync(resolve(home,"auth.json"),0o600); }
     const connections = resolve(this.root,".data/connections",context + ".toml");
     const configPath=resolve(home,"config.toml");
-    const granted = existsSync(configPath) ? [...readFileSync(configPath,"utf8").matchAll(/\[apps\.([a-zA-Z0-9_-]+)\]\s*enabled\s*=\s*true/g)].map(m=>m[1]!).filter(id=>id!=="_default") : [];
+    const granted = Object.entries(readToml(configPath).apps ?? {}).filter(([id,value])=>id!=="_default" && /^[a-zA-Z0-9_-]+$/.test(id) && (value as any)?.enabled === true).map(([id])=>id);
     // Nothing from a broad account config is silently inherited. Scoped MCPs
     // are provisioned by the installer; subscriptions still use native OAuth.
     // Linux executes the sandbox helper through a CODEX_HOME/tmp alias into
@@ -34,11 +43,17 @@ export class ScopedCodexEngine implements CodexEngine {
     const binaries = dirname(dirname(createRequire(import.meta.url).resolve("@openai/codex/package.json")));
     const helpers = process.platform === "linux" ? `${JSON.stringify(resolve(home, "tmp"))} = "read"\n${JSON.stringify(binaries)} = "read"\n` : "";
     const authStorage = this.authTokens ? 'cli_auth_credentials_store = "ephemeral"\n' : "";
-    const settings = `${authStorage}default_permissions = "openstrudel"\n[features]\napps = true\n[permissions.openstrudel.filesystem]\n":minimal" = "read"\n${JSON.stringify(cwd)} = "write"\n${helpers}[permissions.openstrudel.network]\nenabled = true\n[apps._default]\nenabled = false\n`;
-    writeFileSync(configPath,settings + granted.map(id=>`\n[apps.${id}]\nenabled = true\n`).join("") + (existsSync(connections) ? "\n" + readFileSync(connections,"utf8") : ""),{mode:0o600});
+    const settings = `${authStorage}default_permissions = "openstrudel"\n[features]\napps = true\n[permissions.openstrudel.filesystem]\n":minimal" = "read"\n${JSON.stringify(cwd)} = "write"\n${JSON.stringify(resolve(home,"plugins/cache"))} = "read"\n${JSON.stringify(resolve(home,"skills/.system"))} = "read"\n${helpers}[permissions.openstrudel.network]\nenabled = true\n[apps._default]\nenabled = false\n`;
+    const base = parse(settings + granted.map(id=>`\n[apps.${id}]\nenabled = true\n`).join(""));
+    const legacy = readToml(connections);
+    atomicText(resolve(home,"openstrudel-extensions.toml"),stringify(extensions));
+    // Local plugins are explicit per audience. Never auto-import the owner's
+    // account-wide remote plugin collection into a Telegram group.
+    atomicText(configPath, stringify({ ...extensions, ...base, features:{apps:true,plugins:true,remote_plugin:false},
+      mcp_servers:{...extensions.mcp_servers,...legacy.mcp_servers} }));
     const telegramPath = resolve(this.root,".data/connections",context + ".telegram.json");
     const telegramServers:TelegramMcpServers | undefined = existsSync(telegramPath) ? JSON.parse(readFileSync(telegramPath,"utf8")) : undefined;
-    const options: CodexEngineOptions = { workingDirectory:cwd,codexHome:home,scoped:true,authTokens:this.authTokens,telegramServers };
+    const options: CodexEngineOptions = { workingDirectory:cwd,codexHome:home,sharedExtensionsPath,scoped:true,authTokens:this.authTokens,telegramServers,reservedServers:Object.keys(legacy.mcp_servers ?? {}) };
     const engine = new CodexEngineAdapter(options);
     this.contexts.set(context,engine);
     return engine;

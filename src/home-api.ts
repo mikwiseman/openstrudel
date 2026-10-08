@@ -112,8 +112,8 @@ export class HomeApi {
     if (path === "/v1/conversations" && method === "GET") return wireJSON({ conversations: this.home.resources("conversation") });
     let nodeId = url.searchParams.get("deviceId") ?? undefined;
     let body: Record<string, any> | undefined;
-    if (method === "POST" && ["/v1/messages", "/v1/profiles", "/v1/connections/connect"].includes(path) || path.startsWith("/v1/interactions/") && method === "POST") {
-      body = await jsonBody(request);
+    if (method === "POST" && (["/v1/messages", "/v1/profiles", "/v1/connections/connect"].includes(path) || path.startsWith("/v1/extensions/") || path.startsWith("/v1/interactions/"))) {
+      body = await jsonBody(request,path.startsWith("/v1/extensions/") ? 15 * 1024 * 1024 : undefined);
       nodeId ??= body.deviceId;
     }
     if (path === "/v1/messages" && body) {

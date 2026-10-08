@@ -19,6 +19,7 @@ import { homeRequest } from "./home-transport.js";
 import { WebAccess, sameOrigin } from "./web-access.js";
 import type { Accounts } from "./accounts.js";
 import { hostingOrigin } from "./hosting-origin.js";
+import { previewExtension } from "./extensions.js";
 
 const MAX_BODY_BYTES = 1_048_576;
 
@@ -151,6 +152,7 @@ export class HttpApi {
       }
       const localExecution = request.headers["x-openstrudel-executor"] === this.executorKey && ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(request.socket.remoteAddress ?? "");
       const canManageAccount = localExecution ? request.headers["x-openstrudel-owner"] === "1" : webSession ? webSession.owner : !paired || owner;
+      if (path.startsWith("/v1/extensions") && request.method !== "GET" && !canManageAccount) throw new HomeError("Расширения подключает владелец устройства.",403);
       if (!localExecution && request.method !== "GET" && path !== "/v1/home/transfer" && path !== "/v1/home/poll") {
         if (this.home.state.role === "primary" && this.store.getSetting("home.transfer")) throw new HomeError("Передаём управление. Изменения будут доступны после завершения.", 409);
         this.activeWrites++; counted = true;
@@ -444,6 +446,35 @@ export class HttpApi {
       }
       if (request.method === "DELETE" && path === "/v1/integrations/telegram") {
         this.send(response, 200, { telegram: this.telegram.disconnect() });
+        return;
+      }
+      if (path === "/v1/extensions" || path.startsWith("/v1/extensions/")) {
+        const body = request.method === "POST" ? await this.body(request, 15 * 1024 * 1024) : {};
+        if (request.method === "POST" && path === "/v1/extensions/preview") {
+          this.send(response,200,previewExtension(body.files)); return;
+        }
+        const conversationId = String(body.conversationId ?? url.searchParams.get("conversationId") ?? "");
+        const conversation = this.store.getConversation(conversationId);
+        if (!conversation) throw new HomeError("Откройте чат сотрудника, для которого добавляете расширение.",404);
+        if (request.method === "GET" && path === "/v1/extensions/contexts") {
+          const context=this.messages.contextFor(conversationId);
+          const peers=new Set(this.store.listConversations().filter(c=>this.messages.contextFor(c.id)===context).map(c=>c.profileId ?? "main"));
+          const sharedNotice=peers.size>1 ? "Возможности общие для " + peers.size + " сотрудников с этой рабочей папкой." : undefined;
+          const contexts = [{id:conversation.id,title:conversation.channel === "telegram" ? conversation.title ?? "Группа Telegram" : "Личный чат",isGroup:conversation.channel === "telegram",sharedNotice}];
+          for (const chat of this.store.telegramChats()) if (Number(chat.chatId)<0 && chat.profileId===conversation.profileId && chat.conversationId && !contexts.some(c=>c.id===chat.conversationId)) contexts.push({id:chat.conversationId,title:chat.title,isGroup:true,sharedNotice:undefined});
+          this.send(response,200,{contexts}); return;
+        }
+        const engine = this.engine?.forAgent?.(conversation.profileId ?? "main",this.messages.contextFor(conversationId)) ?? this.engine?.forContext?.(this.messages.contextFor(conversationId)) ?? this.engine;
+        const extensions = await engine?.extensions?.();
+        if (!extensions) throw new HomeError("Обновите OpenStrudel на устройстве сотрудника, чтобы добавлять расширения.",501);
+        if (request.method === "GET" && path === "/v1/extensions") this.send(response,200,await extensions.list());
+        else if (request.method === "POST" && path === "/v1/extensions/install") this.send(response,200,await extensions.install(body.files,String(body.digest ?? "")));
+        else if (request.method === "POST" && path === "/v1/extensions/mcp") this.send(response,200,await extensions.addMcp(body));
+        else if (request.method === "POST" && path === "/v1/extensions/mcp/remove") this.send(response,200,await extensions.removeMcp(String(body.name ?? "")));
+        else if (request.method === "POST" && path === "/v1/extensions/change") {
+          if (body.enabled !== undefined && typeof body.enabled !== "boolean") throw new HomeError("Проверьте состояние расширения.");
+          this.send(response,200,await extensions.change(String(body.id ?? ""),body.enabled as boolean|undefined));
+        } else throw new HomeError("Действие не найдено.",404);
         return;
       }
       if (request.method === "GET" && path === "/v1/connections") {

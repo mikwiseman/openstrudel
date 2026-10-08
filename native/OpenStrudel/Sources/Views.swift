@@ -1305,7 +1305,7 @@ private struct BotDetailsView: View {
                 }
                 Button { showConnections = true } label: {
                     HStack {
-                        Label("Сервисы", systemImage: "link")
+                        Label("Сервисы и навыки", systemImage: "link")
                         Spacer()
                         Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                     }.frame(minHeight: controlTarget).contentShape(Rectangle())
@@ -1959,8 +1959,19 @@ private struct ConnectionsView: View {
     @State private var waiting: ServiceConnection?
     @State private var authorizationURL: URL?
     @State private var notice: String?
+    @State private var availableConnections: [ServiceConnection] = []
+    @State private var extensions: [EmployeeExtension] = []
+    @State private var contexts: [ExtensionContext] = []
+    @State private var scopeID = ""
+    @State private var showAdd = false
+    @State private var extensionNotice: String?
+    @State private var changing = false
+    @State private var pendingRemoval: EmployeeExtension?
+    @State private var pendingMCPRemoval: ServiceConnection?
+    @State private var refreshID = UUID()
+    private var scope: ExtensionContext? { contexts.first { $0.id == scopeID } }
     private var results: [ServiceConnection] {
-        client.connections.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
+        availableConnections.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
             .sorted { $0.connected != $1.connected ? $0.connected : $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
     var body: some View {
@@ -1978,6 +1989,13 @@ private struct ConnectionsView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Для «\(client.activeAgentName)» · \(client.executionDeviceName)")
                         .font(.callout).foregroundStyle(AppTheme.secondaryText)
+                    if contexts.count > 1 {
+                        Picker("Где использовать", selection: $scopeID) {
+                            ForEach(contexts) { Text($0.title).tag($0.id) }
+                        }.pickerStyle(.menu).disabled(loading || changing)
+                    }
+                    if scope?.isGroup == true { Text("Сервисы и навыки этого чата доступны участникам группы.").font(.caption).foregroundStyle(AppTheme.secondaryText) }
+                    if let shared = scope?.sharedNotice { Text(shared).font(.callout).foregroundStyle(AppTheme.secondaryText) }
                     if loading { HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Проверяем доступ к сервисам…").font(.callout) } }
                     if let waiting {
                         Text("Завершите подключение \(waiting.name) в браузере. Здесь появится подтверждение.")
@@ -1992,11 +2010,32 @@ private struct ConnectionsView: View {
                         Text(UserFacingError.text(error)).font(.callout).foregroundStyle(AppTheme.warning)
                         Button("Повторить") { Task { await refresh() } }.disabled(loading)
                     }
-                    if let notice = client.connectionNotice { Text(notice).font(.caption).foregroundStyle(AppTheme.secondaryText) }
+                    if let extensionNotice { Text(extensionNotice).font(.caption).foregroundStyle(AppTheme.secondaryText) }
+                    if client.canManageConnections || client.canManageOpenAI {
+                        Button { showAdd = true } label: { Label("Добавить сервис или навык", systemImage: "plus") }
+                            .buttonStyle(.bordered).disabled(scope == nil || changing).padding(.top, 8).accessibilityIdentifier("addEmployeeExtension")
+                    }
                 }
                 .padding(.vertical, 8)
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
+                if !extensions.isEmpty {
+                    Section("Навыки и плагины") {
+                        ForEach(extensions.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }) { item in
+                            VStack(alignment: .leading, spacing: 8) {
+                                if item.removable && (client.canManageConnections || client.canManageOpenAI) {
+                                    Toggle(item.name, isOn: Binding(get: { item.enabled }, set: { enabled in
+                                        updateExtension(item, enabled: enabled)
+                                    })).disabled(changing || loading)
+                                } else { Label(item.name, systemImage: item.enabled ? "checkmark.circle" : "pause.circle") }
+                                Text(item.description).font(.caption).foregroundStyle(AppTheme.secondaryText).lineLimit(3)
+                                if item.removable && (client.canManageConnections || client.canManageOpenAI) {
+                                    Button("Удалить…", role: .destructive) { pendingRemoval = item }.buttonStyle(.borderless).font(.caption).disabled(changing)
+                                }
+                            }.padding(.vertical, 6)
+                        }
+                    }
+                }
                 ForEach(results) { connection in
                     Group {
                         if textSize.isAccessibilitySize {
@@ -2012,20 +2051,26 @@ private struct ConnectionsView: View {
                             }
                         }
                     }.padding(.vertical, 8)
+                    .contextMenu {
+                        if connection.removable == true && (client.canManageConnections || client.canManageOpenAI) {
+                            Button("Удалить подключение…", role: .destructive) { pendingMCPRemoval = connection }
+                        }
+                    }
                 }
                 if results.isEmpty && !query.isEmpty { SearchEmptyState(query: query) { query = "" } }
                 else if results.isEmpty && !loading && error == nil {
-                    Text("Список сервисов пока недоступен. Обновите его или проверьте вход в OpenAI на этом устройстве.")
+                    Text("Добавьте сервис по адресу MCP или подключите сервис своего аккаунта OpenAI.")
                         .foregroundStyle(AppTheme.secondaryText)
                 }
+
             }
             .scrollContentBackground(.hidden)
-            .background(HomeBackground()).navigationTitle("Сервисы")
+            .background(HomeBackground()).navigationTitle("Сервисы и навыки")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Найти сервис")
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Найти сервис или навык")
             #else
-            .searchable(text: $query, prompt: "Найти сервис")
+            .searchable(text: $query, prompt: "Найти сервис или навык")
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -2036,7 +2081,26 @@ private struct ConnectionsView: View {
                         .accessibilityLabel("Обновить сервисы").disabled(loading)
                 }
             }
-        .task { await refresh(force: false) }
+        .navigationDestination(isPresented: $showAdd) {
+            if let scope { ExtensionSetupView(scope: scope, isPresented: $showAdd) }
+        }
+        .onChange(of: showAdd) { wasPresented, isPresented in
+            if wasPresented && !isPresented { Task { await refresh() } }
+        }
+        .confirmationDialog("Удалить расширение?", isPresented: Binding(get: { pendingRemoval != nil || pendingMCPRemoval != nil }, set: { if !$0 { pendingRemoval = nil; pendingMCPRemoval = nil } }), titleVisibility: .visible) {
+            if let item = pendingRemoval { Button("Удалить «\(item.name)»", role: .destructive) { updateExtension(item); pendingRemoval = nil } }
+            if let item = pendingMCPRemoval { Button("Удалить «\(item.name)»", role: .destructive) { removeMCP(item); pendingMCPRemoval = nil } }
+            Button("Отмена", role: .cancel) { pendingRemoval = nil; pendingMCPRemoval = nil }
+        } message: { Text("Переписка и файлы сотрудника сохранятся.") }
+        .task {
+            do { contexts = try await client.extensionContexts(); scopeID = client.conversationID ?? "" }
+            catch { contexts = client.conversationID.map { [ExtensionContext(id: $0, title: "Личный чат", isGroup: false)] } ?? []; scopeID = client.conversationID ?? "" }
+        }
+        .task(id: scopeID) {
+            guard !scopeID.isEmpty else { return }
+            availableConnections = []; extensions = []; waiting = nil; authorizationURL = nil; notice = nil
+            await refresh(force: false)
+        }
         .task(id: waiting?.id) {
             guard waiting != nil else { return }
             for _ in 0..<30 {
@@ -2059,6 +2123,11 @@ private struct ConnectionsView: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(connection.name)
             if let detail = connection.detail { Text(detail).font(.caption).foregroundStyle(AppTheme.secondaryText) }
+            if let count = connection.toolCount, connection.connected { Text("Инструментов: \(count)").font(.caption).foregroundStyle(AppTheme.secondaryText) }
+            if connection.status == "unavailable" { Text("Нет связи с сервисом").font(.caption).foregroundStyle(AppTheme.secondaryText) }
+            if connection.removable == true && (client.canManageConnections || client.canManageOpenAI) {
+                Button("Удалить…", role: .destructive) { pendingMCPRemoval = connection }.buttonStyle(.borderless).font(.caption).disabled(changing)
+            }
         }
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2068,9 +2137,9 @@ private struct ConnectionsView: View {
         if connection.connected {
             Label("Подключён", systemImage: "checkmark").font(.caption).foregroundStyle(AppTheme.secondaryText)
         } else {
-            Button(connecting == connection.id ? "Подключаем…" : waiting?.id == connection.id ? "Ожидаем входа" : "Подключить") {
+            Button(connecting == connection.id ? "Проверяем…" : waiting?.id == connection.id ? "Ожидаем входа" : connection.status == "unavailable" ? "Проверить" : "Подключить") {
                 Task { await connect(connection) }
-            }.disabled(connecting != nil || waiting?.id == connection.id)
+            }.buttonStyle(.bordered).disabled(connecting != nil || waiting?.id == connection.id)
                 .accessibilityLabel("Подключить \(connection.name)")
                 .accessibilityIdentifier("connect-service-" + connection.id)
         }
@@ -2080,27 +2149,51 @@ private struct ConnectionsView: View {
         connecting = connection.id; error = nil; notice = nil
         defer { connecting = nil }
         do {
-            if let url = try await client.connectService(connection.id) {
+            if let url = try await client.connectService(connection.id, for: scopeID) {
                 waiting = connection; authorizationURL = url
                 openURL(url) { accepted in if !accepted { error = "Не удалось открыть браузер. Используйте ссылку «Открыть ещё раз»." } }
             } else {
                 await refresh()
-                if client.connections.contains(where: { $0.id == connection.id && $0.connected }) { notice = "Подключено: " + connection.name }
+                if availableConnections.contains(where: { $0.id == connection.id && $0.connected }) { notice = "Подключено: " + connection.name }
                 else { error = "Сервис ещё не подтвердил подключение. Нажмите «Обновить сервисы»." }
             }
         } catch is CancellationError { }
         catch { self.error = error.localizedDescription }
     }
     private func refresh(force: Bool = true) async {
+        guard !scopeID.isEmpty else { return }
+        let requestID = UUID(), scope = scopeID
+        refreshID = requestID
         loading = true; error = nil
-        defer { loading = false }
+        defer { if refreshID == requestID { loading = false } }
         do {
-            try await client.loadConnections(refresh: force)
-            if let waiting, client.connections.contains(where: { $0.id == waiting.id && $0.connected }) {
+            async let services = client.serviceConnections(for: scope, refresh: force)
+            async let installed = try? client.loadExtensions(for: scope)
+            let (result, packages) = try await (services, installed)
+            guard refreshID == requestID, scope == scopeID else { return }
+            availableConnections = result.connections; extensions = packages?.items ?? []
+            extensionNotice = packages?.notice ?? result.notice ?? (packages == nil ? "Не удалось загрузить навыки. Проверьте, что OpenStrudel на устройстве сотрудника обновлён." : nil)
+            if let waiting, availableConnections.contains(where: { $0.id == waiting.id && $0.connected }) {
                 notice = "Подключено: " + waiting.name; self.waiting = nil; authorizationURL = nil
             }
         } catch is CancellationError { }
-        catch { self.error = error.localizedDescription }
+        catch { if refreshID == requestID { self.error = error.localizedDescription } }
+    }
+    private func updateExtension(_ item: EmployeeExtension, enabled: Bool? = nil) {
+        changing = true; error = nil
+        Task {
+            defer { changing = false }
+            do { try await client.changeExtension(item.id, enabled: enabled, for: scopeID); await refresh() }
+            catch { self.error = error.localizedDescription }
+        }
+    }
+    private func removeMCP(_ item: ServiceConnection) {
+        changing = true; error = nil
+        Task {
+            defer { changing = false }
+            do { try await client.removeMCP(item.id, for: scopeID); await refresh() }
+            catch { self.error = error.localizedDescription }
+        }
     }
 }
 

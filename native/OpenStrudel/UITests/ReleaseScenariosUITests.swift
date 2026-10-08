@@ -114,8 +114,8 @@ final class ReleaseScenariosUITests: XCTestCase {
         app.buttons["Настройки сотрудника"].tap()
         XCTAssertTrue(editableName.waitForExistence(timeout: 10))
         XCTAssertEqual(editableName.value as? String, "Редактор")
-        try reveal(app.buttons["Сервисы"], in: app)
-        app.buttons["Сервисы"].tap()
+        try reveal(app.buttons["Сервисы и навыки"], in: app)
+        app.buttons["Сервисы и навыки"].tap()
         XCTAssertTrue(app.staticTexts["Документы"].waitForExistence(timeout: 10), app.debugDescription)
         capture("services", app)
         let connectService = app.buttons["connect-service-qa-documents"]

@@ -440,8 +440,33 @@ struct ServiceConnection: Decodable, Identifiable {
     let connected: Bool
     let detail: String?
     let url: String?
+    var status: String? = nil
+    var toolCount: Int? = nil
+    var removable: Bool? = nil
 }
 struct ConnectionsEnvelope: Decodable { let connections: [ServiceConnection]; let notice: String? }
+struct EmployeeExtension: Decodable, Identifiable {
+    let id: String
+    let name: String
+    let description: String
+    let kind: String
+    let enabled: Bool
+    let removable: Bool
+}
+struct ExtensionsEnvelope: Decodable { let items: [EmployeeExtension]; let notice: String? }
+struct ExtensionContext: Decodable, Identifiable { let id: String; let title: String; let isGroup: Bool; var sharedNotice: String? = nil }
+struct ExtensionContextsEnvelope: Decodable { let contexts: [ExtensionContext] }
+struct ExtensionFile: Encodable, Sendable { let path: String; let contentBase64: String; let executable: Bool }
+struct ExtensionPreview: Decodable {
+    let kind: String
+    let name: String
+    let description: String
+    let files: Int
+    let bytes: Int
+    let digest: String
+    let services: [String]
+    let hasHooks: Bool
+}
 struct ConnectionLink: Decodable { let url: String? }
 struct ChatInteraction: Decodable, Identifiable, Equatable {
     let id: String
