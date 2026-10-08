@@ -45,7 +45,7 @@ export class Interactions {
   }
   close(): void { for (const p of [...this.pending.values()]) this.cancelMessage(p.card.messageId); }
 
-  async codexRequest(conversationId: string, messageId: string, method: string, params: Record<string, any>): Promise<unknown> {
+  async codexRequest(conversationId: string, messageId: string, method: string, params: Record<string, any>, requestedBy?: string): Promise<unknown> {
     const base = { conversationId, messageId };
     if (method === "item/tool/requestUserInput" || method === "tool/requestUserInput") {
       if ((params.questions ?? []).some((q: any) => q.isSecret)) throw new Error("Секретные данные вводятся только на странице подключения сервиса");
@@ -59,6 +59,19 @@ export class Interactions {
     if (method === "item/permissions/requestApproval") {
       const answers = await this.ask({ ...base, title: "Разрешить доступ?", detail: [params.reason, JSON.stringify(params.permissions)].filter(Boolean).join("\n"), questions: [{ id: "decision", question: "Только для этого ответа", options: ["Разрешить", "Отказать"] }] });
       return { permissions: answers.decision === "Разрешить" ? Object.fromEntries(Object.entries(params.permissions ?? {}).filter(([, value]) => value != null)) : {}, scope: "turn" };
+    }
+    if (method === "mcpServer/elicitation/request" && params.mode === "form"
+        && params._meta?.codex_approval_kind === "mcp_tool_call"
+        && params.requestedSchema?.type === "object"
+        && params.requestedSchema.properties && Object.keys(params.requestedSchema.properties).length === 0
+        && (params.requestedSchema.required === undefined || Array.isArray(params.requestedSchema.required) && params.requestedSchema.required.length === 0)) {
+      // Codex uses an empty MCP form for a one-time tool-call approval.
+      // This is not OAuth and is not permission to approve later calls.
+      const parameters = params._meta.tool_params;
+      const detail = [params.message, parameters && Object.keys(parameters).length ? JSON.stringify(parameters, null, 2) : null].filter(Boolean).join("\n\n");
+      const answers = await this.ask({ ...base, requestedBy, title: "Разрешить действие сервиса?", detail,
+        questions: [{ id: "decision", question: "Только это действие", options: ["Разрешить", "Отказать"] }] });
+      return { action: answers.decision === "Разрешить" ? "accept" : "decline", content: answers.decision === "Разрешить" ? {} : null, _meta: null };
     }
     if (method === "mcpServer/elicitation/request" && params.mode === "url") {
       const answers = await this.ask({ ...base, title: params.serverName, detail: params.message, url: safeURL(params.url), questions: [{ id: "decision", question: "Завершите подключение в браузере", options: ["Продолжить", "Отмена"] }] });

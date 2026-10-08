@@ -105,7 +105,7 @@ export class MessageService {
                 if (method === "item/commandExecution/requestApproval" || method === "item/fileChange/requestApproval") return Promise.resolve({ decision: "decline" });
                 if (method === "item/permissions/requestApproval") return Promise.resolve({ permissions: {}, scope: "turn" });
               }
-              return this.interactions.codexRequest(current.id, inbound.id, method, params);
+              return this.interactions.codexRequest(current.id, inbound.id, method, params, input.telegramSenderId);
             },
             onEvent: event => { if (event.type === "thread.started") this.store.setConversationThread(current.id, (event.payload as { threadId: string }).threadId); },
           });

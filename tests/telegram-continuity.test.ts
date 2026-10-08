@@ -41,6 +41,47 @@ it("restricts a linked group to its approved senders",async()=>{
  await a.processUpdate({update_id:2,message:{message_id:2,from:{id:7},chat:{id:-100,type:"group"},text:"Hello"}});
  expect(s.listMessages(s.getTelegramChat("-100")!.conversationId!)).toHaveLength(2);await m.close();
 });
+it.each(["Разрешить", "Отказать"])("routes MCP approval to its group and original sender: %s", async decision => {
+ const s=new Store(":memory:");stores.push(s);
+ s.linkTelegramChat({chatId:"-100",title:"Core",allowedSenders:["7","8"]});
+ s.bindTelegramChat("-100",s.createProfile({name:"Core"}).id);
+ const executed=vi.fn();
+ const m=new MessageService(s,{async run(_text,options){
+  const answer=await options!.onRequest!("mcpServer/elicitation/request",{
+   mode:"form",serverName:"service",message:"Run the test action?",_meta:{codex_approval_kind:"mcp_tool_call",tool_params:{target:"Test record"}},requestedSchema:{type:"object",properties:{}}
+  }) as {action:string};
+  if(answer.action==="accept")executed();
+  return {threadId:"core",response:answer.action,events:[]};
+ }});
+ const sent:Array<any>=[];
+ vi.stubGlobal("fetch",vi.fn(async(_url:string,init:RequestInit)=>{sent.push(JSON.parse(String(init.body)));return Response.json({ok:true,result:{message_id:99}});}));
+ const a=new TelegramAdapter("123:test",s,m);
+ const turn=a.processUpdate({update_id:200,message:{message_id:200,from:{id:7},chat:{id:-100,type:"group"},text:"Test action"}});
+ await vi.waitFor(()=>expect(sent.some(s=>s.reply_markup?.inline_keyboard)).toBe(true));
+ const card=sent.find(s=>s.reply_markup?.inline_keyboard);
+ expect(card.chat_id).toBe("-100");expect(card.text).toContain("Test record");expect(executed).not.toHaveBeenCalled();
+ const data=card.reply_markup.inline_keyboard.flat().find((button:any)=>button.text===decision).callback_data;
+ const callback=(id:number,who:number,chat=-100)=>({update_id:id,callback_query:{id:String(id),from:{id:who},data,message:{message_id:99,chat:{id:chat}}}});
+ await a.processUpdate(callback(201,7,-101));await a.processUpdate(callback(202,8));
+ expect(m.interactions.list(s.getTelegramChat("-100")!.conversationId!)).toHaveLength(1);
+ expect(sent.some(s=>s.text==="Подтвердить может тот, кто дал поручение")).toBe(true);
+ await a.processUpdate(callback(203,7));await turn;
+ expect(executed).toHaveBeenCalledTimes(decision==="Разрешить"?1:0);
+ await a.processUpdate(callback(204,7));
+ expect(sent.at(-2).text).toBe("Этот запрос уже завершён");
+ expect(executed).toHaveBeenCalledTimes(decision==="Разрешить"?1:0);
+ await m.close();
+});
+it("does not offer confirmation for truncated action details in Telegram", async () => {
+ const {s,m}=setup();s.bindTelegramChat("-100",s.createProfile({name:"Core"}).id);
+ const c=s.getTelegramChat("-100")!.conversationId!;
+ const input=s.addMessage({conversationId:c,channel:"telegram",direction:"inbound",text:"test",externalId:"-100:20"});
+ const result=m.interactions.ask({conversationId:c,messageId:input.id,title:"Approve?",detail:"A".repeat(5000),questions:[{id:"decision",question:"",options:["Разрешить","Отказать"]}]});
+ await vi.waitFor(()=>expect(fetch).toHaveBeenCalled());
+ const body=JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]!.body));
+ expect(body.text).toContain("Полное описание");expect(body.reply_markup.inline_keyboard).toEqual([]);
+ m.interactions.cancelMessage(input.id);await expect(result).rejects.toThrow();await m.close();
+});
 it("does not resend a delivery whose response was lost",async()=>{
  const {a}=setup();vi.stubGlobal("fetch",vi.fn(async()=>{throw new Error("connection lost");}));
  await expect(a.sendMessage(-100,"Hello","same-reply")).rejects.toThrow();

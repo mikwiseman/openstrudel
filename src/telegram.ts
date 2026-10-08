@@ -272,7 +272,9 @@ export class TelegramAdapter {
       const [id, q, o] = (query.data ?? "").split(":");
       const card = id ? this.messages.interactions.get(id) : undefined;
       let feedback = "Этот запрос уже завершён";
-      if (card && this.authorizedSender(chatId,query.from?.id) && this.ownsInteraction(chatId, card)) {
+      if (card && this.authorizedSender(chatId,query.from?.id) && this.ownsInteraction(chatId, card) && card.requestedBy && card.requestedBy !== String(query.from?.id)) {
+        feedback = "Подтвердить может тот, кто дал поручение";
+      } else if (card && this.authorizedSender(chatId,query.from?.id) && this.ownsInteraction(chatId, card)) {
         const question = card.questions[Number(q)];
         const option = question?.options[Number(o)];
         if (question && option) {
@@ -411,10 +413,13 @@ export class TelegramAdapter {
     const rows: Array<Array<Record<string, string>>> = [];
     if (card.url) rows.push([{ text: "Открыть подключение", url: card.url }]);
     card.questions.forEach((q, qi) => q.options.forEach((option, oi) => rows.push([{ text: option, callback_data: `${card.id}:${qi}:${oi}` }])));
+    const text = [card.title, card.detail, ...card.questions.map(q => q.question), card.requestedBy && Number(chatId) < 0 ? "Подтвердить может тот, кто дал поручение." : null].filter(Boolean).join("\n");
+    // Never offer approval for an action whose details were cut off by Telegram.
+    const tooLong = text.length > 4000;
     const result = await this.call<{ message_id: number }>("sendMessage", {
       chat_id: chatId,
-      text: [card.title, card.detail, ...card.questions.map(q => q.question)].filter(Boolean).join("\n").slice(0, 4000),
-      reply_markup: rows.length ? { inline_keyboard: rows } : { force_reply: true },
+      text: tooLong ? `${card.title}\nПолное описание действия доступно в OpenStrudel. Откройте эту переписку в приложении, чтобы проверить и подтвердить его.` : text,
+      reply_markup: tooLong ? { inline_keyboard: [] } : rows.length ? { inline_keyboard: rows } : { force_reply: true },
     });
     this.questionMessages.set(chatId + ":" + result.message_id, card.id);
   }

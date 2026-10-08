@@ -86,7 +86,7 @@ export interface CodexEngine {
 
 export interface DynamicTool { type: "function"; name: string; description: string; inputSchema: Record<string, unknown> }
 export interface Connection { id: string; name: string; kind: "app" | "mcp"; detail?: string | null; connected: boolean; url: string | null; }
-export interface Interaction { id: string; conversationId: string; messageId: string; title: string; detail?: string; url?: string; questions: Array<{ id: string; question: string; options: string[] }>; }
+export interface Interaction { id: string; conversationId: string; messageId: string; title: string; detail?: string; url?: string; requestedBy?: string; questions: Array<{ id: string; question: string; options: string[] }>; }
 
 export interface MessageInput {
   conversationId?: string;
