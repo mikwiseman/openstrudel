@@ -112,6 +112,10 @@ export class Store {
       chat_id TEXT PRIMARY KEY, title TEXT NOT NULL, conversation_id TEXT REFERENCES conversations(id),
       profile_id TEXT REFERENCES employee_profiles(id), allowed_senders_json TEXT NOT NULL
     ); CREATE UNIQUE INDEX IF NOT EXISTS telegram_conversation_unique ON telegram_chats(conversation_id) WHERE conversation_id IS NOT NULL;`);
+    const telegramColumns = new Set((this.db.prepare("PRAGMA table_info(telegram_chats)").all() as Row[]).map(r => String(r.name)));
+    // Existing groups keep their approved participants and participation rules.
+    if (!telegramColumns.has("access")) this.db.exec("ALTER TABLE telegram_chats ADD COLUMN access TEXT NOT NULL DEFAULT 'approved'");
+    if (!telegramColumns.has("replies")) this.db.exec("ALTER TABLE telegram_chats ADD COLUMN replies TEXT NOT NULL DEFAULT 'instructions'");
     for (const row of this.db.prepare("SELECT id, external_id FROM conversations WHERE external_id LIKE '%::employee::%' AND profile_id IS NULL").all() as Row[]) {
       const profile = String(row.external_id).split("::employee::")[1];
       if (profile && this.getProfile(profile)) this.db.prepare("UPDATE conversations SET profile_id=? WHERE id=?").run(profile, String(row.id));
@@ -196,7 +200,7 @@ export class Store {
 
   getTelegramChat(chatId: string): TelegramChat | null {
     const row = this.db.prepare("SELECT * FROM telegram_chats WHERE chat_id=?").get(chatId) as Row | undefined;
-    return row ? { chatId: String(row.chat_id), title: String(row.title), conversationId: row.conversation_id == null ? null : String(row.conversation_id), profileId: row.profile_id == null ? null : String(row.profile_id), allowedSenders: jsonArray(row.allowed_senders_json as string) } : null;
+    return row ? { chatId: String(row.chat_id), title: String(row.title), conversationId: row.conversation_id == null ? null : String(row.conversation_id), profileId: row.profile_id == null ? null : String(row.profile_id), allowedSenders: jsonArray(row.allowed_senders_json as string), access: row.access === "members" ? "members" : "approved", replies: row.replies === "mentions" ? "mentions" : "instructions" } : null;
   }
 
   telegramChats(): TelegramChat[] {

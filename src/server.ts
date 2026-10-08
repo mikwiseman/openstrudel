@@ -392,6 +392,7 @@ export class HttpApi {
         this.send(response, 200, { profile });
         return;
       }
+      if (path.startsWith("/v1/integrations/telegram") && request.method !== "GET" && !canManageAccount) throw new HomeError("Настраивать Telegram может владелец устройства.", 403);
       if (request.method === "POST" && path === "/v1/integrations/telegram") {
         const body = await this.body(request);
         this.send(response, 200, { telegram: await this.telegram.configure(String(body.token ?? "")) });
@@ -404,13 +405,17 @@ export class HttpApi {
       }
       if (request.method === "POST" && path === "/v1/integrations/telegram/link") {
         const body=await this.body(request);
-        this.send(response, 201, this.telegram.createLink(body.profileId ? String(body.profileId) : undefined));
+        this.send(response, 201, this.telegram.createLink(body.profileId ? String(body.profileId) : undefined, body.kind === "group" ? "group" : "private"));
         return;
+      }
+      if (request.method === "POST" && path === "/v1/integrations/telegram/link/status") {
+        const body = await this.body(request);
+        this.send(response, 200, this.telegram.linkStatus(String(body.code ?? ""))); return;
       }
       const bindingMatch=path.match(/^\/v1\/integrations\/telegram\/chats\/(-?\d+)$/);
       if(request.method==="PATCH" && bindingMatch) {
         const body=await this.body(request);
-        this.store.bindTelegramChat(bindingMatch[1]!,body.profileId == null ? null : String(body.profileId));
+        this.telegram.bindChat(bindingMatch[1]!,body.profileId == null ? null : String(body.profileId));
         this.send(response,200,{telegram:this.telegram.status()}); return;
       }
       const historyMatch=path.match(/^\/v1\/conversations\/([^/]+)\/history$/);

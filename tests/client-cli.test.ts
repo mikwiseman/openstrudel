@@ -12,6 +12,35 @@ import { MockCodexEngine } from "../src/codex.js";
 import { hostingOrigin } from "../src/hosting-origin.js";
 
 describe("CLI recovery after a lost response", () => {
+  it("keeps Telegram group links distinct from personal pairing, including older devices", async () => {
+    const root = await mkdtemp(join(tmpdir(), "strudel-cli-telegram-"));
+    const requests: { path: string; body: Record<string, string> }[] = [];
+    let legacy = false;
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(Buffer.from(chunk));
+      const body = JSON.parse(Buffer.concat(chunks).toString() || "{}");
+      requests.push({ path: req.url!, body });
+      const query = body.kind === "group" && !legacy ? "startgroup" : "start";
+      res.writeHead(201, { "content-type": "application/json" }).end(JSON.stringify({ code: "fixture", expiresAt: "2026-10-08T12:00:00Z", url: `https://t.me/test_bot?${query}=fixture` }));
+    });
+    await new Promise<void>(done => server.listen(0, "127.0.0.1", done));
+    const config = join(root, "connection.json");
+    await writeFile(config, JSON.stringify({ url: `http://127.0.0.1:${(server.address() as any).port}`, token: "synthetic-owner" }), { mode: 0o600 });
+    const cli = (args: string[]) => new Promise<{ code: number | null; out: string; err: string }>((resolve, reject) => {
+      const child = spawn(process.execPath, ["--import", import.meta.resolve("tsx"), fileURLToPath(new URL("../src/cli.ts", import.meta.url)), "telegram", ...args], { cwd: root, env: { ...process.env, OPENSTRUDEL_CLIENT_CONFIG: config }, stdio: "pipe" });
+      let out = "", err = ""; child.stdout.on("data", b => out += b); child.stderr.on("data", b => err += b); child.once("error", reject); child.once("exit", code => resolve({ code, out, err })); child.stdin.end();
+    });
+    try {
+      const pair = await cli(["pair"]); expect(pair.code, pair.err).toBe(0);
+      expect(requests.at(-1)?.body).toEqual({});
+      const group = await cli(["group", "editor", "--device", "remote"]); expect(group.code, group.err).toBe(0);
+      expect(JSON.parse(group.out).url).toContain("?startgroup=");
+      expect(requests.at(-1)).toEqual({ path: "/v1/integrations/telegram/link?deviceId=remote", body: { kind: "group", profileId: "editor" } });
+      legacy = true;
+      const old = await cli(["group", "editor"]); expect(old.code).toBe(1); expect(old.out).not.toContain("https://t.me/"); expect(old.err).toContain("Обновите OpenStrudel");
+    } finally { await new Promise<void>(done => server.close(() => done())); await rm(root, { recursive: true, force: true }); }
+  });
+
   it("does not publish store credentials, redirects or executable URLs as a Home destination", () => {
     for (const value of ["javascript:alert(1)", "http://public.example", "https://user:secret@store.example", "https://store.example/path", "https://store.example?key=secret", "https://store.example#key=secret"]) expect(hostingOrigin(value)).toBeUndefined();
     expect(hostingOrigin("https://store.example/")).toBe("https://store.example");

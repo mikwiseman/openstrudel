@@ -1597,96 +1597,132 @@ private struct TelegramChatsView: View {
     @EnvironmentObject private var client: HomeClient
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
-    @Environment(\.scenePhase) private var scenePhase
     var profile: EmployeeProfile? = nil
     @State private var replacement: TelegramChat?
-    private var chats: [TelegramChat] { client.telegram?.chats ?? [] }
-    private var paired: Bool { chats.contains { !$0.chatId.hasPrefix("-") && $0.allowedSenders.contains($0.chatId) } }
+    @State private var removal: TelegramChat?
+    @State private var busy = false
+    @State private var error: String?
+    @State private var invitation: TelegramLinkResponse?
+    private var groups: [TelegramChat] { (client.telegram?.chats ?? []).filter(\.isGroup) }
+    private var ownGroups: [TelegramChat] { groups.filter { profile == nil || $0.profileId == profile?.id } }
+    private var available: [TelegramChat] { groups.filter { $0.profileId != profile?.id } }
+    private var paired: Bool { client.telegram?.chats?.contains(where: \.isPairedOwner) == true }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                if client.telegram?.configured != true {
-                    TelegramSetupView()
-                } else {
-                    Section {
-                        if paired, let name = client.telegram?.botUsername, let url = URL(string: "https://t.me/" + name + "?startgroup=choose&admin=manage_chat") {
-                            Link(destination: url) { Label("Добавить бота в группу", systemImage: "plus.bubble") }
-                                .buttonStyle(.plain).foregroundStyle(AppTheme.accent)
-                        } else {
-                            Button("Подключить Telegram") {
-                                Task { await client.createTelegramLink(); if let url = client.telegramLink?.url { openURL(url) } }
+                VStack(alignment: .leading, spacing: 20) {
+                    if client.telegram?.configured != true || !paired {
+                        TelegramSetupView()
+                    } else {
+                        if let profile {
+                            Text("«\(profile.name)» в Telegram").font(.headline)
+                            Text("Добавьте сотрудника в группу, чтобы общаться с ним вместе с коллегами.")
+                                .font(.callout).foregroundStyle(AppTheme.secondaryText)
+                            Button {
+                                busy = true; error = nil
+                                Task {
+                                    defer { busy = false }
+                                    do {
+                                        let link = try await client.createTelegramGroupLink(profileID: profile.id)
+                                        guard let url = link.url else { throw HomeClientError.server("Не удалось открыть Telegram. Проверьте связь с ботом.") }
+                                        invitation = link
+                                        openURL(url) { opened in if !opened { self.error = "Не удалось открыть Telegram. Проверьте, что приложение установлено, и попробуйте ещё раз." } }
+                                    } catch { self.error = UserFacingError.text(error.localizedDescription) }
+                                }
+                            } label: {
+                                HStack { if busy { ProgressView().controlSize(.small) }; Label("Добавить в группу…", systemImage: "plus.bubble") }
+                            }.buttonStyle(.borderedProminent).disabled(busy).accessibilityIdentifier("addEmployeeTelegramGroup")
+                            Text("Выберите группу в Telegram. Все её участники смогут обращаться к сотруднику через @упоминание бота или ответ ему.")
+                                .font(.caption).foregroundStyle(AppTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+                            if let invitation {
+                                TimelineView(.periodic(from: .now, by: 5)) { context in
+                                    let expired = (invitation.expiryDate ?? .distantPast) < context.date
+                                    Text(expired ? "Ссылка устарела. Нажмите «Добавить в группу» ещё раз." : "Ждём выбора группы в Telegram…")
+                                        .font(.callout).foregroundStyle(AppTheme.secondaryText)
+                                }
                             }
                         }
-                    } footer: {
-                        Text(paired ? "Telegram предложит сделать бота администратором, чтобы он видел сообщения группы. Затем выберите сотрудника здесь." : "Сначала свяжите свой Telegram-аккаунт.")
-                            .font(.caption).fontWeight(.regular).foregroundStyle(AppTheme.secondaryText)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    if !chats.isEmpty {
-                        Section {
-                            ForEach(chats) { chat in
-                                HStack {
-                                    Image(systemName: chat.chatId.hasPrefix("-") ? "person.2" : "person.crop.circle").foregroundStyle(AppTheme.secondaryText)
+                        if !ownGroups.isEmpty {
+                            Divider()
+                            ForEach(ownGroups) { chat in
+                                HStack(alignment: .top, spacing: 12) {
+                                    Image(systemName: "person.2").foregroundStyle(AppTheme.secondaryText).padding(.top, 3)
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(chat.title)
-                                        Text(client.profiles.first(where: { $0.id == chat.profileId })?.name ?? (chat.chatId.hasPrefix("-") ? "Выберите сотрудника" : "Общий помощник"))
+                                        Text(chat.title).font(.body.weight(.medium))
+                                        if profile == nil { Text(client.profiles.first(where: { $0.id == chat.profileId })?.name ?? "Сотрудник не выбран").font(.caption) }
+                                        Text(chat.replies == "mentions" ? "По @упоминанию или ответу" : "По правилам сотрудника")
                                             .font(.caption).foregroundStyle(AppTheme.secondaryText)
+                                        if chat.access != "members" { Text("Сохранённый список участников").font(.caption).foregroundStyle(AppTheme.secondaryText) }
                                     }
-                                    Spacer()
-                                    if let profile {
-                                        if chat.profileId == profile.id {
-                                            Menu { Button("Отвязать", role: .destructive) { Task { await client.bindTelegram(chatID: chat.chatId, profileID: nil) } } } label: {
-                                                Image(systemName: "checkmark").foregroundStyle(AppTheme.secondaryText)
-                                            }.menuIndicator(.hidden).accessibilityLabel("Чат связан")
-                                        } else {
-                                            Button("Связать") {
-                                                if chat.profileId != nil { replacement = chat }
-                                                else { Task { await client.bindTelegram(chatID: chat.chatId, profileID: profile.id) } }
-                                            }.controlSize(.small)
-                                        }
-                                    } else {
-                                        Menu("Сотрудник") {
-                                            ForEach(client.profiles) { employee in
-                                                Button(employee.name) { Task { await client.bindTelegram(chatID: chat.chatId, profileID: employee.id) } }
-                                            }
-                                        }.controlSize(.small)
-                                    }
-                                }.padding(.vertical, 5)
+                                    Spacer(minLength: 4)
+                                    Menu {
+                                        Button("Отключить от сотрудника…", role: .destructive) { removal = chat }
+                                    } label: { Image(systemName: "ellipsis.circle") }
+                                        .menuIndicator(.hidden).accessibilityLabel("Настройки группы «\(chat.title)»")
+                                }.padding(.vertical, 4)
                             }
-                        } footer: {
                             Text("У каждой группы своя переписка. Личные чаты в неё не попадают.")
-                                .font(.caption).fontWeight(.regular).foregroundStyle(AppTheme.secondaryText)
-                                .fixedSize(horizontal: false, vertical: true)
+                                .font(.caption).foregroundStyle(AppTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+                        }
+                        if let profile, !available.isEmpty {
+                            DisclosureGroup("Выбрать подключённую группу") {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    ForEach(available) { chat in
+                                        Button { replacement = chat } label: {
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(chat.title)
+                                                Text(client.profiles.first(where: { $0.id == chat.profileId }).map { "Сейчас отвечает «\($0.name)»" } ?? "Сотрудник не выбран")
+                                                    .font(.caption).foregroundStyle(AppTheme.secondaryText)
+                                            }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                                        }.buttonStyle(.plain).accessibilityIdentifier("chooseTelegramGroup-" + chat.chatId)
+                                    }
+                                    Text("Выбранной группе будет отвечать «\(profile.name)».").font(.caption).foregroundStyle(AppTheme.secondaryText)
+                                }.padding(.top, 12)
+                            }
                         }
                     }
-                }
-            }.padding(24)
+                    if let error { Text(error).foregroundStyle(AppTheme.destructive).font(.callout) }
+                }.padding(24)
             }
             .background(HomeBackground())
             .navigationTitle("Telegram")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Готово") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button { Task { await client.loadChatSettings() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Обновить чаты")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Готово") { dismiss() } } }
+            .task {
+                while !Task.isCancelled {
+                    await client.loadChatSettings()
+                    if let invitation, let state = try? await client.telegramLinkState(code: invitation.code) {
+                        if state.status == "connected" { self.invitation = nil; await client.loadChatSettings() }
+                        else if let problem = state.error { error = problem; self.invitation = nil }
+                    }
+                    do { try await Task.sleep(for: .seconds(5)) } catch { return }
                 }
             }
-            .task { await client.loadChatSettings() }
-            .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await client.loadChatSettings() } } }
-            .confirmationDialog("Заменить сотрудника в этом чате?", isPresented: Binding(get: { replacement != nil }, set: { if !$0 { replacement = nil } })) {
+            .confirmationDialog("\(replacement?.title ?? "Группа"): здесь будет отвечать «\(profile?.name ?? "Сотрудник")»", isPresented: Binding(get: { replacement != nil }, set: { if !$0 { replacement = nil } }), titleVisibility: .visible) {
                 if let chat = replacement, let profile {
-                    Button("Связать с «\(profile.name)»") { Task { await client.bindTelegram(chatID: chat.chatId, profileID: profile.id) }; replacement = nil }
+                    Button(chat.profileId == nil ? "Подключить сотрудника" : "Заменить сотрудника") { bind(chat, to: profile.id); replacement = nil }
                 }
                 Button("Отмена", role: .cancel) { replacement = nil }
-            }
+            } message: { Text("Переписка в OpenStrudel сохранится. Личная история сотрудника останется отдельно.") }
+            .confirmationDialog("Отключить «\(removal?.title ?? "Группа")»?", isPresented: Binding(get: { removal != nil }, set: { if !$0 { removal = nil } }), titleVisibility: .visible) {
+                if let chat = removal { Button("Отключить", role: .destructive) { bind(chat, to: nil); removal = nil } }
+                Button("Отмена", role: .cancel) { removal = nil }
+            } message: { Text("Бот перестанет отвечать в этой группе. Сотрудник и переписка сохранятся.") }
         }
         #if os(macOS)
-        .frame(width: 470, height: 440)
+        .frame(width: 480, height: ownGroups.isEmpty ? 380 : 460)
         #endif
+    }
+
+    private func bind(_ chat: TelegramChat, to profileID: String?) {
+        Task {
+            error = nil
+            await client.bindTelegram(chatID: chat.chatId, profileID: profileID)
+            if let problem = client.errorMessage { error = UserFacingError.text(problem); client.errorMessage = nil }
+        }
     }
 }
 

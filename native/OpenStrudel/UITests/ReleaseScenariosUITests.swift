@@ -2,6 +2,38 @@ import XCTest
 
 /// Runs against tests/fixtures/release-scenarios.ts on a disposable simulator.
 final class ReleaseScenariosUITests: XCTestCase {
+    @MainActor func testTelegramGroups() async throws {
+        continueAfterFailure = false
+        guard let fixture = ProcessInfo.processInfo.environment["OPENSTRUDEL_RELEASE_FIXTURE"] else { throw XCTSkip("Start the isolated fixture.") }
+        let app = XCUIApplication(); app.launch()
+        let invite = try await read(fixture + "/invite")
+        app.open(try XCTUnwrap(URL(string: XCTUnwrap(invite["url"] as? String))))
+        let confirm = app.buttons["confirmMacPairing"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 15)); confirm.tap(); app.finishDevicePairing()
+        let consent = app.buttons["acceptAIDataSharing"]
+        if consent.waitForExistence(timeout: 5) { consent.tap() }
+        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 15)); app.buttons["Чаты"].tap()
+        XCTAssertTrue(app.buttons["Редактор"].waitForExistence(timeout: 10)); app.buttons["Редактор"].tap()
+        app.buttons["Настройки сотрудника"].tap()
+        let telegram = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Telegram")).firstMatch
+        try reveal(telegram, in: app); telegram.tap()
+        XCTAssertTrue(app.buttons["addEmployeeTelegramGroup"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Связать мой Telegram"].exists)
+        capture("telegram-empty", app)
+        app.buttons["Выбрать подключённую группу"].tap()
+        app.buttons["chooseTelegramGroup--100"].tap()
+        XCTAssertTrue(app.buttons["Подключить сотрудника"].waitForExistence(timeout: 5))
+        capture("telegram-confirm", app)
+        app.buttons["Подключить сотрудника"].tap()
+        XCTAssertTrue(app.staticTexts["По @упоминанию или ответу"].waitForExistence(timeout: 10))
+        capture("telegram-connected", app)
+        app.buttons["Настройки группы «Рабочая группа»"].tap()
+        app.buttons["Отключить от сотрудника…"].tap()
+        XCTAssertTrue(app.buttons["Отключить"].waitForExistence(timeout: 5))
+        app.buttons["Отмена"].tap()
+        XCTAssertTrue(app.staticTexts["Рабочая группа"].exists)
+    }
+
     @MainActor func testSettingsEmployeesMessagesAndRecovery() async throws {
         continueAfterFailure = false
         guard let fixture = ProcessInfo.processInfo.environment["OPENSTRUDEL_RELEASE_FIXTURE"] else {
@@ -92,11 +124,14 @@ final class ReleaseScenariosUITests: XCTestCase {
         try done(app)
         let telegram = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Telegram")).firstMatch
         try reveal(telegram, in: app); telegram.tap()
-        XCTAssertTrue(app.staticTexts["Личный чат"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["Рабочая группа"].exists)
+        XCTAssertTrue(app.buttons["addEmployeeTelegramGroup"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Связать мой Telegram"].exists)
+        app.buttons["Выбрать подключённую группу"].tap()
+        XCTAssertTrue(app.buttons["chooseTelegramGroup--100"].waitForExistence(timeout: 5))
         capture("employee-telegram", app)
-        app.buttons["Связать"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["Чат связан"].firstMatch.waitForExistence(timeout: 10))
+        app.buttons["chooseTelegramGroup--100"].tap()
+        app.buttons["Подключить сотрудника"].tap()
+        XCTAssertTrue(app.staticTexts["По @упоминанию или ответу"].waitForExistence(timeout: 10))
         try done(app)
         let name = app.textFields["Имя сотрудника"]
         try reveal(name, in: app)

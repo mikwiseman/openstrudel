@@ -9,17 +9,33 @@ struct TelegramSetupView: View {
     @State private var linking = false
     @State private var checking = false
     @State private var checked = false
-    private var linked: Bool {
-        client.telegram?.chats?.contains { !$0.chatId.hasPrefix("-") && $0.allowedSenders.contains($0.chatId) && $0.profileId == client.activeProfile?.id } == true
-    }
+    @State private var confirmDisconnect = false
+    private var privateChats: [TelegramChat] { (client.telegram?.chats ?? []).filter(\.isPairedOwner) }
+    private var linked: Bool { !privateChats.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Telegram на «\(client.executionDeviceName)»").font(.headline)
+            HStack {
+                Text("Telegram на «\(client.executionDeviceName)»").font(.headline)
+                Spacer()
+                if client.telegram?.configured == true {
+                    Menu {
+                        Button("Отключить бота…", role: .destructive) { confirmDisconnect = true }
+                    } label: { Image(systemName: "ellipsis.circle") }.menuIndicator(.hidden).accessibilityLabel("Настройки бота Telegram")
+                }
+            }
             if client.telegram?.configured == true {
-                Label(client.telegram?.connectionError != nil ? "Telegram недоступен" : linked ? "Чат подключён" : "Бот подключён", systemImage: client.telegram?.connectionError != nil ? "wifi.exclamationmark" : "checkmark.circle.fill").foregroundStyle(AppTheme.accent)
-                Text(linked ? "Пишите в Telegram — отвечает «\(client.activeAgentName)»." : "Свяжите личный чат с «\(client.activeAgentName)».")
-                    .font(.callout).foregroundStyle(AppTheme.secondaryText)
+                Label(client.telegram?.connectionError != nil ? "Telegram недоступен" : "Бот подключён", systemImage: client.telegram?.connectionError != nil ? "wifi.exclamationmark" : "checkmark.circle.fill").foregroundStyle(AppTheme.accent)
+                if let name = client.telegram?.botUsername { Text("@" + name).font(.callout).textSelection(.enabled) }
+                if linked {
+                    ForEach(privateChats) { chat in
+                        let name = client.profiles.first(where: { $0.id == chat.profileId })?.name ?? "Общий помощник"
+                        Text("Личный чат: \(name)").font(.callout).foregroundStyle(AppTheme.secondaryText)
+                    }
+                } else {
+                    Text("Свяжите свой Telegram, чтобы писать общему помощнику и добавлять сотрудников в группы.")
+                        .font(.callout).foregroundStyle(AppTheme.secondaryText)
+                }
                 if let problem = client.telegram?.lastError {
                     Text(UserFacingError.text(problem)).font(.callout).foregroundStyle(AppTheme.destructive)
                 } else if client.telegram?.running != true {
@@ -37,7 +53,7 @@ struct TelegramSetupView: View {
                     if checking { ProgressView().controlSize(.small) }
                     else if checked && client.telegram?.connectionError == nil { Text("Telegram отвечает").font(.caption).foregroundStyle(AppTheme.secondaryText) }
                 }
-                Button(linking ? "Готовим подключение…" : "Открыть чат в Telegram") {
+                Button(linking ? "Готовим подключение…" : linked ? "Открыть личный чат" : "Связать мой Telegram") {
                     linking = true; error = nil
                     Task {
                         if linked, let name = client.telegram?.botUsername, let url = URL(string: "https://t.me/" + name) {
@@ -49,7 +65,10 @@ struct TelegramSetupView: View {
                         }
                         linking = false
                     }
-                }.buttonStyle(.borderedProminent).disabled(linking)
+                }.buttonStyle(.borderedProminent).disabled(linking).accessibilityIdentifier("openPersonalTelegram")
+                if linked {
+                    Text("Для группы откройте сотрудника → Telegram → Добавить в группу.").font(.caption).foregroundStyle(AppTheme.secondaryText)
+                }
                 if client.telegramLink != nil && !linked {
                     Text("Нажмите «Начать» в Telegram. Здесь появится подтверждение подключения.").font(.caption).foregroundStyle(AppTheme.secondaryText)
                 }
@@ -77,17 +96,18 @@ struct TelegramSetupView: View {
             if let error { Text(error).font(.callout).foregroundStyle(AppTheme.destructive) }
         }
         .task { await client.loadChatSettings() }
+        .confirmationDialog("Отключить бота?", isPresented: $confirmDisconnect, titleVisibility: .visible) {
+            Button("Отключить", role: .destructive) {
+                Task {
+                    await client.disconnectTelegram()
+                    if let problem = client.errorMessage { error = UserFacingError.text(problem); client.errorMessage = nil }
+                }
+            }
+            Button("Отмена", role: .cancel) {}
+        } message: { Text("Бот перестанет отвечать в личном чате и группах. Сотрудники и переписка сохранятся.") }
         .task(id: client.normalizedBaseURL) {
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(5)) } catch { return }
-                await client.loadChatSettings()
-            }
-        }
-        .task(id: client.telegramLink?.code) {
-            guard client.telegramLink != nil else { return }
-            for _ in 0..<300 {
-                if linked || Task.isCancelled { return }
-                do { try await Task.sleep(for: .seconds(2)) } catch { return }
                 await client.loadChatSettings()
             }
         }

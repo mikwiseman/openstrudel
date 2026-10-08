@@ -266,6 +266,50 @@ import Testing
         #expect(client.openAIErrorMessage == nil)
     }
 
+    @Test func telegramPairingIsIndependentOfTheOpenEmployee() async throws {
+        let state = AccountFixtureState()
+        var bodies: [[String: String]] = []
+        state.customResponse = { request in
+            guard request.url?.path == "/v1/integrations/telegram/link" else { return nil }
+            var data = request.httpBody ?? Data()
+            if data.isEmpty, let stream = request.httpBodyStream {
+                stream.open(); defer { stream.close() }
+                var buffer = [UInt8](repeating: 0, count: 1024)
+                while stream.hasBytesAvailable {
+                    let count = stream.read(&buffer, maxLength: buffer.count)
+                    guard count > 0 else { break }
+                    data.append(contentsOf: buffer.prefix(count))
+                }
+            }
+            bodies.append((try? JSONSerialization.jsonObject(with: data) as? [String: String]) ?? [:])
+            let query = bodies.last?["kind"] == "group" ? "startgroup" : "start"
+            return (201, Data("{\"code\":\"fixture\",\"expiresAt\":\"2026-10-08T12:00:00.123Z\",\"url\":\"https://t.me/test_bot?\(query)=fixture\"}".utf8))
+        }
+        let (client, session) = makeClient(state)
+        defer { session.invalidateAndCancel() }
+        await client.selectProfile("open-employee")
+        await client.createTelegramLink()
+        #expect(bodies.last == [:])
+        let group = try await client.createTelegramGroupLink(profileID: "chosen-employee")
+        #expect(bodies.last == ["kind": "group", "profileId": "chosen-employee"])
+        #expect(group.expiryDate != nil)
+        #expect(client.telegramLink?.code == "fixture")
+    }
+
+    @Test func oldDeviceCannotTurnGroupSetupIntoPersonalPairing() async throws {
+        let state = AccountFixtureState()
+        state.customResponse = { request in
+            guard request.url?.path == "/v1/integrations/telegram/link" else { return nil }
+            return (201, Data(#"{"code":"fixture","expiresAt":"2026-10-08T12:00:00Z","url":"https://t.me/test_bot?start=fixture"}"#.utf8))
+        }
+        let (client, session) = makeClient(state)
+        defer { session.invalidateAndCancel() }
+        do {
+            _ = try await client.createTelegramGroupLink(profileID: "chosen-employee")
+            Issue.record("A personal pairing link must not open during group setup")
+        } catch { #expect(error.localizedDescription.contains("Обновите OpenStrudel")) }
+    }
+
     private func makeClient(_ state: AccountFixtureState) -> (HomeClient, URLSession) {
         let defaults = UserDefaults(suiteName: "OpenStrudel.account-test." + UUID().uuidString)!
         defaults.set("http://127.0.0.1:57575", forKey: "openstrudel.homeURL")

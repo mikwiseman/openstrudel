@@ -30,7 +30,7 @@ export interface Message {
 
 export interface Attachment { id: string; conversationId: string; name: string; mimeType: string; size: number; }
 
-export interface TelegramChat { chatId: string; title: string; conversationId: string | null; profileId: string | null; allowedSenders: string[]; }
+export interface TelegramChat { chatId: string; title: string; conversationId: string | null; profileId: string | null; allowedSenders: string[]; access: "approved" | "members"; replies: "instructions" | "mentions"; }
 export interface HistoryEntry { sourceId: string; date: string; author: string; direction: "inbound" | "outbound"; text: string; }
 
 export interface EmployeeProfile {

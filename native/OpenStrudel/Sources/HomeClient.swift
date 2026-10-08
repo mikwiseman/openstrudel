@@ -963,10 +963,24 @@ final class HomeClient: ObservableObject, Identifiable {
     func createTelegramLink() async {
         do {
             telegramLink = nil
-            telegramLink = try await request("/v1/integrations/telegram/link" + employeeDeviceQuery, method: "POST", body: try JSONSerialization.data(withJSONObject: selectedProfileID.map { ["profileId": $0] } ?? [:]))
+            telegramLink = try await request("/v1/integrations/telegram/link" + employeeDeviceQuery, method: "POST", body: Data("{}".utf8))
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    func createTelegramGroupLink(profileID: String) async throws -> TelegramLinkResponse {
+        let link: TelegramLinkResponse = try await request("/v1/integrations/telegram/link" + employeeDeviceQuery, method: "POST", body: JSONSerialization.data(withJSONObject: ["kind": "group", "profileId": profileID]))
+        // Older devices ignore `kind` and return a personal pairing link.
+        guard let url = link.url, url.scheme == "https", url.host == "t.me",
+              URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains(where: { $0.name == "startgroup" && $0.value == link.code }) == true else {
+            throw HomeClientError.server("Обновите OpenStrudel на устройстве этого сотрудника, чтобы подключить группу.")
+        }
+        return link
+    }
+
+    func telegramLinkState(code: String) async throws -> TelegramLinkState {
+        try await request("/v1/integrations/telegram/link/status" + employeeDeviceQuery, method: "POST", body: JSONSerialization.data(withJSONObject: ["code": code]))
     }
 
     func beginOpenAILogin() async {
