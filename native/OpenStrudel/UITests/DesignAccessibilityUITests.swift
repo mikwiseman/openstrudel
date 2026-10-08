@@ -43,7 +43,7 @@ final class DesignAccessibilityUITests: XCTestCase {
         let editor = app.buttons["Редактор"]
         reveal(editor, app)
         audit("employee-list", app, &issues)
-        let search = app.searchFields["Найти сотрудника"]
+        let search = app.searchFields["Найти чат"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.tap(); search.typeText("OpenStrudel")
         XCTAssertTrue(app.buttons["OpenStrudel"].waitForExistence(timeout: 5))

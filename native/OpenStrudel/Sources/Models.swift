@@ -91,6 +91,7 @@ struct TelegramChat: Codable, Identifiable {
     let allowedSenders: [String]
     var access: String? = nil
     var replies: String? = nil
+    var enabled: Bool? = nil
     var id: String { chatId }
     var isGroup: Bool { chatId.hasPrefix("-") }
     var isPairedOwner: Bool { !isGroup && allowedSenders.contains(chatId) }

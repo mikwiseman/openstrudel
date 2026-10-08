@@ -429,7 +429,8 @@ export class HttpApi {
       const bindingMatch=path.match(/^\/v1\/integrations\/telegram\/chats\/(-?\d+)$/);
       if(request.method==="PATCH" && bindingMatch) {
         const body=await this.body(request);
-        this.telegram.bindChat(bindingMatch[1]!,body.profileId == null ? null : String(body.profileId));
+        if (typeof body.enabled === "boolean") this.telegram.setGroupEnabled(bindingMatch[1]!, body.enabled);
+        else this.telegram.bindChat(bindingMatch[1]!,body.profileId == null ? null : String(body.profileId));
         this.send(response,200,{telegram:this.telegram.status()}); return;
       }
       const historyMatch=path.match(/^\/v1\/conversations\/([^/]+)\/history$/);

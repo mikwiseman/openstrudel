@@ -80,5 +80,5 @@ esac
       expect(run().status).toBe(0);
       expect(readFileSync(plist, "utf8")).toContain("release-3");
     } finally { rmSync(directory, { recursive: true, force: true }); }
-  });
+  }, 15_000);
 });

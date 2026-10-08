@@ -116,7 +116,9 @@ final class HomeClient: ObservableObject, Identifiable {
     @Published private(set) var connectionNotice: String?
     @Published private(set) var schedules: [ChatSchedule] = []
     @Published private(set) var scheduleRuns: [ScheduleRun] = []
-    @Published private(set) var selectedChatID: String?
+    @Published private(set) var selectedChatID: String? {
+        didSet { defaults.set(selectedChatID, forKey: "openstrudel.selectedChatID") }
+    }
     @Published private(set) var historyLimit = 100
     @Published private(set) var hasEarlierMessages = false
     @Published private(set) var isLoadingEarlier = false
@@ -188,7 +190,9 @@ final class HomeClient: ObservableObject, Identifiable {
         #endif
         self.conversationID = defaults.string(forKey: "openstrudel.conversationID")
         self.selectedProfileID = defaults.string(forKey: "openstrudel.profileID")
+        self.selectedChatID = defaults.string(forKey: "openstrudel.selectedChatID")
         if let selectedProfileID, selectedProfileID.hasPrefix("draft:") {
+            self.selectedChatID = nil
             draftAppearance = .seeded(selectedProfileID)
             draftDeviceID = defaults.string(forKey: "openstrudel.draftDeviceID") ?? ""
         }
@@ -307,6 +311,9 @@ final class HomeClient: ObservableObject, Identifiable {
     var activeAgentName: String {
         isEmployeeDraft ? "Новый сотрудник" : activeProfile?.name ?? "OpenStrudel"
     }
+
+    var telegramGroups: [TelegramChat] { (telegram?.chats ?? []).filter { $0.isGroup && $0.conversationId != nil } }
+    var activeTelegramGroup: TelegramChat? { telegramGroups.first { $0.conversationId == selectedChatID } }
 
     var isEmployeeDraft: Bool { selectedProfileID?.hasPrefix("draft:") == true }
 
@@ -778,9 +785,15 @@ final class HomeClient: ObservableObject, Identifiable {
     }
 
     func selectChat(_ id: String?) async {
+        if let group = telegramGroups.first(where: { $0.conversationId == id }) {
+            selectedProfileID = group.profileId
+            defaults.set(selectedProfileID, forKey: "openstrudel.profileID")
+        }
         selectedChatID = id
+        conversationID = nil; connections = []; connectionNotice = nil; schedules = []
         resetHistory()
         messages = []
+        interactions = []
         await refreshConversation()
     }
     func loadEarlierMessages() async {
@@ -820,6 +833,12 @@ final class HomeClient: ObservableObject, Identifiable {
             telegram = response.telegram
             await refreshConversation()
         } catch { errorMessage = error.localizedDescription }
+    }
+
+    func setTelegramGroupEnabled(_ chatID: String, enabled: Bool) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["enabled": enabled])
+        let response: TelegramEnvelope = try await request("/v1/integrations/telegram/chats/" + chatID + employeeDeviceQuery, method: "PATCH", body: body)
+        telegram = response.telegram
     }
 
     func setSchedule(_ schedule: ChatSchedule, enabled: Bool) async {

@@ -45,7 +45,7 @@ struct OpenStrudelRootView: View {
                     ConversationView(showSettings: $showSettings)
                 }
                 #else
-                NavigationStack { ConversationView(showSettings: $showSettings) }
+                NavigationStack { ConversationView(showSettings: $showSettings).background(HomeBackground()) }
                 #endif
             }
         }
@@ -127,7 +127,7 @@ private struct HomeUnavailableView: View {
             OpenStrudelMark(size: 76)
             VStack(spacing: 12) {
                 Text(reconnecting ? "Нет связи с OpenStrudel" : client.isSignedOut ? "Вы вышли на этом устройстве" : "Помощники для ваших задач")
-                    .font(.system(.largeTitle, design: .serif, weight: .medium))
+                    .font(AppTypography.welcome)
                     .multilineTextAlignment(.center)
                 Text(reconnecting
                      ? "Пока не удаётся подключиться к вашей команде. Ваши чаты сохранены. Подключимся автоматически."
@@ -275,7 +275,7 @@ private struct Sidebar: View {
 
             ScrollView {
                 VStack(spacing: 3) {
-                    if !showsMain && !library.visibleClients.contains(where: { source in source.profiles.contains { $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) } }) {
+                    if !showsMain && !library.visibleClients.contains(where: { source in source.profiles.contains { $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) } || source.telegramGroups.contains { $0.title.localizedCaseInsensitiveContains(searchTerm) } }) {
                         SearchEmptyState(query: query) { query = "" }
                     }
                     ForEach(library.visibleClients) { source in
@@ -291,7 +291,7 @@ private struct Sidebar: View {
                             }
                             if showsMain {
                                 SidebarRow(name: "OpenStrudel", subtitle: library.hasOtherDevices ? source.displayName : "Помощник для ваших задач",
-                                           selected: source === client && source.selectedProfileID == nil, appearance: nil) {
+                                           selected: source === client && source.selectedProfileID == nil && source.selectedChatID == nil, appearance: nil) {
                                     closeSearch(); Task { await library.select(source, profile: nil) }
                                 }
                             }
@@ -300,7 +300,7 @@ private struct Sidebar: View {
                             }
                             ForEach(people) { profile in
                                 SidebarRow(name: profile.name, subtitle: profile.previewText.isEmpty ? profile.roleText : profile.previewText,
-                                           selected: source === client && source.selectedProfileID == profile.id, appearance: profile.resolvedAppearance) {
+                                           selected: source === client && source.selectedProfileID == profile.id && source.activeTelegramGroup == nil, appearance: profile.resolvedAppearance) {
                                     closeSearch()
                                     focusedEmployee = source.id + profile.id
                                     Task { await library.select(source, profile: profile.id) }
@@ -318,6 +318,22 @@ private struct Sidebar: View {
                                     Button("Удалить сотрудника…", role: .destructive) { requestDeletion(profile, from: source) }
                                         .disabled(deleting || !source.canManageOpenAI || source.homeUnreachable)
                                 }
+                            }
+                        }
+                        let groups = source.telegramGroups.filter { searchTerm.isEmpty || $0.title.localizedCaseInsensitiveContains(searchTerm) }
+                        if !groups.isEmpty {
+                            Text(library.hasOtherDevices ? "Telegram · " + source.displayName : "Telegram")
+                                .font(.caption.weight(.medium)).foregroundStyle(AppTheme.secondaryText)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 12).padding(.top, 14).padding(.bottom, 5)
+                            ForEach(groups) { group in
+                                SidebarRow(name: group.title, subtitle: group.enabled == false ? "Бот на паузе" : "Группа в Telegram",
+                                           selected: source === client && source.selectedChatID == group.conversationId,
+                                           appearance: source.profiles.first(where: { $0.id == group.profileId })?.resolvedAppearance,
+                                           symbol: "person.2") {
+                                    closeSearch(); Task { await library.select(source, group: group) }
+                                }
+                                .accessibilityIdentifier("telegramConversation-" + group.chatId)
                             }
                         }
                     }
@@ -390,15 +406,19 @@ private struct SidebarRow: View {
     let subtitle: String
     let selected: Bool
     let appearance: AgentAppearance?
+    var symbol: String? = nil
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 11) {
-                AgentAvatar(appearance: appearance, size: 36)
+                if let symbol {
+                    Image(systemName: symbol).font(.title3).foregroundStyle(AppTheme.accent)
+                        .frame(width: 36, height: 36).background(AppTheme.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
+                } else { AgentAvatar(appearance: appearance, size: 36) }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(name).font(.system(size: 15, weight: .medium)).lineLimit(1)
-                    if !subtitle.isEmpty { Text(subtitle).font(.system(size: 12)).foregroundStyle(AppTheme.secondaryText).lineLimit(1) }
+                    Text(name).font(AppTypography.sidebarTitle).lineLimit(1)
+                    if !subtitle.isEmpty { Text(subtitle).font(AppTypography.sidebarDetail).foregroundStyle(AppTheme.secondaryText).lineLimit(1) }
                 }
                 Spacer(minLength: 0)
             }
@@ -592,6 +612,12 @@ private struct ConversationView: View {
                 }
             }
 
+            if client.activeTelegramGroup != nil {
+                Text("Здесь можно обсудить переписку с помощником. Ответ останется в OpenStrudel.")
+                    .font(.caption).foregroundStyle(AppTheme.secondaryText)
+                    .frame(maxWidth: chatColumn, alignment: .leading).padding(.horizontal, chatInset)
+                    .accessibilityIdentifier("telegramReplyDestination")
+            }
             Composer(draft: $draft, files: $pickedFiles, focused: $focused, contextID: draftKey, canSend: client.isConfigured && !client.connectionNeedsPairing && client.openAIAccount?.connected != false) {
                 guard client.openAIAccount?.connected != false else { return }
                 let value = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -652,7 +678,8 @@ private struct ConversationView: View {
             EmployeePicker().environmentObject(client)
         }
         .sheet(isPresented: $showBotDetails) {
-            if let profile = client.activeProfile {
+            if client.activeTelegramGroup != nil { TelegramChatsView() }
+            else if let profile = client.activeProfile {
                 BotDetailsView(profile: profile).environmentObject(client)
             }
         }
@@ -744,7 +771,7 @@ private struct ConversationTitle: View {
     @EnvironmentObject private var client: HomeClient
     let openEmployee: () -> Void
     private var chats: [TelegramChat] {
-        (client.telegram?.chats ?? []).filter { $0.profileId == client.selectedProfileID && $0.conversationId != nil }
+        (client.telegram?.chats ?? []).filter { !$0.isGroup && $0.profileId == client.selectedProfileID && $0.conversationId != nil }
     }
     private var importedChats: [ImportedConversation] { client.importedConversations.filter { $0.profileId == client.selectedProfileID } }
     private var chatName: String {
@@ -754,7 +781,19 @@ private struct ConversationTitle: View {
     }
     var body: some View {
         VStack(spacing: 2) {
-            if client.activeProfile != nil {
+            if let group = client.activeTelegramGroup {
+                Button(action: openEmployee) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "person.2").foregroundStyle(AppTheme.accent)
+                        VStack(spacing: 2) {
+                            Text(group.title).font(.headline).lineLimit(1)
+                            Text(group.enabled == false ? "Telegram · бот на паузе" : "Telegram")
+                                .font(.caption).foregroundStyle(AppTheme.secondaryText)
+                        }
+                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    }.frame(minHeight: controlTarget).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityLabel("Telegram · " + group.title)
+            } else if client.activeProfile != nil {
                 Button(action: openEmployee) {
                     HStack(spacing: 7) {
                         identity
@@ -769,7 +808,7 @@ private struct ConversationTitle: View {
             } else {
                 HStack(spacing: 7) { identity }.frame(minHeight: controlTarget)
             }
-                if !chats.isEmpty || !importedChats.isEmpty {
+                if client.activeTelegramGroup == nil && (!chats.isEmpty || !importedChats.isEmpty) {
                     Menu {
                         Button { Task { await client.selectChat(nil) } } label: {
                             Label("В приложении", systemImage: client.selectedChatID == nil ? "checkmark" : "bubble.left")
@@ -789,7 +828,7 @@ private struct ConversationTitle: View {
                                 }
                             }
                         }
-                    } label: { Label(chatName, systemImage: client.selectedChatID == nil ? "bubble.left" : "paperplane").lineLimit(1) }
+                    } label: { Label(chatName, systemImage: client.selectedChatID == nil ? "bubble.left" : importedChats.contains(where: { $0.id == client.selectedChatID }) ? "archivebox" : "paperplane").lineLimit(1) }
                         .font(.caption).foregroundStyle(AppTheme.secondaryText)
                         .menuStyle(.borderlessButton)
                         .frame(maxWidth: 260)
@@ -815,7 +854,7 @@ private struct EmptyChat: View {
         VStack(spacing: 12) {
             AgentAvatar(appearance: client.activeAppearance, size: 72)
             Text(client.isEmployeeDraft ? "Создайте сотрудника" : client.activeProfile?.name ?? "Напишите, что нужно")
-                .font(.system(.title2, design: .serif, weight: .semibold))
+                .font(AppTypography.emptyTitle)
             if client.isEmployeeDraft {
                 Text("Напишите, чем он должен заниматься. Например: «Редактор, который помогает писать короткие посты».")
                     .font(.subheadline)
@@ -1186,7 +1225,7 @@ private struct EmployeePicker: View {
     var body: some View {
         NavigationStack {
             List {
-                if !showsMain && !library.visibleClients.contains(where: { source in source.profiles.contains { $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) } }) {
+                if !showsMain && !library.visibleClients.contains(where: { source in source.profiles.contains { $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) } || source.telegramGroups.contains { $0.title.localizedCaseInsensitiveContains(searchTerm) } }) {
                     SearchEmptyState(query: query) { query = "" }
                 }
                 ForEach(library.visibleClients) { source in
@@ -1194,16 +1233,28 @@ private struct EmployeePicker: View {
                     if showsMain || !people.isEmpty {
                     Section {
                         if showsMain {
-                            EmployeePickerRow(name: "OpenStrudel", subtitle: source.displayName, selected: source === client && source.selectedProfileID == nil, appearance: nil) {
+                            EmployeePickerRow(name: "OpenStrudel", subtitle: source.displayName, selected: source === client && source.selectedProfileID == nil && source.selectedChatID == nil, appearance: nil) {
                                 Task { await library.select(source, profile: nil); dismiss() }
                             }
                         }
                         ForEach(people) { profile in
-                            EmployeePickerRow(name: profile.name, subtitle: profile.previewText.isEmpty ? profile.roleText : profile.previewText, selected: source === client && source.selectedProfileID == profile.id, appearance: profile.resolvedAppearance) {
+                            EmployeePickerRow(name: profile.name, subtitle: profile.previewText.isEmpty ? profile.roleText : profile.previewText, selected: source === client && source.selectedProfileID == profile.id && source.activeTelegramGroup == nil, appearance: profile.resolvedAppearance) {
                                 Task { await library.select(source, profile: profile.id); dismiss() }
                             }
                         }
                     } header: { if library.hasOtherDevices { Text(source.displayName) } }
+                    }
+                    let groups = source.telegramGroups.filter { searchTerm.isEmpty || $0.title.localizedCaseInsensitiveContains(searchTerm) }
+                    if !groups.isEmpty {
+                        Section(library.hasOtherDevices ? "Telegram · " + source.displayName : "Telegram") {
+                            ForEach(groups) { group in
+                                EmployeePickerRow(name: group.title, subtitle: group.enabled == false ? "Бот на паузе" : "Группа в Telegram",
+                                                  selected: source === client && source.selectedChatID == group.conversationId,
+                                                  appearance: nil, symbol: "person.2") {
+                                    Task { await library.select(source, group: group); dismiss() }
+                                }.accessibilityIdentifier("telegramConversation-" + group.chatId)
+                            }
+                        }
                     }
                 }
             }
@@ -1211,9 +1262,9 @@ private struct EmployeePicker: View {
             .background(HomeBackground())
             .navigationTitle("Чаты")
             #if os(iOS)
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Найти сотрудника")
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Найти чат")
             #else
-            .searchable(text: $query, prompt: "Найти сотрудника")
+            .searchable(text: $query, prompt: "Найти чат")
             #endif
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -1237,12 +1288,16 @@ private struct EmployeePickerRow: View {
     let subtitle: String
     let selected: Bool
     let appearance: AgentAppearance?
+    var symbol: String? = nil
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 11) {
-                if !textSize.isAccessibilitySize { AgentAvatar(appearance: appearance, size: 42) }
+                if !textSize.isAccessibilitySize {
+                    if let symbol { Image(systemName: symbol).font(.title2).foregroundStyle(AppTheme.accent).frame(width: 42, height: 42) }
+                    else { AgentAvatar(appearance: appearance, size: 42) }
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(.body.weight(.medium)).lineLimit(textSize.isAccessibilitySize ? nil : 2)
                     if !subtitle.isEmpty { Text(subtitle).font(.caption).foregroundStyle(AppTheme.secondaryText).lineLimit(1) }
@@ -1545,7 +1600,7 @@ private struct OpenAIWelcomeView: View {
                      : !client.canManageOpenAI ? "Нужен вход владельца"
                      : client.openAIAccount?.needsSignInAgain == true ? "Войдите в OpenAI снова"
                      : "Подключите OpenAI")
-                    .font(.system(.largeTitle, design: .serif, weight: .medium)).multilineTextAlignment(.center)
+                    .font(AppTypography.welcome).multilineTextAlignment(.center)
                 Text(client.openAIAccount?.isUnavailable == true
                      ? "Проверьте подключение к интернету и попробуйте ещё раз. Ваши чаты и сотрудники сохранены."
                      : !client.canManageOpenAI ? client.openAIRecoveryMessage
@@ -1571,20 +1626,14 @@ private struct OpenAIWelcomeView: View {
 private struct TelegramChatsView: View {
     @EnvironmentObject private var client: HomeClient
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var textSize
     var profile: EmployeeProfile? = nil
     var embedded = false
-    @State private var replacement: TelegramChat?
-    @State private var removal: TelegramChat?
-    @State private var busy = false
+    @State private var busyGroup: String?
     @State private var error: String?
-    @State private var invitation: TelegramLinkResponse?
-    @State private var preparingOwner = false
     @State private var showAccounts = false
+    @State private var showConnections = false
     private var groups: [TelegramChat] { (client.telegram?.chats ?? []).filter(\.isGroup) }
-    private var ownGroups: [TelegramChat] { groups.filter { profile == nil || $0.profileId == profile?.id } }
-    private var available: [TelegramChat] { groups.filter { $0.profileId != profile?.id } }
-    private var paired: Bool { client.telegram?.chats?.contains(where: \.isPairedOwner) == true }
 
     var body: some View {
         Group {
@@ -1598,82 +1647,59 @@ private struct TelegramChatsView: View {
 
     private var content: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                if let profile {
-                    Text("Группы «\(profile.name)»").font(.title3.weight(.semibold))
-                    Text("Здесь сотрудник общается с вами и коллегами. У каждой группы своя переписка.")
-                        .font(.callout).foregroundStyle(AppTheme.secondaryText)
+            VStack(alignment: .leading, spacing: 24) {
+                if let group = client.activeTelegramGroup {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Label("Группа в Telegram", systemImage: "person.2").foregroundStyle(AppTheme.secondaryText)
+                        Text(groupDescription(group)).font(.headline)
+                        if group.enabled != false {
+                            Text(group.replies == "mentions" ? "Отвечает на @упоминание и ответы боту" : "Отвечает по правилам сотрудника")
+                                .font(.callout).foregroundStyle(AppTheme.secondaryText)
+                        }
+                        Divider()
+                        Button { showConnections = true } label: { Label("Сервисы и навыки", systemImage: "link") }
+                            .accessibilityIdentifier("telegramGroupServices")
+                        groupAction(group)
+                    }
+                } else { TelegramSetupView() }
+                if client.telegram?.configured == true && client.openAIAccount?.connected == false {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(client.openAIAccount?.isUnavailable == true
+                             ? "Не удалось проверить OpenAI. Подключение Telegram сохранено."
+                             : "Войдите в OpenAI, чтобы помощник мог отвечать.")
+                            .font(.callout)
+                        Button("Аккаунты OpenAI") { showAccounts = true }
+                            .accessibilityIdentifier("telegramOpenAIAccounts")
+                    }.settingsCard()
                 }
-                if client.telegram?.configured != true {
-                    TelegramSetupView()
-                } else {
-                    if let profile {
-                        if let username = client.telegram?.botUsername {
-                            Text("@" + username + " · " + client.executionDeviceName)
-                                .font(.caption).foregroundStyle(AppTheme.secondaryText)
-                        }
-                        if client.openAIAccount?.connected == false {
+                if client.activeTelegramGroup == nil && !groups.isEmpty {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Группы").font(.headline)
+                        ForEach(groups) { chat in
                             VStack(alignment: .leading, spacing: 10) {
-                                Text(client.openAIAccount?.isUnavailable == true
-                                     ? "Не удалось проверить OpenAI. Подключение группы сохранено."
-                                     : "Чтобы сотрудник отвечал, войдите в OpenAI на этом устройстве.")
-                                    .font(.callout)
-                                Button("Аккаунты OpenAI") { showAccounts = true }
-                                    .accessibilityIdentifier("telegramOpenAIAccounts")
-                            }.settingsCard()
-                        }
-                        if !ownGroups.isEmpty { connectedGroups }
-                        Button {
-                            if paired { addGroup(profile) }
-                            else { preparingOwner = true }
-                        } label: {
-                            HStack { if busy { ProgressView().controlSize(.small) }; Label("Добавить в группу…", systemImage: "plus.bubble") }
-                        }.buttonStyle(.borderedProminent).disabled(busy || preparingOwner)
-                            .accessibilityIdentifier("addEmployeeTelegramGroup")
-                        if preparingOwner && !paired {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Сначала подтвердите свой Telegram. Затем выберете группу.")
-                                    .font(.callout.weight(.medium))
-                                TelegramSetupView(contextual: true)
-                                Button("Отмена") { preparingOwner = false }
-                            }.settingsCard()
-                        } else {
-                            Text("В Telegram выберите существующую группу или создайте новую. Сотрудник ответит на @упоминание бота или ответ на его сообщение.")
-                                .font(.caption).foregroundStyle(AppTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
-                        }
-                        if let invitation {
-                            TimelineView(.periodic(from: .now, by: 5)) { context in
-                                let expired = (invitation.expiryDate ?? .distantPast) < context.date
-                                Text(expired ? "Ссылка устарела. Нажмите «Добавить в группу» ещё раз." : "Ждём выбора группы в Telegram…")
-                                    .font(.callout).foregroundStyle(AppTheme.secondaryText)
+                              HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: "person.2").foregroundStyle(AppTheme.accent).padding(.top, 3)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(chat.title).font(.body.weight(.medium))
+                                    Text(groupDescription(chat)).font(.callout).foregroundStyle(AppTheme.secondaryText)
+                                    if chat.enabled != false {
+                                        Text(chat.replies == "mentions" ? "Отвечает на @упоминание и ответы боту" : "Отвечает по правилам сотрудника")
+                                            .font(.caption).foregroundStyle(AppTheme.secondaryText)
+                                    }
+                                }
+                                Spacer(minLength: 8)
+                                if !textSize.isAccessibilitySize { groupAction(chat) }
+                              }
+                              if textSize.isAccessibilitySize { groupAction(chat) }
                             }
                         }
-                        if !available.isEmpty {
-                            Divider()
-                            Text("Другие группы этого бота").font(.headline)
-                            ForEach(available) { chat in
-                                Button { replacement = chat } label: {
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(chat.title).font(.body.weight(.medium))
-                                            Text(client.profiles.first(where: { $0.id == chat.profileId }).map { "Сейчас отвечает «\($0.name)»" } ?? "Сотрудник не выбран")
-                                                .font(.caption).foregroundStyle(AppTheme.secondaryText)
-                                        }
-                                        Spacer()
-                                        Image(systemName: "plus.circle").foregroundStyle(AppTheme.accent)
-                                    }.frame(minHeight: controlTarget).contentShape(Rectangle())
-                                }.buttonStyle(.plain).accessibilityIdentifier("chooseTelegramGroup-" + chat.chatId)
-                            }
-                        }
-                    } else {
-                        TelegramSetupView()
-                        if !ownGroups.isEmpty { connectedGroups }
                     }
                 }
                 if let error { Text(error).foregroundStyle(AppTheme.destructive).font(.callout) }
             }.padding(24)
         }
-        .background(HomeBackground()).navigationTitle("Telegram")
+        .background(HomeBackground()).navigationTitle(client.activeTelegramGroup?.title ?? "Telegram")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -1685,70 +1711,31 @@ private struct TelegramChatsView: View {
         .navigationDestination(isPresented: $showAccounts) {
             ScrollView { DeviceAccountsView().padding(24) }.navigationTitle("Аккаунты OpenAI")
         }
-        .onChange(of: paired) { _, linked in
-            if linked && preparingOwner, let profile { preparingOwner = false; addGroup(profile) }
-        }
-        .task {
-            while !Task.isCancelled {
-                await client.loadChatSettings()
-                if let invitation, let state = try? await client.telegramLinkState(code: invitation.code) {
-                    if state.status == "connected" { self.invitation = nil; await client.loadChatSettings() }
-                    else if let problem = state.error { error = problem; self.invitation = nil }
-                }
-                do { try await Task.sleep(for: .seconds(5)) } catch { return }
-            }
-        }
-        .confirmationDialog("\(replacement?.title ?? "Группа"): здесь будет отвечать «\(profile?.name ?? "Сотрудник")»", isPresented: Binding(get: { replacement != nil }, set: { if !$0 { replacement = nil } }), titleVisibility: .visible) {
-            if let chat = replacement, let profile {
-                Button(chat.profileId == nil ? "Подключить сотрудника" : "Заменить сотрудника") { bind(chat, to: profile.id); replacement = nil }
-            }
-            Button("Отмена", role: .cancel) { replacement = nil }
-        } message: { Text("Переписка в OpenStrudel сохранится. Личная история сотрудника останется отдельно.") }
-        .confirmationDialog("Отключить «\(removal?.title ?? "Группа")»?", isPresented: Binding(get: { removal != nil }, set: { if !$0 { removal = nil } }), titleVisibility: .visible) {
-            if let chat = removal { Button("Отключить", role: .destructive) { bind(chat, to: nil); removal = nil } }
-            Button("Отмена", role: .cancel) { removal = nil }
-        } message: { Text("Бот перестанет отвечать в этой группе. Сотрудник и переписка сохранятся.") }
+        .navigationDestination(isPresented: $showConnections) { ConnectionsView(embedded: true) }
     }
 
-    private var connectedGroups: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            ForEach(ownGroups) { chat in
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "person.2").foregroundStyle(AppTheme.accent).padding(.top, 3)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(chat.title).font(.body.weight(.medium))
-                        if profile == nil { Text(client.profiles.first(where: { $0.id == chat.profileId })?.name ?? "Сотрудник не выбран").font(.caption) }
-                        Text(chat.replies == "mentions" ? "По @упоминанию или ответу" : "По правилам сотрудника")
-                            .font(.caption).foregroundStyle(AppTheme.secondaryText)
-                    }
-                    Spacer(minLength: 4)
-                    Menu {
-                        Button("Отключить от сотрудника…", role: .destructive) { removal = chat }
-                    } label: { Image(systemName: "ellipsis.circle") }
-                        .menuIndicator(.hidden).accessibilityLabel("Настройки группы «\(chat.title)»")
-                }
-            }
-        }.settingsCard()
+    @ViewBuilder private func groupAction(_ chat: TelegramChat) -> some View {
+        if busyGroup == chat.chatId { ProgressView().controlSize(.small) }
+        else {
+            Button(chat.enabled == false ? "Продолжить" : "Приостановить") { toggle(chat) }
+                .disabled(busyGroup != nil)
+                .accessibilityLabel((chat.enabled == false ? "Продолжить в группе «" : "Приостановить в группе «") + chat.title + "»")
+                .accessibilityIdentifier("toggleTelegramGroup-" + chat.chatId)
+        }
     }
 
-    private func addGroup(_ profile: EmployeeProfile) {
-        busy = true; error = nil
+    private func groupDescription(_ chat: TelegramChat) -> String {
+        if chat.enabled == false { return "На паузе · переписка сохранена" }
+        if let name = client.profiles.first(where: { $0.id == chat.profileId })?.name { return "Отвечает «\(name)»" }
+        return "Помощник сам подбирает сотрудника по задаче"
+    }
+
+    private func toggle(_ chat: TelegramChat) {
+        busyGroup = chat.chatId; error = nil
         Task {
-            defer { busy = false }
-            do {
-                let link = try await client.createTelegramGroupLink(profileID: profile.id)
-                guard let url = link.url else { throw HomeClientError.server("Не удалось открыть Telegram. Проверьте связь с ботом.") }
-                invitation = link
-                openURL(url) { opened in if !opened { self.error = "Не удалось открыть Telegram. Установите приложение и попробуйте ещё раз." } }
-            } catch { self.error = UserFacingError.text(error.localizedDescription) }
-        }
-    }
-
-    private func bind(_ chat: TelegramChat, to profileID: String?) {
-        Task {
-            error = nil
-            await client.bindTelegram(chatID: chat.chatId, profileID: profileID)
-            if let problem = client.errorMessage { error = UserFacingError.text(problem); client.errorMessage = nil }
+            defer { busyGroup = nil }
+            do { try await client.setTelegramGroupEnabled(chat.chatId, enabled: chat.enabled == false) }
+            catch { self.error = UserFacingError.text(error.localizedDescription) }
         }
     }
 }
@@ -1866,16 +1853,7 @@ struct OpenStrudelMark: View {
 }
 
 struct HomeBackground: View {
-    var body: some View {
-        ZStack {
-            #if os(macOS)
-            Color(nsColor: .windowBackgroundColor)
-            #else
-            Color(uiColor: .systemBackground)
-            #endif
-        }
-        .ignoresSafeArea()
-    }
+    var body: some View { AppTheme.canvas.ignoresSafeArea() }
 }
 
 private struct InteractionCard: View {
@@ -2228,7 +2206,7 @@ private struct ConnectionsView: View {
 }
 
 /// One reading column for messages and the composer.
-private let chatColumn: CGFloat = 720
+private let chatColumn: CGFloat = 680
 
 private var controlTarget: CGFloat {
     #if os(iOS)

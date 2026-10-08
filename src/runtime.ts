@@ -49,7 +49,7 @@ export class OpenStrudelRuntime {
       engine.setCodexHome?.(this.account.executionHome());
       if (identityChanged) this.store.clearConversationThreads();
     });
-    this.messages = new MessageService(this.store, this.engine,undefined,options.rootDirectory);
+    this.messages = new MessageService(this.store, this.engine,options.rootDirectory);
     if (!(this.engine instanceof AccountEngines)) this.messages.onAuthenticationError = () => this.account.invalidate();
     this.telegram = new TelegramAdapter(telegramToken, this.store, this.messages);
     this.scheduler = new Scheduler(this.store,this.messages);

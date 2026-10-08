@@ -200,7 +200,7 @@ export class Store {
 
   getTelegramChat(chatId: string): TelegramChat | null {
     const row = this.db.prepare("SELECT * FROM telegram_chats WHERE chat_id=?").get(chatId) as Row | undefined;
-    return row ? { chatId: String(row.chat_id), title: String(row.title), conversationId: row.conversation_id == null ? null : String(row.conversation_id), profileId: row.profile_id == null ? null : String(row.profile_id), allowedSenders: jsonArray(row.allowed_senders_json as string), access: row.access === "members" ? "members" : "approved", replies: row.replies === "mentions" ? "mentions" : "instructions" } : null;
+    return row ? { chatId: String(row.chat_id), title: String(row.title), conversationId: row.conversation_id == null ? null : String(row.conversation_id), profileId: row.profile_id == null ? null : String(row.profile_id), allowedSenders: jsonArray(row.allowed_senders_json as string), access: row.access === "members" ? "members" : "approved", replies: row.replies === "mentions" ? "mentions" : "instructions", enabled: this.getSetting("telegram.paused." + String(row.chat_id)) !== "true" } : null;
   }
 
   telegramChats(): TelegramChat[] {
@@ -230,6 +230,16 @@ export class Store {
     return this.getTelegramChat(chatId)!;
   }
 
+  /** A connected bot is sufficient: root assistant, isolated group history. */
+  connectTelegramGroup(chatId: string): TelegramChat {
+    const chat = this.getTelegramChat(chatId);
+    if (!chat || Number(chatId) >= 0) throw new Error("Группа Telegram не найдена");
+    if (chat.conversationId || chat.profileId) return chat;
+    const conversation = this.getOrCreateConversation({ channel: "telegram", externalId: chatId, title: chat.title });
+    this.db.prepare("UPDATE telegram_chats SET conversation_id=?,access='members',replies='mentions' WHERE chat_id=?").run(conversation.id, chatId);
+    return this.getTelegramChat(chatId)!;
+  }
+
   /** Telegram upgrades ordinary groups when admin rights are configured. */
   migrateTelegramGroup(oldId: string, newId: string): void {
     if (!/^-[1-9]\d*$/.test(oldId) || !/^-[1-9]\d*$/.test(newId) || oldId === newId || !this.getTelegramChat(oldId)) return;
@@ -247,6 +257,9 @@ export class Store {
         this.db.prepare("UPDATE conversations SET external_id=? WHERE id=?").run(externalId, String(row.id));
       }
       this.setSetting("telegram.group_origin." + newId, this.getSetting("telegram.group_origin." + oldId) ?? oldId);
+      if (this.getSetting("telegram.paused." + oldId) === "true") this.setSetting("telegram.paused." + newId, "true");
+      else this.deleteSetting("telegram.paused." + newId);
+      this.deleteSetting("telegram.paused." + oldId);
       if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schedules'").get()) {
         this.db.prepare("UPDATE schedules SET telegram_chat_id=? WHERE telegram_chat_id=?").run(newId, oldId);
       }

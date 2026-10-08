@@ -61,6 +61,12 @@ final class DeviceLibrary: ObservableObject {
         await client.selectProfile(profile)
     }
 
+    func select(_ client: HomeClient, group: TelegramChat) async {
+        select(client)
+        await client.selectChat(group.conversationId)
+        await client.refreshOpenAIAccount()
+    }
+
     func beginEmployee(on client: HomeClient? = nil, deviceID: String? = nil) {
         guard !isErasing else { return }
         let target = client ?? visibleClients.first(where: \.isLocalConnection) ?? active
