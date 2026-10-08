@@ -12,6 +12,7 @@ process.chdir(directory);
 delete process.env.TELEGRAM_BOT_TOKEN;
 delete process.env.OPENSTRUDEL_SETUP_CODE;
 let offline = false;
+let privateTelegramLinked = true;
 let loginStarts = 0;
 let loginCanceled = 0;
 let serviceConnected = false;
@@ -61,7 +62,7 @@ runtime.store.importHistory(runtime.store.profileConversation(editor.id).id, [
 ]);
 runtime.store.linkTelegramChat({ chatId: "42", title: "Личный чат", allowedSenders: ["42"] });
 runtime.store.linkTelegramChat({ chatId: "-100", title: "Рабочая группа", allowedSenders: ["42"] });
-runtime.telegram.status = () => ({ configured: true, running: true, botUsername: "openstrudel_preview_bot", linkedChats: ["42", "-100"], chats: runtime.store.telegramChats(), lastError: null });
+runtime.telegram.status = () => ({ configured: true, running: true, botUsername: "openstrudel_preview_bot", linkedChats: ["42", "-100"], chats: runtime.store.telegramChats().filter(chat => privateTelegramLinked || chat.chatId.startsWith("-")), lastError: null });
 runtime.telegram.createLink = () => ({ code: "preview", expiresAt: new Date(Date.now() + 600_000).toISOString(), url: `${controlURL}/telegram` });
 
 let controlURL = "";
@@ -75,6 +76,7 @@ const control = createServer(async (req, res) => {
   }
   if (path.pathname === "/offline") offline = path.searchParams.get("value") === "1";
   if (path.pathname === "/connect") serviceConnected = true;
+  if (path.pathname === "/telegram-private") privateTelegramLinked = path.searchParams.get("value") !== "0";
   res.end(JSON.stringify({ loginStarts, loginCanceled, serviceConnected, offline, profiles: runtime.store.listProfiles() }));
 });
 await new Promise<void>(done => control.listen(0, "127.0.0.1", done));
