@@ -70,7 +70,7 @@ targets:
         buildPhase: resources
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: is.openstrudel.ios
-      CURRENT_PROJECT_VERSION: 18
+      CURRENT_PROJECT_VERSION: 20
       ASSETCATALOG_COMPILER_APPICON_NAME: iOSAppIcon
       CODE_SIGN_STYLE: Manual
       CODE_SIGN_IDENTITY: Apple Development
