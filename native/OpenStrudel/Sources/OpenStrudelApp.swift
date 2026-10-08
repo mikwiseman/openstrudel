@@ -9,45 +9,8 @@ struct OpenStrudelApp: App {
     #endif
 
     var body: some Scene {
-        WindowGroup(id: "home") {
-            Group {
-                #if os(macOS)
-                if library.isErasing { LocalDataResetProgress() }
-                else { OpenStrudelRootView() }
-                #else
-                OpenStrudelRootView()
-                #endif
-            }
-                .id(client.id + "-" + String(library.viewGeneration))
-                .tint(AppTheme.accent)
-                #if os(macOS)
-                .modifier(AppIconAppearance())
-                .modifier(HomeStatusItemAppearance())
-                #endif
-                .sheet(item: $library.invitation) { pairing in
-                    AddDeviceConfirmation(pairing: pairing)
-                        .environmentObject(library)
-                }
-                .task {
-                    while !Task.isCancelled {
-                        await library.refresh()
-                        do { try await Task.sleep(for: .seconds(15)) } catch { break }
-                    }
-                }
-                .onOpenURL { url in
-                    guard !library.isErasing else { return }
-                    if url.scheme == "openstrudel" && url.host == "oauth" && url.path == "/digitalocean" {
-                        #if os(macOS)
-                        DigitalOceanCloud.shared.acceptBrowserCallback(url)
-                        #endif
-                        return
-                    }
-                    library.preparePairing(url)
-                }
-                .environmentObject(client)
-                .environmentObject(library)
-        }
         #if os(macOS)
+        mainWindow
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unifiedCompact)
         .defaultSize(width: 1120, height: 760)
@@ -60,8 +23,6 @@ struct OpenStrudelApp: App {
             CommandGroup(after: .appInfo) {
                 Button("Аккаунты и остатки") {
                     Task { @MainActor in
-                        // Let the application menu finish tracking before opening
-                        // the transient status popover.
                         await Task.yield()
                         HomeStatusItem.shared.showAccounts()
                     }
@@ -71,8 +32,6 @@ struct OpenStrudelApp: App {
                     .disabled(!updater.canCheckForUpdates)
             }
         }
-        #endif
-        #if os(macOS)
         Window("Серверы", id: "servers") {
             Group {
                 if library.isErasing { LocalDataResetProgress().environmentObject(library) }
@@ -89,6 +48,57 @@ struct OpenStrudelApp: App {
                 .tint(AppTheme.accent)
                 .frame(minWidth: 580, minHeight: 520)
         }
+        #else
+        mainWindow
         #endif
+    }
+
+    @SceneBuilder private var mainWindow: some Scene {
+        #if os(macOS)
+        // The menu-bar Open action brings back the same workspace, including
+        // its draft and reading position, instead of creating another window.
+        Window("OpenStrudel", id: "home") { applicationContent }
+        #else
+        WindowGroup(id: "home") { applicationContent }
+        #endif
+    }
+
+    private var applicationContent: some View {
+        Group {
+            #if os(macOS)
+            if library.isErasing { LocalDataResetProgress() }
+            else { OpenStrudelRootView() }
+            #else
+            OpenStrudelRootView()
+            #endif
+        }
+            .id(client.id + "-" + String(library.viewGeneration))
+            .tint(AppTheme.accent)
+            #if os(macOS)
+            .modifier(AppIconAppearance())
+            .modifier(HomeStatusItemAppearance())
+            #endif
+            .sheet(item: $library.invitation) { pairing in
+                AddDeviceConfirmation(pairing: pairing)
+                    .environmentObject(library)
+            }
+            .task {
+                while !Task.isCancelled {
+                    await library.refresh()
+                    do { try await Task.sleep(for: .seconds(15)) } catch { break }
+                }
+            }
+            .onOpenURL { url in
+                guard !library.isErasing else { return }
+                if url.scheme == "openstrudel" && url.host == "oauth" && url.path == "/digitalocean" {
+                    #if os(macOS)
+                    DigitalOceanCloud.shared.acceptBrowserCallback(url)
+                    #endif
+                    return
+                }
+                library.preparePairing(url)
+            }
+            .environmentObject(client)
+            .environmentObject(library)
     }
 }

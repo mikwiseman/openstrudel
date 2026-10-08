@@ -74,7 +74,17 @@ final class ReleaseScenariosUITests: XCTestCase {
         let connectService = app.buttons["connect-service-qa-documents"]
         if connectService.exists {
             connectService.tap()
-            _ = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari").wait(for: .runningForeground, timeout: 10)
+            XCTAssertTrue(XCUIApplication(bundleIdentifier: "com.apple.mobilesafari").wait(for: .runningForeground, timeout: 10))
+            capture("service-browser", app)
+            // Foreground does not mean the OAuth callback page has loaded yet.
+            // Wait for the synthetic provider, as a person would before returning.
+            var connected = false
+            for _ in 0..<30 {
+                connected = try await read(fixture + "/state")["serviceConnected"] as? Bool == true
+                if connected { break }
+                try await Task.sleep(for: .seconds(1))
+            }
+            XCTAssertTrue(connected, "The browser must complete the test provider callback.")
             app.activate(); app.buttons["Обновить сервисы"].tap()
         }
         XCTAssertTrue(app.staticTexts["Подключён"].waitForExistence(timeout: 10), app.debugDescription)

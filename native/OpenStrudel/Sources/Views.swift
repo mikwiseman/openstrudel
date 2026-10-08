@@ -429,6 +429,7 @@ private struct ConversationView: View {
     @State private var showBotDetails = false
     @State private var followsLatest = true
     @State private var userIsScrolling = false
+    @State private var visibleMessageID: String?
     @State private var hasNewMessages = false
     @FocusState private var focused: Bool
     private var draftKey: String { HomeDrafts.key(home: client.baseURLString, profile: client.selectedProfileID, chat: client.selectedChatID) }
@@ -464,18 +465,8 @@ private struct ConversationView: View {
                         TranscriptStack {
                             if client.hasEarlierMessages {
                                 Button {
-                                    let anchor = client.messages.first?.id
-                                    let conversation = draftKey
                                     followsLatest = false
-                                    Task { @MainActor in
-                                        await client.loadEarlierMessages()
-                                        // Let the lazy stack lay out the prepended rows
-                                        // before restoring the original reading position.
-                                        await Task.yield()
-                                        await Task.yield()
-                                        guard conversation == draftKey else { return }
-                                        if let anchor { proxy.scrollTo(anchor, anchor: .top) }
-                                    }
+                                    Task { await client.loadEarlierMessages() }
                                 } label: {
                                     HStack {
                                         if client.isLoadingEarlier { ProgressView().controlSize(.small) }
@@ -531,6 +522,10 @@ private struct ConversationView: View {
                     }
                 }
                 .scrollIndicators(.hidden)
+                .scrollPosition(id: Binding(
+                    get: { followsLatest ? nil : visibleMessageID },
+                    set: { if !followsLatest { visibleMessageID = $0 } }
+                ), anchor: .top)
                 .defaultScrollAnchor(.bottom, for: .initialOffset)
                 .defaultScrollAnchor(followsLatest ? .bottom : nil, for: .sizeChanges)
                 #if os(macOS)
@@ -538,7 +533,9 @@ private struct ConversationView: View {
                 #endif
                 .scrollDismissesKeyboard(.interactively)
                 .onScrollPhaseChange { oldPhase, phase, context in
-                    if phase == .tracking || phase == .interacting {
+                    // A touch on an answer button also enters .tracking. Only an
+                    // actual drag should change the transcript reading anchor.
+                    if phase == .interacting {
                         userIsScrolling = true
                         followsLatest = false
                     }
@@ -567,9 +564,6 @@ private struct ConversationView: View {
                     followsLatest = true
                     hasNewMessages = false
                     scrollToBottom(proxy, animated: false)
-                }
-                .onChange(of: client.isLoading) { _, loading in
-                    if !loading && followsLatest { scrollToBottom(proxy, animated: false) }
                 }
                 // Animate scrolling, not pending-row replacement: an implicit
                 // layout animation can loop while the iPad keyboard is visible.
@@ -828,7 +822,8 @@ private struct ConversationTitle: View {
                         }
                     } label: { Text(chatName).lineLimit(1) }
                         .font(.caption).foregroundStyle(AppTheme.secondaryText)
-                        .menuStyle(.borderlessButton).fixedSize(horizontal: true, vertical: false)
+                        .menuStyle(.borderlessButton)
+                        .frame(maxWidth: 260)
                         .accessibilityLabel("Выбрать переписку")
                         .accessibilityValue(client.activeAgentName + ", " + chatName)
                         .accessibilityIdentifier("chooseConversation")
@@ -932,9 +927,11 @@ private struct MessageBubble: View {
                     }
                     VStack(alignment: .leading, spacing: 9) {
                         if isUser && !message.text.isEmpty {
-                            Text(message.text)
-                                .font(ChatTypography.body)
-                                .lineSpacing(4).textSelection(.enabled)
+                            if message.imported == true { ImportedMessageText(source: message.text) }
+                            else {
+                                Text(message.text).font(ChatTypography.body)
+                                    .lineSpacing(4).textSelection(.enabled)
+                            }
                         }
                         else if !isUser { MessageContent(source: message.text).equatable() }
                         ForEach(message.attachments ?? []) { file in
@@ -1240,7 +1237,11 @@ private struct EmployeePicker: View {
             .scrollContentBackground(.hidden)
             .background(HomeBackground())
             .navigationTitle("Чаты")
+            #if os(iOS)
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Найти сотрудника")
+            #else
             .searchable(text: $query, prompt: "Найти сотрудника")
+            #endif
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     HStack(spacing: 16) {
@@ -1655,7 +1656,7 @@ private struct TelegramChatsView: View {
                                 }.padding(.vertical, 5)
                             }
                         } footer: {
-                            Text("В группе будет отдельная переписка. Личная история туда не передаётся. Пока бот отвечает только тому, кто его подключил.")
+                            Text("У каждой группы своя переписка. Личные чаты в неё не попадают.")
                                 .font(.caption).fontWeight(.regular).foregroundStyle(AppTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -1888,6 +1889,7 @@ private struct ConnectionsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var textSize
     @State private var query = ""
     @State private var loading = true
     @State private var error: String?
@@ -1901,7 +1903,7 @@ private struct ConnectionsView: View {
     }
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 0) {
+            List {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Для «\(client.activeAgentName)» · \(client.executionDeviceName)")
                         .font(.callout).foregroundStyle(AppTheme.secondaryText)
@@ -1909,9 +1911,9 @@ private struct ConnectionsView: View {
                     if let waiting {
                         Text("Завершите подключение \(waiting.name) в браузере. Здесь появится подтверждение.")
                             .font(.callout).fixedSize(horizontal: false, vertical: true)
-                        HStack {
-                            if let authorizationURL { Link("Открыть ещё раз", destination: authorizationURL) }
-                            Button("Проверить подключение") { Task { await refresh() } }.disabled(loading)
+                        ViewThatFits(in: .horizontal) {
+                            HStack { authorizationActions }.fixedSize(horizontal: true, vertical: false)
+                            VStack(alignment: .leading, spacing: 12) { authorizationActions }
                         }
                     }
                     if let notice { Label(notice, systemImage: "checkmark.circle").font(.callout) }
@@ -1920,37 +1922,40 @@ private struct ConnectionsView: View {
                         Button("Повторить") { Task { await refresh() } }.disabled(loading)
                     }
                     if let notice = client.connectionNotice { Text(notice).font(.caption).foregroundStyle(AppTheme.secondaryText) }
-                }.padding(20)
-                List {
-                    ForEach(results) { connection in
-                        HStack(spacing: 12) {
-                            Image(systemName: connection.icon).foregroundStyle(AppTheme.secondaryText).frame(width: 26)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(connection.name)
-                                if let detail = connection.detail { Text(detail).font(.caption).foregroundStyle(AppTheme.secondaryText) }
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                            if connection.connected {
-                                Label("Подключён", systemImage: "checkmark").font(.caption).foregroundStyle(AppTheme.secondaryText)
-                            } else {
-                                Button(connecting == connection.id ? "Подключаем…" : waiting?.id == connection.id ? "Ожидаем входа" : "Подключить") {
-                                    Task { await connect(connection) }
-                                }.disabled(connecting != nil || waiting?.id == connection.id)
-                                    .accessibilityLabel("Подключить \(connection.name)")
-                                    .accessibilityIdentifier("connect-service-" + connection.id)
+                }
+                .padding(.vertical, 8)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                ForEach(results) { connection in
+                    Group {
+                        if textSize.isAccessibilitySize {
+                            VStack(alignment: .leading, spacing: 12) {
+                                connectionDetails(connection)
+                                connectionAction(connection).adaptiveActionStyle(.bordered)
                             }
-                        }.padding(.vertical, 8)
-                    }
-                    if results.isEmpty && !query.isEmpty { SearchEmptyState(query: query) { query = "" } }
-                    else if results.isEmpty && !loading && error == nil {
-                        Text("Список сервисов пока недоступен. Обновите его или проверьте вход в OpenAI на этом устройстве.")
-                            .foregroundStyle(AppTheme.secondaryText)
-                    }
-                }.scrollContentBackground(.hidden)
-            }.background(HomeBackground()).navigationTitle("Сервисы")
+                        } else {
+                            HStack(spacing: 12) {
+                                Image(systemName: connection.icon).foregroundStyle(AppTheme.secondaryText).frame(width: 26)
+                                connectionDetails(connection)
+                                connectionAction(connection)
+                            }
+                        }
+                    }.padding(.vertical, 8)
+                }
+                if results.isEmpty && !query.isEmpty { SearchEmptyState(query: query) { query = "" } }
+                else if results.isEmpty && !loading && error == nil {
+                    Text("Список сервисов пока недоступен. Обновите его или проверьте вход в OpenAI на этом устройстве.")
+                        .foregroundStyle(AppTheme.secondaryText)
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(HomeBackground()).navigationTitle("Сервисы")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Найти сервис")
+            #else
             .searchable(text: $query, prompt: "Найти сервис")
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Готово") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -1975,6 +1980,33 @@ private struct ConnectionsView: View {
             if old != .active && phase == .active && !loading { Task { await refresh() } }
         }
     }
+
+    @ViewBuilder private var authorizationActions: some View {
+        if let authorizationURL { Link("Открыть ещё раз", destination: authorizationURL) }
+        Button("Проверить подключение") { Task { await refresh() } }.disabled(loading)
+    }
+
+    private func connectionDetails(_ connection: ServiceConnection) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(connection.name)
+            if let detail = connection.detail { Text(detail).font(.caption).foregroundStyle(AppTheme.secondaryText) }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder private func connectionAction(_ connection: ServiceConnection) -> some View {
+        if connection.connected {
+            Label("Подключён", systemImage: "checkmark").font(.caption).foregroundStyle(AppTheme.secondaryText)
+        } else {
+            Button(connecting == connection.id ? "Подключаем…" : waiting?.id == connection.id ? "Ожидаем входа" : "Подключить") {
+                Task { await connect(connection) }
+            }.disabled(connecting != nil || waiting?.id == connection.id)
+                .accessibilityLabel("Подключить \(connection.name)")
+                .accessibilityIdentifier("connect-service-" + connection.id)
+        }
+    }
+
     private func connect(_ connection: ServiceConnection) async {
         connecting = connection.id; error = nil; notice = nil
         defer { connecting = nil }
