@@ -3,6 +3,24 @@ import SwiftUI
 
 @MainActor
 struct MessageContentTests {
+    @Test func importedFileKeepsCaptionAndReadableText() {
+        let text = "До\n<file name=\"Пример.pdf\" mime=\"application/pdf\">\n<<<EXTERNAL_UNTRUSTED_CONTENT id=\"abc\">>>\nSource: External\n---\nПервая строка\nВторая строка\n<<<END_EXTERNAL_UNTRUSTED_CONTENT id=\"abc\">>>\n</file>\nПосле"
+        #expect(ImportedTranscript.parts(text) == [.text("До"), .file(name: "Пример.pdf", text: "Первая строка\nВторая строка"), .text("После")])
+    }
+
+    @Test func importedMultipleFilesStayInOrderAndDoNotFetchPaths() {
+        let text = "<file name=\"/private/example.txt\" mime=\"text/plain\">Один</file>\nПодпись\n<file name=\"Второй.txt\" mime=\"text/plain\">Два</file>"
+        #expect(ImportedTranscript.parts(text) == [.file(name: "/private/example.txt", text: "Один"), .text("Подпись"), .file(name: "Второй.txt", text: "Два")])
+    }
+
+    @Test func malformedImportAndOrdinaryTextAreNotLost() {
+        for text in ["Обычный текст", "<file name=\"test\">незакрытый файл", "<<<EXTERNAL_UNTRUSTED_CONTENT>>> Текст"] {
+            #expect(ImportedTranscript.parts(text) == [.text(text)])
+        }
+        let raw = "<<<EXTERNAL_UNTRUSTED_CONTENT id=\"a\">>>\nSource: External\n---\nТекст\n<<<END_EXTERNAL_UNTRUSTED_CONTENT id=\"b\">>>"
+        #expect(ImportedTranscript.parts("<file name=\"test.txt\" mime=\"text/plain\">\(raw)</file>") == [.file(name: "test.txt", text: raw)])
+    }
+
     @Test func imagesRemainVisibleBetweenText() {
         let blocks = MessageContent(source: "До ![Стул](https://example.com/chair.jpg) после").blocks
         #expect(blocks.map(\.kind) == ["paragraph", "image", "paragraph"])

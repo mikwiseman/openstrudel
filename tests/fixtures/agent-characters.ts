@@ -14,10 +14,17 @@ runtime.account.read = async () => ({ connected: true, email: "qa@example.invali
 for (const [index, name] of ["Редактор", "Исследователь", "Планировщик", "Помощник", "Идеи", "Проверка"].entries()) {
   const profile = runtime.store.createProfile({ name, instructions: "Помогай с задачами. Пиши коротко и понятно.", purpose: "У каждого свой образ", appearance: { version: 1, kind: characterKinds[index]!, tone: [0,4,3,7,6,2][index]! } });
   if (index === 0 && process.env.OPENSTRUDEL_GROUP_HISTORY_QA === "1") {
-    runtime.store.linkTelegramChat({ chatId: "-100", title: "Тестовая группа", allowedSenders: ["42"] });
+    const audit = process.env.OPENSTRUDEL_FULL_AUDIT === "1";
+    runtime.store.linkTelegramChat({ chatId: "-100", title: audit ? "Тестовая группа с очень длинным названием для проверки компактного заголовка" : "Тестовая группа", allowedSenders: ["42"] });
     const group = runtime.store.bindTelegramChat("-100", profile.id);
     for (let message = 1; message <= 155; message++) {
       runtime.store.addMessage({ conversationId: group.conversationId!, channel: "telegram", direction: message % 2 ? "inbound" : "outbound", text: `Сообщение ${message}. Тестовая история группы для проверки постраничной загрузки.` });
+    }
+    if (audit) {
+      runtime.store.importHistory(group.conversationId!, [{
+        sourceId: "audit-document", author: "Тестовый участник", date: new Date().toISOString(), direction: "inbound",
+        text: 'Посмотри документ\n<file name="План проекта.pdf" mime="application/pdf">\n<<<EXTERNAL_UNTRUSTED_CONTENT id="audit">>>\nSource: External\n---\n' + "Пример текста документа. Здесь только синтетические данные для проверки интерфейса.\n".repeat(200) + '<<<END_EXTERNAL_UNTRUSTED_CONTENT id="audit">>>\n</file>\nОбсудим завтра.',
+      }]);
     }
   }
   const chat = runtime.store.profileConversation(profile.id);

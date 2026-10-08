@@ -1,5 +1,94 @@
 import SwiftUI
 
+/// A presentation of legacy imported attachments. The stored message and the
+/// employee's context stay verbatim; this never fetches a path from the import.
+enum ImportedTranscript {
+    enum Part: Equatable {
+        case text(String)
+        case file(name: String, text: String)
+    }
+
+    private static let files = try! NSRegularExpression(pattern: #"<file name="([^"\r\n]+)" mime="[^"\r\n]+">\s*([\s\S]*?)\s*</file>"#)
+    private static let envelope = try! NSRegularExpression(pattern: #"^\s*<<<EXTERNAL_UNTRUSTED_CONTENT id="([a-zA-Z0-9_-]+)">>>\r?\nSource: External\r?\n---\r?\n([\s\S]*?)\r?\n<<<END_EXTERNAL_UNTRUSTED_CONTENT id="\1">>>\s*$"#)
+
+    static func parts(_ source: String) -> [Part] {
+        let range = NSRange(source.startIndex..., in: source)
+        let matches = files.matches(in: source, range: range)
+        guard !matches.isEmpty else { return [.text(source)] }
+        var parts: [Part] = []
+        var start = source.startIndex
+        for match in matches {
+            guard let whole = Range(match.range, in: source),
+                  let name = Range(match.range(at: 1), in: source),
+                  let content = Range(match.range(at: 2), in: source) else { continue }
+            let prefix = String(source[start..<whole.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !prefix.isEmpty { parts.append(.text(prefix)) }
+            let raw = String(source[content])
+            var text = raw
+            if let wrapper = envelope.firstMatch(in: raw, range: NSRange(raw.startIndex..., in: raw)),
+               let inner = Range(wrapper.range(at: 2), in: raw) { text = String(raw[inner]) }
+            parts.append(.file(name: String(source[name]), text: text))
+            start = whole.upperBound
+        }
+        let suffix = String(source[start...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !suffix.isEmpty { parts.append(.text(suffix)) }
+        return parts
+    }
+}
+
+struct ImportedMessageText: View {
+    let source: String
+    @State private var selected: Document?
+    private struct Document: Identifiable {
+        let id: Int
+        let name: String
+        let text: String
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(ImportedTranscript.parts(source).enumerated()), id: \.offset) { index, part in
+                switch part {
+                case .text(let text):
+                    Text(text).font(ChatTypography.body).lineSpacing(4).textSelection(.enabled)
+                case .file(let name, let text):
+                    Button { selected = Document(id: index, name: name, text: text) } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "doc.text").font(.title2).foregroundStyle(AppTheme.secondaryText)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(name).font(.callout.weight(.medium)).lineLimit(2)
+                                Text("Открыть текст из истории").font(.caption).foregroundStyle(AppTheme.secondaryText)
+                            }
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(AppTheme.secondaryText)
+                        }.padding(12).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                        .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 11))
+                        .accessibilityLabel("Открыть текст файла «\(name)»")
+                }
+            }
+        }
+        .sheet(item: $selected) { document in
+            NavigationStack {
+                ScrollView {
+                    Text(document.text).font(ChatTypography.body).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(24)
+                }
+                .navigationTitle(document.name)
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                #endif
+                .toolbar { ToolbarItem(placement: .confirmationAction) {
+                    Button("Готово") { selected = nil }
+                } }
+            }
+            #if os(macOS)
+            .frame(width: 620, height: 540)
+            #endif
+        }
+    }
+}
+
 /// Foundation handles Markdown syntax; SwiftUI lays out its native, selectable content.
 struct MessageContent: View, Equatable {
     let source: String
