@@ -63,11 +63,11 @@ describe("MessageService", () => {
       const messages = new MessageService(store, { run });
       messages.onAuthenticationError = vi.fn();
       const request = { channel: "api" as const, externalChatId: "home", externalId: "original-action", text: "Сделай действие" };
-      await expect(messages.handle(request)).rejects.toThrow("Вход в OpenAI больше не действует");
+      await expect(messages.handle(request)).rejects.toThrow("Войдите в OpenAI на устройстве сотрудника");
       expect(messages.onAuthenticationError).toHaveBeenCalledOnce();
       expect(store.listMessages(conversation.id)[0]).toMatchObject({ status: "failed" });
       authorized = true;
-      await expect(messages.handle(request)).rejects.toThrow("Вход в OpenAI больше не действует");
+      await expect(messages.handle(request)).rejects.toThrow("Войдите в OpenAI на устройстве сотрудника");
       expect(run).toHaveBeenCalledOnce();
       expect(store.getConversation(conversation.id)?.codexThreadId).toBe("existing-thread");
       expect((await messages.handle({ ...request, externalId: "explicit-new-action" })).text).toBe("Готово");

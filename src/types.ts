@@ -82,11 +82,12 @@ export interface CodexEngine {
   connectionNotice?: string;
   isConnected?(id: string): Promise<boolean>;
   connect?(id: string): Promise<{ url: string | null }>;
+  extensions?(): import("./extensions.js").CodexExtensions | Promise<import("./extensions.js").CodexExtensions>;
 }
 
 export interface DynamicTool { type: "function"; name: string; description: string; inputSchema: Record<string, unknown> }
-export interface Connection { id: string; name: string; kind: "app" | "mcp"; detail?: string | null; connected: boolean; url: string | null; }
-export interface Interaction { id: string; conversationId: string; messageId: string; title: string; detail?: string; url?: string; questions: Array<{ id: string; question: string; options: string[] }>; }
+export interface Connection { id: string; name: string; kind: "app" | "mcp"; detail?: string | null; connected: boolean; url: string | null; status?: "ready" | "sign_in" | "unavailable" | "disabled"; toolCount?: number; removable?: boolean; }
+export interface Interaction { id: string; conversationId: string; messageId: string; title: string; detail?: string; url?: string; requestedBy?: string; questions: Array<{ id: string; question: string; options: string[] }>; }
 
 export interface MessageInput {
   conversationId?: string;

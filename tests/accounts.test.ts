@@ -31,7 +31,7 @@ describe("per-device Codex subscriptions", () => {
     const { accounts, second } = fixture();
     vi.mocked(accounts.get("default").usage).mockResolvedValue({ checkedAt: "now", ordinaryUsageAllowed: false, windows: [] });
     expect((await accounts.choose("main")).id).toBe(second);
-    accounts.setPolicy("main", ["default"]); await expect(accounts.choose("main")).rejects.toThrow("нет доступного");
+    accounts.setPolicy("main", ["default"]); await expect(accounts.choose("main")).rejects.toMatchObject({ reason: "limits" });
     vi.mocked(accounts.get("default").usage).mockResolvedValue({ checkedAt: "now", ordinaryUsageAllowed: null, windows: [{ name: "unknown", usedPercent: 100, remainingPercent: 0, windowDurationMins: 1, resetsAt: 0 }] });
     expect((await accounts.choose("main")).id).toBe("default");
   });
@@ -68,5 +68,10 @@ describe("per-device Codex subscriptions", () => {
     vi.mocked(accounts.get("default").read).mockResolvedValue({ connected: false, email: null, planType: null, managed: true, issue: "unavailable" });
     await expect(accounts.choose("main")).rejects.toThrow("пока не отвечает");
     expect(accounts.get(second).read).not.toHaveBeenCalled();
+  });
+  it("distinguishes missing login from exhausted limits", async () => {
+    const { accounts, second } = fixture();
+    for (const id of ["default", second]) vi.mocked(accounts.get(id).read).mockResolvedValue({ connected: false, email: null, planType: null, managed: false });
+    await expect(accounts.choose("main")).rejects.toMatchObject({ reason: "sign_in_required" });
   });
 });

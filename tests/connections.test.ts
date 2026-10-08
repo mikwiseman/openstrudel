@@ -46,6 +46,6 @@ it("keeps working native integrations visible when the OpenAI app directory is u
     throw new Error(method);
   });
   const engine = new CodexEngineAdapter();
-  try { expect(await engine.connections(true)).toEqual([{id:"mcp:wai_personal",name:"WAI",detail:"Личные документы",kind:"mcp",connected:true,url:null}]); }
+  try { expect(await engine.connections(true)).toEqual([{id:"mcp:wai_personal",name:"WAI",detail:"Личные документы",kind:"mcp",connected:true,url:null,status:"ready",toolCount:1,removable:false}]); }
   finally { engine.close(); }
 });

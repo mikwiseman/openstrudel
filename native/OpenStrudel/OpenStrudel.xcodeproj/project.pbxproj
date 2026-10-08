@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0273A3B12C532A6C897E1E4D /* AttachmentImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 718BE32FAB2706C4D8DB4C86 /* AttachmentImport.swift */; };
+		02C59B29F2AB08336EF37F25 /* ExtensionSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75DCFF9D5E311EA2C0891A41 /* ExtensionSetupView.swift */; };
 		066029DEC026A68A1379F314 /* MobilePairingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8AC19EC197C2FC60EBEB3D /* MobilePairingTests.swift */; };
 		077A169A25CD4395F918F4E7 /* DeviceSignOut.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8709EBB6593952ABF30E9889 /* DeviceSignOut.swift */; };
 		088E7C7AA2674D44C3751AE5 /* AgentAppearanceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D96F9460E173BD6E9269AE3 /* AgentAppearanceViews.swift */; };
@@ -70,6 +71,7 @@
 		8264AD8368237A515B1B219D /* HomeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D671F62812BA20E0AF9CB2FA /* HomeClient.swift */; };
 		850B934B29DF93BD5D94629D /* AgentAppearanceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D96F9460E173BD6E9269AE3 /* AgentAppearanceViews.swift */; };
 		85C1C1D5EA678B5643F6884B /* OpenStrudelApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 680E20C305BC52A853E797DD /* OpenStrudelApp.swift */; };
+		85DCDAD404A8CAF5A70DE7D1 /* ExtensionSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75DCFF9D5E311EA2C0891A41 /* ExtensionSetupView.swift */; };
 		8769E196AFD3136FF6469A32 /* DigitalOceanCloud.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CF338D2C3249DC58392487E /* DigitalOceanCloud.swift */; };
 		87816A6CD5C75D29103B8A80 /* WaiVDSContract.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61A4BCF298A1E1126E8D3482 /* WaiVDSContract.swift */; };
 		8948A7997B267280DC592F77 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = E29C1F0D3A0FE125E35B565D /* PrivacyInfo.xcprivacy */; };
@@ -121,6 +123,7 @@
 		F6604979C497258E987E2193 /* AgentAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A54DEED2D78EBBD77B24825 /* AgentAppearance.swift */; };
 		F92751B4CA90257CFDC92A40 /* DesignAccessibilityUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1AB12278F64C5C7247C698 /* DesignAccessibilityUITests.swift */; };
 		FA990FEF4C0EA7D7B16F790C /* PrimaryHomeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6E988F61680172334C63B12 /* PrimaryHomeTests.swift */; };
+		FAF196A470B7DCB88053E108 /* ExtensionsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 560A60BE1D2AAD42DC5C600D /* ExtensionsUITests.swift */; };
 		FC61FB4F58F351C111D601E9 /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = B9A7842329C25226D34D8B1C /* cloud-init.sh */; };
 		FE16FE1017F5BA162CF34398 /* AgentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97A6C72C5E00D5723795E8B1 /* AgentTransfer.swift */; };
 		FED472FDDD9D5774F84AD1A4 /* AttachmentImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 718BE32FAB2706C4D8DB4C86 /* AttachmentImport.swift */; };
@@ -158,6 +161,7 @@
 		4B9B3467FCD3522515AD8F38 /* AppIconAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconAppearance.swift; sourceTree = "<group>"; };
 		4D96F9460E173BD6E9269AE3 /* AgentAppearanceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAppearanceViews.swift; sourceTree = "<group>"; };
 		4DDBDB4821F4175BB293C35F /* MobilePairingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePairingUITests.swift; sourceTree = "<group>"; };
+		560A60BE1D2AAD42DC5C600D /* ExtensionsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionsUITests.swift; sourceTree = "<group>"; };
 		58B7111F287B0C5661239DEB /* MessageContentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageContentTests.swift; sourceTree = "<group>"; };
 		58DAA420A0BE0C62176A43DB /* PrimaryHomeSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryHomeSettings.swift; sourceTree = "<group>"; };
 		59124750DE089CC23DCB20B9 /* HomeAccountRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeAccountRecoveryTests.swift; sourceTree = "<group>"; };
@@ -173,6 +177,7 @@
 		709BE1A9B19D0468720417CF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		718BE32FAB2706C4D8DB4C86 /* AttachmentImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentImport.swift; sourceTree = "<group>"; };
 		72EEEC73D033EF5BC24DC309 /* DeviceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceSettingsView.swift; sourceTree = "<group>"; };
+		75DCFF9D5E311EA2C0891A41 /* ExtensionSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionSetupView.swift; sourceTree = "<group>"; };
 		7C3D241925EF81E938247C15 /* ChatMedia.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMedia.swift; sourceTree = "<group>"; };
 		7ECDE7BFB212A84C42AEC2A3 /* DeviceLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceLibraryTests.swift; sourceTree = "<group>"; };
 		8709EBB6593952ABF30E9889 /* DeviceSignOut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceSignOut.swift; sourceTree = "<group>"; };
@@ -252,6 +257,7 @@
 				8709EBB6593952ABF30E9889 /* DeviceSignOut.swift */,
 				C1A041EB646E3F285D182418 /* DigitalOceanBootstrap.swift */,
 				5CF338D2C3249DC58392487E /* DigitalOceanCloud.swift */,
+				75DCFF9D5E311EA2C0891A41 /* ExtensionSetupView.swift */,
 				D671F62812BA20E0AF9CB2FA /* HomeClient.swift */,
 				B49A5A4FE8FCDBCA5997D859 /* HomeMenu.swift */,
 				2B99FD977A6DF945EF17152E /* HostingStore.swift */,
@@ -282,6 +288,7 @@
 				452D1C62E5C23CB46B6FD978 /* AccountRecoveryUITests.swift */,
 				C156BE0450E7CC24D988FA90 /* AgentCharactersUITests.swift */,
 				6D1AB12278F64C5C7247C698 /* DesignAccessibilityUITests.swift */,
+				560A60BE1D2AAD42DC5C600D /* ExtensionsUITests.swift */,
 				1132C0F7932A6440305D150A /* iPhoneSmokeTests.swift */,
 				96A2DF3BB4A7D519FA68EA0F /* LiveCloudPairingUITests.swift */,
 				4DDBDB4821F4175BB293C35F /* MobilePairingUITests.swift */,
@@ -572,6 +579,7 @@
 				077A169A25CD4395F918F4E7 /* DeviceSignOut.swift in Sources */,
 				96011E8827031FF477E78A0D /* DigitalOceanBootstrap.swift in Sources */,
 				A789FE50A71BA8F813390382 /* DigitalOceanCloud.swift in Sources */,
+				85DCDAD404A8CAF5A70DE7D1 /* ExtensionSetupView.swift in Sources */,
 				8264AD8368237A515B1B219D /* HomeClient.swift in Sources */,
 				A29435710511A8C352C77D66 /* HomeMenu.swift in Sources */,
 				7CB4918D49632B6169D77921 /* HostingStore.swift in Sources */,
@@ -612,6 +620,7 @@
 				C8E9F77A1A8A5D66D4211EF5 /* DeviceSignOut.swift in Sources */,
 				E09E082D82D45A7D09421AB8 /* DigitalOceanBootstrap.swift in Sources */,
 				8769E196AFD3136FF6469A32 /* DigitalOceanCloud.swift in Sources */,
+				02C59B29F2AB08336EF37F25 /* ExtensionSetupView.swift in Sources */,
 				714657174DCE32C3AD9148AE /* HomeClient.swift in Sources */,
 				4069A7E903D63727808053A3 /* HomeMenu.swift in Sources */,
 				141A8FF96B26F636B9AFAFD3 /* HostingStore.swift in Sources */,
@@ -641,6 +650,7 @@
 				35830784DC5290BC03679296 /* AccountRecoveryUITests.swift in Sources */,
 				405EE709A22DB0AD7D596EF5 /* AgentCharactersUITests.swift in Sources */,
 				F92751B4CA90257CFDC92A40 /* DesignAccessibilityUITests.swift in Sources */,
+				FAF196A470B7DCB88053E108 /* ExtensionsUITests.swift in Sources */,
 				09FDF891ED4D0479E78D39E0 /* LiveCloudPairingUITests.swift in Sources */,
 				5E17805965A351ABB7620CF2 /* MobilePairingUITests.swift in Sources */,
 				396D0DCDA42F07B7B6AD8CDA /* ReleaseScenariosUITests.swift in Sources */,
@@ -667,7 +677,7 @@
 				CODE_SIGN_ENTITLEMENTS = iOS.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 24;
 				INFOPLIST_FILE = "iOS-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = OpenStrudel;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -708,7 +718,7 @@
 				CODE_SIGN_ENTITLEMENTS = iOS.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 24;
 				INFOPLIST_FILE = "iOS-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = OpenStrudel;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -809,7 +819,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 24;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -907,7 +917,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 24;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

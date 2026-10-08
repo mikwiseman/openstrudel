@@ -5,7 +5,7 @@ import { HomeError, identifier } from "./home.js";
 import { ScopedCodexEngine } from "./scopes.js";
 import type { Store } from "./store.js";
 import type { CodexEngine } from "./types.js";
-import { isOpenAIAuthenticationError } from "./account-errors.js";
+import { AccountUnavailableError, isOpenAIAuthenticationError } from "./account-errors.js";
 
 type AccountEntry = { id: string; name: string };
 export class Accounts {
@@ -66,20 +66,21 @@ export class Accounts {
   }
   async choose(agent: string, checkQuota = true): Promise<{ id: string; service: CodexAccountService }> {
     const ids = this.policy(agent) ?? this.entries().map(a => a.id);
+    let limited = false, signingIn = false;
     for (const id of ids) {
       const service = this.get(id);
-      if (this.changing.has(id) || service.loginPending) continue;
+      if (this.changing.has(id) || service.loginPending) { signingIn = true; continue; }
       const account = await service.read();
-      if (account.issue === "unavailable") throw new HomeError("OpenAI пока не отвечает. Аккаунт сохранён, повторный вход не нужен.", 503);
+      if (account.issue === "unavailable") throw new AccountUnavailableError("unavailable");
       if (!account.connected) continue;
       const usage = checkQuota ? await service.usage() : null;
       // Only backend permission can block ordinary usage. A local clock and a
       // percentage are not proof of quota recovery or permission to spend credits.
-      if (usage?.ordinaryUsageAllowed === false) continue;
-      if (this.changing.has(id) || service.loginPending) continue;
+      if (usage?.ordinaryUsageAllowed === false) { limited = true; continue; }
+      if (this.changing.has(id) || service.loginPending) { signingIn = true; continue; }
       return { id, service };
     }
-    throw new HomeError("Для этого агента нет доступного аккаунта Codex. Проверьте вход и остатки в настройках.", 409);
+    throw new AccountUnavailableError(signingIn ? "login_pending" : limited ? "limits" : "sign_in_required");
   }
   assertIdle(id: string) { if (this.active.get(id)) throw new HomeError("Аккаунт выполняет поручение. Дождитесь завершения перед выходом или новым входом.", 409); }
   async withIdle<T>(id: string, work: () => Promise<T>): Promise<T> {
@@ -144,6 +145,7 @@ export class AccountEngines implements CodexEngine {
       connections: async refresh => { const selected = await selection(); connectionEngine = this.scoped(selected.id, selected.service).forContext(context); return connectionEngine.connections?.(refresh) ?? []; },
       connect: async name => { const selected = await selection(); return this.scoped(selected.id, selected.service).forContext(context).connect!(name); },
       isConnected: async name => { const selected = await selection(); return this.scoped(selected.id, selected.service).forContext(context).isConnected!(name); },
+      extensions: async () => { const selected = await selection(); return this.scoped(selected.id, selected.service).forContext(context).extensions!(); },
     };
   }
   forContext(context: string): CodexEngine { return this.forAgent("main", context); }

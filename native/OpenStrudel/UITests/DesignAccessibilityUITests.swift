@@ -57,7 +57,7 @@ final class DesignAccessibilityUITests: XCTestCase {
         XCTAssertTrue(settings.waitForExistence(timeout: 10)); settings.tap()
         XCTAssertTrue(app.textFields["Имя сотрудника"].waitForExistence(timeout: 10))
         audit("employee-editor", app, &issues)
-        let services = app.buttons["Сервисы"]
+        let services = app.buttons["Сервисы и навыки"]
         reveal(services, app); services.tap()
         XCTAssertTrue(app.staticTexts["Документы"].waitForExistence(timeout: 10))
         let connectService = app.buttons["connect-service-qa-documents"]

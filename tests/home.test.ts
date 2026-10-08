@@ -37,6 +37,32 @@ async function eventually(f: () => Promise<void> | void) {
 }
 
 describe("user-owned primary Home", () => {
+  it("routes extension reads and writes to the employee's device and reports legacy shared workspaces", async () => {
+    const primary = await node("Laptop"), worker = await node("Mac mini");
+    const profile = worker.runtime.store.createProfile({name:"Writer",instructions:""});
+    const peer = worker.runtime.store.createProfile({name:"Editor",instructions:""});
+    const chat = worker.runtime.store.profileConversation(profile.id);
+    worker.runtime.store.profileConversation(peer.id);
+    worker.runtime.store.setSetting("employee.context." + profile.id,"legacy-work");
+    worker.runtime.store.setSetting("employee.context." + peer.id,"legacy-work");
+    let installed: unknown;
+    worker.runtime.engine.extensions = async () => ({
+      list: async () => ({items:[],notice:null}),
+      addMcp: async value => { installed=value;return {name:value.name}; },
+    }) as any;
+    await connect(primary,worker);
+    await eventually(() => expect(primary.home.nodeFor("conversation",chat.id)).toBe(worker.home.state.nodeId));
+    const scopes=await primary.api(`/v1/extensions/contexts?conversationId=${chat.id}`);
+    expect(scopes.status).toBe(200);
+    expect(scopes.value.contexts[0].sharedNotice).toContain("2 сотрудников");
+    expect((await primary.api(`/v1/extensions?conversationId=${chat.id}`)).value.items).toEqual([]);
+    const value={conversationId:chat.id,name:"docs",url:"https://example.com/mcp"};
+    const result=await primary.api("/v1/extensions/mcp","POST",value);
+    expect(result.status).toBe(200);
+    expect(installed).toEqual(value);
+    expect(result.value).toEqual({name:"docs"});
+    expect(primary.runtime.store.getConversation(chat.id)).toBeNull();
+  });
   it("preserves the joining Mac's main history as a named local agent", async () => {
     const primary = await node("Main"), worker = await node("Personal Mac");
     worker.runtime.store.setSetting("main.soul", "Помни мои планы");

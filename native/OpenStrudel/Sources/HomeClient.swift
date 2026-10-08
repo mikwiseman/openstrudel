@@ -703,23 +703,23 @@ final class HomeClient: ObservableObject, Identifiable {
             if !pending.isEmpty { query += "&watch=" + pending.prefix(200).joined(separator: ",") }
             let envelope: ConversationEnvelope = try await request(path + query)
             guard generation == refreshGeneration, profileID == selectedProfileID else { return }
-            conversationID = envelope.conversation.id
+            if conversationID != envelope.conversation.id { conversationID = envelope.conversation.id }
             if let page = envelope.pagination {
                 if !pagedHistory { olderCursor = page.olderCursor; hasEarlierMessages = olderCursor != nil }
-                messages = MessagePages.merge(existing: pagedHistory ? messages : [], page: envelope.messages, updates: envelope.updates ?? [])
+                let updated = MessagePages.merge(existing: pagedHistory ? messages : [], page: envelope.messages, updates: envelope.updates ?? [])
+                if messages != updated { messages = updated }
                 newerCursor = page.newerCursor
                 pagedHistory = true
             } else {
                 if messages != envelope.messages { messages = envelope.messages }
                 hasEarlierMessages = messages.count >= limit
             }
-            let pendingCount = pendingMessages.count
             let delivered = Set(envelope.messages.compactMap(\.externalId))
-            pendingMessages.removeAll { delivered.contains($0.id.uuidString) }
-            if pendingMessages.count != pendingCount { try savePending() }
-            if !messages.isEmpty || !profiles.isEmpty { hasOpenedConversation = true }
+            let remaining = pendingMessages.filter { !delivered.contains($0.id.uuidString) }
+            if remaining.count != pendingMessages.count { pendingMessages = remaining; try savePending() }
+            if !hasOpenedConversation && (!messages.isEmpty || !profiles.isEmpty) { hasOpenedConversation = true }
             if interactions != envelope.interactions ?? [] { interactions = envelope.interactions ?? [] }
-            syncError = nil
+            if syncError != nil { syncError = nil }
         } catch {
             guard generation == refreshGeneration, profileID == selectedProfileID else { return }
             if case HomeClientError.authenticationExpired = error { connectionNeedsPairing = true; health = nil }
@@ -756,10 +756,10 @@ final class HomeClient: ObservableObject, Identifiable {
         } catch { errorMessage = error.localizedDescription }
     }
 
-    func loadConnections(refresh: Bool = false) async throws {
+    func loadConnections(refresh: Bool = false, for scope: String? = nil) async throws {
         let generation = connectionGeneration
         let chat = conversationID
-        let query = "?refresh=" + String(refresh) + (conversationID.map { "&conversationId=" + $0 } ?? "")
+        let query = "?refresh=" + String(refresh) + ((scope ?? conversationID).map { "&conversationId=" + $0 } ?? "")
         let result: ConnectionsEnvelope = try await request("/v1/connections" + query)
         guard generation == connectionGeneration, chat == conversationID else { throw CancellationError() }
         connections = result.connections
@@ -832,13 +832,55 @@ final class HomeClient: ObservableObject, Identifiable {
         } catch { errorMessage = error.localizedDescription }
     }
 
-    func connectService(_ id: String) async throws -> URL? {
+    func connectService(_ id: String, for scope: String? = nil) async throws -> URL? {
         var value = ["id": id]
-        if let conversationID { value["conversationId"] = conversationID }
+        if let conversationID = scope ?? conversationID { value["conversationId"] = conversationID }
         let body = try JSONSerialization.data(withJSONObject: value)
         let result: ConnectionLink = try await request("/v1/connections/connect", method: "POST", body: body)
         return result.url.flatMap { URL(string: $0) }
     }
+
+    func extensionContexts() async throws -> [ExtensionContext] {
+        guard let conversationID else { throw HomeClientError.server("Сначала откройте чат сотрудника.") }
+        let value: ExtensionContextsEnvelope = try await request("/v1/extensions/contexts?conversationId=" + conversationID)
+        return value.contexts
+    }
+
+    func loadExtensions(for scope: String) async throws -> ExtensionsEnvelope {
+        try await request("/v1/extensions?conversationId=" + scope)
+    }
+
+    func serviceConnections(for scope: String, refresh: Bool) async throws -> ConnectionsEnvelope {
+        try await request("/v1/connections?conversationId=" + scope + "&refresh=" + String(refresh))
+    }
+
+    func previewExtension(_ files: [ExtensionFile], for scope: String) async throws -> ExtensionPreview {
+        struct Upload: Encodable { let files: [ExtensionFile]; let conversationId: String }
+        return try await request("/v1/extensions/preview", method: "POST", body: JSONEncoder().encode(Upload(files: files, conversationId: scope)))
+    }
+
+    func installExtension(_ files: [ExtensionFile], digest: String, for scope: String) async throws {
+        struct Upload: Encodable { let files: [ExtensionFile]; let digest: String; let conversationId: String }
+        let _: ExtensionPreview = try await request("/v1/extensions/install", method: "POST", body: JSONEncoder().encode(Upload(files: files, digest: digest, conversationId: scope)))
+    }
+
+    func addMCP(name: String, url: String, token: String, for scope: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["name": name, "url": url, "token": token, "conversationId": scope])
+        let _: ExtensionAction = try await request("/v1/extensions/mcp", method: "POST", body: body)
+    }
+
+    func changeExtension(_ id: String, enabled: Bool? = nil, for scope: String) async throws {
+        var value: [String: Any] = ["id": id, "conversationId": scope]
+        if let enabled { value["enabled"] = enabled }
+        let _: ExtensionAction = try await request("/v1/extensions/change", method: "POST", body: JSONSerialization.data(withJSONObject: value))
+    }
+
+    func removeMCP(_ id: String, for scope: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["name": String(id.dropFirst(4)), "conversationId": scope])
+        let _: ExtensionAction = try await request("/v1/extensions/mcp/remove", method: "POST", body: body)
+    }
+
+    private struct ExtensionAction: Decodable { }
 
     func answer(_ interaction: ChatInteraction, answers: [String: String]) async throws {
         let body = try JSONSerialization.data(withJSONObject: ["conversationId": interaction.conversationId, "answers": answers])

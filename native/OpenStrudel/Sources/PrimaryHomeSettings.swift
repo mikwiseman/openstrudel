@@ -13,7 +13,8 @@ struct AgentAccountPreference: View {
             Divider()
             Text("Аккаунт OpenAI").font(.subheadline.weight(.medium))
             if let device = client.devices.first(where: { $0.id == profile.deviceId }) {
-                Text("Работает на «\(device.name)»").font(.caption).foregroundStyle(AppTheme.secondaryText)
+                Text("Работает на «\(device.id == client.health?.nodeId ? client.displayName : device.name)»")
+                    .font(.caption).foregroundStyle(AppTheme.secondaryText)
             }
             Picker("Использовать", selection: $selection) {
                 Text("По умолчанию").tag("")

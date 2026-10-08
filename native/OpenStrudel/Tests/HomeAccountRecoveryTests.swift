@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import Testing
 
 @Suite(.serialized)
@@ -33,6 +34,25 @@ import Testing
         #expect(queries.last?.queryItems?.contains(URLQueryItem(name: "after", value: "m99")) == true)
         #expect(queries.last?.queryItems?.contains(URLQueryItem(name: "watch", value: "m99")) == true)
         #expect(queries.allSatisfy { $0.queryItems?.contains(URLQueryItem(name: "limit", value: "50")) == true })
+    }
+
+    @Test func unchangedHistoryPollingDoesNotInvalidateTheWholeInterface() async throws {
+        let state = AccountFixtureState()
+        state.customResponse = { request in
+            guard request.url!.path.contains("conversation") else { return nil }
+            let after = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems?.contains(where: { $0.name == "after" }) == true
+            return (200, historyPage(after ? [] : Array(0..<50), older: nil, newer: "m49"))
+        }
+        let (client, session) = makeClient(state)
+        defer { session.invalidateAndCancel() }
+        await client.refreshConversation()
+        var notifications = 0
+        let observation = client.objectWillChange.sink { notifications += 1 }
+        await client.refreshConversation()
+        await client.refreshConversation()
+        #expect(client.messages.count == 50)
+        #expect(notifications == 0)
+        withExtendedLifetime(observation) {}
     }
 
     @Test func changingEmployeeDiscardsAnOlderPageThatArrivesLate() async throws {
