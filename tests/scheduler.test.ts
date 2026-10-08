@@ -24,7 +24,7 @@ describe("durable cron", () => {
     const scheduler = new Scheduler(store, messages), c = store.primaryConversation();
     scheduler.save({ conversationId: c.id, name: "Daily", prompt: "Digest", cron: "0 6 * * *", timezone: "Europe/Moscow" }, new Date("2026-09-26T10:00:00Z"));
     await scheduler.tick(new Date("2026-09-27T03:00:01Z")); await scheduler.idle();
-    expect(scheduler.runs(c.id)[0]).toMatchObject({ status: "failed", error: expect.stringContaining("Вход в OpenAI больше не действует") });
+    expect(scheduler.runs(c.id)[0]).toMatchObject({ status: "failed", error: expect.stringContaining("Войдите в OpenAI на устройстве сотрудника") });
     authorized = true;
     scheduler.recover();
     await scheduler.tick(new Date("2026-09-27T04:00:01Z")); await scheduler.idle();

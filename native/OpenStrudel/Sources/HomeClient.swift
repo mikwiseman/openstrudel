@@ -703,23 +703,23 @@ final class HomeClient: ObservableObject, Identifiable {
             if !pending.isEmpty { query += "&watch=" + pending.prefix(200).joined(separator: ",") }
             let envelope: ConversationEnvelope = try await request(path + query)
             guard generation == refreshGeneration, profileID == selectedProfileID else { return }
-            conversationID = envelope.conversation.id
+            if conversationID != envelope.conversation.id { conversationID = envelope.conversation.id }
             if let page = envelope.pagination {
                 if !pagedHistory { olderCursor = page.olderCursor; hasEarlierMessages = olderCursor != nil }
-                messages = MessagePages.merge(existing: pagedHistory ? messages : [], page: envelope.messages, updates: envelope.updates ?? [])
+                let updated = MessagePages.merge(existing: pagedHistory ? messages : [], page: envelope.messages, updates: envelope.updates ?? [])
+                if messages != updated { messages = updated }
                 newerCursor = page.newerCursor
                 pagedHistory = true
             } else {
                 if messages != envelope.messages { messages = envelope.messages }
                 hasEarlierMessages = messages.count >= limit
             }
-            let pendingCount = pendingMessages.count
             let delivered = Set(envelope.messages.compactMap(\.externalId))
-            pendingMessages.removeAll { delivered.contains($0.id.uuidString) }
-            if pendingMessages.count != pendingCount { try savePending() }
-            if !messages.isEmpty || !profiles.isEmpty { hasOpenedConversation = true }
+            let remaining = pendingMessages.filter { !delivered.contains($0.id.uuidString) }
+            if remaining.count != pendingMessages.count { pendingMessages = remaining; try savePending() }
+            if !hasOpenedConversation && (!messages.isEmpty || !profiles.isEmpty) { hasOpenedConversation = true }
             if interactions != envelope.interactions ?? [] { interactions = envelope.interactions ?? [] }
-            syncError = nil
+            if syncError != nil { syncError = nil }
         } catch {
             guard generation == refreshGeneration, profileID == selectedProfileID else { return }
             if case HomeClientError.authenticationExpired = error { connectionNeedsPairing = true; health = nil }

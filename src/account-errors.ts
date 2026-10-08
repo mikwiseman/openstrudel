@@ -1,4 +1,17 @@
-export const OPENAI_SIGN_IN_REQUIRED = "Вход в OpenAI больше не действует. Восстановите его в настройках основного Mac или сервера OpenStrudel. История сохранена; после входа повторите сообщение.";
+import { HomeError } from "./home.js";
+
+export const OPENAI_SIGN_IN_REQUIRED = "Войдите в OpenAI на устройстве сотрудника: OpenStrudel → Настройки → Аккаунты. История сохранена; после входа повторите сообщение.";
+
+export class AccountUnavailableError extends HomeError {
+  constructor(readonly reason: "sign_in_required" | "limits" | "login_pending" | "unavailable") {
+    super({
+      sign_in_required: OPENAI_SIGN_IN_REQUIRED,
+      limits: "Лимит подключённых аккаунтов OpenAI закончился. Дождитесь обновления лимита или выберите другой аккаунт в OpenStrudel → Настройки → Аккаунты.",
+      login_pending: "Завершите вход в OpenAI в OpenStrudel → Настройки → Аккаунты, затем повторите сообщение.",
+      unavailable: "OpenAI пока не отвечает. Аккаунт сохранён, повторный вход не нужен. Попробуйте позже.",
+    }[reason], reason === "unavailable" ? 503 : 409);
+  }
+}
 
 export function isOpenAIAuthenticationError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);

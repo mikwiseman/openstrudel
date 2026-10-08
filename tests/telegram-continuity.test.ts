@@ -3,6 +3,7 @@ import { Store } from "../src/store.js";
 import { Scheduler } from "../src/scheduler.js";
 import { MessageService } from "../src/messages.js";
 import { TelegramAdapter } from "../src/telegram.js";
+import { AccountUnavailableError } from "../src/account-errors.js";
 const stores:Store[]=[];
 afterEach(()=>{vi.useRealTimers();vi.unstubAllGlobals();for(const s of stores.splice(0))s.close();});
 function setup() {
@@ -12,6 +13,27 @@ function setup() {
  vi.stubGlobal("fetch",vi.fn(async()=>Response.json({ok:true,result:{message_id:99}})));
  return {s,m,a,run};
 }
+it("keeps ordinary group chatter quiet during an account incident and sends one actionable notice until recovery", async () => {
+ const {s,m,a,run}=setup();s.setSetting("telegram.bot_username","core_bot");
+ s.bindTelegramChat("-100",s.createProfile({name:"Core"}).id);
+ run.mockRejectedValue(new AccountUnavailableError("limits"));
+ const update=(id:number,text:string)=>({update_id:id,message:{message_id:id,from:{id:7},chat:{id:-100,type:"group"},text}});
+ await a.processUpdate(update(1,"ordinary conversation"));
+ expect(fetch).not.toHaveBeenCalled();
+ await a.processUpdate(update(2,"@core_bot check"));
+ await a.processUpdate(update(3,"@core_bot second attachment"));
+ expect(fetch).toHaveBeenCalledTimes(1);
+ expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]!.body)).text).toContain("Лимит");
+ expect(s.listMessages(s.getTelegramChat("-100")!.conversationId!).filter(m=>m.status==="failed")).toHaveLength(3);
+ // Restart retains the incident; successful processing resets it.
+ const restarted=new TelegramAdapter("123:test",s,m);
+ await restarted.processUpdate(update(4,"@core_bot still waiting"));expect(fetch).toHaveBeenCalledTimes(1);
+ run.mockResolvedValue({threadId:"one",response:"NO_REPLY",events:[]});
+ await restarted.processUpdate(update(5,"ordinary conversation after recovery"));
+ run.mockRejectedValue(new AccountUnavailableError("sign_in_required"));
+ await restarted.processUpdate(update(6,"@core_bot hello"));expect(fetch).toHaveBeenCalledTimes(2);
+ await m.close();
+});
 it("restricts a linked group to its approved senders",async()=>{
  const {s,m,a,run}=setup();const p=s.createProfile({name:"News"});s.bindTelegramChat("-100",p.id);
  await a.processUpdate({update_id:1,message:{message_id:1,from:{id:8},chat:{id:-100,type:"group"},text:"change everything"}});

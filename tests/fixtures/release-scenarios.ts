@@ -60,6 +60,16 @@ runtime.store.importHistory(runtime.store.profileConversation(editor.id).id, [
   { sourceId: "qa-one", author: "Вы", date: "2026-10-02T06:40:00Z", direction: "inbound", text: "Покажи пример оформления" },
   { sourceId: "qa-two", author: "Редактор", date: "2026-10-02T06:41:00Z", direction: "outbound", text: "## Черновик готов\n\n**Главное** уже выделено.\n\n- Первый пункт\n- Второй пункт\n\n> Цитата для проверки\n\n```js\nconst ready = true;\n```" },
 ]);
+if (process.env.OPENSTRUDEL_QA_LONG_HISTORY === "1") {
+  const longChat = runtime.store.createProfile({ name: "Большая история", instructions: "Изолированная проверка длинной переписки.", domain: "personal" });
+  runtime.store.importHistory(runtime.store.profileConversation(longChat.id).id, Array.from({ length: 5000 }, (_, index) => ({
+    sourceId: `long-${index}`, author: index % 2 ? "Сотрудник" : "Вы",
+    date: new Date(Date.UTC(2026, 8, 1) + index * 120_000).toISOString(),
+    direction: index % 2 ? "outbound" as const : "inbound" as const,
+    text: `## Сообщение ${index + 1}\n\n` + "Проверка длинной истории: **выделение**, [ссылка](https://example.com), обычный текст и сохранение позиции прокрутки.\n\n".repeat(12)
+      + "- Первый пункт\n- Второй пункт\n\n```swift\nlet value = 42\n```",
+  })));
+}
 runtime.store.linkTelegramChat({ chatId: "42", title: "Личный чат", allowedSenders: ["42"] });
 runtime.store.linkTelegramChat({ chatId: "-100", title: "Рабочая группа", allowedSenders: ["42"] });
 runtime.telegram.status = () => ({ configured: true, running: true, botUsername: "openstrudel_preview_bot", linkedChats: ["42", "-100"], chats: runtime.store.telegramChats().filter(chat => privateTelegramLinked || chat.chatId.startsWith("-")), lastError: null });

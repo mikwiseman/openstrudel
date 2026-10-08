@@ -4,6 +4,7 @@ import type { Attachment, Interaction, MessageInput, MessageResult, TelegramChat
 import { readFile } from "node:fs/promises";
 import { telegramText } from "./telegram-format.js";
 import { transcribeVoice } from "./voice.js";
+import { AccountUnavailableError } from "./account-errors.js";
 import type { MessageService } from "./messages.js";
 import type { Store } from "./store.js";
 
@@ -324,6 +325,7 @@ export class TelegramAdapter {
       this.store.markTelegramUpdate(update.update_id); return;
     }
     const binding = this.store.getTelegramChat(chatId);
+    const accountNoticeKey = `telegram.accountNotice.${chatId}.${binding?.profileId ?? "main"}`;
     if (Number(chatId) < 0 && !binding?.profileId) {
       this.store.markTelegramUpdate(update.update_id); return;
     }
@@ -366,11 +368,23 @@ export class TelegramAdapter {
     const input = await prepared;text=input.text;
     const replyToAssistant = Boolean(replyConversation || replyAuthor && (replyAuthor.id === this.bot?.id || replyAuthor.is_bot && replyAuthor.username?.toLowerCase() === (this.bot?.username ?? this.store.getSetting("telegram.bot_username"))?.toLowerCase()));
     const result: MessageResult = await this.messages.handle({ channel: "telegram", conversationId: conversation.id, text, uploads:input.uploads, replyToAssistant, telegramSenderId:message.from ? String(message.from.id) : undefined, author:[message.from?.first_name,message.from?.last_name].filter(Boolean).join(" ") || undefined, externalId: chatId + ":" + String(message.message_id), externalChatId: chatId, title: message.chat.title ?? "Telegram " + chatId });
+    this.store.deleteSetting(accountNoticeKey);
     const currentBinding = this.store.getTelegramChat(chatId);
     try { if (currentBinding && currentBinding.profileId === binding?.profileId && (Number(chatId) >= 0 || result.text.trim() !== "NO_REPLY")) { await this.sendMessage(message.chat.id, result.text,`reply:${result.messageId}`); await this.sendFiles(message.chat.id,result.attachments,`reply:${result.messageId}`); } }
     catch { this.lastError="Ответ сохранён в приложении; доставку в Telegram нужно проверить"; }
     } catch (error) {
-      await this.sendMessage(message.chat.id, error instanceof Error ? error.message : "Не удалось завершить ответ",`error:${update.update_id}`);
+      if (error instanceof AccountUnavailableError && Number(chatId) < 0) {
+        // A group may send an album or carry on talking during an account
+        // outage. Keep each failed input in Home, but announce one incident
+        // only when addressed. A successful turn ends the incident.
+        const addressed = replyToBot || Boolean(username && new RegExp(`@${username}(?![\\w])`, "i").test(text));
+        if (addressed && this.store.getSetting(accountNoticeKey) !== error.reason) {
+          this.store.setSetting(accountNoticeKey, error.reason);
+          await this.sendMessage(message.chat.id, error.message, `error:${update.update_id}`);
+        }
+      } else {
+        await this.sendMessage(message.chat.id, error instanceof Error ? error.message : "Не удалось завершить ответ",`error:${update.update_id}`);
+      }
     } finally {
       if(this.preparations.get(chatId)===prepared) this.preparations.delete(chatId);
       const remaining = (this.activeChats.get(chatId) ?? 1) - 1;

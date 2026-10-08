@@ -20,7 +20,6 @@ final class ReleaseScenariosUITests: XCTestCase {
         XCTAssertTrue(app.buttons["addEmployeeTelegramGroup"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["Связать мой Telegram"].exists)
         capture("telegram-empty", app)
-        app.buttons["Выбрать подключённую группу"].tap()
         app.buttons["chooseTelegramGroup--100"].tap()
         XCTAssertTrue(app.buttons["Подключить сотрудника"].waitForExistence(timeout: 5))
         capture("telegram-confirm", app)
@@ -30,17 +29,24 @@ final class ReleaseScenariosUITests: XCTestCase {
         app.buttons["Настройки группы «Рабочая группа»"].tap()
         app.buttons["Отключить от сотрудника…"].tap()
         XCTAssertTrue(app.buttons["Отключить"].waitForExistence(timeout: 5))
-        app.buttons["Отмена"].tap()
+        if app.buttons["Отмена"].exists { app.buttons["Отмена"].tap() }
+        else { app.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.85)).tap() }
         XCTAssertTrue(app.staticTexts["Рабочая группа"].exists)
         // Upgraded installations can have existing groups before the owner
         // pairs a private chat. They must remain visible and manageable.
         _ = try await read(fixture + "/telegram-private?value=0")
-        XCTAssertTrue(app.buttons["openPersonalTelegram"].waitForExistence(timeout: 12))
-        XCTAssertFalse(app.buttons["addEmployeeTelegramGroup"].exists)
+        try await Task.sleep(for: .seconds(6))
+        XCTAssertTrue(app.buttons["addEmployeeTelegramGroup"].exists)
+        app.buttons["addEmployeeTelegramGroup"].tap()
+        XCTAssertTrue(app.buttons["openPersonalTelegram"].waitForExistence(timeout: 10))
         try reveal(app.staticTexts["Рабочая группа"].firstMatch, in: app)
         XCTAssertTrue(app.buttons["Настройки группы «Рабочая группа»"].exists)
         capture("telegram-existing-without-private", app)
+        app.buttons["Отмена"].tap()
+        XCTAssertFalse(app.buttons["openPersonalTelegram"].exists)
         _ = try await read(fixture + "/telegram-private?value=1")
+        try backToEmployee(app)
+        XCTAssertTrue(app.textFields["Имя сотрудника"].waitForExistence(timeout: 5))
     }
 
     @MainActor func testSettingsEmployeesMessagesAndRecovery() async throws {
@@ -130,18 +136,17 @@ final class ReleaseScenariosUITests: XCTestCase {
         }
         XCTAssertTrue(app.staticTexts["Подключён"].waitForExistence(timeout: 10), app.debugDescription)
         capture("service-connected", app)
-        try done(app)
+        try backToEmployee(app)
         let telegram = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Telegram")).firstMatch
         try reveal(telegram, in: app); telegram.tap()
         XCTAssertTrue(app.buttons["addEmployeeTelegramGroup"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["Связать мой Telegram"].exists)
-        app.buttons["Выбрать подключённую группу"].tap()
         XCTAssertTrue(app.buttons["chooseTelegramGroup--100"].waitForExistence(timeout: 5))
         capture("employee-telegram", app)
         app.buttons["chooseTelegramGroup--100"].tap()
         app.buttons["Подключить сотрудника"].tap()
         XCTAssertTrue(app.staticTexts["По @упоминанию или ответу"].waitForExistence(timeout: 10))
-        try done(app)
+        try backToEmployee(app)
         let name = app.textFields["Имя сотрудника"]
         try reveal(name, in: app)
         name.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
@@ -221,6 +226,12 @@ final class ReleaseScenariosUITests: XCTestCase {
             XCTFail(app.debugDescription)
             throw NSError(domain: "ReleaseUI", code: 1)
         }
+    }
+
+    @MainActor private func backToEmployee(_ app: XCUIApplication) throws {
+        let back = app.navigationBars.buttons["Сотрудник"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5), app.debugDescription)
+        back.tap()
     }
 
     @MainActor private func done(_ app: XCUIApplication) throws {

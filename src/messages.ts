@@ -9,7 +9,7 @@ import { resolve } from "node:path";
 import type { Scheduler } from "./scheduler.js";
 import { createHash } from "node:crypto";
 import { ConversationFiles } from "./files.js";
-import { isOpenAIAuthenticationError, OPENAI_SIGN_IN_REQUIRED } from "./account-errors.js";
+import { AccountUnavailableError, isOpenAIAuthenticationError, OPENAI_SIGN_IN_REQUIRED } from "./account-errors.js";
 import { assertAgentWritable } from "./agent-move.js";
 
 /** One FIFO per conversation, shared by every client. No second agent loop. */
@@ -118,6 +118,8 @@ export class MessageService {
         if (isOpenAIAuthenticationError(error)) this.onAuthenticationError?.();
         const message = friendlyError(error);
         this.store.setMessageStatus(inbound.id, "failed", message);
+        if (error instanceof AccountUnavailableError) throw error;
+        if (isOpenAIAuthenticationError(error)) throw new AccountUnavailableError("sign_in_required");
         throw new Error(message);
       } finally { this.interactions.cancelMessage(inbound.id); }
     });
