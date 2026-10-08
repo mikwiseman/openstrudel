@@ -71,7 +71,7 @@ struct ApprovalSettingsView: View {
             }
         }
         .task { await load() }
-        .confirmationDialog("Выполнять без подтверждений?", isPresented: $confirmAll, titleVisibility: .visible) {
+        .alert("Выполнять без подтверждений?", isPresented: $confirmAll) {
             Button("Включить для этого устройства") { Task { await save(.approveAll) } }
             Button("Отмена", role: .cancel) { }
         } message: {

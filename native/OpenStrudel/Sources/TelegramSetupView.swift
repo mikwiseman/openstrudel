@@ -55,10 +55,10 @@ struct TelegramSetupView: View {
                     linking = true; error = nil
                     Task {
                         if linked, let name = client.telegram?.botUsername, let url = URL(string: "https://t.me/" + name) {
-                            openURL(url)
+                            openTelegram(url)
                         } else {
                             await client.createTelegramLink()
-                            if let url = client.telegramLink?.url { openURL(url) }
+                            if let url = client.telegramLink?.url { openTelegram(url) }
                             else { error = client.errorMessage; client.errorMessage = nil }
                         }
                         linking = false
@@ -66,7 +66,7 @@ struct TelegramSetupView: View {
                 }.buttonStyle(.borderedProminent).disabled(linking).accessibilityIdentifier("openPersonalTelegram")
                 if linked && !contextual {
                     if let name = client.telegram?.botUsername, let url = URL(string: "https://t.me/" + name + "?startgroup=choose") {
-                        Link(destination: url) { Label("Добавить бота в группу", systemImage: "person.2.badge.plus") }
+                        Button { openTelegram(url) } label: { Label("Добавить бота в группу", systemImage: "person.2.badge.plus") }
                             .buttonStyle(.bordered).accessibilityIdentifier("addTelegramGroup")
                     }
                     Text("Добавьте бота в группу и упомяните его. Он ответит сам или подключит подходящего сотрудника.")
@@ -78,7 +78,7 @@ struct TelegramSetupView: View {
             } else {
                 Text("1. Откройте BotFather и создайте бота командой /newbot.")
                     .font(.callout).fixedSize(horizontal: false, vertical: true)
-                Link("Открыть BotFather", destination: URL(string: "https://t.me/BotFather")!)
+                Button("Открыть BotFather") { openTelegram(URL(string: "https://t.me/BotFather")!) }
                 Text("2. Скопируйте выданный ключ и вставьте сюда.").font(.callout)
                 SecureField("Ключ бота из BotFather", text: $token).textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("telegramBotToken")
@@ -114,6 +114,25 @@ struct TelegramSetupView: View {
                 do { try await Task.sleep(for: .seconds(5)) } catch { return }
                 await client.loadChatSettings()
             }
+        }
+    }
+
+    private func openTelegram(_ webURL: URL) {
+        let openInBrowser: @MainActor @Sendable () -> Void = {
+            openURL(webURL) { @Sendable accepted in
+                Task { @MainActor in
+                    if !accepted { error = "Не удалось открыть Telegram. Попробуйте ещё раз." }
+                }
+            }
+        }
+        if let nativeURL = TelegramLink.nativeURL(for: webURL) {
+            // Launch Services calls back on its own queue on macOS. Keep the
+            // callback nonisolated, then return to the UI actor explicitly.
+            openURL(nativeURL) { @Sendable accepted in
+                Task { @MainActor in if !accepted { openInBrowser() } }
+            }
+        } else {
+            openInBrowser()
         }
     }
 

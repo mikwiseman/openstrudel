@@ -22,6 +22,17 @@ const engine: CodexEngine = {
     if (message.includes("Проверка свободного места")) {
       throw new Error("ENOSPC: no space left on device, open '/private/qa/history.jsonl.tmp'");
     }
+    if (message.includes("Проверка подтверждения")) {
+      await new Promise(done => setTimeout(done, 900));
+      const answer = await options!.onRequest!("mcpServer/elicitation/request", {
+        mode: "form", serverName: "qa-service",
+        message: 'Allow the qa-service MCP server to run tool "check_ready"?',
+        _meta: { codex_approval_kind: "mcp_tool_call", tool_params: {} },
+        requestedSchema: { type: "object", properties: {} },
+      }) as { action: string };
+      await new Promise(done => setTimeout(done, 400));
+      return { threadId: options?.threadId ?? "qa-thread", response: answer.action === "accept" ? "Проверка выполнена." : "Действие не выполнено.", events: [] };
+    }
     if (message.includes("Проверка выбора")) {
       const answer = await options!.onRequest!("item/tool/requestUserInput", {
         questions: [{ id: "choice", question: "Когда подготовить черновик?", options: [{ label: "Утром" }, { label: "Вечером" }] }],

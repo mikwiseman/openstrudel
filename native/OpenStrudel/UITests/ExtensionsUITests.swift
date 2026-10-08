@@ -36,7 +36,7 @@ final class ExtensionsUITests: XCTestCase {
         hideKeyboard(app)
         try reveal(app.buttons["Добавить сервис"], in: app)
         app.buttons["Добавить сервис"].tap()
-        let failure = app.staticTexts.matching(NSPredicate(format:"label CONTAINS %@", "HTTPS")).firstMatch
+        let failure = app.staticTexts.matching(NSPredicate(format:"label CONTAINS[c] %@", "https")).firstMatch
         try reveal(failure, in: app)
         try reveal(address, in: app, upwards: false)
         address.tap()

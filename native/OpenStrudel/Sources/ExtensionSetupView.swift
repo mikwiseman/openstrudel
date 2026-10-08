@@ -1,6 +1,19 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Connection rows contain controls, not selectable records. A macOS Form
+/// exposes each button to keyboard navigation and assistive technologies.
+struct ServiceList<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    var body: some View {
+        #if os(macOS)
+        Form(content: content).formStyle(.grouped)
+        #else
+        List(content: content)
+        #endif
+    }
+}
+
 /// A navigation destination owns its state instead of retaining the presenting view.
 struct ConnectionCatalogView: View {
     @EnvironmentObject private var client: HomeClient
@@ -23,7 +36,7 @@ struct ConnectionCatalogView: View {
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
     var body: some View {
-        List {
+        ServiceList {
             Section {
                 Text(scope.isGroup ? "Для Telegram-группы «\(scope.title)»" : "Для разговора в приложении")
                     .foregroundStyle(AppTheme.secondaryText)
@@ -55,6 +68,7 @@ struct ConnectionCatalogView: View {
                                 .accessibilityLabel("\(connection.actionTitle) \(connection.name)")
                                 .accessibilityIdentifier("connect-service-" + connection.id)
                         }.padding(.vertical, 6)
+                            .accessibilityElement(children: .contain)
                     }
                     if results.isEmpty { Text("Ничего не найдено").foregroundStyle(AppTheme.secondaryText) }
                 } header: { Text("Из аккаунта OpenAI") } footer: {
@@ -107,8 +121,10 @@ struct ConnectionCatalogView: View {
         do {
             if let url = try await client.connectService(connection.id, for: scope.id) {
                 waiting = connection; authorizationURL = url
-                openURL(url) { accepted in
-                    if !accepted { error = "Не удалось открыть браузер. Используйте ссылку «Открыть ещё раз»." }
+                openURL(url) { @Sendable accepted in
+                    Task { @MainActor in
+                        if !accepted { error = "Не удалось открыть браузер. Используйте ссылку «Открыть ещё раз»." }
+                    }
                 }
             } else {
                 await refresh()

@@ -379,13 +379,14 @@ private struct Sidebar: View {
                 }
             }
         } message: {
-            Text("Сотрудник, его переписка и расписания будут удалены с «\(deletion?.device ?? "устройства")». Это действие нельзя отменить.")
+            Text("Сотрудник, переписка и расписания будут удалены с устройства «\(deletion?.device ?? "OpenStrudel")». Отменить удаление нельзя.")
         }
     }
 
     private func requestDeletion(_ profile: EmployeeProfile, from source: HomeClient) {
         guard !deleting else { return }
-        let device = source.devices.first(where: { $0.id == profile.deviceId })?.name ?? source.displayName
+        let device = profile.deviceId == source.health?.nodeId ? source.displayName
+            : source.devices.first(where: { $0.id == profile.deviceId })?.name ?? source.displayName
         deletion = EmployeeDeletion(client: source, id: profile.id, name: profile.name, device: device)
         confirmDeletion = true
     }
@@ -449,7 +450,6 @@ private struct ConversationView: View {
     @State private var showBotDetails = false
     @State private var followsLatest = true
     @State private var userIsScrolling = false
-    @State private var visibleMessageID: String?
     @State private var hasNewMessages = false
     @FocusState private var focused: Bool
     private var draftKey: String { HomeDrafts.key(home: client.baseURLString, profile: client.selectedProfileID, chat: client.selectedChatID) }
@@ -485,12 +485,12 @@ private struct ConversationView: View {
                         TranscriptStack {
                             if client.hasEarlierMessages {
                                 Button {
-                                    let anchor = visibleMessageID ?? client.messages.first?.id
+                                    let anchor = client.messages.first?.id
                                     let conversation = draftKey
                                     followsLatest = false
-                                    visibleMessageID = anchor
                                     Task {
                                         await client.loadEarlierMessages()
+                                        await Task.yield()
                                         guard conversation == draftKey, let anchor else { return }
                                         proxy.scrollTo(anchor, anchor: .top)
                                     }
@@ -511,6 +511,7 @@ private struct ConversationView: View {
                                     if let day = row.day { DayDivider(date: day) }
                                     MessageBubble(message: row.message)
                                 }.id(row.id)
+                                    .accessibilityElement(children: .contain)
                             }
                             ForEach(client.visiblePendingMessages) { pending in
                                 VStack(alignment: .trailing, spacing: 4) {
@@ -549,12 +550,7 @@ private struct ConversationView: View {
                     }
                 }
                 .scrollIndicators(.hidden)
-                .scrollPosition(id: Binding(
-                    get: { followsLatest ? nil : visibleMessageID },
-                    set: { if !followsLatest { visibleMessageID = $0 } }
-                ), anchor: .top)
                 .defaultScrollAnchor(.bottom, for: .initialOffset)
-                .defaultScrollAnchor(followsLatest ? .bottom : nil, for: .sizeChanges)
                 #if os(macOS)
                 .mask(EdgeFade())
                 #endif
@@ -695,8 +691,10 @@ private struct ConversationView: View {
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
+        let conversation = draftKey
         Task { @MainActor in
             await Task.yield()
+            guard conversation == draftKey, followsLatest else { return }
             if animated && !reduceMotion {
                 withAnimation(.easeOut(duration: 0.22)) {
                     proxy.scrollTo("conversation-bottom", anchor: .bottom)
@@ -1965,7 +1963,7 @@ private struct ConnectionsView: View {
     }
 
     private var servicesList: some View {
-            List {
+            ServiceList {
                 connectionHeader
                 if availableConnections.filter({ !$0.isAvailableToAdd }).count > 6 {
                     TextField("Найти подключение", text: $query)
@@ -2048,6 +2046,7 @@ private struct ConnectionsView: View {
                                     Button("Удалить…", role: .destructive) { pendingRemoval = item }.buttonStyle(.borderless).font(.caption).disabled(changing)
                                 }
                             }.padding(.vertical, 6)
+                                .accessibilityElement(children: .contain)
                         }
                     }
                 }
@@ -2100,6 +2099,7 @@ private struct ConnectionsView: View {
                     }
                 }
                 .padding(.vertical, 8)
+                .accessibilityElement(children: .contain)
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
     }
@@ -2124,6 +2124,7 @@ private struct ConnectionsView: View {
                 }
             }
         }.padding(.vertical, 8)
+            .accessibilityElement(children: .contain)
     }
 
     private func connectionDetails(_ connection: ServiceConnection) -> some View {
@@ -2159,7 +2160,11 @@ private struct ConnectionsView: View {
         do {
             if let url = try await client.connectService(connection.id, for: scopeID) {
                 waiting = connection; authorizationURL = url
-                openURL(url) { accepted in if !accepted { error = "Не удалось открыть браузер. Используйте ссылку «Открыть ещё раз»." } }
+                openURL(url) { @Sendable accepted in
+                    Task { @MainActor in
+                        if !accepted { error = "Не удалось открыть браузер. Используйте ссылку «Открыть ещё раз»." }
+                    }
+                }
             } else {
                 await refresh()
                 if availableConnections.contains(where: { $0.id == connection.id && $0.connected }) { notice = "Подключено: " + connection.name }

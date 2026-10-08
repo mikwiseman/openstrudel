@@ -101,11 +101,11 @@ final class ReleaseScenariosUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: app.buttons["approvalMode-auto"])], timeout: 10), .completed)
         app.buttons["approvalMode-approve_all"].tap()
         XCTAssertTrue(app.buttons["Включить для этого устройства"].waitForExistence(timeout: 5))
-        let cancel = app.buttons["Отмена"]
-        if cancel.exists && cancel.isHittable { cancel.tap() }
-        else { app.otherElements["PopoverDismissRegion"].coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.15)).tap() }
+        let approvalAlert = app.alerts["Выполнять без подтверждений?"]
+        XCTAssertTrue(approvalAlert.waitForExistence(timeout: 5))
+        approvalAlert.buttons["Отмена"].tap()
         XCTAssertTrue(app.buttons["Включить для этого устройства"].waitForNonExistence(timeout: 5))
-        XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(approvalAlert.waitForNonExistence(timeout: 5))
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: app.buttons["approvalMode-auto"])], timeout: 10), .completed)
         app.buttons["approvalMode-ask"].tap()
         app.buttons["settingsSection"].tap()
@@ -205,6 +205,21 @@ final class ReleaseScenariosUITests: XCTestCase {
         capture("request-input", app)
         app.buttons["Утром"].tap()
         XCTAssertTrue(app.staticTexts["Выбрано: Утром"].waitForExistence(timeout: 20))
+        // Pending -> approval -> thinking -> answer used to trigger a layout
+        // loop. Repeat with alternating decisions and a changing input height.
+        for index in 1...6 {
+            input.tap()
+            input.typeText("Проверка подтверждения \(index). " + String(repeating: "Безопасная проверка раскладки. ", count: index))
+            app.buttons["Отправить"].tap()
+            let decision = app.buttons[index.isMultiple(of: 2) ? "Отказать" : "Разрешить"]
+            XCTAssertTrue(decision.waitForExistence(timeout: 20))
+            decision.tap()
+            XCTAssertTrue(decision.waitForNonExistence(timeout: 10))
+            let answer = index.isMultiple(of: 2) ? "Действие не выполнено." : "Проверка выполнена."
+            XCTAssertTrue(app.staticTexts[answer].firstMatch.waitForExistence(timeout: 20))
+            XCTAssertTrue(input.isHittable)
+        }
+        capture("repeated-approvals", app)
         input.tap(); input.typeText("Проверка свободного места"); app.buttons["Отправить"].tap()
         let storageError = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "На устройстве сотрудника закончилось место.")).firstMatch
         XCTAssertTrue(storageError.waitForExistence(timeout: 20))
