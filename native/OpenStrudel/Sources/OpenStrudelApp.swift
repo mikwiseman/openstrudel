@@ -41,13 +41,12 @@ struct OpenStrudelApp: App {
         Settings {
             Group {
                 if library.isErasing { LocalDataResetProgress() }
-                else { SettingsView() }
+                else { SettingsView(standalone: true) }
             }
                 .environmentObject(client)
                 .environmentObject(library)
                 .tint(AppTheme.accent)
-                .frame(minWidth: 580, minHeight: 520)
-        }
+        }.windowResizability(.contentSize)
         #else
         mainWindow
         #endif

@@ -71,6 +71,9 @@ export interface CodexEngine {
       profile?: string | null;
       model?: string | null;
       images?: string[];
+      /** Snapshotted when the queued turn starts on its execution device. */
+      approvalMode?: import("./approval-mode.js").ApprovalMode;
+      groupContext?: boolean;
       /** Verified channel identity, supplied only by the Telegram adapter. */
       telegramActor?: { userId: string; chatId: string; messageId: string };
       tools?: { definitions: DynamicTool[]; call: (name: string, args: Record<string, unknown>) => Promise<unknown> };
@@ -86,7 +89,7 @@ export interface CodexEngine {
 }
 
 export interface DynamicTool { type: "function"; name: string; description: string; inputSchema: Record<string, unknown> }
-export interface Connection { id: string; name: string; kind: "app" | "mcp"; detail?: string | null; connected: boolean; url: string | null; status?: "ready" | "sign_in" | "unavailable" | "disabled"; toolCount?: number; removable?: boolean; }
+export interface Connection { id: string; name: string; kind: "app" | "mcp"; detail?: string | null; connected: boolean; url: string | null; status?: "ready" | "sign_in" | "unavailable" | "disabled" | "available" | "unknown"; toolCount?: number; removable?: boolean; }
 export interface Interaction { id: string; conversationId: string; messageId: string; title: string; detail?: string; url?: string; requestedBy?: string; questions: Array<{ id: string; question: string; options: string[] }>; }
 
 export interface MessageInput {

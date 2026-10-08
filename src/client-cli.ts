@@ -6,6 +6,7 @@ import { endpoint, HomeError, type Endpoint } from "./home.js";
 import { homeRequest, requestJSON, resultJSON } from "./home-transport.js";
 import { listClientAttempts, recordClientAttempt } from "./client-attempt.js";
 import { readExtensionBundle } from "./extension-bundle.js";
+import { isApprovalMode } from "./approval-mode.js";
 
 type Connection = Endpoint & { token: string; homeId?: string; epoch?: number };
 const path = () => process.env.OPENSTRUDEL_CLIENT_CONFIG ?? resolve(homedir(), ".config/openstrudel/connection.json");
@@ -38,7 +39,7 @@ export async function clientCommand(command: string, args: string[]): Promise<bo
   if (requestedId && command !== "message" && !(command === "agents" && ["create", "move"].includes(clean[0] ?? ""))) throw new HomeError("--request-id доступен для message, agents create и agents move.");
   const output = (value: unknown) => console.log(typeof value === "string" && !json ? value : JSON.stringify(value, null, 2));
   if (command === "help" || command === "--help") {
-    output("OpenStrudel\n\nstart · doctor · connect · web · servers help\ndevices list | invite | join\nhome status | backup --output FILE | restore | transfer DEVICE\nhome operation ID | retry ID | request ID | cancel ID | attempts\nagents list | create | accounts AGENT | move AGENT DEVICE\nagents export --output FILE | preview FILE | import FILE\naccounts list | add NAME | login ID | status ID LOGIN_ID | use ID | logout ID\ntelegram status | pair | group AGENT\nservices list | add NAME | connect ID | remove NAME\nskills / plugins list | preview PATH | install PATH | enable ID | disable ID | remove ID\n--agent ID или --chat ID выбирает, кому доступны сервисы и навыки.\nmessage [--agent ID] ТЕКСТ\n\n--device ID выбирает устройство для аккаунтов, создания и копии агентов.\nНастройки и секреты передаются через stdin в JSON. --json включает JSON для скриптов.\nДля message, agents create и agents move сохраняется request-id. После обрыва повторите ту же команду с --request-id UUID; список: home attempts.\nИмпорт добавляет копии. move сохраняет идентичность агента и одну работающую копию.\nРезервная копия управления и экспорт агентов — разные файлы."); return true;
+    output("OpenStrudel\n\nstart · doctor · connect · web · servers help\ndevices list | invite | join\nhome status | backup --output FILE | restore | transfer DEVICE\nhome operation ID | retry ID | request ID | cancel ID | attempts\nagents list | create | accounts AGENT | move AGENT DEVICE\nagents export --output FILE | preview FILE | import FILE\naccounts list | add NAME | login ID | status ID LOGIN_ID | use ID | logout ID\ntelegram status | pair | group AGENT\napprovals status | set ask|auto|approve_all [--yes]\nservices list | add NAME | connect ID | remove NAME\nskills / plugins list | preview PATH | install PATH | enable ID | disable ID | remove ID\n--agent ID или --chat ID выбирает, кому доступны сервисы и навыки.\nmessage [--agent ID] ТЕКСТ\n\n--device ID выбирает устройство для аккаунтов, создания и копии агентов.\nНастройки и секреты передаются через stdin в JSON. --json включает JSON для скриптов.\nДля message, agents create и agents move сохраняется request-id. После обрыва повторите ту же команду с --request-id UUID; список: home attempts.\nИмпорт добавляет копии. move сохраняет идентичность агента и одну работающую копию.\nРезервная копия управления и экспорт агентов — разные файлы."); return true;
   }
   if (command === "connect") {
     const raw = await readInput();
@@ -64,7 +65,7 @@ export async function clientCommand(command: string, args: string[]): Promise<bo
     connection.homeId = health.homeId;
     await saveConnection(connection); output({ connected: true, url: connection.url }); return true;
   }
-  if (!["devices", "home", "agents", "accounts", "web", "message", "telegram", "services", "skills", "plugins"].includes(command)) return false;
+  if (!["devices", "home", "agents", "accounts", "web", "message", "telegram", "services", "skills", "plugins", "approvals"].includes(command)) return false;
   let connection = await readClientConnection();
   const attempt = async (operation: string, payload: unknown, id = requestedId) => {
     const requestId = await recordClientAttempt(path() + ".attempts", { requestId: id, operation, payload, deviceId, home: connection.homeId ?? connection.url + "#" + (connection.pin ?? "") });
@@ -152,6 +153,12 @@ export async function clientCommand(command: string, args: string[]): Promise<bo
     else if (action === "request" && id) output(await call("/v1/home/requests/" + encodeURIComponent(id)));
     else if (action === "cancel" && id) output(await call("/v1/home/requests/" + encodeURIComponent(id), "DELETE"));
     else throw new HomeError("Используйте home status, backup, restore, transfer, operation, request или cancel.");
+  } else if (command === "approvals") {
+    if (action === "status" || action === "list") output(await call("/v1/settings/approvals"));
+    else if (action === "set" && isApprovalMode(id)) {
+      if (id === "approve_all" && !clean.includes("--yes")) throw new HomeError("Без подтверждений сотрудники смогут изменять данные доступных сервисов. Для этого режима добавьте --yes.");
+      output(await call("/v1/settings/approvals","POST",{mode:id,confirm:clean.includes("--yes")}));
+    } else throw new HomeError("Используйте approvals status или approvals set ask|auto|approve_all. --device выбирает устройство.");
   } else if (command === "telegram") {
     if (action === "status" || action === "list") output((await call("/v1/integrations")).telegram);
     else if (action === "pair") output(await call("/v1/integrations/telegram/link", "POST", {}));

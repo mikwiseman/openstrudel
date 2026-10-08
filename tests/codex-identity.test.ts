@@ -10,6 +10,32 @@ vi.mock("../src/rpc.js", () => ({ CodexRpc: class {
 import { CodexEngineAdapter } from "../src/codex.js";
 afterEach(() => wire.request.mockReset());
 
+it("changes approval policy on resume without replaying identity or silently approving a pending request",async()=>{
+  wire.request.mockImplementation(async(method:string,params:any)=>{
+    if(method==="thread/start"||method==="thread/resume")return {thread:{id:"approval-thread"}};
+    if(method==="thread/unsubscribe")return {};
+    if(method==="turn/start"){
+      queueMicrotask(()=>wire.notify?.({method:"turn/completed",params:{threadId:params.threadId,turn:{status:"completed"}}}));
+      return {turn:{id:"turn"}};
+    }
+    throw new Error(method);
+  });
+  const engine=new CodexEngineAdapter({config:{mcp_servers:{fixture:{command:"test",enabled:false}}}});
+  try {
+    const first=await engine.run("First");
+    await engine.run("Second",{threadId:first.threadId,approvalMode:"auto",groupContext:true});
+    await engine.run("Third",{threadId:first.threadId,approvalMode:"approve_all",groupContext:true});
+    const resumes=wire.request.mock.calls.filter(([m])=>m==="thread/resume").map(([,p])=>p);
+    expect(resumes[0].approvalsReviewer).toBe("auto_review");
+    expect(resumes[0].approvalPolicy.granular.request_permissions).toBe(false);
+    expect(resumes[1].approvalPolicy).toBe("never");
+    expect(resumes[1].config['mcp_servers.fixture.default_tools_approval_mode']).toBe("approve");
+    expect(resumes[1].config.mcp_servers.fixture.enabled).toBe(false);
+    expect(wire.request.mock.calls.filter(([m])=>m==="thread/unsubscribe")).toHaveLength(2);
+    expect(wire.request.mock.calls.some(([m])=>m==="thread/inject_items")).toBe(false);
+  }finally{engine.close();}
+});
+
 it("sends identity as developer instructions and refreshes it when the employee changes", async () => {
   wire.request.mockImplementation(async (method: string, params: any) => {
     if (method === "thread/start" || method === "thread/resume") return {thread:{id:"identity-thread"}};

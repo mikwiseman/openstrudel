@@ -747,7 +747,11 @@ private struct ConversationTitle: View {
         (client.telegram?.chats ?? []).filter { $0.profileId == client.selectedProfileID && $0.conversationId != nil }
     }
     private var importedChats: [ImportedConversation] { client.importedConversations.filter { $0.profileId == client.selectedProfileID } }
-    private var chatName: String { importedChats.first { $0.id == client.selectedChatID }?.title ?? chats.first { $0.conversationId == client.selectedChatID }?.title ?? "Личный чат" }
+    private var chatName: String {
+        if let chat = chats.first(where: { $0.conversationId == client.selectedChatID }) { return "Telegram · " + chat.title }
+        if let chat = importedChats.first(where: { $0.id == client.selectedChatID }) { return "Архив · " + chat.title }
+        return "В приложении"
+    }
     var body: some View {
         VStack(spacing: 2) {
             if client.activeProfile != nil {
@@ -768,13 +772,11 @@ private struct ConversationTitle: View {
                 if !chats.isEmpty || !importedChats.isEmpty {
                     Menu {
                         Button { Task { await client.selectChat(nil) } } label: {
-                            if client.selectedChatID == nil { Label("Личный чат", systemImage: "checkmark") }
-                            else { Text("Личный чат") }
+                            Label("В приложении", systemImage: client.selectedChatID == nil ? "checkmark" : "bubble.left")
                         }
                         ForEach(chats) { chat in
                             Button { Task { await client.selectChat(chat.conversationId) } } label: {
-                                if client.selectedChatID == chat.conversationId { Label(chat.title, systemImage: "checkmark") }
-                                else { Text(chat.title) }
+                                Label("Telegram · " + chat.title, systemImage: client.selectedChatID == chat.conversationId ? "checkmark" : "paperplane")
                             }
                         }
                         if !importedChats.isEmpty {
@@ -787,14 +789,14 @@ private struct ConversationTitle: View {
                                 }
                             }
                         }
-                    } label: { Text(chatName).lineLimit(1) }
+                    } label: { Label(chatName, systemImage: client.selectedChatID == nil ? "bubble.left" : "paperplane").lineLimit(1) }
                         .font(.caption).foregroundStyle(AppTheme.secondaryText)
                         .menuStyle(.borderlessButton)
                         .frame(maxWidth: 260)
                         .accessibilityLabel("Выбрать переписку")
                         .accessibilityValue(client.activeAgentName + ", " + chatName)
                         .accessibilityIdentifier("chooseConversation")
-                        .help("Выбрать личный чат или переписку в Telegram")
+                        .help("В приложении — разговор с вами. В Telegram — переписка с участниками группы.")
                 }
         }.frame(minHeight: controlTarget).contentShape(Rectangle())
     }
@@ -1971,7 +1973,7 @@ private struct ConnectionsView: View {
     @State private var refreshID = UUID()
     private var scope: ExtensionContext? { contexts.first { $0.id == scopeID } }
     private var results: [ServiceConnection] {
-        availableConnections.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
+        availableConnections.filter { !$0.isAvailableToAdd && (query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)) }
             .sorted { $0.connected != $1.connected ? $0.connected : $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
     var body: some View {
@@ -1984,41 +1986,76 @@ private struct ConnectionsView: View {
         #endif
     }
 
-    private var content: some View {
+    private var servicesList: some View {
             List {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Для «\(client.activeAgentName)» · \(client.executionDeviceName)")
-                        .font(.callout).foregroundStyle(AppTheme.secondaryText)
-                    if contexts.count > 1 {
-                        Picker("Где использовать", selection: $scopeID) {
-                            ForEach(contexts) { Text($0.title).tag($0.id) }
-                        }.pickerStyle(.menu).disabled(loading || changing)
-                    }
-                    if scope?.isGroup == true { Text("Сервисы и навыки этого чата доступны участникам группы.").font(.caption).foregroundStyle(AppTheme.secondaryText) }
-                    if let shared = scope?.sharedNotice { Text(shared).font(.callout).foregroundStyle(AppTheme.secondaryText) }
-                    if loading { HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Проверяем доступ к сервисам…").font(.callout) } }
-                    if let waiting {
-                        Text("Завершите подключение \(waiting.name) в браузере. Здесь появится подтверждение.")
-                            .font(.callout).fixedSize(horizontal: false, vertical: true)
-                        ViewThatFits(in: .horizontal) {
-                            HStack { authorizationActions }.fixedSize(horizontal: true, vertical: false)
-                            VStack(alignment: .leading, spacing: 12) { authorizationActions }
-                        }
-                    }
-                    if let notice { Label(notice, systemImage: "checkmark.circle").font(.callout) }
-                    if let error {
-                        Text(UserFacingError.text(error)).font(.callout).foregroundStyle(AppTheme.warning)
-                        Button("Повторить") { Task { await refresh() } }.disabled(loading)
-                    }
-                    if let extensionNotice { Text(extensionNotice).font(.caption).foregroundStyle(AppTheme.secondaryText) }
-                    if client.canManageConnections || client.canManageOpenAI {
-                        Button { showAdd = true } label: { Label("Добавить сервис или навык", systemImage: "plus") }
-                            .buttonStyle(.bordered).disabled(scope == nil || changing).padding(.top, 8).accessibilityIdentifier("addEmployeeExtension")
-                    }
+                connectionHeader
+                if availableConnections.filter({ !$0.isAvailableToAdd }).count > 6 {
+                    TextField("Найти подключение", text: $query)
+                        .textFieldStyle(.roundedBorder).accessibilityLabel("Найти подключение")
                 }
-                .padding(.vertical, 8)
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
+                extensionRows
+                connectionRows
+
+            }
+            .scrollContentBackground(.hidden)
+            .background(HomeBackground()).navigationTitle("Сервисы и навыки")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    if !embedded { Button("Готово") { dismiss() } }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button { Task { await refresh() } } label: { Image(systemName: "arrow.clockwise") }
+                        .accessibilityLabel("Обновить сервисы").disabled(loading)
+                }
+            }
+
+    }
+
+    private var content: some View {
+        servicesList
+        .navigationDestination(isPresented: $showAdd) {
+            if let scope { ConnectionCatalogView(scope: scope, isPresented: $showAdd) }
+        }
+        .onChange(of: showAdd) { wasPresented, isPresented in
+            if wasPresented && !isPresented { Task { await refresh() } }
+        }
+        .confirmationDialog("Удалить расширение?", isPresented: Binding(get: { pendingRemoval != nil || pendingMCPRemoval != nil }, set: { if !$0 { pendingRemoval = nil; pendingMCPRemoval = nil } }), titleVisibility: .visible) {
+            if let item = pendingRemoval { Button("Удалить «\(item.name)»", role: .destructive) { updateExtension(item); pendingRemoval = nil } }
+            if let item = pendingMCPRemoval { Button("Удалить «\(item.name)»", role: .destructive) { removeMCP(item); pendingMCPRemoval = nil } }
+            Button("Отмена", role: .cancel) { pendingRemoval = nil; pendingMCPRemoval = nil }
+        } message: { Text("Переписка и файлы сотрудника сохранятся.") }
+        .task { await loadContexts() }
+        .task(id: scopeID) { await loadScope() }
+        .task(id: waiting?.id) { await pollAuthorization() }
+        .onChange(of: scenePhase) { old, phase in
+            if old != .active && phase == .active && !loading { Task { await refresh() } }
+        }
+    }
+
+    private func loadContexts() async {
+        do { contexts = try await client.extensionContexts(); scopeID = client.conversationID ?? "" }
+        catch { self.error = "Не удалось определить чат. Вернитесь к переписке и откройте сервисы снова."; loading = false }
+    }
+
+    private func loadScope() async {
+        guard !scopeID.isEmpty else { return }
+        availableConnections = []; extensions = []; waiting = nil; authorizationURL = nil; notice = nil
+        await refresh(force: false)
+    }
+
+    private func pollAuthorization() async {
+        guard waiting != nil else { return }
+        for _ in 0..<30 {
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            if !loading { await refresh() }
+            if waiting == nil { return }
+        }
+    }
+
+    @ViewBuilder private var extensionRows: some View {
                 if !extensions.isEmpty {
                     Section("Навыки и плагины") {
                         ForEach(extensions.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }) { item in
@@ -2036,21 +2073,12 @@ private struct ConnectionsView: View {
                         }
                     }
                 }
+
+    }
+
+    @ViewBuilder private var connectionRows: some View {
                 ForEach(results) { connection in
-                    Group {
-                        if textSize.isAccessibilitySize {
-                            VStack(alignment: .leading, spacing: 12) {
-                                connectionDetails(connection)
-                                connectionAction(connection).adaptiveActionStyle(.bordered)
-                            }
-                        } else {
-                            HStack(spacing: 12) {
-                                Image(systemName: connection.icon).foregroundStyle(AppTheme.secondaryText).frame(width: 26)
-                                connectionDetails(connection)
-                                connectionAction(connection)
-                            }
-                        }
-                    }.padding(.vertical, 8)
+                    serviceRow(connection)
                     .contextMenu {
                         if connection.removable == true && (client.canManageConnections || client.canManageOpenAI) {
                             Button("Удалить подключение…", role: .destructive) { pendingMCPRemoval = connection }
@@ -2059,64 +2087,65 @@ private struct ConnectionsView: View {
                 }
                 if results.isEmpty && !query.isEmpty { SearchEmptyState(query: query) { query = "" } }
                 else if results.isEmpty && !loading && error == nil {
-                    Text("Добавьте сервис по адресу MCP или подключите сервис своего аккаунта OpenAI.")
+                    Text(extensions.isEmpty ? "Пока без подключений. Нажмите «Добавить», чтобы сотрудник мог работать с вашими сервисами." : "Другие сервисы можно подключить через «Добавить».")
                         .foregroundStyle(AppTheme.secondaryText)
                 }
 
-            }
-            .scrollContentBackground(.hidden)
-            .background(HomeBackground()).navigationTitle("Сервисы и навыки")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Найти сервис или навык")
-            #else
-            .searchable(text: $query, prompt: "Найти сервис или навык")
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    if !embedded { Button("Готово") { dismiss() } }
+    }
+
+    private var connectionHeader: some View {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Для «\(client.activeAgentName)» · \(client.executionDeviceName)")
+                        .font(.callout).foregroundStyle(AppTheme.secondaryText)
+                    Label(scope?.isGroup == true ? "Telegram · " + (scope?.title ?? "Группа") : "В приложении", systemImage: scope?.isGroup == true ? "paperplane" : "bubble.left")
+                        .font(.headline)
+                    if scope?.isGroup == true { Text("Подключения для этой группы.").font(.caption).foregroundStyle(AppTheme.secondaryText) }
+                    if let shared = scope?.sharedNotice { Text(shared).font(.callout).foregroundStyle(AppTheme.secondaryText) }
+                    if loading { HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Проверяем доступ к сервисам…").font(.callout) } }
+                    if let waiting {
+                        Text("Завершите подключение \(waiting.name) в браузере. Здесь появится подтверждение.")
+                            .font(.callout).fixedSize(horizontal: false, vertical: true)
+                        ViewThatFits(in: .horizontal) {
+                            HStack { authorizationActions }.fixedSize(horizontal: true, vertical: false)
+                            VStack(alignment: .leading, spacing: 12) { authorizationActions }
+                        }
+                    }
+                    if let notice { Label(notice, systemImage: "checkmark.circle").font(.callout) }
+                    if let error {
+                        Text(UserFacingError.text(error)).font(.callout).foregroundStyle(AppTheme.warning)
+                        Button("Повторить") { Task { await refresh() } }.disabled(loading)
+                    }
+                    if let extensionNotice, !extensionNotice.hasPrefix("Каталог OpenAI") { Text(extensionNotice).font(.caption).foregroundStyle(AppTheme.secondaryText) }
+                    if client.canManageConnections || client.canManageOpenAI {
+                        Button { query = ""; showAdd = true } label: { Label("Добавить…", systemImage: "plus") }
+                            .buttonStyle(.bordered).disabled(scope == nil || changing).padding(.top, 8).accessibilityIdentifier("addEmployeeExtension")
+                    }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button { Task { await refresh() } } label: { Image(systemName: "arrow.clockwise") }
-                        .accessibilityLabel("Обновить сервисы").disabled(loading)
-                }
-            }
-        .navigationDestination(isPresented: $showAdd) {
-            if let scope { ExtensionSetupView(scope: scope, isPresented: $showAdd) }
-        }
-        .onChange(of: showAdd) { wasPresented, isPresented in
-            if wasPresented && !isPresented { Task { await refresh() } }
-        }
-        .confirmationDialog("Удалить расширение?", isPresented: Binding(get: { pendingRemoval != nil || pendingMCPRemoval != nil }, set: { if !$0 { pendingRemoval = nil; pendingMCPRemoval = nil } }), titleVisibility: .visible) {
-            if let item = pendingRemoval { Button("Удалить «\(item.name)»", role: .destructive) { updateExtension(item); pendingRemoval = nil } }
-            if let item = pendingMCPRemoval { Button("Удалить «\(item.name)»", role: .destructive) { removeMCP(item); pendingMCPRemoval = nil } }
-            Button("Отмена", role: .cancel) { pendingRemoval = nil; pendingMCPRemoval = nil }
-        } message: { Text("Переписка и файлы сотрудника сохранятся.") }
-        .task {
-            do { contexts = try await client.extensionContexts(); scopeID = client.conversationID ?? "" }
-            catch { contexts = client.conversationID.map { [ExtensionContext(id: $0, title: "Личный чат", isGroup: false)] } ?? []; scopeID = client.conversationID ?? "" }
-        }
-        .task(id: scopeID) {
-            guard !scopeID.isEmpty else { return }
-            availableConnections = []; extensions = []; waiting = nil; authorizationURL = nil; notice = nil
-            await refresh(force: false)
-        }
-        .task(id: waiting?.id) {
-            guard waiting != nil else { return }
-            for _ in 0..<30 {
-                do { try await Task.sleep(for: .seconds(2)) } catch { return }
-                if !loading { await refresh() }
-                if waiting == nil { return }
-            }
-        }
-        .onChange(of: scenePhase) { old, phase in
-            if old != .active && phase == .active && !loading { Task { await refresh() } }
-        }
+                .padding(.vertical, 8)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
     }
 
     @ViewBuilder private var authorizationActions: some View {
         if let authorizationURL { Link("Открыть ещё раз", destination: authorizationURL) }
         Button("Проверить подключение") { Task { await refresh() } }.disabled(loading)
+    }
+
+    private func serviceRow(_ connection: ServiceConnection) -> some View {
+        Group {
+            if textSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 12) {
+                    connectionDetails(connection)
+                    connectionAction(connection).adaptiveActionStyle(.bordered)
+                }
+            } else {
+                HStack(spacing: 12) {
+                    Image(systemName: connection.icon).foregroundStyle(AppTheme.secondaryText).frame(width: 26)
+                    connectionDetails(connection)
+                    connectionAction(connection).fixedSize()
+                }
+            }
+        }.padding(.vertical, 8)
     }
 
     private func connectionDetails(_ connection: ServiceConnection) -> some View {
@@ -2125,6 +2154,7 @@ private struct ConnectionsView: View {
             if let detail = connection.detail { Text(detail).font(.caption).foregroundStyle(AppTheme.secondaryText) }
             if let count = connection.toolCount, connection.connected { Text("Инструментов: \(count)").font(.caption).foregroundStyle(AppTheme.secondaryText) }
             if connection.status == "unavailable" { Text("Нет связи с сервисом").font(.caption).foregroundStyle(AppTheme.secondaryText) }
+            if connection.status == "unknown" { Text("Не удалось проверить подключение").font(.caption).foregroundStyle(AppTheme.secondaryText) }
             if connection.removable == true && (client.canManageConnections || client.canManageOpenAI) {
                 Button("Удалить…", role: .destructive) { pendingMCPRemoval = connection }.buttonStyle(.borderless).font(.caption).disabled(changing)
             }
@@ -2137,10 +2167,10 @@ private struct ConnectionsView: View {
         if connection.connected {
             Label("Подключён", systemImage: "checkmark").font(.caption).foregroundStyle(AppTheme.secondaryText)
         } else {
-            Button(connecting == connection.id ? "Проверяем…" : waiting?.id == connection.id ? "Ожидаем входа" : connection.status == "unavailable" ? "Проверить" : "Подключить") {
+            Button(connecting == connection.id ? "Проверяем…" : waiting?.id == connection.id ? "Ожидаем входа" : connection.actionTitle) {
                 Task { await connect(connection) }
             }.buttonStyle(.bordered).disabled(connecting != nil || waiting?.id == connection.id)
-                .accessibilityLabel("Подключить \(connection.name)")
+                .accessibilityLabel("\(connection.actionTitle) \(connection.name)")
                 .accessibilityIdentifier("connect-service-" + connection.id)
         }
     }

@@ -78,6 +78,23 @@ final class ReleaseScenariosUITests: XCTestCase {
         app.buttons["Настройки"].tap()
         XCTAssertTrue(app.buttons["addDevice"].waitForExistence(timeout: 10))
         capture("settings-account-telegram", app)
+        // Approval mode belongs to this device, not an individual chat.
+        app.buttons["settingsSection"].tap()
+        app.buttons["Приложение"].tap()
+        XCTAssertTrue(app.buttons["approvalMode-ask"].waitForExistence(timeout: 10))
+        capture("approval-modes", app)
+        app.buttons["approvalMode-auto"].tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: app.buttons["approvalMode-auto"])], timeout: 10), .completed)
+        app.buttons["approvalMode-approve_all"].tap()
+        XCTAssertTrue(app.buttons["Включить для этого устройства"].waitForExistence(timeout: 5))
+        let cancel = app.buttons["Отмена"]
+        if cancel.exists && cancel.isHittable { cancel.tap() }
+        else { app.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.8)).tap() }
+        XCTAssertTrue(app.buttons["Включить для этого устройства"].waitForNonExistence(timeout: 5))
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: app.buttons["approvalMode-auto"])], timeout: 10), .completed)
+        app.buttons["approvalMode-ask"].tap()
+        app.buttons["settingsSection"].tap()
+        app.buttons["Устройства"].tap()
         app.openFirstDeviceDetails()
         let pair = app.buttons["Получить ссылку подключения"].firstMatch
         try reveal(pair, in: app); pair.tap()
@@ -116,6 +133,8 @@ final class ReleaseScenariosUITests: XCTestCase {
         XCTAssertEqual(editableName.value as? String, "Редактор")
         try reveal(app.buttons["Сервисы и навыки"], in: app)
         app.buttons["Сервисы и навыки"].tap()
+        XCTAssertTrue(app.buttons["addEmployeeExtension"].waitForExistence(timeout: 10))
+        app.buttons["addEmployeeExtension"].tap()
         XCTAssertTrue(app.staticTexts["Документы"].waitForExistence(timeout: 10), app.debugDescription)
         capture("services", app)
         let connectService = app.buttons["connect-service-qa-documents"]
@@ -132,7 +151,7 @@ final class ReleaseScenariosUITests: XCTestCase {
                 try await Task.sleep(for: .seconds(1))
             }
             XCTAssertTrue(connected, "The browser must complete the test provider callback.")
-            app.activate(); app.buttons["Обновить сервисы"].tap()
+            app.activate()
         }
         XCTAssertTrue(app.staticTexts["Подключён"].waitForExistence(timeout: 10), app.debugDescription)
         capture("service-connected", app)

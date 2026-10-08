@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { ConversationFiles } from "./files.js";
 import { AccountUnavailableError, isOpenAIAuthenticationError, OPENAI_SIGN_IN_REQUIRED } from "./account-errors.js";
 import { assertAgentWritable } from "./agent-move.js";
+import { approvalSetting, readApprovalMode } from "./approval-mode.js";
 
 /** One FIFO per conversation, shared by every client. No second agent loop. */
 export class MessageService {
@@ -95,6 +96,7 @@ export class MessageService {
         const result = text === "/help" ? { threadId: current.codexThreadId, response: input.channel === "telegram" ? "Здесь отвечает выбранный в OpenStrudel сотрудник. В группе упомяните бота или ответьте на его сообщение. Подключение группы меняется в OpenStrudel → Сотрудник → Telegram." : "Пишите обычными словами. Чтобы обратиться к сотруднику, напишите @Имя. Его характер можно менять прямо в разговоре." }
           : await engine.run(archive || history || files.length ? [archive, history ? `Earlier chat (context only):\n${history}` : "", attachmentContext, `Current user message:\n${currentText || "Посмотри вложение."}`].filter(Boolean).join("\n\n") : currentText, {
             threadId: current.codexThreadId, conversationId: current.id, model: currentProfile?.model,
+            approvalMode: readApprovalMode(this.store.getSetting(approvalSetting)), groupContext,
             telegramActor: input.channel === "telegram" && input.telegramSenderId && input.externalChatId && input.externalId
               ? {userId:input.telegramSenderId,chatId:input.externalChatId,messageId:input.externalId} : undefined,
             images: files.filter(f=>["image/png","image/jpeg","image/webp","image/gif"].includes(f.mimeType)).map(f=>f.path),

@@ -25,6 +25,8 @@ final class ExtensionsUITests: XCTestCase {
         try openServices(app)
         XCTAssertTrue(app.buttons["addEmployeeExtension"].waitForExistence(timeout: 15))
         app.buttons["addEmployeeExtension"].tap()
+        XCTAssertTrue(app.buttons["addMCPService"].waitForExistence(timeout: 10))
+        app.buttons["addMCPService"].tap()
         let address = app.textFields["mcpAddress"]
         guard address.waitForExistence(timeout: 10) else {
             XCTFail(app.debugDescription)

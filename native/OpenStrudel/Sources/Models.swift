@@ -424,6 +424,12 @@ struct OpenAILoginStatus: Decodable, Equatable {
 }
 
 struct ServiceConnection: Decodable, Identifiable {
+    var isAvailableToAdd: Bool { kind == "app" && !connected && (status == "available" || status == "sign_in") }
+    var actionTitle: String {
+        if status == "available" { return "Добавить" }
+        if status == "unknown" || status == "unavailable" { return "Проверить" }
+        return "Подключить"
+    }
     var icon: String {
         switch id {
         case "mcp:cua_repl": return "desktopcomputer"

@@ -32,11 +32,13 @@
 		2F84019800922A922C82B1CE /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38873CBA5B37136CDD8FF91 /* AppTheme.swift */; };
 		33E5289AE4FCC51707985917 /* AgentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97A6C72C5E00D5723795E8B1 /* AgentTransfer.swift */; };
 		34F7B89438C04109E4B1A946 /* WaiVDSClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7D69A9EDA344A443227E0B2 /* WaiVDSClient.swift */; };
+		355DA3CE6FDC4903C7A38DC3 /* ApprovalSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E0150A7686260E33ABC51F9 /* ApprovalSettingsView.swift */; };
 		35830784DC5290BC03679296 /* AccountRecoveryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 452D1C62E5C23CB46B6FD978 /* AccountRecoveryUITests.swift */; };
 		38670454174D5126BB5A84D1 /* ChatMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3D241925EF81E938247C15 /* ChatMedia.swift */; };
 		38A327481A17BCFCEAC3F116 /* LocalDataResetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F7D53298A142CDF1B276ABC /* LocalDataResetTests.swift */; };
 		396D0DCDA42F07B7B6AD8CDA /* ReleaseScenariosUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 269C829F112500B5E34127F7 /* ReleaseScenariosUITests.swift */; };
 		3A4F31F9396C14C867C86558 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A12DEA162BBC10A8CA136D /* Views.swift */; };
+		3B7C53804164BE37DA226B4D /* ApprovalSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E0150A7686260E33ABC51F9 /* ApprovalSettingsView.swift */; };
 		3CEEE4913F9C75966E2902EA /* LocalDataReset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B1CA4A01722F775952B9530 /* LocalDataReset.swift */; };
 		405EE709A22DB0AD7D596EF5 /* AgentCharactersUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C156BE0450E7CC24D988FA90 /* AgentCharactersUITests.swift */; };
 		4069A7E903D63727808053A3 /* HomeMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = B49A5A4FE8FCDBCA5997D859 /* HomeMenu.swift */; };
@@ -150,6 +152,7 @@
 		25538EEFA0F0470CDF4958CC /* AppUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdater.swift; sourceTree = "<group>"; };
 		269C829F112500B5E34127F7 /* ReleaseScenariosUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseScenariosUITests.swift; sourceTree = "<group>"; };
 		2B99FD977A6DF945EF17152E /* HostingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostingStore.swift; sourceTree = "<group>"; };
+		2E0150A7686260E33ABC51F9 /* ApprovalSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalSettingsView.swift; sourceTree = "<group>"; };
 		31C9D3DF0BCBDC8DE546D88B /* AgentTransferViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTransferViews.swift; sourceTree = "<group>"; };
 		36B92676161A3FD9E3889C48 /* TelegramSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelegramSetupView.swift; sourceTree = "<group>"; };
 		37B4BD216FB2EDE09E4E16E4 /* Sparkle-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Sparkle-LICENSE.txt"; sourceTree = "<group>"; };
@@ -248,6 +251,7 @@
 				97A6C72C5E00D5723795E8B1 /* AgentTransfer.swift */,
 				31C9D3DF0BCBDC8DE546D88B /* AgentTransferViews.swift */,
 				4B9B3467FCD3522515AD8F38 /* AppIconAppearance.swift */,
+				2E0150A7686260E33ABC51F9 /* ApprovalSettingsView.swift */,
 				E38873CBA5B37136CDD8FF91 /* AppTheme.swift */,
 				25538EEFA0F0470CDF4958CC /* AppUpdater.swift */,
 				718BE32FAB2706C4D8DB4C86 /* AttachmentImport.swift */,
@@ -572,6 +576,7 @@
 				631BE06D25300A0E399F2E28 /* AppIconAppearance.swift in Sources */,
 				2061E90D9AC95D39DAAA06E8 /* AppTheme.swift in Sources */,
 				523AFBBC3F4EB9C2769483F3 /* AppUpdater.swift in Sources */,
+				355DA3CE6FDC4903C7A38DC3 /* ApprovalSettingsView.swift in Sources */,
 				FED472FDDD9D5774F84AD1A4 /* AttachmentImport.swift in Sources */,
 				5785006166AD53761DA29454 /* ChatMedia.swift in Sources */,
 				E57438BBC88134F35C3EA734 /* DeviceLibrary.swift in Sources */,
@@ -613,6 +618,7 @@
 				BD17762CF52EB077E6C09EC9 /* AppIconAppearance.swift in Sources */,
 				2F84019800922A922C82B1CE /* AppTheme.swift in Sources */,
 				BA4C2329101E4E5D8C2EABD1 /* AppUpdater.swift in Sources */,
+				3B7C53804164BE37DA226B4D /* ApprovalSettingsView.swift in Sources */,
 				0273A3B12C532A6C897E1E4D /* AttachmentImport.swift in Sources */,
 				38670454174D5126BB5A84D1 /* ChatMedia.swift in Sources */,
 				BD536195DB95EA60861EF9AD /* DeviceLibrary.swift in Sources */,
@@ -677,7 +683,7 @@
 				CODE_SIGN_ENTITLEMENTS = iOS.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 25;
 				INFOPLIST_FILE = "iOS-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = OpenStrudel;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -718,7 +724,7 @@
 				CODE_SIGN_ENTITLEMENTS = iOS.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 25;
 				INFOPLIST_FILE = "iOS-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = OpenStrudel;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -819,7 +825,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 25;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -917,7 +923,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 25;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

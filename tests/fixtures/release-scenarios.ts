@@ -32,7 +32,7 @@ const engine: CodexEngine = {
     return { threadId: options?.threadId ?? "qa-thread", response: `Принято: ${message}`, events: [] };
   },
   async connections() {
-    return [{ id: "qa-documents", name: "Документы", connected: serviceConnected, kind: "app", detail: "Тестовое подключение", url: `${controlURL}/connect` }];
+    return [{ id: "qa-documents", name: "Документы", connected: serviceConnected, status: serviceConnected ? "ready" : "sign_in", kind: "app", detail: "Тестовое подключение", url: `${controlURL}/connect` }];
   },
   async connect() { return { url: `${controlURL}/connect` }; },
 };

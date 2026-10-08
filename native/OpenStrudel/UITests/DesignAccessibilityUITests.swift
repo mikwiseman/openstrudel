@@ -59,12 +59,17 @@ final class DesignAccessibilityUITests: XCTestCase {
         audit("employee-editor", app, &issues)
         let services = app.buttons["Сервисы и навыки"]
         reveal(services, app); services.tap()
+        let addService = app.buttons["addEmployeeExtension"]
+        XCTAssertTrue(addService.waitForExistence(timeout: 10))
+        reveal(addService, app)
+        audit("services", app, &issues)
+        addService.tap()
         XCTAssertTrue(app.staticTexts["Документы"].waitForExistence(timeout: 10))
         let connectService = app.buttons["connect-service-qa-documents"]
         XCTAssertTrue(connectService.waitForExistence(timeout: 5))
         reveal(connectService, app)
         try assertFitsHorizontally(connectService, in: app)
-        audit("services", app, &issues)
+        audit("service-catalog", app, &issues)
         let report = XCTAttachment(string: issues.isEmpty ? "No findings on the audited native screens." : issues.joined(separator: "\n\n"))
         report.name = "native-accessibility-findings"; report.lifetime = .keepAlways; add(report)
         if ProcessInfo.processInfo.environment["OPENSTRUDEL_AUDIT_REPORT_ONLY"] != "1" {
