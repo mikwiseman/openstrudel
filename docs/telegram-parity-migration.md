@@ -38,7 +38,7 @@ controls; do not introduce a parallel agent engine or a second Telegram router.
 - [x] Check why the existing «Тестовая команда» cannot be removed. Distinguish
   disconnecting a saved device from deleting its employees or erasing its data.
   Make the appropriate action visible and verify it when the device is offline.
-- [ ] Keep App Store build 28's pending review intact. Deliver a new iOS build
+- [x] Keep App Store build 28's pending review intact. Deliver a new iOS build
   separately; diagnose the distribution signing failure without rotating keys.
 
 ### 1. Wai Core Team on Mac mini
@@ -106,16 +106,19 @@ with a reproduction and evidence before adding a workaround.
   build wrapper; inspect the real application through Computer Use.
 - [x] Keep shared-group QA quiet: use a private test group or DM for replay.
 - [x] Save private inputs, observations and results outside version control.
-- [ ] Ship only verified changes: diff, checks, managed backup, staged atomic
+- [x] Ship only verified changes: diff, checks, managed backup, staged atomic
   installation, exact-service restart if required, health/data checks, rollback
   on failure, then mark the backup healthy.
-- [ ] Report proven outcomes and remaining blockers separately. Do not equate
+- [x] Report proven outcomes and remaining blockers separately. Do not equate
   a successful build or a synthetic test with a completed migration.
 
 ### 5. Connected devices, catalog changes and personal hiding
 
-- [ ] Reproduce removal on one host while two clients are connected. Inspect
-  catalog refresh, stale in-flight responses, reconnects and selection changes.
+- [x] Reproduce removal through a separate management client while the native
+  app remains open. Verify automatic catalog and selection updates. Regression
+  tests cover stale responses, revoked credentials and reconnects.
+- [ ] Repeat deletion with two physical remote devices on different networks;
+  that hardware scenario has not been observed in this revision.
 - [x] Update clients promptly without repeatedly loading full histories,
   account limits or integrations. Reuse HTTP conditional requests or an existing
   event mechanism; add new infrastructure only if evidence requires it.
@@ -125,8 +128,9 @@ with a reproduction and evidence before adding a workaround.
   must not delete, stop or hide an employee for other people or devices.
 - [x] Verify hidden employees stay hidden after reconnect/relaunch, can be
   found in a clear hidden-items view, and never mix across connected hosts.
-- [ ] Verify deletion, hiding and device removal through context menus,
-  keyboard, confirmation and touch layouts, including offline states.
+- [x] Verify Mac deletion by context menu and Backspace with confirmation,
+  local Hide/Show, and removing an offline device without removing another.
+- [ ] Complete equivalent touch and VoiceOver checks for these new actions.
 
 ### 6. Composer, voice and attachments
 
@@ -235,11 +239,13 @@ memory and keyboard coverage is detailed in the linked earlier acceptance.
   and opening the correct imported archive were inspected in the native app.
 - iPad landscape with accessibility text sizes is verified using the same
   scenario, with screenshot inspection in addition to functional assertions.
-- Mac build 28 was installed and its runtime/data health checks passed. The
-  combined icons and subsequent changes will ship as Mac/Home 29. App Store
-  Connect has iOS 28 waiting for review; preserve that review. iOS 29 archive
-  signing uses the existing dedicated release keychain, now verified with a
-  test signature. Upload and processing are still pending.
+- Mac/Home 29 is installed on Mini and published. App and DMG notarization,
+  Gatekeeper, Sparkle signatures and externally downloaded SHA256 hashes passed.
+  The managed rollback snapshot was marked healthy only after runtime, database
+  and Telegram checks. No website deployment or web-service restart was needed.
+- iOS 29 was archived, exported and uploaded using the existing dedicated
+  distribution keychain. App Store Connect reports VALID and IN_BETA_TESTING
+  for the existing internal group. iOS 28 remains WAITING_FOR_REVIEW.
 
 
 ### Revision 29 verification
@@ -284,3 +290,50 @@ memory and keyboard coverage is detailed in the linked earlier acceptance.
   steering and uncertain delivery are covered by runtime regression tests. Native
   `turn/steer` is used with expectedTurnId; there is no additional agent loop.
   Editing or promoting an already queued message remains a separate follow-up.
+- A live Codex run accepted a steering instruction and changed its answer to the
+  requested date, time and headcount. A second live run acknowledged interruption.
+  These used an isolated workspace and the existing account, without changing
+  production agents or service permissions.
+- The iPhone settings/recovery scenario passed. The Telegram scenario then passed
+  on a clean dedicated simulator and fresh fixture. An earlier combined run had
+  stale test connections and a fixture employee renamed by the preceding case;
+  the failed evidence was retained, and no user installation was reset.
+
+### Release 29 post-installation checks
+
+- The database passed integrity checks. At cutover, all six employee records,
+  14 conversations, 1,718 messages, three schedules and the Telegram binding
+  fingerprint were preserved. There were no active tasks during installation.
+- In the private QA group, message `1677232` received one answer, `1677233`:
+  the bot retained the earlier fictional workshop context, delegated the check,
+  and correctly returned 21 November, 20:00 and 12 participants. No working
+  group received a release probe.
+- The disposable «Проверка релиза 29» was hidden and shown in the installed Mac
+  app. An independent API read confirmed it remained on the host while hidden.
+  Backspace displayed a named deletion confirmation and Cancel preserved it.
+- After its delegated work completed, the disposable employee was deleted
+  through a separate API client. The unchanged catalog had returned 304; deletion
+  changed its ETag. Without an app action, the selected employee disappeared and
+  the native app returned to the main assistant by the next observation, 13 seconds
+  later. The other five employees remained. This is not a measured five-second SLA.
+- None of the 37 deliberately deleted employees or their schedules was restored.
+- The installed application accepted the public signed feed and reported it was
+  up to date. Release receipts and private deployment data are in
+  `.data/migration-parity-2026-10-09/release29-shipping/`.
+- An isolated, signed QA bundle actually updated from 28 to 29 through Sparkle:
+  discovery, download, signature verification, installation, relaunch and the
+  About panel all passed. It used a separate signed test feed and remained
+  signed out with no production endpoint. The production service was unchanged.
+
+### Remaining acceptance boundaries
+
+| Item | Evidence still needed |
+| --- | --- |
+| Physical microphone | The system permission surface is unavailable to Computer Use. Local recognition of an actual synthesized recording and audio-draft review/send passed; physical capture did not. |
+| Core Team company meetings | The source permits the owner's private identity but withholds meetings from group scope. An explicit group-scoped source grant is needed; private identity substitution is not acceptable. |
+| Reported connection loss | Current health and retained logs did not reproduce the earlier failure. Capture the failure before assigning a cause. |
+| Full accessibility sweep | Complete VoiceOver, touch and all appearance/text-size combinations for the new composer and Hide/Show states. The Show button is clickable, but its parent List row is what the current AX snapshot exposes. |
+| Existing queued-message edits | Queue/send/cancel/interrupt are implemented. Editing or promoting an item already in the queue remains follow-up work. |
+
+These boundaries remain open in the plan; release 29 does not claim complete
+parity in every group, universal memory limits, or an exhaustive design audit.
