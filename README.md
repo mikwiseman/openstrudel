@@ -92,9 +92,20 @@ The script checks Node 22+, builds the runtime, creates a private `.data` direct
 
 On macOS, install the native app with `scripts/install-mac-app.sh`. The SwiftUI project in `native/OpenStrudel` builds the Mac and iOS clients with the Liquid Glass interface.
 
-On iPhone, scan the code or paste the link from **Settings → Devices → Get connection link** on the device running your employees. Confirm the device shown on the phone. The phone must be able to reach its address: a local Mac normally needs the same network; a server needs an independently reachable HTTPS endpoint. OpenStrudel does not add a relay. This connects to the existing employees, history, Telegram and schedules; iOS does not run another Home.
+On another Mac or iPhone, scan the code or paste the link from **Settings → Devices → Get connection link** on the device running your employees. Confirm that device. This connects to its existing employees, history, Telegram and schedules; iOS does not run another Home.
 
-The code is single-use and expires after five minutes. The phone checks the Mac's certificate against the fingerprint in the code, then keeps its credential in Keychain. Mac Settings can revoke mobile access. The existing HTTP API stays on localhost; paired phones use a separate HTTPS listener on port 7789.
+For access from another network, configure a reachable public address or a private network between your devices. Home uses its configured public address in new links by default. A Mac without either still needs the same local network. OpenStrudel does not provision a relay automatically or require a vendor-operated relay.
+
+An operator can use the restricted SSH relay scripts with their own server. The server forwards encrypted TCP to the Mac's HTTPS listener; TLS terminates on the Mac. Save the reachable address in the Home data directory's `.env` (`~/Library/Application Support/OpenStrudel/runtime/.env` for the native Mac app):
+
+```dotenv
+OPENSTRUDEL_PUBLIC_HOST=your-server.example.com
+OPENSTRUDEL_PUBLIC_PORT=17789
+```
+
+These settings survive app updates. Legacy public-address and TLS-path settings in the installed Mac LaunchAgent are also retained. The relay's client and server both check for lost connections, so a disconnected session releases the public port for reconnection. The Mac and relay must stay online. [Remote access validation](docs/releases/2026-10-09-remote-access.md).
+
+The link is single-use and expires after five minutes. Anyone holding an unused link can connect with the access it grants. The client checks the Mac's TLS identity against the fingerprint in the link, then keeps its own credential in Keychain. Settings can revoke each connected device. The existing HTTP API stays on localhost; paired devices use a separate HTTPS listener on port 7789. Employees and their data remain on the device where they run.
 
 ## Verify
 
