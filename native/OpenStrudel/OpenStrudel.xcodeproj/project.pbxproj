@@ -16,6 +16,7 @@
 		0904BDBFA3C19E8CFB674BF5 /* VoiceCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E2B037D5BBDE8A17342F544 /* VoiceCapture.swift */; };
 		09FDF891ED4D0479E78D39E0 /* LiveCloudPairingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96A2DF3BB4A7D519FA68EA0F /* LiveCloudPairingUITests.swift */; };
 		0A357D80F9C3C9AB33B86C93 /* TranscriptStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEB733894E124793EDA9ACA3 /* TranscriptStack.swift */; };
+		0A51BB6B1224F2175E2398D3 /* EmployeeRowHitAreaUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1528882E712996305DF1EA4 /* EmployeeRowHitAreaUITests.swift */; };
 		0E0F3C4329E1EA2E6C689738 /* AgentTransferViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31C9D3DF0BCBDC8DE546D88B /* AgentTransferViews.swift */; };
 		1109A0AEE1C8475E2E3181A3 /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = B9A7842329C25226D34D8B1C /* cloud-init.sh */; };
 		141A8FF96B26F636B9AFAFD3 /* HostingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B99FD977A6DF945EF17152E /* HostingStore.swift */; };
@@ -205,6 +206,7 @@
 		97A6C72C5E00D5723795E8B1 /* AgentTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTransfer.swift; sourceTree = "<group>"; };
 		98BB832A7436E9C4AD93FB56 /* OpenStrudel iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "OpenStrudel iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		9A54DEED2D78EBBD77B24825 /* AgentAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAppearance.swift; sourceTree = "<group>"; };
+		A1528882E712996305DF1EA4 /* EmployeeRowHitAreaUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmployeeRowHitAreaUITests.swift; sourceTree = "<group>"; };
 		A4A12DEA162BBC10A8CA136D /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
 		A635A0DA48A1D907252A7BCB /* SetupViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupViews.swift; sourceTree = "<group>"; };
 		A6EBF07406C0F7BBD5F47800 /* AttachmentImportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentImportTests.swift; sourceTree = "<group>"; };
@@ -314,6 +316,7 @@
 				452D1C62E5C23CB46B6FD978 /* AccountRecoveryUITests.swift */,
 				C156BE0450E7CC24D988FA90 /* AgentCharactersUITests.swift */,
 				6D1AB12278F64C5C7247C698 /* DesignAccessibilityUITests.swift */,
+				A1528882E712996305DF1EA4 /* EmployeeRowHitAreaUITests.swift */,
 				560A60BE1D2AAD42DC5C600D /* ExtensionsUITests.swift */,
 				1132C0F7932A6440305D150A /* iPhoneSmokeTests.swift */,
 				96A2DF3BB4A7D519FA68EA0F /* LiveCloudPairingUITests.swift */,
@@ -693,6 +696,7 @@
 				35830784DC5290BC03679296 /* AccountRecoveryUITests.swift in Sources */,
 				405EE709A22DB0AD7D596EF5 /* AgentCharactersUITests.swift in Sources */,
 				F92751B4CA90257CFDC92A40 /* DesignAccessibilityUITests.swift in Sources */,
+				0A51BB6B1224F2175E2398D3 /* EmployeeRowHitAreaUITests.swift in Sources */,
 				FAF196A470B7DCB88053E108 /* ExtensionsUITests.swift in Sources */,
 				09FDF891ED4D0479E78D39E0 /* LiveCloudPairingUITests.swift in Sources */,
 				5E17805965A351ABB7620CF2 /* MobilePairingUITests.swift in Sources */,
@@ -721,7 +725,7 @@
 				CODE_SIGN_ENTITLEMENTS = iOS.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				INFOPLIST_FILE = "iOS-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = OpenStrudel;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -762,7 +766,7 @@
 				CODE_SIGN_ENTITLEMENTS = iOS.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				INFOPLIST_FILE = "iOS-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = OpenStrudel;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -863,7 +867,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -961,7 +965,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
