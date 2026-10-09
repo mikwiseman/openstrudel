@@ -81,6 +81,18 @@ export class CodexEngineAdapter implements CodexEngine {
     try { return await this.performRun(input,options); } finally { this.running--; finish(); }
   }
 
+  async steer(input: string, options: { threadId: string; images?: string[] }): Promise<boolean> {
+    const turn = this.active.get(options.threadId);
+    if (!turn?.turnId || !this.rpc || this.rpc.closed) return false;
+    // A matching expectedTurnId prevents late input from reaching the next
+    // turn. Unknown transport failures must never be retried as a second task.
+    await this.rpc.request("turn/steer", {
+      threadId: options.threadId, expectedTurnId: turn.turnId,
+      input: [{ type: "text", text: input }, ...(options.images ?? []).map(path => ({ type: "localImage", path }))],
+    });
+    return true;
+  }
+
   private async performRun(input: string, options: RunOptions): Promise<CodexRunResult> {
     const rpc = await this.client();
     const model = options.model ?? this.options.model ?? process.env.OPENSTRUDEL_CODEX_MODEL ?? "gpt-6-astra";

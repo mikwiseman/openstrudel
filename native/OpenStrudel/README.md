@@ -20,10 +20,12 @@ Foundation parses Markdown, including nested lists, fenced code and tables. Tabl
 ```bash
 cd native/OpenStrudel
 xcodegen generate
-xcodebuild -project OpenStrudel.xcodeproj -scheme "OpenStrudel macOS" -configuration Debug -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
-xcodebuild -project OpenStrudel.xcodeproj -scheme "OpenStrudel iOS" -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17' CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Automatic PROVISIONING_PROFILE_SPECIFIER= build
-xcodebuild -project OpenStrudel.xcodeproj -scheme "OpenStrudel macOS" -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO test
+python3 ../../scripts/native-build.py -- -scheme "OpenStrudel macOS" -configuration Debug -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+python3 ../../scripts/native-build.py -- -scheme "OpenStrudel iOS" -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17' CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Automatic PROVISIONING_PROFILE_SPECIFIER= build
+python3 ../../scripts/native-build.py -- -scheme "OpenStrudel macOS" -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO test
 ```
+
+The build wrapper reuses one stable DerivedData directory per checkout under `~/Library/Caches/OpenStrudelBuilds`. It serializes builds in that directory and prunes idle managed caches after builds (7 days; a soft 12 GiB budget with 24-hour protection for recently used caches). See [storage rules](../../AGENTS.md). Use an explicit result bundle or archive path outside the cache for results that must be retained.
 
 The Mac app connects to the local Home at `http://127.0.0.1:7788`. In Mac Settings, choose **Устройства**, expand the device and choose **Получить ссылку подключения**. Scan the one-use code in the iPhone app, or open the shared connection link. Confirm the Mac and allow local-network access. Home must stay running on an awake Mac on the same network. The code expires after five minutes; creating another code invalidates the old one.
 

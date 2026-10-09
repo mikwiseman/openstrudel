@@ -13,7 +13,7 @@ Apple signing uses the existing Developer ID identity for team `R4A779QVVY`, an 
 ## Release sequence
 
 1. Increase `CURRENT_PROJECT_VERSION` monotonically in `project.yml`, regenerate with XcodeGen, run native tests, and inspect both appearances, small phone, large Dynamic Type and iPad layouts. Test the actual cloud/API paths separately from disposable UI fixtures.
-2. Build macOS Release for arm64. Bundle the public runtime with `scripts/bundle-mac-runtime.sh <app>`. That script includes only tracked runtime sources; private handoffs, migration scripts, local state and credentials are excluded.
+2. Build macOS Release for arm64 through `python3 scripts/native-build.py --copy-product Build/Products/Release/OpenStrudel.app /absolute/release-staging/OpenStrudel.app -- -scheme 'OpenStrudel macOS' -configuration Release -destination 'platform=macOS,arch=arm64' build`. Choose a new staging destination outside the cache. The product is copied while the build lock is held, so a subsequent build cannot change the app being signed. Keep signed release artifacts and archives outside the cache. Bundle the public runtime into the staged app with `scripts/bundle-mac-runtime.sh <app>`. That script includes only tracked runtime sources; private handoffs, migration scripts, local state and credentials are excluded.
 3. Run `python3 scripts/sign-mac-app.py <app> --identity <Developer-ID-SHA1> --keychain <unlocked-keychain>`. This signs runtime Mach-O files and Sparkle helpers inside out, then the outer app. Only Node and the Codex code-mode host receive the JIT entitlement. Never use `codesign --deep` for signing.
 4. Zip the app with `ditto -c -k --keepParent`, submit to `xcrun notarytool`, wait for Accepted, staple and validate. Build a DMG containing the app and an Applications link, sign it, notarize it, staple it and check Gatekeeper. Do not modify the app or DMG after this step.
 5. Put the DMG in a clean feed work directory under an immutable name such as `OpenStrudel-1.0-8-arm64.dmg`, with a matching `.html` release note fragment. Use the tools from the pinned Sparkle SDK:
@@ -29,3 +29,11 @@ Apple signing uses the existing Developer ID identity for team `R4A779QVVY`, an 
 7. Verify the production feed from the app and exercise download, signature verification, installation and relaunch using an isolated older QA bundle and test feed. QA bundle IDs must differ from `is.openstrudel.mac`, so they cannot start the user's personal Home. Preserve the working production runtime and schedules.
 
 Versions predating Sparkle require one manual installation of the first Sparkle-enabled release. Later versions can update from the application.
+
+## Local rollback snapshots
+
+Before a local production update, run `python3 scripts/backup-local-state.py` and retain its printed backup path. The private snapshot includes the installed app, launch configuration, preferences and user state. SQLite databases are copied with the backup API and checked for integrity. Stop or quiesce writes using the deployment procedure if the update needs an exact snapshot across the database and other files. The helper itself does not stop services.
+
+Snapshots live in `~/Library/Application Support/OpenStrudelBackups`. They exclude `deployment`, `releases` and reproducible runtime binaries/dependencies, so old releases do not get nested in each new backup. Restore runtime binaries from the saved app, restore `user-data` and launch configuration using the normal rollback procedure, and verify health before resuming work.
+
+After the new version passes health and data checks, run `python3 scripts/backup-local-state.py --mark-healthy <backup-path>`. The helper retains the two newest managed snapshots associated with healthy deployments. Failed, pending, unknown snapshots and all release archives require an explicit review; they are not automatically pruned. Codex history and private exports are never periodic cleanup targets.

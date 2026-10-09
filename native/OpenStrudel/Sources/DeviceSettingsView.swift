@@ -80,6 +80,8 @@ struct SettingsView: View {
                             }
                             ApprovalSettingsView().environmentObject(selected).id("approvals-" + selected.id)
                             Divider()
+                            DictationSettings()
+                            Divider()
                             #if os(macOS)
                             Toggle("Показывать в строке меню", isOn: $showMenuBar)
                             UpdateSettings()
@@ -124,8 +126,6 @@ struct SettingsView: View {
                 )) {
                     VStack(alignment: .leading, spacing: 12) {
                         MobilePairingSettings().environmentObject(device)
-                        DeviceSignOutButton { if device === library.active, let other = library.visibleClients.first { library.select(other) } }
-                            .environmentObject(device)
                     }.padding(.top, 12)
                 } label: {
                     HStack(spacing: 12) {
@@ -138,10 +138,12 @@ struct SettingsView: View {
                         Spacer()
                     }.padding(.vertical, 6)
                 }.accessibilityIdentifier("deviceDetails")
+                DeviceSignOutButton {}.environmentObject(device)
                 if device.id != library.visibleClients.last?.id { Divider() }
             }
             Button("Подключить устройство…") { adding = true }.buttonStyle(.borderedProminent)
                 .accessibilityIdentifier("addDevice")
+            HiddenEmployeesButton()
             #if os(macOS)
             if !library.visibleClients.contains(where: \.isLocalConnection), LocalHome.isAvailable {
                 Button(localStarting ? "Запускаем этот Mac…" : "Работать также на этом Mac") {

@@ -1,5 +1,5 @@
 import type { IncomingMessage } from "node:http";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Home, HomeError, endpoint, encryptBackup, identifier, object, type WireRequest, type WireResponse } from "./home.js";
 import { HomeLink } from "./home-link.js";
 import { requestJSON, wireJSON } from "./home-transport.js";
@@ -107,7 +107,13 @@ export class HomeApi {
       return wireJSON({ id: row.id, status: row.canceled ? "canceled" : row.response ? "delivered" : row.dispatched ? "sent" : "queued", response: row.response ? JSON.parse(row.response) : null });
     }
     if (path === "/v1/profiles" && method === "GET") {
-      return wireJSON({ profiles: this.home.resources("profile").filter(p => p.id !== this.home.state.mainAgentId), importedConversations: this.home.resources("conversation").filter(c => c.externalId?.startsWith("import::")).map(c => ({ id: c.id, title: c.title ?? "Импортированный чат", profileId: c.profileId, deviceId: c.deviceId })) });
+      const response = wireJSON({ profiles: this.home.resources("profile").filter(p => p.id !== this.home.state.mainAgentId), importedConversations: this.home.resources("conversation").filter(c => c.externalId?.startsWith("import::")).map(c => ({ id: c.id, title: c.title ?? "Импортированный чат", profileId: c.profileId, deviceId: c.deviceId })) });
+      // The catalog is small and already authoritative here. Conditional HTTP
+      // avoids transferring/decoding it when nothing changed, without another
+      // event bus or a persisted revision that can drift after restore/import.
+      const etag = '"' + createHash("sha256").update(response.body).digest("hex") + '"';
+      const unchanged = request.headers["if-none-match"]?.split(",").some(value => value.trim().replace(/^W\//, "") === etag);
+      return { ...response, etag, ...(unchanged ? { status: 304, body: "" } : {}) };
     }
     if (path === "/v1/conversations" && method === "GET") return wireJSON({ conversations: this.home.resources("conversation") });
     let nodeId = url.searchParams.get("deviceId") ?? undefined;

@@ -4,8 +4,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="${1:?Pass the built OpenStrudel.app path}"
 NODE_BIN="$(command -v node)"
 if [[ ! -f "$APP/Contents/Info.plist" ]]; then echo "Built macOS app required" >&2; exit 1; fi
-mkdir -p "$ROOT/.data"
-WORK="$(mktemp -d "$ROOT/.data/packaged-runtime.XXXXXX")"
+CACHE="$HOME/Library/Caches/OpenStrudelBuilds/runtime-temp"
+mkdir -p "$CACHE"
+WORK="$(mktemp -d "$CACHE/packaged-runtime.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 RUNTIME="$WORK/runtime"
 mkdir -p "$WORK/source" "$RUNTIME/bin" "$RUNTIME/scripts"

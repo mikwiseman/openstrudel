@@ -42,6 +42,8 @@
 	<string>Сканирование приглашения OpenStrudel для подключения к вашим чатам.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Подключение к вашему Mac или серверу, чтобы открыть общие чаты и сотрудников.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Запись голосового сообщения. Распознавание происходит на этом устройстве.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

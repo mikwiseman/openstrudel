@@ -46,6 +46,7 @@ struct HomeHealth: Decodable {
     var primaryId: String? = nil
     var agentAppearanceVersion: Int? = nil
     var deviceLogoutVersion: Int? = nil
+    var turnControlVersion: Int? = nil
 }
 
 struct HomeConversation: Decodable {
@@ -225,6 +226,12 @@ struct PendingHomeMessage: Codable, Identifiable, Equatable {
     var deliveryState: String? = nil
     var operationID: String? = nil
     var appearance: AgentAppearance? = nil
+    var mode: ComposerSendMode? = nil
+}
+
+enum ComposerSendMode: String, Codable, CaseIterable {
+    case steer, queue
+    var title: String { self == .steer ? "Уточнить сейчас" : "После ответа" }
 }
 
 enum PendingMessagesFile {
@@ -281,7 +288,7 @@ struct ProfilesEnvelope: Decodable {
 struct ImportedConversation: Decodable, Identifiable, Equatable {
     let id: String
     let title: String
-    let profileId: String
+    let profileId: String?
 }
 
 struct ProfileResponse: Decodable {

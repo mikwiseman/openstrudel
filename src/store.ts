@@ -105,6 +105,7 @@ export class Store {
     if (!columns.has("imported")) this.db.exec("ALTER TABLE messages ADD COLUMN imported INTEGER NOT NULL DEFAULT 0");
     if (!columns.has("attachments_json")) this.db.exec("ALTER TABLE messages ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]'");
     if (!columns.has("hidden")) this.db.exec("ALTER TABLE messages ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0");
+    if (!columns.has("context_only")) this.db.exec("ALTER TABLE messages ADD COLUMN context_only INTEGER NOT NULL DEFAULT 0");
     this.db.exec("CREATE INDEX IF NOT EXISTS messages_page_idx ON messages(conversation_id, hidden, created_at)");
     const conversationColumns = new Set((this.db.prepare("PRAGMA table_info(conversations)").all() as Row[]).map(r => String(r.name)));
     if (!conversationColumns.has("profile_id")) this.db.exec("ALTER TABLE conversations ADD COLUMN profile_id TEXT REFERENCES employee_profiles(id)");
@@ -199,7 +200,13 @@ export class Store {
   }
 
   getTelegramChat(chatId: string): TelegramChat | null {
-    const row = this.db.prepare("SELECT * FROM telegram_chats WHERE chat_id=?").get(chatId) as Row | undefined;
+    // Root private chats predate explicit conversation bindings. Expose their
+    // existing history without creating or moving a conversation on read.
+    const row = this.db.prepare(`SELECT t.*, COALESCE(t.conversation_id,c.id) AS conversation_id
+      FROM telegram_chats t LEFT JOIN conversations c
+      ON CAST(t.chat_id AS INTEGER)>0 AND t.profile_id IS NULL AND c.profile_id IS NULL
+      AND c.channel='telegram' AND c.external_id=t.chat_id
+      WHERE t.chat_id=?`).get(chatId) as Row | undefined;
     return row ? { chatId: String(row.chat_id), title: String(row.title), conversationId: row.conversation_id == null ? null : String(row.conversation_id), profileId: row.profile_id == null ? null : String(row.profile_id), allowedSenders: jsonArray(row.allowed_senders_json as string), access: row.access === "members" ? "members" : "approved", replies: row.replies === "mentions" ? "mentions" : "instructions", enabled: this.getSetting("telegram.paused." + String(row.chat_id)) !== "true" } : null;
   }
 
@@ -358,9 +365,26 @@ export class Store {
     return row ? this.mapMessage(row) : null;
   }
 
+  getMessage(conversationId: string, messageId: string): Message | null {
+    const row = this.db.prepare("SELECT * FROM messages WHERE conversation_id=? AND id=? AND hidden=0").get(conversationId, messageId) as Row | undefined;
+    return row ? this.mapMessage(row) : null;
+  }
+
   listMessages(conversationId: string, limit = 50): Message[] {
     const rows = this.db.prepare("SELECT * FROM messages WHERE conversation_id = ? AND hidden=0 ORDER BY created_at DESC, rowid DESC LIMIT ?").all(conversationId, limit) as Row[];
     return rows.reverse().map((row) => this.mapMessage(row));
+  }
+
+  /** Bounded context before this request, never later queued input. */
+  contextMessages(conversationId: string, beforeId: string, pendingOnly: boolean): Message[] {
+    const checkpoint = pendingOnly ? this.getSetting("context.checkpoint." + conversationId) : null;
+    const rows = this.db.prepare(`SELECT * FROM messages WHERE conversation_id=?
+      AND hidden=0 AND imported=0 AND status='completed' AND kind<>'notice'
+      ${pendingOnly ? "AND context_only=1" : ""}
+      AND rowid < (SELECT rowid FROM messages WHERE id=? AND conversation_id=?)
+      AND rowid > COALESCE((SELECT rowid FROM messages WHERE id=? AND conversation_id=?),0)
+      ORDER BY rowid DESC LIMIT 51`).all(conversationId, beforeId, conversationId, checkpoint, conversationId) as Row[];
+    return rows.reverse().map(row => this.mapMessage(row));
   }
 
   /** Keyset pagination: identical timestamps are disambiguated by SQLite's rowid. */

@@ -29,6 +29,8 @@ def sign(path, *extra):
 with tempfile.TemporaryDirectory(prefix="openstrudel-sign-") as temporary:
     entitlements = pathlib.Path(temporary) / "node.plist"
     entitlements.write_bytes(plistlib.dumps({"com.apple.security.cs.allow-jit": True}))
+    app_entitlements = pathlib.Path(temporary) / "app.plist"
+    app_entitlements.write_bytes(plistlib.dumps({"com.apple.security.device.audio-input": True}))
     runtime = app / "Contents/Resources/Runtime"
     for path in sorted(runtime.rglob("*")):
         if not path.is_file() or path.is_symlink():
@@ -47,6 +49,6 @@ with tempfile.TemporaryDirectory(prefix="openstrudel-sign-") as temporary:
     sign(version / "Autoupdate")
     sign(version / "Updater.app")
     sign(framework)
-    sign(app)
+    sign(app, "--entitlements", str(app_entitlements))
 
 subprocess.run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)], check=True)

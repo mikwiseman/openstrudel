@@ -15,6 +15,7 @@ struct DeviceSignOutButton: View {
 
 struct DeviceSignOutView: View {
     @EnvironmentObject private var client: HomeClient
+    @EnvironmentObject private var library: DeviceLibrary
     @Environment(\.dismiss) private var dismiss
     let completed: () -> Void
     @State private var showingBackup = false
@@ -32,7 +33,8 @@ struct DeviceSignOutView: View {
                     Spacer()
                     Button("Отмена") { dismiss() }.keyboardShortcut(.cancelAction)
                     Button("Убрать подключение") {
-                        Task { await client.signOutOnThisDevice(); if client.isSignedOut { completed() } }
+                        let source = client
+                        Task { await library.removeConnection(source); completed() }
                     }.buttonStyle(.borderedProminent).accessibilityIdentifier("confirmDeviceSignOut")
                 }.disabled(client.isSigningOut)
             }.padding(28).navigationTitle("Подключение устройства")
