@@ -37,6 +37,26 @@ async function eventually(f: () => Promise<void> | void) {
 }
 
 describe("user-owned primary Home", () => {
+  it("conditionally refreshes independent client catalogs after employee deletion without exposing data before auth", async () => {
+    const host = await node("Mac mini");
+    const employee = host.runtime.store.createProfile({ name: "Temporary editor", instructions: "Keep the facts." });
+    const read = (etag?: string, token = "test-owner") => fetch(host.url + "/v1/profiles", { headers: { authorization: "Bearer " + token, ...(etag ? { "if-none-match": etag } : {}) } });
+    const first = await read();
+    const etag = first.headers.get("etag")!;
+    expect(etag).toMatch(/^"[a-f0-9]{64}"$/);
+    expect((await first.json()).profiles.map((p: any) => p.id)).toContain(employee.id);
+    const unchanged = await read(etag);
+    expect(unchanged.status).toBe(304);
+    expect(await unchanged.text()).toBe("");
+    expect((await read(etag, "wrong-token")).status).toBe(401);
+    expect((await host.api("/v1/profiles/" + employee.id, "DELETE")).status).toBe(200);
+    for (let client = 0; client < 2; client++) {
+      const changed = await read(etag);
+      expect(changed.status).toBe(200);
+      expect(changed.headers.get("etag")).not.toBe(etag);
+      expect((await changed.json()).profiles.some((p: any) => p.id === employee.id)).toBe(false);
+    }
+  });
   it("routes extension reads and writes to the employee's device and reports legacy shared workspaces", async () => {
     const primary = await node("Laptop"), worker = await node("Mac mini");
     const profile = worker.runtime.store.createProfile({name:"Writer",instructions:""});

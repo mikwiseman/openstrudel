@@ -16,6 +16,7 @@ final class DeviceLibrary: ObservableObject {
     @Published private(set) var eraseError: String?
     @Published private(set) var erased = false
     @Published private(set) var viewGeneration = 0
+    @Published private(set) var hiddenEmployees: [String: [String]]
     var fileDrafts: [String: [PickedFile]] = [:]
     private let defaults: UserDefaults
     private var observations: [AnyCancellable] = []
@@ -23,9 +24,11 @@ final class DeviceLibrary: ObservableObject {
     var active: HomeClient { clients.first { $0.id == selectedID } ?? clients[0] }
     var visibleClients: [HomeClient] { clients.filter { !$0.isSignedOut && ($0.isConfigured || $0.connectionNeedsPairing || $0 === active) } }
     var hasOtherDevices: Bool { visibleClients.count > 1 }
+    var connectionListKey: String { visibleClients.map { $0.id + ":" + $0.normalizedBaseURL }.joined(separator: "|") }
 
     init(defaults: UserDefaults = .standard, clients supplied: [HomeClient]? = nil) {
         self.defaults = defaults
+        hiddenEmployees = defaults.dictionary(forKey: "openstrudel.hiddenEmployees") as? [String: [String]] ?? [:]
         if let supplied, !supplied.isEmpty {
             clients = supplied
         } else {
@@ -113,6 +116,68 @@ final class DeviceLibrary: ObservableObject {
         defaults.set(clients.map(\.id), forKey: "openstrudel.deviceConnections")
         observeClients()
         if shouldSelect { select(client) }
+    }
+
+    /// Remove only this client's saved connection. No employee deletion or
+    /// remote logout is required, so an offline device can always be removed.
+    func removeConnection(_ client: HomeClient) async {
+        guard !isErasing, clients.contains(where: { $0 === client }) else { return }
+        await client.signOutOnThisDevice()
+        clients.removeAll { $0 === client }
+        if clients.isEmpty {
+            let empty = newConnection()
+            empty.disconnectFromMac()
+            clients = [empty]
+        }
+        if selectedID == client.id || !clients.contains(where: { $0.id == selectedID }) {
+            selectedID = clients[0].id
+        }
+        defaults.set(clients.map(\.id), forKey: "openstrudel.deviceConnections")
+        defaults.set(selectedID, forKey: "openstrudel.selectedDevice")
+        observeClients()
+    }
+
+    private func visibilityKey(_ client: HomeClient) -> String {
+        // Home identity survives address changes and renewed invitations. The
+        // cached identity also lets an offline client keep the same preference.
+        client.catalogueIdentity
+    }
+
+    func isHidden(_ profile: EmployeeProfile, on client: HomeClient) -> Bool {
+        hiddenEmployees[visibilityKey(client)]?.contains(profile.id) == true
+    }
+    func visibleProfiles(on client: HomeClient) -> [EmployeeProfile] { client.profiles.filter { !isHidden($0, on: client) } }
+    func hiddenProfiles(on client: HomeClient) -> [EmployeeProfile] { client.profiles.filter { isHidden($0, on: client) } }
+
+    func setHidden(_ hidden: Bool, profile: EmployeeProfile, on client: HomeClient) async {
+        let key = visibilityKey(client)
+        var ids = Set(hiddenEmployees[key] ?? [])
+        if hidden { ids.insert(profile.id) } else { ids.remove(profile.id) }
+        hiddenEmployees[key] = ids.sorted()
+        defaults.set(hiddenEmployees, forKey: "openstrudel.hiddenEmployees")
+        if hidden, client.selectedProfileID == profile.id { await client.selectProfile(nil) }
+    }
+
+    /// Each host has its own conditional refresh loop. A slow or unreachable
+    /// host cannot delay changes from another one. Background iOS suspends the
+    /// task; the first foreground request catches up without a socket service.
+    func watchCatalogues() async {
+        await withTaskGroup(of: Void.self) { group in
+            for client in visibleClients where client.shouldRestoreConnection && !client.isPairing {
+                group.addTask {
+                    while !Task.isCancelled {
+                        await client.refreshCatalogue()
+                        do { try await Task.sleep(for: .seconds(await client.homeUnreachable ? 15 : 5)) } catch { break }
+                    }
+                }
+                group.addTask {
+                    while !Task.isCancelled {
+                        await client.load(quiet: true)
+                        do { try await Task.sleep(for: .seconds(60)) } catch { break }
+                    }
+                }
+            }
+        }
     }
 
     #if os(macOS)

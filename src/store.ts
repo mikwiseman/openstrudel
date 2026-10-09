@@ -365,6 +365,11 @@ export class Store {
     return row ? this.mapMessage(row) : null;
   }
 
+  getMessage(conversationId: string, messageId: string): Message | null {
+    const row = this.db.prepare("SELECT * FROM messages WHERE conversation_id=? AND id=? AND hidden=0").get(conversationId, messageId) as Row | undefined;
+    return row ? this.mapMessage(row) : null;
+  }
+
   listMessages(conversationId: string, limit = 50): Message[] {
     const rows = this.db.prepare("SELECT * FROM messages WHERE conversation_id = ? AND hidden=0 ORDER BY created_at DESC, rowid DESC LIMIT ?").all(conversationId, limit) as Row[];
     return rows.reverse().map((row) => this.mapMessage(row));

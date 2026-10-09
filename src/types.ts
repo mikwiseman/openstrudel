@@ -59,6 +59,8 @@ export interface CodexRunResult {
 }
 
 export interface CodexEngine {
+  /** Native app-server input for an already running turn; false means no turn. */
+  steer?(input: string, options: { threadId: string; images?: string[] }): Promise<boolean>;
   forContext?(context: string): CodexEngine;
   forAgent?(agentId: string, context: string): CodexEngine;
   run(
@@ -95,6 +97,7 @@ export interface Connection { id: string; name: string; kind: "app" | "mcp"; det
 export interface Interaction { id: string; conversationId: string; messageId: string; title: string; detail?: string; url?: string; requestedBy?: string; questions: Array<{ id: string; question: string; options: string[] }>; }
 
 export interface MessageInput {
+  mode?: "steer" | "queue";
   conversationId?: string;
   channel: Channel;
   text: string;

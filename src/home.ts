@@ -13,7 +13,7 @@ export type HomeState = {
 };
 export type Inventory = { profiles: Record<string, any>[]; conversations: Record<string, any>[]; files: string[] };
 export type WireRequest = { method: string; path: string; body?: string; contentType?: string; owner: boolean };
-export type WireResponse = { status: number; body: string; contentType: string };
+export type WireResponse = { status: number; body: string; contentType: string; etag?: string };
 export type Command = { id: string; request: WireRequest };
 type Row = Record<string, any>;
 export class HomeError extends Error { constructor(message: string, readonly status = 400) { super(message); } }

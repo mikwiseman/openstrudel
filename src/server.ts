@@ -276,7 +276,7 @@ export class HttpApi {
         }
       }
       if (request.method === "GET" && path === "/health") {
-        this.send(response, 200, { ok: true, service: "openstrudel", platform: process.platform, arch: process.arch, time: new Date().toISOString(), telegram: this.telegram.status(), agentArchiveVersion: 1, agentArchiveEncryption: true, agentAppearanceVersion: 1, deviceLogoutVersion: 1, homeProtocol: 1, homeId: this.home.state.id, primaryId: this.home.state.primaryId, nodeId: this.home.state.nodeId, hostingOrigin: hostingOrigin(process.env.OPENSTRUDEL_HOSTING_ORIGIN) });
+        this.send(response, 200, { ok: true, service: "openstrudel", platform: process.platform, arch: process.arch, time: new Date().toISOString(), telegram: this.telegram.status(), turnControlVersion: 1, agentArchiveVersion: 1, agentArchiveEncryption: true, agentAppearanceVersion: 1, deviceLogoutVersion: 1, homeProtocol: 1, homeId: this.home.state.id, primaryId: this.home.state.primaryId, nodeId: this.home.state.nodeId, hostingOrigin: hostingOrigin(process.env.OPENSTRUDEL_HOSTING_ORIGIN) });
         return;
       }
       if (request.method === "GET" && path === "/v1/integrations") {
@@ -515,7 +515,9 @@ export class HttpApi {
       }
       if (request.method === "POST" && path === "/v1/messages") {
         const body = await this.body(request);
+        if (body.mode !== undefined && body.mode !== "steer" && body.mode !== "queue") throw new HomeError("Выберите: уточнить сейчас или отправить после ответа.");
         const submission = await this.messages.submit({
+          mode: body.mode,
           channel: body.channel === "telegram" ? "telegram" : "api",
           text: String(body.text ?? ""),
           externalId: body.externalId == null ? undefined : String(body.externalId),
@@ -527,6 +529,11 @@ export class HttpApi {
         });
         this.send(response, url.searchParams.get("async") === "true" ? 202 : 200, url.searchParams.get("async") === "true" ? submission.receipt : await submission.completion);
         return;
+      }
+      const cancelMessage = path.match(/^\/v1\/conversations\/([^/]+)\/messages\/([^/]+)\/cancel$/);
+      if (request.method === "POST" && cancelMessage) {
+        this.messages.cancel(cancelMessage[1]!, cancelMessage[2]!);
+        this.send(response, 200, { ok: true }); return;
       }
       this.send(response, 404, { error: "not_found" });
     } catch (error) {
@@ -570,7 +577,7 @@ export class HttpApi {
   }
   private sendWire(response: ServerResponse, value: WireResponse) {
     const body = Buffer.from(value.body, "base64");
-    response.writeHead(value.status, { "content-type": value.contentType, "content-length": body.length, "cache-control": "no-store" }).end(body);
+    response.writeHead(value.status, { "content-type": value.contentType, ...(value.status === 304 ? {} : { "content-length": body.length }), "cache-control": "no-store", ...(value.etag ? { etag: value.etag } : {}) }).end(body);
   }
 
   private async asset(response: ServerResponse, name: string, contentType: string): Promise<void> {

@@ -22,6 +22,25 @@ with the user's former OpenClaw/Hermes assistants.
 
 ## Work streams and acceptance
 
+Execution order for the remaining work: connection/catalog correctness and
+removal, personal hiding, composer and dictation, private end-to-end scenarios,
+then the combined release. Reuse Codex app-server operations and native Apple
+controls; do not introduce a parallel agent engine or a second Telegram router.
+
+### 0. Latest decisions and preservation rules
+
+- [x] The user confirmed that the 37 employees deleted on 9 October at
+  11:40–11:42 Moscow were intentionally removed. Leave them, their conversations
+  and schedules deleted. This includes «Эрец Исраэль» and «Редактор».
+- [x] Merge the approved bun and monochrome menu icons from `84cb899`.
+  The combined next Mac/Home release is 29. Installed Mac 28 and public Mac 27
+  are different builds; do not publish another artifact as build 28.
+- [x] Check why the existing «Тестовая команда» cannot be removed. Distinguish
+  disconnecting a saved device from deleting its employees or erasing its data.
+  Make the appropriate action visible and verify it when the device is offline.
+- [ ] Keep App Store build 28's pending review intact. Deliver a new iOS build
+  separately; diagnose the distribution signing failure without rotating keys.
+
 ### 1. Wai Core Team on Mac mini
 
 - [x] Read recent real group requests and successful former assistant responses.
@@ -33,14 +52,19 @@ with the user's former OpenClaw/Hermes assistants.
 - [x] Exercise the same inputs privately with the same employee and tool scope.
   A passing answer must use the relevant evidence and produce a usable result;
   a tool ping or confident prose alone is insufficient.
-- [ ] Test delegation with a real specialist task and verify the helper ran.
+- [x] Test delegation with a real specialist task and verify the helper ran.
 - [x] Verify read tasks do not change CRM, schedules or send messages elsewhere.
   Verify write behavior with isolated fixtures or a separately authorized real
   operation; do not replay historical cancellation instructions against today.
 - [ ] Fix demonstrated runtime/configuration gaps and repeat failed cases.
-- [ ] Confirm exactly one active Telegram delivery path and no duplicate replies.
+- [x] Confirm exactly one active Telegram delivery path and no duplicate replies.
 
 ### 2. Personal “Эрец Исраэль aka Земля в Израиле”
+
+**Superseded by the user's explicit deletion decision on 9 October.** The
+historical migration evidence below remains a record of earlier work. Do not
+restore this employee, re-enable either schedule, or wait for a new scheduled
+issue. Use a new disposable employee for subsequent personal-case tests.
 
 The user requested a separate implementation task. It owns fresh source export,
 persona, source quality, deduplication, schedules, migration and personal-case QA.
@@ -54,8 +78,8 @@ do not call a task created on Mac mini a task running on MacBook.
 - [x] Validate the replacement before switching the exact old schedule.
 - [x] Avoid two bots or two schedulers publishing the same issue.
 - [x] Keep a recoverable source snapshot and documented rollback.
-- [ ] Observe the first complete scheduled ten-listing issue. A three-listing
-  preview and an already-delivered-day dry run do not prove this final step.
+- First complete scheduled ten-listing issue: not observed before intentional
+  deletion. A preview did not establish that result; this check is cancelled.
 
 ### 3. Navigation and Telegram setup
 
@@ -78,7 +102,7 @@ states, distinct limits/credits, direct service setup, permissions and safe
 cross-network device invitations. Any newly observed failure enters this plan
 with a reproduction and evidence before adding a workaround.
 
-- [ ] Run relevant runtime regressions and native build/tests using the managed
+- [x] Run relevant runtime regressions and native build/tests using the managed
   build wrapper; inspect the real application through Computer Use.
 - [x] Keep shared-group QA quiet: use a private test group or DM for replay.
 - [x] Save private inputs, observations and results outside version control.
@@ -87,6 +111,57 @@ with a reproduction and evidence before adding a workaround.
   on failure, then mark the backup healthy.
 - [ ] Report proven outcomes and remaining blockers separately. Do not equate
   a successful build or a synthetic test with a completed migration.
+
+### 5. Connected devices, catalog changes and personal hiding
+
+- [ ] Reproduce removal on one host while two clients are connected. Inspect
+  catalog refresh, stale in-flight responses, reconnects and selection changes.
+- [x] Update clients promptly without repeatedly loading full histories,
+  account limits or integrations. Reuse HTTP conditional requests or an existing
+  event mechanism; add new infrastructure only if evidence requires it.
+- [x] Check Mini connection logs and distinguish transport failure, account
+  checking and a stale menu-bar status. Preserve usable cached data on failure.
+- [x] Add reversible Hide/Show actions, stored on each viewing client. Hiding
+  must not delete, stop or hide an employee for other people or devices.
+- [x] Verify hidden employees stay hidden after reconnect/relaunch, can be
+  found in a clear hidden-items view, and never mix across connected hosts.
+- [ ] Verify deletion, hiding and device removal through context menus,
+  keyboard, confirmation and touch layouts, including offline states.
+
+### 6. Composer, voice and attachments
+
+- [x] Use Codex `turn/steer` with its required expected turn ID for messages
+  sent during a running turn. Default to Steer; offer explicit queue behavior.
+  Handle turn completion races without duplicate messages or silent loss.
+- [x] Keep drafts, attachments and queued inputs visible and recoverable.
+  Verify stop, cancel, retry, pasted images, file picker and drag-and-drop.
+- [x] Match the supplied recording states: cancel, live waveform, stop to
+  review, and send. Avoid duplicate recording/transcription processes.
+- [x] Recommend Open Ramble for Mac dictation and use its actual supported
+  integration. It currently inserts at the cursor through its global hotkey;
+  it has no public URL/IPC recording control. Do not invent one in the UI.
+- [ ] Verify microphone/accessibility denial, model download/setup, local
+  dictation, text review, empty recording, cancellation and app switching.
+- [ ] Check keyboard access, VoiceOver, reduced motion, narrow windows,
+  dark/light appearance and accessibility text sizes in every changed state.
+
+### 7. Final real scenarios and shipping
+
+- [x] In the private QA group, an unaddressed discussion supplies facts to a
+  later addressed request, with no unsolicited response to the first message.
+- [x] Create disposable employees and verify real Codex delegation, retaining
+  their distinct instructions and keeping private/group audiences isolated.
+- [x] In the owner's bot DM, complete a real read-only company-source request,
+  including an ordinary approval. Verify evidence, useful output and no writes.
+- [x] Exercise tool/skill setup and missing-access recovery without changing
+  global permissions merely to make a test pass.
+- [x] Check permissions modes with isolated tests. Never replay historical
+  cancellation or scheduling instructions against current production data.
+- [x] Validate crash and memory regressions with bounded histories/attachments;
+  record observed resource use and unresolved limitations rather than promises.
+- [ ] Update PR scope and evidence, run relevant checks, build the combined
+  icons/runtime/native release, deploy with backup and rollback, then merge and
+  publish matching Mac/Home artifacts. Preserve iOS review and release evidence.
 
 ## Evidence
 
@@ -148,9 +223,10 @@ memory and keyboard coverage is detailed in the linked earlier acceptance.
 
 ### Release checks
 
-- Runtime: 303 tests in 47 files, plus TypeScript checking.
-- Native model: 115 tests across 15 suites, including a root archive and
-  employee/group selection without changing the underlying conversation.
+- Runtime: 310 tests in 48 files, plus TypeScript checking.
+- Native model: 125 tests across 17 suites, including catalog deletion, stale
+  responses, revoked credentials, client-local hiding, offline removal, voice
+  drafts and real attachment providers. Build/backup storage: 11 tests.
 - iPhone: private Telegram history, imported root archive, automatic groups,
   pause/resume, missing private link, selected group after relaunch, and services
   scoped to the group passed against the isolated Home fixture.
@@ -159,6 +235,52 @@ memory and keyboard coverage is detailed in the linked earlier acceptance.
   and opening the correct imported archive were inspected in the native app.
 - iPad landscape with accessibility text sizes is verified using the same
   scenario, with screenshot inspection in addition to functional assertions.
-- Mac build 28 and iOS build 29 are separate release numbers. App Store Connect
-  already has iOS 28 waiting for review; this revision must preserve that review
-  and deliver iOS 29 through TestFlight.
+- Mac build 28 was installed and its runtime/data health checks passed. The
+  combined icons and subsequent changes will ship as Mac/Home 29. App Store
+  Connect has iOS 28 waiting for review; preserve that review. iOS 29 archive
+  signing uses the existing dedicated release keychain, now verified with a
+  test signature. Upload and processing are still pending.
+
+
+### Revision 29 verification
+
+- Independent conditional catalog requests run every five seconds per connected
+  host (15 seconds when unavailable); full account/integration refresh is separate.
+  Unchanged catalogs return 304 without publishing a SwiftUI update. Cached data
+  survives connection failure. A public health response cannot mask revoked access.
+- In the isolated Mac app, «Тестовая команда» was removed while its runtime was
+  unavailable. The other device and its employees remained. The actual reported
+  saved connection was not present in Mini's production preferences; its screenshot
+  may be from another client or an earlier build.
+- Hide/Show was exercised through the Mac context menu and hidden-items view.
+  Regression tests cover relaunch, another client, and identical employee IDs on
+  different hosting devices. No host employee record is modified.
+- The 5,000-message fixture opened at message 5,000 and loaded earlier messages
+  while retaining the visible boundary near 4,951. Observed QA app RSS was 99.7 MiB.
+  This is one measured scenario, not proof of a universal memory ceiling.
+- A synthesized Russian recording was actually recognized using Apple's local
+  DictationTranscriber. In the Mac UI, a saved audio draft survived relaunch,
+  became editable text, and was sent only after pressing Send. The recording was
+  then removed. A real file picker plus pasted text also delivered the attachment.
+- Live microphone capture reached the macOS permission dialog. Computer Use
+  disallowed control of that system surface, so capture permission and physical
+  microphone recording remain unverified. No TCC or permission bypass was used.
+- Open Ramble is recommended on Mac and opened through its installed application
+  or official download page. Its supported global hotkey inserts text at the
+  cursor. Integrated waveform recording uses Apple's on-device transcription.
+- In the private owner-and-bot QA group, an unaddressed fictional workshop note
+  received no unsolicited answer. A later mention retained its date, time,
+  duration, headcount, unchanged price and unknown venue. Native Codex traces
+  confirmed delegation to the newly created «Проверка релиза 29» employee and
+  the returned answer followed that employee's distinct format. One reply arrived.
+- The owner's bot DM read actual company meeting evidence with an ordinary
+  approval, linked the record and distinguished a proposed price from accepted
+  terms. No writes occurred. Group-scoped company-source access is still a
+  separate boundary; the private identity was not substituted into a group.
+- Mini's current Home and Telegram delivery state were healthy with no unfinished
+  runs. Recent retained logs did not reproduce the reported disconnect. The
+  exact cause of that earlier occurrence is not established.
+- Queue input, cancellation, active interruption, attachment input, same-account
+  steering and uncertain delivery are covered by runtime regression tests. Native
+  `turn/steer` is used with expectedTurnId; there is no additional agent loop.
+  Editing or promoting an already queued message remains a separate follow-up.

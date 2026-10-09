@@ -45,6 +45,7 @@ targets:
             CFBundleURLSchemes: [openstrudel]
         NSLocalNetworkUsageDescription: Подключение к вашему Mac или серверу, чтобы открыть общие чаты и сотрудников.
         NSCameraUsageDescription: Сканирование приглашения OpenStrudel для подключения к вашим чатам.
+        NSMicrophoneUsageDescription: Запись голосового сообщения. Распознавание происходит на этом устройстве.
         NSAppTransportSecurity:
           # Self-hosted Homes use a certificate carried in the one-use invite.
           # PinnedHomeSession validates the exact host, port and certificate;
@@ -104,6 +105,7 @@ targets:
       properties:
         CFBundleDisplayName: OpenStrudel
         SUFeedURL: https://waiwai.is/openstrudel/updates/appcast.xml
+        NSMicrophoneUsageDescription: Запись голосового сообщения. Распознавание происходит на этом Mac.
         UTExportedTypeDeclarations:
           - UTTypeIdentifier: is.openstrudel.team
             UTTypeDescription: Команда OpenStrudel
@@ -149,6 +151,7 @@ targets:
       - path: Sources/AppTheme.swift
       - path: Sources/ChatMedia.swift
       - path: Sources/AttachmentImport.swift
+      - path: Sources/VoiceCapture.swift
       - path: Sources/Models.swift
       - path: Sources/AgentAppearance.swift
       - path: Sources/HomeClient.swift

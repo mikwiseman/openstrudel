@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct OpenStrudelApp: App {
     @StateObject private var library = DeviceLibrary()
+    @Environment(\.scenePhase) private var scenePhase
     private var client: HomeClient { library.active }
     #if os(macOS)
     @StateObject private var updater = AppUpdater.shared
@@ -81,11 +82,9 @@ struct OpenStrudelApp: App {
                 AddDeviceConfirmation(pairing: pairing)
                     .environmentObject(library)
             }
-            .task {
-                while !Task.isCancelled {
-                    await library.refresh()
-                    do { try await Task.sleep(for: .seconds(15)) } catch { break }
-                }
+            .task(id: library.connectionListKey + (scenePhase == .background ? ":background" : ":visible")) {
+                guard scenePhase != .background else { return }
+                await library.watchCatalogues()
             }
             .onOpenURL { url in
                 guard !library.isErasing else { return }

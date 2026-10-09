@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UniformTypeIdentifiers
 
 @Suite("Attachment import")
 struct AttachmentImportTests {
@@ -45,6 +46,25 @@ struct AttachmentImportTests {
         #expect(AttachmentImport.isCancellation(URLError(.cancelled)))
         #expect(!AttachmentImport.isCancellation(CocoaError(.fileReadNoPermission)))
         #expect(!AttachmentImport.isCancellation(AttachmentImport.Failure.tooLarge))
+    }
+
+    @Test @MainActor func droppedFileAndPastedImagePreserveTheirBytes() async throws {
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("Drop.txt")
+        let bytes = Data("Dropped file".utf8)
+        try bytes.write(to: file)
+        let provider = NSItemProvider(item: file as NSURL, typeIdentifier: UTType.fileURL.identifier)
+        let dropped = try await AttachmentImport.providers([provider])
+        #expect(dropped.first?.data == bytes)
+        #expect(dropped.first?.name == "Drop.txt")
+        let image = NSItemProvider()
+        image.registerDataRepresentation(forTypeIdentifier: UTType.png.identifier, visibility: .all) { completion in
+            completion(Data([137, 80, 78, 71]), nil); return nil
+        }
+        let pasted = try await AttachmentImport.providers([image])
+        #expect(pasted.first?.mimeType == "image/png")
+        #expect(pasted.first?.data == Data([137, 80, 78, 71]))
     }
 
     private func temporaryFolder() throws -> URL {

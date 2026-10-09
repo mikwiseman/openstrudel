@@ -115,8 +115,10 @@ export class AccountEngines implements CodexEngine {
   forAgent(agent: string, context: string): CodexEngine {
     let locked: { id: string; service: CodexAccountService } | undefined;
     let connectionEngine: CodexEngine | undefined;
+    let runningEngine: CodexEngine | undefined;
     const selection = () => locked ? Promise.resolve(locked) : this.accounts.choose(agent, false);
     return {
+      steer: async (input, options) => runningEngine?.steer?.(input, options) ?? false,
       run: async (input, options) => {
         const { id, service } = await this.accounts.choose(agent);
         locked = { id, service };
@@ -129,6 +131,7 @@ export class AccountEngines implements CodexEngine {
           const threadId = saved ?? (id === "default" && (!owner || owner === id) ? options?.threadId : undefined);
           const history = !threadId && options?.conversationId && options.threadId ? this.accounts.store.listMessages(options.conversationId, 200).filter(m => m.kind !== "notice" && m.status === "completed").map(m => `${m.direction === "inbound" ? "User" : "Assistant"}: ${m.text}`).join("\n") : "";
           const engine = this.scoped(id, service).forContext(context);
+          runningEngine = engine;
           const result = await engine.run(history ? `Earlier chat (context only):\n${history}\n\nCurrent message:\n${input}` : input, { ...options, threadId,
             onEvent: event => {
               if (threadKey && event.type === "thread.started") this.accounts.store.setSetting(threadKey, (event.payload as any).threadId);
@@ -139,7 +142,7 @@ export class AccountEngines implements CodexEngine {
           if (ownerKey) this.accounts.store.setSetting(ownerKey, id);
           return result;
         } catch (error) { if (isOpenAIAuthenticationError(error)) service.invalidate(); throw error; }
-        finally { locked = undefined; this.accounts.active.set(id, Math.max(0, (this.accounts.active.get(id) ?? 1) - 1)); }
+        finally { locked = undefined; runningEngine = undefined; this.accounts.active.set(id, Math.max(0, (this.accounts.active.get(id) ?? 1) - 1)); }
       },
       get connectionNotice() { return connectionEngine?.connectionNotice; },
       connections: async refresh => { const selected = await selection(); connectionEngine = this.scoped(selected.id, selected.service).forContext(context); return connectionEngine.connections?.(refresh) ?? []; },

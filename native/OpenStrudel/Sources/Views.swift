@@ -285,11 +285,11 @@ private struct Sidebar: View {
 
             ScrollView {
                 VStack(spacing: 3) {
-                    if !showsMain && !library.visibleClients.contains(where: { source in source.profiles.contains { $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) } || source.telegramGroups.contains { $0.title.localizedCaseInsensitiveContains(searchTerm) } }) {
+                    if !showsMain && !library.visibleClients.contains(where: { source in library.visibleProfiles(on: source).contains { $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) } || source.telegramGroups.contains { $0.title.localizedCaseInsensitiveContains(searchTerm) } }) {
                         SearchEmptyState(query: query) { query = "" }
                     }
                     ForEach(library.visibleClients) { source in
-                        let people = source.profiles.filter { searchTerm.isEmpty || $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) }
+                        let people = library.visibleProfiles(on: source).filter { searchTerm.isEmpty || $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) }
                         if showsMain || !people.isEmpty {
                             if library.hasOtherDevices {
                                 HStack(spacing: 5) {
@@ -325,6 +325,8 @@ private struct Sidebar: View {
                                 }
                                 #endif
                                 .contextMenu {
+                                    Button("Скрыть у меня", systemImage: "eye.slash") { Task { await library.setHidden(true, profile: profile, on: source) } }
+                                    Divider()
                                     Button("Удалить сотрудника…", role: .destructive) { requestDeletion(profile, from: source) }
                                         .disabled(deleting || !source.canManageOpenAI || source.homeUnreachable)
                                 }
@@ -353,6 +355,8 @@ private struct Sidebar: View {
             .scrollIndicators(.hidden)
 
             Spacer(minLength: 12)
+
+            HiddenEmployeesButton().padding(.horizontal, 22)
 
             Button { showSettings = true } label: {
                 HStack(spacing: 10) {
@@ -625,7 +629,7 @@ private struct ConversationView: View {
                     .frame(maxWidth: chatColumn, alignment: .leading).padding(.horizontal, chatInset)
                     .accessibilityIdentifier("telegramReplyDestination")
             }
-            Composer(draft: $draft, files: $pickedFiles, focused: $focused, contextID: draftKey, canSend: client.isConfigured && !client.connectionNeedsPairing && client.openAIAccount?.connected != false) {
+            Composer(draft: $draft, files: $pickedFiles, focused: $focused, contextID: draftKey, canSend: client.isConfigured && !client.connectionNeedsPairing && client.openAIAccount?.connected != false) { mode in
                 guard client.openAIAccount?.connected != false else { return }
                 let value = draft.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !value.isEmpty || !pickedFiles.isEmpty else { return }
@@ -633,7 +637,7 @@ private struct ConversationView: View {
                 pickedFiles = []
                 draft = ""
                 focused = true
-                Task { await client.sendMessage(value, files: files) }
+                Task { await client.sendMessage(value, files: files, mode: mode) }
             }
             .frame(maxWidth: chatColumn)
             .padding(.horizontal, chatInset)
@@ -1017,6 +1021,7 @@ private struct ThinkingBubble: View {
 }
 
 private struct Composer: View {
+    @EnvironmentObject private var client: HomeClient
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var textSize
     @Binding var draft: String
@@ -1024,7 +1029,8 @@ private struct Composer: View {
     @FocusState.Binding var focused: Bool
     let contextID: String
     let canSend: Bool
-    let send: () -> Void
+    let send: (ComposerSendMode) -> Void
+    @State private var sendMode: ComposerSendMode = .steer
     @State private var showFiles = false
     @State private var showPhotos = false
     @State private var photoSelection: [PhotosPickerItem] = []
@@ -1032,91 +1038,25 @@ private struct Composer: View {
     @State private var importTask: Task<Void, Never>?
     @State private var importID = UUID()
     @State private var importing = false
+    @StateObject private var voice = VoiceCapture()
+    @AppStorage("openstrudel.dictation") private var dictationProvider = "ramble"
+    @AppStorage("openstrudel.dictationLocale") private var dictationLocale = "ru-RU"
+    @State private var showDictation = false
+    @State private var dropTargeted = false
     private var hasContent: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if !files.isEmpty {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
-                        ForEach(files) { file in
-                            HStack(spacing: 8) {
-                                if file.mimeType.hasPrefix("image/"), let image = ChatMedia.thumbnail(file.data) {
-                                    Image(decorative: image, scale: 1).resizable().scaledToFill()
-                                        .frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 8))
-                                } else { Image(systemName: "doc").foregroundStyle(AppTheme.secondaryText).frame(width: 28) }
-                                Text(file.name).font(.caption).lineLimit(1)
-                                Button { files.removeAll { $0.id == file.id } } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(AppTheme.secondaryText).frame(width: controlTarget, height: controlTarget).contentShape(Rectangle()) }
-                                    .buttonStyle(.plain).accessibilityLabel("Убрать " + file.name)
-                            }.padding(5).background(.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
-                        }
-                    }.padding(.horizontal, 12).padding(.top, 9)
-                }.scrollIndicators(.hidden)
-            }
-            HStack(alignment: .bottom, spacing: 9) {
-            Menu {
-                Button("Фото", systemImage: "photo") { showPhotos = true }
-                Button("Прикрепить файл", systemImage: "paperclip") { showFiles = true }
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(AppTheme.secondaryText)
-                    .frame(width: controlTarget, height: controlTarget).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(AppTheme.secondaryText)
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .frame(width: controlTarget, height: controlTarget)
-            .accessibilityLabel("Прикрепить фото или файл")
-            .help(files.count >= AttachmentImport.countLimit ? "Можно прикрепить до шести файлов" : "Прикрепить фото или файл до 25 МБ")
-            .disabled(importing || files.count >= AttachmentImport.countLimit)
-
-            TextField("Сообщение", text: $draft, axis: .vertical)
-                .accessibilityLabel("Сообщение").accessibilityIdentifier("messageComposer")
-                .textFieldStyle(.plain)
-                .font(ChatTypography.body)
-                .lineLimit(1...(textSize.isAccessibilitySize ? 2 : 6))
-                .padding(.vertical, 8)
-                .frame(minHeight: controlTarget)
-                .focused($focused)
-                #if os(macOS)
-                .onKeyPress(.return, phases: .down) { press in
-                    guard press.modifiers.contains(.shift),
-                          let editor = NSApp.keyWindow?.firstResponder as? NSTextView else { return .ignored }
-                    editor.insertNewlineIgnoringFieldEditor(nil)
-                    return .handled
-                }
-                .help("Return отправляет сообщение. Shift+Return добавляет новую строку.")
-                #endif
-                .onSubmit { if canSend && hasContent && !importing { send() } }
-
-            if importing {
-                ProgressView().controlSize(.small).frame(width: controlTarget, height: controlTarget)
-                    .accessibilityLabel("Добавляем файлы")
-            } else {
-                Button(action: send) {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(colorScheme == .dark ? Color.black : Color.white)
-                        .frame(width: 30, height: 30)
-                        .background(colorScheme == .dark ? Color.white : Color.black, in: Circle())
-                        .frame(width: controlTarget, height: controlTarget)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .disabled(!canSend || !hasContent)
-                .opacity(canSend && hasContent ? 1 : 0.4)
-                .accessibilityLabel("Отправить")
-                .accessibilityIdentifier("sendMessage")
-                .help("Отправить сообщение (⌘Return)")
-                .keyboardShortcut(.return, modifiers: .command)
-            }
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 4)
-        }
+        composerContents
         .glassEffect(.regular, in: .rect(cornerRadius: 25))
+        .overlay { RoundedRectangle(cornerRadius: 25).stroke(AppTheme.accent, lineWidth: dropTargeted ? 2 : 0).allowsHitTesting(false) }
+        .onDrop(of: [.fileURL, .image], isTargeted: $dropTargeted) { providers in
+            guard voice.phase == .idle else { return false }
+            importProviders(providers); return true
+        }
+        #if os(macOS)
+        .onPasteCommand(of: [.fileURL, .image]) { importProviders($0) }
+        #endif
+        .sheet(isPresented: $showDictation) { DictationSetupView { voice.start(locale: dictationLocale) } }
         .photosPicker(isPresented: $showPhotos, selection: $photoSelection, maxSelectionCount: max(1, AttachmentImport.countLimit - files.count), matching: .images)
         .onChange(of: photoSelection) { _, selection in
             guard !selection.isEmpty else { return }
@@ -1150,9 +1090,166 @@ private struct Composer: View {
                 } catch { reportImportError(error, id: id, context: context) }
             }
         }
-        .onChange(of: contextID) { _, _ in cancelImport() }
-        .onDisappear { cancelImport() }
+        .onAppear { attachVoice() }
+        .onChange(of: contextID) { _, _ in cancelImport(); attachVoice() }
+        .onDisappear { cancelImport(); voice.detach() }
         .alert("Не удалось добавить файл", isPresented: Binding(get: { fileError != nil }, set: { if !$0 { fileError = nil } })) { Button("Понятно", role: .cancel) {} } message: { Text(fileError ?? "") }
+    }
+
+    private var composerContents: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if client.health?.turnControlVersion == 1 {
+                ForEach(client.messages.filter { $0.direction == "inbound" && $0.channel == "api" && $0.status == "queued" }) { queued in
+                    HStack(spacing: 10) {
+                        Image(systemName: "clock").foregroundStyle(.secondary)
+                        Text(queued.text.isEmpty ? "Вложение" : queued.text).font(.callout).lineLimit(2)
+                        Spacer()
+                        Button { Task { await client.cancelMessage(queued) } } label: { Image(systemName: "xmark") }
+                            .buttonStyle(.plain).accessibilityLabel("Убрать сообщение из очереди")
+                    }.padding(.horizontal, 16).padding(.top, 10)
+                }
+            }
+            if !files.isEmpty {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) {
+                        ForEach(files) { file in
+                            HStack(spacing: 8) {
+                                if file.mimeType.hasPrefix("image/"), let image = ChatMedia.thumbnail(file.data) {
+                                    Image(decorative: image, scale: 1).resizable().scaledToFill()
+                                        .frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 8))
+                                } else { Image(systemName: "doc").foregroundStyle(AppTheme.secondaryText).frame(width: 28) }
+                                Text(file.name).font(.caption).lineLimit(1)
+                                Button { files.removeAll { $0.id == file.id } } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(AppTheme.secondaryText).frame(width: controlTarget, height: controlTarget).contentShape(Rectangle()) }
+                                    .buttonStyle(.plain).accessibilityLabel("Убрать " + file.name)
+                            }.padding(5).background(.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
+                        }
+                    }.padding(.horizontal, 12).padding(.top, 9)
+                }.scrollIndicators(.hidden)
+            }
+            if voice.phase != .idle {
+                VoiceRecordingRow(voice: voice, locale: dictationLocale, canSend: canSend)
+            } else {
+                if !voice.detail.isEmpty { Text(voice.detail).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.top, 8) }
+                inputRow
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+            }
+        }
+    }
+
+    private var inputRow: some View {
+        HStack(alignment: .bottom, spacing: 9) {
+            Menu {
+                Button("Фото", systemImage: "photo") { showPhotos = true }
+                Button("Прикрепить файл", systemImage: "paperclip") { showFiles = true }
+                Divider()
+                Button("Голосовой ввод…", systemImage: "mic") { showDictation = true }
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(AppTheme.secondaryText)
+                    .frame(width: controlTarget, height: controlTarget).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(AppTheme.secondaryText)
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: controlTarget, height: controlTarget)
+            .accessibilityLabel("Прикрепить фото или файл")
+            .help(files.count >= AttachmentImport.countLimit ? "Можно прикрепить до шести файлов" : "Прикрепить фото или файл до 25 МБ")
+            .disabled(importing || files.count >= AttachmentImport.countLimit)
+
+            TextField("Сообщение", text: $draft, axis: .vertical)
+                .accessibilityLabel("Сообщение").accessibilityIdentifier("messageComposer")
+                .textFieldStyle(.plain)
+                .font(ChatTypography.body)
+                .lineLimit(1...(textSize.isAccessibilitySize ? 2 : 6))
+                .padding(.vertical, 8)
+                .frame(minHeight: controlTarget)
+                .focused($focused)
+                #if os(macOS)
+                .onKeyPress(.return, phases: .down) { press in
+                    guard press.modifiers.contains(.shift),
+                          let editor = NSApp.keyWindow?.firstResponder as? NSTextView else { return .ignored }
+                    editor.insertNewlineIgnoringFieldEditor(nil)
+                    return .handled
+                }
+                .help("Return отправляет сообщение. Shift+Return добавляет новую строку.")
+                #endif
+                .onSubmit { if canSend && hasContent && !importing { send(sendMode) } }
+
+            if client.isSending && client.health?.turnControlVersion == 1 {
+                Menu {
+                    Picker("Отправка во время ответа", selection: $sendMode) {
+                        ForEach(ComposerSendMode.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                } label: {
+                    Image(systemName: sendMode == .steer ? "arrow.turn.down.right" : "clock")
+                        .frame(width: controlTarget, height: controlTarget)
+                }.menuStyle(.borderlessButton).menuIndicator(.hidden)
+                    .accessibilityLabel(sendMode.title).help(sendMode.title)
+            }
+
+            if importing {
+                ProgressView().controlSize(.small).frame(width: controlTarget, height: controlTarget)
+                    .accessibilityLabel("Добавляем файлы")
+            } else {
+                Button {
+                    focused = true
+                    #if os(macOS)
+                    if dictationProvider == "ramble" { showDictation = true }
+                    else { voice.start(locale: dictationLocale) }
+                    #else
+                    voice.start(locale: dictationLocale)
+                    #endif
+                } label: { Image(systemName: "mic").frame(width: controlTarget, height: controlTarget) }
+                    .buttonStyle(.plain).accessibilityLabel("Голосовой ввод").accessibilityIdentifier("voiceInput")
+                sendButton
+            }
+        }
+    }
+
+    private var canStop: Bool { !hasContent && client.activeMessage != nil && client.health?.turnControlVersion == 1 }
+
+    private var sendButton: some View {
+        Button {
+            if !hasContent, let active = client.activeMessage, client.health?.turnControlVersion == 1 { Task { await client.cancelMessage(active) } }
+            else { send(sendMode) }
+        } label: {
+            Image(systemName: canStop ? "stop.fill" : "arrow.up")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(colorScheme == .dark ? Color.black : Color.white)
+                .frame(width: 30, height: 30)
+                .background(colorScheme == .dark ? Color.white : Color.black, in: Circle())
+                .frame(width: controlTarget, height: controlTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!canSend || (!hasContent && !canStop))
+        .opacity(canSend && (hasContent || canStop) ? 1 : 0.4)
+        .accessibilityLabel(canStop ? "Остановить ответ" : client.isSending ? sendMode.title : "Отправить")
+        .accessibilityIdentifier("sendMessage")
+        .help(canStop ? "Остановить текущий ответ" : "Отправить сообщение (⌘Return)")
+        .keyboardShortcut(hasContent ? KeyboardShortcut(.return, modifiers: .command) : nil)
+    }
+
+    private func attachVoice() {
+        voice.attach(context: contextID) { text, sendNow in
+            draft = draft.isEmpty ? text : draft + "\n" + text
+            focused = true
+            if sendNow && client.isConfigured && !client.connectionNeedsPairing && client.openAIAccount?.connected != false { send(sendMode) }
+        }
+    }
+
+    private func importProviders(_ providers: [NSItemProvider]) {
+        guard !providers.isEmpty, !importing, voice.phase == .idle else { return }
+        guard files.count + providers.count <= AttachmentImport.countLimit else { fileError = "Можно прикрепить до шести файлов."; return }
+        let (id, context) = beginImport()
+        importTask = Task {
+            defer { if importID == id { importing = false } }
+            do { completeImport(try await AttachmentImport.providers(providers), id: id, context: context) }
+            catch { reportImportError(error, id: id, context: context) }
+        }
     }
 
     private func beginImport() -> (UUID, String) {
@@ -1208,11 +1305,11 @@ private struct EmployeePicker: View {
                         Label("Переписки", systemImage: "clock.arrow.circlepath")
                     }.accessibilityIdentifier("openConversations")
                 }
-                if !showsMain && !library.visibleClients.contains(where: { source in source.profiles.contains { $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) } || source.telegramGroups.contains { $0.title.localizedCaseInsensitiveContains(searchTerm) } }) {
+                if !showsMain && !library.visibleClients.contains(where: { source in library.visibleProfiles(on: source).contains { $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) } || source.telegramGroups.contains { $0.title.localizedCaseInsensitiveContains(searchTerm) } }) {
                     SearchEmptyState(query: query) { query = "" }
                 }
                 ForEach(library.visibleClients) { source in
-                    let people = source.profiles.filter { searchTerm.isEmpty || $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) }
+                    let people = library.visibleProfiles(on: source).filter { searchTerm.isEmpty || $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) }
                     if showsMain || !people.isEmpty {
                     Section {
                         if showsMain {
@@ -1223,6 +1320,12 @@ private struct EmployeePicker: View {
                         ForEach(people) { profile in
                             EmployeePickerRow(name: profile.name, subtitle: profile.previewText.isEmpty ? profile.roleText : profile.previewText, selected: source === client && source.selectedProfileID == profile.id && source.selectedChatID == nil, appearance: profile.resolvedAppearance) {
                                 Task { await library.select(source, profile: profile.id); dismiss() }
+                            }
+                            .contextMenu {
+                                Button("Скрыть у меня", systemImage: "eye.slash") { Task { await library.setHidden(true, profile: profile, on: source) } }
+                            }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button("Скрыть", systemImage: "eye.slash") { Task { await library.setHidden(true, profile: profile, on: source) } }.tint(.gray)
                             }
                         }
                     } header: { if library.hasOtherDevices { Text(source.displayName) } }
@@ -1240,6 +1343,7 @@ private struct EmployeePicker: View {
                         }
                     }
                 }
+                HiddenEmployeesButton()
             }
             .scrollContentBackground(.hidden)
             .background(HomeBackground())
