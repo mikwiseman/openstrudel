@@ -264,10 +264,7 @@ private struct Sidebar: View {
                     Spacer(minLength: 0)
                 }
 
-                Button {
-                    closeSearch()
-                    library.beginEmployee()
-                } label: {
+                NewEmployeeControl(beforeCreate: closeSearch) {
                     Image(systemName: "plus")
                         .font(.system(size: 17, weight: .medium))
                         .frame(width: 36, height: 36)
@@ -275,8 +272,6 @@ private struct Sidebar: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(AppTheme.secondaryText)
-                .disabled(client.isCreating)
-                .accessibilityLabel("Новый сотрудник")
                 .help("Новый сотрудник (⌘N)")
             }
             .padding(.horizontal, 15)
@@ -460,7 +455,6 @@ private struct ConversationView: View {
     @Binding var showSettings: Bool
     @State private var draft = ""
     @State private var pickedFiles: [PickedFile] = []
-    @State private var drafts = UserDefaults.standard.dictionary(forKey: "openstrudel.drafts") as? [String: String] ?? [:]
     @State private var showEmployees = false
     @State private var showBotDetails = false
     @State private var followsLatest = true
@@ -642,18 +636,22 @@ private struct ConversationView: View {
             .frame(maxWidth: chatColumn)
             .padding(.horizontal, chatInset)
         }
-        .task { draft = drafts[draftKey] ?? ""; pickedFiles = library.fileDrafts[draftKey] ?? [] }
+        .task { draft = library.draft(for: draftKey); pickedFiles = library.fileDrafts[draftKey] ?? [] }
         .onChange(of: client.openAIAccount?.connected) { _, connected in
             if connected == false { focused = false }
         }
-        .onChange(of: pickedFiles) { _, value in library.fileDrafts[draftKey] = value }
+        .onChange(of: pickedFiles) { _, value in
+            guard library.active === client else { return }
+            library.fileDrafts[draftKey] = value
+        }
         .onChange(of: draft) { _, value in
-            drafts[draftKey] = value.isEmpty ? nil : value
-            UserDefaults.standard.set(drafts, forKey: "openstrudel.drafts")
+            guard library.active === client else { return }
+            library.saveDraft(value, for: draftKey)
         }
         .onChange(of: draftKey) { old, new in
-            drafts[old] = draft
-            draft = drafts[new] ?? ""
+            guard library.active === client else { return }
+            library.saveDraft(draft, for: old)
+            draft = library.draft(for: new)
             library.fileDrafts[old] = pickedFiles
             pickedFiles = library.fileDrafts[new] ?? []
             #if os(macOS)
@@ -826,6 +824,56 @@ private struct ConversationTitle: View {
     }
 }
 
+/// One destination chooser for the sidebar, the phone toolbar and the draft.
+/// It uses the existing paired connections; it never grants owner privileges.
+private struct EmployeeDestinationChoices: View {
+    @EnvironmentObject private var library: DeviceLibrary
+    let choose: (DeviceLibrary.EmployeeDestination) -> Void
+
+    var body: some View {
+        ForEach(library.employeeDestinations) { destination in
+            Button {
+                choose(destination)
+            } label: {
+                Text(destination.name + (destination.available ? "" : " · недоступно"))
+            }
+            .disabled(!destination.available)
+            .accessibilityIdentifier("employeeDestination-" + destination.id)
+        }
+    }
+}
+
+private struct NewEmployeeControl<Label: View>: View {
+    @EnvironmentObject private var library: DeviceLibrary
+    var beforeCreate: () -> Void = {}
+    @ViewBuilder let label: () -> Label
+
+    var body: some View {
+        Group {
+            if library.employeeDestinations.count > 1 {
+                Menu {
+                    Section("Создать сотрудника на") {
+                        EmployeeDestinationChoices { destination in
+                            beforeCreate()
+                            library.beginEmployee(on: destination.client, deviceID: destination.deviceID)
+                        }
+                    }
+                } label: { label() }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+            } else {
+                Button {
+                    beforeCreate()
+                    library.beginEmployee()
+                } label: { label() }
+                .disabled(library.employeeDestinations.first?.available != true)
+            }
+        }
+        .accessibilityLabel("Новый сотрудник")
+        .accessibilityIdentifier("newEmployee")
+    }
+}
+
 private struct EmptyChat: View {
     @EnvironmentObject private var library: DeviceLibrary
     @EnvironmentObject private var client: HomeClient
@@ -841,20 +889,29 @@ private struct EmptyChat: View {
                     .foregroundStyle(AppTheme.secondaryText)
                     .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: 360)
-                if library.visibleClients.count > 1 || client.devices.count > 1 {
+                if library.employeeDestinations.count > 1 {
                     Menu {
-                        ForEach(library.visibleClients) { source in
-                            if source.devices.count > 1 {
-                                ForEach(source.devices) { device in
-                                    Button(device.name) { library.chooseEmployeeDevice(source, deviceID: device.id) }.disabled(!device.online)
-                                }
-                            } else {
-                                Button(source.displayName) { library.chooseEmployeeDevice(source) }.disabled(source.homeUnreachable)
-                            }
+                        EmployeeDestinationChoices { destination in
+                            library.chooseEmployeeDevice(destination.client, deviceID: destination.deviceID)
                         }
                     } label: {
-                        Label(client.executionDeviceName, systemImage: "desktopcomputer").font(.callout)
-                    }.menuStyle(.borderlessButton).fixedSize().padding(.top, 8).accessibilityLabel("Где будет работать сотрудник")
+                        Label("Создать на: " + client.executionDeviceName, systemImage: "desktopcomputer")
+                            .font(.callout).fixedSize(horizontal: false, vertical: true)
+                            .frame(minHeight: controlTarget)
+                    }
+                    #if os(macOS)
+                    .menuStyle(.borderedButton)
+                    #else
+                    .buttonStyle(.bordered)
+                    #endif
+                    .padding(.top, 8)
+                    .accessibilityLabel("Где будет работать сотрудник")
+                    .accessibilityValue(client.executionDeviceName)
+                    .accessibilityIdentifier("employeeCreationDevice")
+                } else {
+                    Text("Будет работать на «" + client.executionDeviceName + "»")
+                        .font(.callout).foregroundStyle(AppTheme.secondaryText)
+                        .multilineTextAlignment(.center)
                 }
             } else if client.homeUnreachable || client.connectionNeedsPairing {
                 Text("История появится после подключения к устройству.")
@@ -1449,8 +1506,9 @@ private struct EmployeePicker: View {
                     HStack(spacing: 16) {
                         Button { showingSettings = true } label: { Image(systemName: "gearshape") }
                             .accessibilityLabel("Настройки").accessibilityIdentifier("teamSettings")
-                        Button { library.beginEmployee(); dismiss() } label: { Image(systemName: "plus") }
-                            .accessibilityLabel("Новый сотрудник")
+                        NewEmployeeControl(beforeCreate: { dismiss() }) {
+                            Image(systemName: "plus").frame(minWidth: controlTarget, minHeight: controlTarget)
+                        }
                     }
                 }
                 ToolbarItem(placement: .cancellationAction) { Button("Готово") { dismiss() } }

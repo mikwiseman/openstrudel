@@ -109,6 +109,7 @@
 		AAE26D83AD3BF442576953F8 /* DeviceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72EEEC73D033EF5BC24DC309 /* DeviceSettingsView.swift */; };
 		AEBC06A730AF2BB81D4BA10A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 709BE1A9B19D0468720417CF /* Assets.xcassets */; };
 		AF175297574377B16061325E /* MobileConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15270A8B1FADC16CBEE2AB86 /* MobileConnection.swift */; };
+		B57D15E58D05AC46BF315CE7 /* RemoteEmployeeCreationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73555041AB1BEE1B2C7226BA /* RemoteEmployeeCreationUITests.swift */; };
 		B5946DFBDF9D76520B6AFCB8 /* home-certificate.json in Resources */ = {isa = PBXBuildFile; fileRef = C4EA2EF5DDC9D052A757B498 /* home-certificate.json */; };
 		B94227E897A95830CFA06A03 /* MessageContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9FCFCC5FBCE6D6D6D612458 /* MessageContent.swift */; };
 		BA4C2329101E4E5D8C2EABD1 /* AppUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25538EEFA0F0470CDF4958CC /* AppUpdater.swift */; };
@@ -194,6 +195,7 @@
 		709BE1A9B19D0468720417CF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		718BE32FAB2706C4D8DB4C86 /* AttachmentImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentImport.swift; sourceTree = "<group>"; };
 		72EEEC73D033EF5BC24DC309 /* DeviceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceSettingsView.swift; sourceTree = "<group>"; };
+		73555041AB1BEE1B2C7226BA /* RemoteEmployeeCreationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteEmployeeCreationUITests.swift; sourceTree = "<group>"; };
 		75DCFF9D5E311EA2C0891A41 /* ExtensionSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionSetupView.swift; sourceTree = "<group>"; };
 		7C3D241925EF81E938247C15 /* ChatMedia.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMedia.swift; sourceTree = "<group>"; };
 		7ECDE7BFB212A84C42AEC2A3 /* DeviceLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceLibraryTests.swift; sourceTree = "<group>"; };
@@ -317,6 +319,7 @@
 				96A2DF3BB4A7D519FA68EA0F /* LiveCloudPairingUITests.swift */,
 				4DDBDB4821F4175BB293C35F /* MobilePairingUITests.swift */,
 				269C829F112500B5E34127F7 /* ReleaseScenariosUITests.swift */,
+				73555041AB1BEE1B2C7226BA /* RemoteEmployeeCreationUITests.swift */,
 				63F40AD948917E9AE1685058 /* StorePreviewUITests.swift */,
 			);
 			path = UITests;
@@ -694,6 +697,7 @@
 				09FDF891ED4D0479E78D39E0 /* LiveCloudPairingUITests.swift in Sources */,
 				5E17805965A351ABB7620CF2 /* MobilePairingUITests.swift in Sources */,
 				396D0DCDA42F07B7B6AD8CDA /* ReleaseScenariosUITests.swift in Sources */,
+				B57D15E58D05AC46BF315CE7 /* RemoteEmployeeCreationUITests.swift in Sources */,
 				63497E44A5FAA3B8E94C0FF6 /* StorePreviewUITests.swift in Sources */,
 				2D09788DED8F1C5EDE458BE2 /* iPhoneSmokeTests.swift in Sources */,
 			);
@@ -717,7 +721,7 @@
 				CODE_SIGN_ENTITLEMENTS = iOS.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				INFOPLIST_FILE = "iOS-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = OpenStrudel;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -758,7 +762,7 @@
 				CODE_SIGN_ENTITLEMENTS = iOS.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				INFOPLIST_FILE = "iOS-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = OpenStrudel;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -859,7 +863,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -957,7 +961,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

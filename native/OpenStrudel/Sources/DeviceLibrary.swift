@@ -26,6 +26,30 @@ final class DeviceLibrary: ObservableObject {
     var hasOtherDevices: Bool { visibleClients.count > 1 }
     var connectionListKey: String { visibleClients.map { $0.id + ":" + $0.normalizedBaseURL }.joined(separator: "|") }
 
+    struct EmployeeDestination: Identifiable {
+        let client: HomeClient
+        let deviceID: String?
+        let name: String
+        let available: Bool
+        var id: String { client.id + ":" + (deviceID ?? "self") }
+    }
+
+    // Creating an employee is available to every paired client. Account and
+    // device administration remain separate, owner-only operations.
+    var employeeDestinations: [EmployeeDestination] {
+        visibleClients.flatMap { source in
+            let available = source.isConfigured && !source.connectionNeedsPairing && !source.homeUnreachable && !source.isCreating
+            if source.devices.count > 1 {
+                return source.devices.map { device in
+                    EmployeeDestination(client: source, deviceID: device.id,
+                                        name: device.id == source.health?.nodeId ? source.displayName : device.name,
+                                        available: available && device.online)
+                }
+            }
+            return [EmployeeDestination(client: source, deviceID: nil, name: source.displayName, available: available)]
+        }
+    }
+
     init(defaults: UserDefaults = .standard, clients supplied: [HomeClient]? = nil) {
         self.defaults = defaults
         hiddenEmployees = defaults.dictionary(forKey: "openstrudel.hiddenEmployees") as? [String: [String]] ?? [:]
@@ -72,7 +96,8 @@ final class DeviceLibrary: ObservableObject {
 
     func beginEmployee(on client: HomeClient? = nil, deviceID: String? = nil) {
         guard !isErasing else { return }
-        let target = client ?? visibleClients.first(where: \.isLocalConnection) ?? active
+        let target = client ?? active
+        guard clients.contains(where: { $0 === target }), !target.isSignedOut, !target.connectionNeedsPairing else { return }
         select(target)
         target.beginEmployee()
         if let deviceID { target.draftDeviceID = deviceID }
@@ -91,11 +116,14 @@ final class DeviceLibrary: ObservableObject {
     }
 
     func chooseEmployeeDevice(_ target: HomeClient, deviceID: String? = nil) {
+        guard !isErasing, clients.contains(where: { $0 === target }), !target.isSignedOut, !target.connectionNeedsPairing else { return }
         let old = active
         guard old.isEmployeeDraft else { beginEmployee(on: target, deviceID: deviceID); return }
         if old === target { if let deviceID { target.draftDeviceID = deviceID }; return }
         let oldKey = HomeDrafts.key(home: old.baseURLString, profile: old.selectedProfileID, chat: nil)
+        let appearance = old.draftAppearance
         beginEmployee(on: target, deviceID: deviceID)
+        target.draftAppearance = appearance
         let newKey = HomeDrafts.key(home: target.baseURLString, profile: target.selectedProfileID, chat: nil)
         var drafts = defaults.dictionary(forKey: "openstrudel.drafts") as? [String: String] ?? [:]
         drafts[newKey] = drafts[oldKey]
@@ -104,6 +132,18 @@ final class DeviceLibrary: ObservableObject {
         fileDrafts[newKey] = fileDrafts[oldKey]
         fileDrafts.removeValue(forKey: oldKey)
         old.releaseEmployeeDraft()
+    }
+
+    func draft(for key: String) -> String {
+        (defaults.dictionary(forKey: "openstrudel.drafts") as? [String: String])?[key] ?? ""
+    }
+
+    func saveDraft(_ text: String, for key: String) {
+        // Merge into the current store: another window or a destination change
+        // may have moved a draft since this conversation was displayed.
+        var drafts = defaults.dictionary(forKey: "openstrudel.drafts") as? [String: String] ?? [:]
+        drafts[key] = text.isEmpty ? nil : text
+        defaults.set(drafts, forKey: "openstrudel.drafts")
     }
 
     func add(_ client: HomeClient, select shouldSelect: Bool = true) {
