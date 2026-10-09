@@ -256,9 +256,10 @@ memory and keyboard coverage is detailed in the linked earlier acceptance.
   Unchanged catalogs return 304 without publishing a SwiftUI update. Cached data
   survives connection failure. A public health response cannot mask revoked access.
 - In the isolated Mac app, «Тестовая команда» was removed while its runtime was
-  unavailable. The other device and its employees remained. The actual reported
-  saved connection was not present in Mini's production preferences; its screenshot
-  may be from another client or an earlier build.
+  unavailable. The other device and its employees remained. At final cleanup,
+  the same «Тестовая команда» section shown in the user's screenshot was found
+  in a still-running separate `OpenStrudel QA28` app, not in Mini's production
+  preferences. That old test app was quit; production 29 remains running.
 - Hide/Show was exercised through the Mac context menu and hidden-items view.
   Regression tests cover relaunch, another client, and identical employee IDs on
   different hosting devices. No host employee record is modified.
@@ -318,6 +319,9 @@ memory and keyboard coverage is detailed in the linked earlier acceptance.
   the native app returned to the main assistant by the next observation, 13 seconds
   later. The other five employees remained. This is not a measured five-second SLA.
 - None of the 37 deliberately deleted employees or their schedules was restored.
+- After deletion, the owner's bot DM checked the live employee catalog and
+  correctly reported five employees and no «Проверка релиза 29» (request
+  `1677252`, reply `1677253`), rather than repeating the old count from history.
 - The installed application accepted the public signed feed and reported it was
   up to date. Release receipts and private deployment data are in
   `.data/migration-parity-2026-10-09/release29-shipping/`.
