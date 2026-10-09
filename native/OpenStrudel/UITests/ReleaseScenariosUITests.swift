@@ -2,6 +2,125 @@ import XCTest
 
 /// Runs against tests/fixtures/release-scenarios.ts on a disposable simulator.
 final class ReleaseScenariosUITests: XCTestCase {
+    @MainActor func testVisibilityPersistsAndOfflineDeviceCanBeRemoved() async throws {
+        continueAfterFailure = false
+        guard let fixture = ProcessInfo.processInfo.environment["OPENSTRUDEL_RELEASE_FIXTURE"] else { throw XCTSkip("Start the isolated fixture.") }
+        let app = XCUIApplication()
+        app.launch()
+        let invite = try await read(fixture + "/invite")
+        app.open(try XCTUnwrap(URL(string: XCTUnwrap(invite["url"] as? String))))
+        let confirm = app.buttons["confirmMacPairing"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 15)); confirm.tap(); app.finishDevicePairing()
+        let consent = app.buttons["acceptAIDataSharing"]
+        if consent.waitForExistence(timeout: 5) { consent.tap() }
+        let initial = try await read(fixture + "/state")
+        let editorID = try XCTUnwrap(initial["editor"] as? String)
+        let profiles = try XCTUnwrap(initial["profiles"] as? [[String: Any]])
+        let editorName = try XCTUnwrap(profiles.first { $0["id"] as? String == editorID }?["name"] as? String)
+        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 15)); app.buttons["Чаты"].tap()
+        let editor = app.buttons["employee-" + editorID]
+        XCTAssertTrue(editor.waitForExistence(timeout: 10)); editor.press(forDuration: 1)
+        let hide = app.buttons["Скрыть у меня"]
+        XCTAssertTrue(hide.waitForExistence(timeout: 5)); hide.tap()
+        XCTAssertTrue(editor.waitForNonExistence(timeout: 10))
+        let hidden = app.buttons["hiddenEmployees"]
+        XCTAssertTrue(hidden.waitForExistence(timeout: 5))
+        capture("hidden-employee", app)
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 15)); app.buttons["Чаты"].tap()
+        XCTAssertFalse(editor.exists)
+        XCTAssertTrue(hidden.waitForExistence(timeout: 5)); hidden.tap()
+        let show = app.buttons["Показать «" + editorName + "»"]
+        XCTAssertTrue(show.waitForExistence(timeout: 5)); show.tap()
+        try done(app)
+        XCTAssertTrue(editor.waitForExistence(timeout: 10))
+        XCTAssertFalse(hidden.exists)
+        app.buttons["teamSettings"].tap()
+        XCTAssertTrue(app.buttons["signOutThisDevice"].waitForExistence(timeout: 10))
+        _ = try await read(fixture + "/offline?value=1")
+        let leave = app.buttons["signOutThisDevice"].firstMatch
+        try reveal(leave, in: app); leave.tap()
+        let remove = app.buttons["confirmDeviceSignOut"]
+        XCTAssertTrue(remove.waitForExistence(timeout: 5))
+        capture("remove-offline-device", app)
+        app.buttons["Отмена"].tap()
+        XCTAssertTrue(leave.waitForExistence(timeout: 5)); leave.tap()
+        XCTAssertTrue(remove.waitForExistence(timeout: 5)); remove.tap()
+        XCTAssertTrue(app.buttons["pasteInvitation"].waitForExistence(timeout: 20))
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.buttons["pasteInvitation"].waitForExistence(timeout: 10))
+        _ = try await read(fixture + "/offline?value=0")
+        let after = try await read(fixture + "/state")
+        XCTAssertEqual((after["profiles"] as? [[String: Any]])?.count, profiles.count)
+        XCTAssertEqual((after["telegram"] as? [[String: Any]])?.count, (initial["telegram"] as? [[String: Any]])?.count)
+        capture("offline-device-removed-server-preserved", app)
+    }
+
+    @MainActor func testQueueEditingOrderingAndCancellation() async throws {
+        continueAfterFailure = false
+        guard let fixture = ProcessInfo.processInfo.environment["OPENSTRUDEL_RELEASE_FIXTURE"] else { throw XCTSkip("Start the isolated fixture.") }
+        let app = XCUIApplication()
+        if let size = ProcessInfo.processInfo.environment["OPENSTRUDEL_QA_CONTENT_SIZE"] {
+            app.launchArguments = ["-UIPreferredContentSizeCategoryName", size]
+        }
+        XCUIDevice.shared.orientation = ProcessInfo.processInfo.environment["OPENSTRUDEL_QA_LANDSCAPE"] == "1" ? .landscapeLeft : .portrait
+        app.launch()
+        let invite = try await read(fixture + "/invite")
+        app.open(try XCTUnwrap(URL(string: XCTUnwrap(invite["url"] as? String))))
+        let confirm = app.buttons["confirmMacPairing"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 15)); confirm.tap(); app.finishDevicePairing()
+        let consent = app.buttons["acceptAIDataSharing"]
+        if consent.waitForExistence(timeout: 5) { consent.tap() }
+        let queue = try await read(fixture + "/queue-fixture")
+        let initial = try await read(fixture + "/state")
+        let profiles = try XCTUnwrap(initial["profiles"] as? [[String: Any]])
+        let editorID = try XCTUnwrap(profiles.first { $0["name"] as? String == "Редактор" }?["id"] as? String)
+        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 15)); app.buttons["Чаты"].tap()
+        let editor = app.buttons["employee-" + editorID]
+        try reveal(editor, in: app)
+        XCTAssertTrue(editor.waitForExistence(timeout: 10)); editor.tap()
+        let first = try XCTUnwrap(queue["first"] as? String), second = try XCTUnwrap(queue["second"] as? String)
+        let firstRow = app.buttons["editQueuedMessage-" + first]
+        let secondRow = app.buttons["editQueuedMessage-" + second]
+        XCTAssertTrue(firstRow.waitForExistence(timeout: 15))
+        XCTAssertTrue(secondRow.exists)
+        if ProcessInfo.processInfo.environment["OPENSTRUDEL_QA_CONTENT_SIZE"]?.contains("Accessibility") == true {
+            let input = app.descendants(matching: .any).matching(identifier: "messageComposer").firstMatch
+            XCTAssertGreaterThan(input.frame.width, app.windows.firstMatch.frame.width * 0.7,
+                                 "Large text needs a full-width field above the controls.")
+        }
+        firstRow.tap()
+        let text = app.textViews["queuedMessageText"]
+        XCTAssertTrue(text.waitForExistence(timeout: 5)); text.tap()
+        text.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Первый черновик".count) + "Исправленный черновик")
+        app.buttons["Сохранить"].tap()
+        XCTAssertTrue(firstRow.waitForExistence(timeout: 10))
+        var state = try await read(fixture + "/queue-state")
+        var messages = try XCTUnwrap(state["messages"] as? [[String: Any]])
+        XCTAssertEqual(messages.first?["text"] as? String, "Исправленный черновик")
+        let promote = app.buttons.matching(identifier: "В начало очереди").allElementsBoundByIndex.first(where: \.isEnabled)
+        try XCTUnwrap(promote).tap()
+        let reordered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in secondRow.frame.minY < firstRow.frame.minY }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [reordered], timeout: 10), .completed)
+        capture("queue-edited-and-reordered", app)
+        var findings: [String] = []
+        try app.performAccessibilityAudit(for: [.hitRegion, .sufficientElementDescription]) { issue in
+            findings.append((issue.element?.label ?? "") + ": " + issue.detailedDescription)
+            return true
+        }
+        XCTAssertTrue(findings.isEmpty, findings.joined(separator: "\n"))
+        app.buttons.matching(identifier: "Убрать сообщение из очереди").firstMatch.tap()
+        let removed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: secondRow)
+        XCTAssertEqual(XCTWaiter.wait(for: [removed], timeout: 10), .completed)
+        state = try await read(fixture + "/queue-state"); messages = try XCTUnwrap(state["messages"] as? [[String: Any]])
+        XCTAssertEqual(messages.map { $0["id"] as? String }, [first])
+        _ = try await read(fixture + "/release-queue")
+        let drained = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: firstRow)
+        XCTAssertEqual(XCTWaiter.wait(for: [drained], timeout: 15), .completed)
+        XCTAssertTrue(app.staticTexts["Принято: Исправленный черновик"].waitForExistence(timeout: 10))
+        capture("queue-delivered-once", app)
+    }
+
     @MainActor func testTelegramGroups() async throws {
         continueAfterFailure = false
         guard let fixture = ProcessInfo.processInfo.environment["OPENSTRUDEL_RELEASE_FIXTURE"] else { throw XCTSkip("Start the isolated fixture.") }
@@ -18,7 +137,9 @@ final class ReleaseScenariosUITests: XCTestCase {
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 5) { consent.tap() }
         XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 15)); app.buttons["Чаты"].tap()
-        XCTAssertTrue(app.buttons["Редактор"].waitForExistence(timeout: 10)); app.buttons["Редактор"].tap()
+        let state = try await read(fixture + "/state")
+        let editor = app.buttons["employee-" + (try XCTUnwrap(state["editor"] as? String))]
+        XCTAssertTrue(editor.waitForExistence(timeout: 10)); editor.tap()
         let details = app.buttons["Настройки сотрудника"]
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: details)], timeout: 10), .completed)
         details.tap()
@@ -144,9 +265,9 @@ final class ReleaseScenariosUITests: XCTestCase {
         try done(app)
 
         app.buttons["Чаты"].tap()
-        let editor = app.buttons["Редактор"]
-        XCTAssertTrue(editor.waitForExistence(timeout: 10))
+        let editor = app.buttons["employee-" + (try XCTUnwrap(initial["editor"] as? String))]
         try reveal(editor, in: app)
+        XCTAssertTrue(editor.waitForExistence(timeout: 10))
         capture("employee-list", app)
         // A row must work in the blank area as well as on its text.
         editor.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)).tap()
@@ -286,7 +407,7 @@ final class ReleaseScenariosUITests: XCTestCase {
             + app.collectionViews.allElementsBoundByIndex + app.tables.allElementsBoundByIndex
         let scroller = scrollable.last(where: \.isHittable) ?? app
         for _ in 0..<16 where !element.isHittable {
-            if element.frame.midY < scroller.frame.midY { scroller.swipeDown() }
+            if element.exists && element.frame.midY < scroller.frame.midY { scroller.swipeDown() }
             else { scroller.swipeUp() }
         }
         guard element.isHittable else {

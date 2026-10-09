@@ -197,6 +197,7 @@ struct MessageContent: View, Equatable {
                 Text(block.marker).foregroundStyle(AppTheme.secondaryText).monospacedDigit().frame(minWidth: 14, alignment: .trailing)
                 Text(styled(block.content)).frame(maxWidth: .infinity, alignment: .leading)
             }
+            .accessibilityElement(children: .combine)
         case "quote":
             Text(styled(block.content))
                 .foregroundStyle(AppTheme.secondaryText)
@@ -216,6 +217,7 @@ struct MessageContent: View, Equatable {
             }
             .padding(12)
             .background(.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+            .accessibilityElement(children: .combine)
         case "table":
             if let table = block.table { MarkdownTableView(table: table) }
         case "image":

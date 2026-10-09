@@ -375,6 +375,16 @@ export class Store {
     return rows.reverse().map((row) => this.mapMessage(row));
   }
 
+  /** Advance consumed context monotonically, even when waiting input is reordered. */
+  advanceContextCheckpoint(conversationId: string, messageId: string) {
+    const key = "context.checkpoint." + conversationId;
+    // Reordering waiting input must not make already consumed group context new again.
+    const newer = this.db.prepare(`SELECT 1 FROM messages WHERE id=? AND conversation_id=?
+      AND rowid > COALESCE((SELECT rowid FROM messages WHERE id=? AND conversation_id=?),0)`)
+      .get(messageId, conversationId, this.getSetting(key), conversationId);
+    if (newer) this.setSetting(key, messageId);
+  }
+
   /** Bounded context before this request, never later queued input. */
   contextMessages(conversationId: string, beforeId: string, pendingOnly: boolean): Message[] {
     const checkpoint = pendingOnly ? this.getSetting("context.checkpoint." + conversationId) : null;

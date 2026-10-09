@@ -276,7 +276,7 @@ export class HttpApi {
         }
       }
       if (request.method === "GET" && path === "/health") {
-        this.send(response, 200, { ok: true, service: "openstrudel", platform: process.platform, arch: process.arch, time: new Date().toISOString(), telegram: this.telegram.status(), turnControlVersion: 1, agentArchiveVersion: 1, agentArchiveEncryption: true, agentAppearanceVersion: 1, deviceLogoutVersion: 1, homeProtocol: 1, homeId: this.home.state.id, primaryId: this.home.state.primaryId, nodeId: this.home.state.nodeId, hostingOrigin: hostingOrigin(process.env.OPENSTRUDEL_HOSTING_ORIGIN) });
+        this.send(response, 200, { ok: true, service: "openstrudel", platform: process.platform, arch: process.arch, time: new Date().toISOString(), telegram: this.telegram.status(), turnControlVersion: 1, queueControlVersion: 1, agentArchiveVersion: 1, agentArchiveEncryption: true, agentAppearanceVersion: 1, deviceLogoutVersion: 1, homeProtocol: 1, homeId: this.home.state.id, primaryId: this.home.state.primaryId, nodeId: this.home.state.nodeId, hostingOrigin: hostingOrigin(process.env.OPENSTRUDEL_HOSTING_ORIGIN) });
         return;
       }
       if (request.method === "GET" && path === "/v1/integrations") {
@@ -319,7 +319,7 @@ export class HttpApi {
       }
       if (request.method === "GET" && path === "/v1/conversation") {
         const conversation = this.store.primaryConversation();
-        this.send(response, 200, { conversation, ...(url.searchParams.get("page") === "true" ? this.store.messagePage(conversation.id, url.searchParams) : { messages: this.store.listMessages(conversation.id, messageLimit) }), interactions: this.messages.interactions.list(conversation.id) });
+        this.send(response, 200, { conversation, ...(url.searchParams.get("page") === "true" ? this.store.messagePage(conversation.id, url.searchParams) : { messages: this.store.listMessages(conversation.id, messageLimit) }), interactions: this.messages.interactions.list(conversation.id), queuedMessages: this.messages.queuedMessages(conversation.id) });
         return;
       }
       const agentConversationMatch = path.match(/^\/v1\/agents\/([^/]+)\/conversation$/);
@@ -330,7 +330,7 @@ export class HttpApi {
           return;
         }
         const conversation = this.store.profileConversation(profile.id);
-        this.send(response, 200, { conversation, ...(url.searchParams.get("page") === "true" ? this.store.messagePage(conversation.id, url.searchParams) : { messages: this.store.listMessages(conversation.id, messageLimit) }), interactions: this.messages.interactions.list(conversation.id) });
+        this.send(response, 200, { conversation, ...(url.searchParams.get("page") === "true" ? this.store.messagePage(conversation.id, url.searchParams) : { messages: this.store.listMessages(conversation.id, messageLimit) }), interactions: this.messages.interactions.list(conversation.id), queuedMessages: this.messages.queuedMessages(conversation.id) });
         return;
       }
       if (request.method === "GET" && path === "/v1/conversations") {
@@ -455,7 +455,7 @@ export class HttpApi {
       if(request.method==="GET" && singleConversation) {
         const conversation=this.store.getConversation(singleConversation[1]!);
         if(!conversation) throw new Error("Чат не найден");
-        this.send(response,200,{conversation,...(url.searchParams.get("page") === "true" ? this.store.messagePage(conversation.id, url.searchParams) : { messages: this.store.listMessages(conversation.id, messageLimit) }),interactions:this.messages.interactions.list(conversation.id)});return;
+        this.send(response,200,{conversation,...(url.searchParams.get("page") === "true" ? this.store.messagePage(conversation.id, url.searchParams) : { messages: this.store.listMessages(conversation.id, messageLimit) }),interactions:this.messages.interactions.list(conversation.id),queuedMessages:this.messages.queuedMessages(conversation.id)});return;
       }
       if (request.method === "DELETE" && path === "/v1/integrations/telegram") {
         this.send(response, 200, { telegram: this.telegram.disconnect() });
@@ -529,6 +529,20 @@ export class HttpApi {
         });
         this.send(response, url.searchParams.get("async") === "true" ? 202 : 200, url.searchParams.get("async") === "true" ? submission.receipt : await submission.completion);
         return;
+      }
+      const queuedMessage = path.match(/^\/v1\/conversations\/([^/]+)\/messages\/([^/]+)\/edit$/);
+      if (request.method === "POST" && queuedMessage) {
+        const body = await this.body(request);
+        if (typeof body.text !== "string" || typeof body.expectedText !== "string") throw new HomeError("Проверьте текст сообщения.");
+        this.messages.editQueuedMessage(queuedMessage[1]!, queuedMessage[2]!, body.text, body.expectedText);
+        this.send(response, 200, { queuedMessages: this.messages.queuedMessages(queuedMessage[1]!) }); return;
+      }
+      const queueOrder = path.match(/^\/v1\/conversations\/([^/]+)\/queue$/);
+      if (request.method === "POST" && queueOrder) {
+        const body = await this.body(request);
+        if (!Array.isArray(body.messageIds) || !Array.isArray(body.expectedMessageIds) || [...body.messageIds, ...body.expectedMessageIds].some(id => typeof id !== "string")) throw new HomeError("Проверьте сообщения в очереди.");
+        this.messages.reorderQueuedMessages(queueOrder[1]!, body.messageIds, body.expectedMessageIds);
+        this.send(response, 200, { queuedMessages: this.messages.queuedMessages(queueOrder[1]!) }); return;
       }
       const cancelMessage = path.match(/^\/v1\/conversations\/([^/]+)\/messages\/([^/]+)\/cancel$/);
       if (request.method === "POST" && cancelMessage) {

@@ -47,6 +47,7 @@ struct HomeHealth: Decodable {
     var agentAppearanceVersion: Int? = nil
     var deviceLogoutVersion: Int? = nil
     var turnControlVersion: Int? = nil
+    var queueControlVersion: Int? = nil
 }
 
 struct HomeConversation: Decodable {
@@ -71,7 +72,10 @@ struct ConversationEnvelope: Decodable {
     let interactions: [ChatInteraction]?
     var pagination: MessagePagination? = nil
     var updates: [HomeMessage]? = nil
+    var queuedMessages: [HomeMessage]? = nil
 }
+
+struct MessageQueueEnvelope: Decodable { let queuedMessages: [HomeMessage] }
 
 struct TelegramStatus: Codable {
     let configured: Bool
