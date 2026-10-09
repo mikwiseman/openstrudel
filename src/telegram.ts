@@ -347,9 +347,7 @@ export class TelegramAdapter {
     const replyAuthor = message.reply_to_message?.from;
     const username = this.bot?.username ?? this.store.getSetting("telegram.bot_username");
     const replyToBot = Boolean(replyAuthor && (replyAuthor.id === this.bot?.id || replyAuthor.is_bot && username && replyAuthor.username?.toLowerCase() === username.toLowerCase()));
-    if (Number(chatId) < 0 && binding?.replies === "mentions" && !replyToBot && !(username && new RegExp(`@${username}(?![\\w])`, "i").test(text))) {
-      this.store.markTelegramUpdate(update.update_id); return;
-    }
+    const contextOnly = Number(chatId) < 0 && binding?.replies === "mentions" && !replyToBot && !(username && new RegExp(`@${username}(?![\\w])`, "i").test(text));
     const replyKey = chatId + ":" + message.reply_to_message?.message_id;
     const cardId = this.questionMessages.get(replyKey);
     const card = cardId ? this.messages.interactions.get(cardId) : undefined;
@@ -382,12 +380,21 @@ export class TelegramAdapter {
     try {
     const input = await prepared;text=input.text;
     const replyToAssistant = Boolean(replyConversation || replyAuthor && (replyAuthor.id === this.bot?.id || replyAuthor.is_bot && replyAuthor.username?.toLowerCase() === (this.bot?.username ?? this.store.getSetting("telegram.bot_username"))?.toLowerCase()));
-    const result: MessageResult = await this.messages.handle({ channel: "telegram", conversationId: conversation.id, text, uploads:input.uploads, replyToAssistant, telegramSenderId:message.from ? String(message.from.id) : undefined, author:[message.from?.first_name,message.from?.last_name].filter(Boolean).join(" ") || undefined, externalId: chatId + ":" + String(message.message_id), externalChatId: chatId, title: message.chat.title ?? "Telegram " + chatId });
+    const submission = { channel: "telegram" as const, conversationId: conversation.id, text, uploads:input.uploads, replyToAssistant, telegramSenderId:message.from ? String(message.from.id) : undefined, author:[message.from?.first_name,message.from?.last_name].filter(Boolean).join(" ") || undefined, externalId: chatId + ":" + String(message.message_id), externalChatId: chatId, title: message.chat.title ?? "Telegram " + chatId };
+    if (contextOnly) {
+      await this.messages.submit({ ...submission, contextOnly:true });
+      this.store.markTelegramUpdate(update.update_id); return;
+    }
+    const result: MessageResult = await this.messages.handle(submission);
     this.store.deleteSetting(accountNoticeKey);
     const currentBinding = this.store.getTelegramChat(chatId);
     try { if (currentBinding && currentBinding.profileId === binding?.profileId && (Number(chatId) >= 0 || result.text.trim() !== "NO_REPLY")) { await this.sendMessage(message.chat.id, result.text,`reply:${result.messageId}`); await this.sendFiles(message.chat.id,result.attachments,`reply:${result.messageId}`); } }
     catch { this.lastError="Ответ сохранён в приложении; доставку в Telegram нужно проверить"; }
     } catch (error) {
+      if (contextOnly) {
+        this.lastError = "Не удалось сохранить часть контекста группы. Отправьте нужное вложение в ответ на сообщение бота.";
+        this.store.markTelegramUpdate(update.update_id); return;
+      }
       if (error instanceof AccountUnavailableError && Number(chatId) < 0) {
         // A group may send an album or carry on talking during an account
         // outage. Keep each failed input in Home, but announce one incident

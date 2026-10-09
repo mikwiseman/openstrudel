@@ -107,6 +107,8 @@ export interface MessageInput {
   /** Trusted Telegram delivery metadata, not accepted from the public message API. */
   replyToAssistant?: boolean;
   telegramSenderId?: string;
+  /** Trusted adapter input: preserve group context without invoking the model. */
+  contextOnly?: boolean;
   /** Background runs cannot wait forever for an interactive approval. */
   scheduled?: boolean;
   attachments?: string[];

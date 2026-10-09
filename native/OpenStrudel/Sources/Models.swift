@@ -281,7 +281,7 @@ struct ProfilesEnvelope: Decodable {
 struct ImportedConversation: Decodable, Identifiable, Equatable {
     let id: String
     let title: String
-    let profileId: String
+    let profileId: String?
 }
 
 struct ProfileResponse: Decodable {

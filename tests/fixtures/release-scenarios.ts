@@ -1,6 +1,6 @@
 /** Disposable UI acceptance server. No real accounts, messages, or schedules. */
 import { createServer } from "node:http";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { OpenStrudelRuntime } from "../../src/runtime.js";
@@ -61,6 +61,7 @@ runtime.account.cancel = async () => { loginCanceled++; return { loginId: "qa-lo
 const api = runtime.api as unknown as { handle: (...args: any[]) => Promise<void> };
 const originalHandle = api.handle.bind(runtime.api);
 api.handle = async (req, res, ...rest) => {
+  if (req.method !== "GET") await appendFile(output + ".requests.jsonl", JSON.stringify({ at: new Date().toISOString(), method: req.method, path: new URL(req.url, "http://127.0.0.1").pathname }) + "\n", { mode: 0o600 });
   if (offline) { res.writeHead(503).end('{"error":"Тестовое отключение"}'); return; }
   await originalHandle(req, res, ...rest);
 };
@@ -82,6 +83,10 @@ if (process.env.OPENSTRUDEL_QA_LONG_HISTORY === "1") {
   })));
 }
 runtime.store.linkTelegramChat({ chatId: "42", title: "Личный чат", allowedSenders: ["42"] });
+const direct = runtime.store.getOrCreateConversation({channel:"telegram",externalId:"42",title:"Личный чат"});
+runtime.store.addMessage({conversationId:direct.id,channel:"telegram",direction:"outbound",text:"Пример личной переписки"});
+const archive = runtime.store.getOrCreateConversation({channel:"telegram",externalId:"import::qa-archive",title:"Старые заметки"});
+runtime.store.importHistory(archive.id,[{sourceId:"qa-archive",date:"2026-10-01T08:00:00Z",author:"Вы",direction:"inbound",text:"Сохранённая заметка"}]);
 runtime.store.linkTelegramChat({ chatId: "-100", title: "Рабочая группа", allowedSenders: ["42"] });
 runtime.store.connectTelegramGroup("-100");
 runtime.telegram.status = () => ({ configured: true, running: true, botUsername: "openstrudel_preview_bot", linkedChats: ["42", "-100"], chats: runtime.store.telegramChats().filter(chat => privateTelegramLinked || chat.chatId.startsWith("-")), lastError: null });

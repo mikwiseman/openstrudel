@@ -197,6 +197,7 @@ private struct Sidebar: View {
     @EnvironmentObject private var client: HomeClient
     @Binding var showSettings: Bool
     @State private var searching = false
+    @State private var showHistory = false
     @State private var query = ""
     private var searchTerm: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
     @FocusState private var searchFocused: Bool
@@ -252,6 +253,15 @@ private struct Sidebar: View {
                     .keyboardShortcut("f", modifiers: .command)
 
                     Spacer()
+                    Button { showHistory = true } label: {
+                        Label("Переписки", systemImage: "clock.arrow.circlepath")
+                            .font(.callout).frame(minHeight: 36)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(AppTheme.secondaryText)
+                    .accessibilityIdentifier("openConversations")
+                    .help("История разговоров с ботом")
+                    Spacer(minLength: 0)
                 }
 
                 Button {
@@ -300,7 +310,7 @@ private struct Sidebar: View {
                             }
                             ForEach(people) { profile in
                                 SidebarRow(name: profile.name, subtitle: profile.previewText.isEmpty ? profile.roleText : profile.previewText,
-                                           selected: source === client && source.selectedProfileID == profile.id && source.activeTelegramGroup == nil, appearance: profile.resolvedAppearance) {
+                                           selected: source === client && source.selectedProfileID == profile.id && source.selectedChatID == nil, appearance: profile.resolvedAppearance) {
                                     closeSearch()
                                     focusedEmployee = source.id + profile.id
                                     Task { await library.select(source, profile: profile.id) }
@@ -320,9 +330,9 @@ private struct Sidebar: View {
                                 }
                             }
                         }
-                        let groups = source.telegramGroups.filter { searchTerm.isEmpty || $0.title.localizedCaseInsensitiveContains(searchTerm) }
+                        let groups = source.telegramGroups.filter { !searchTerm.isEmpty && $0.title.localizedCaseInsensitiveContains(searchTerm) }
                         if !groups.isEmpty {
-                            Text(library.hasOtherDevices ? "Telegram · " + source.displayName : "Telegram")
+                            Text(library.hasOtherDevices ? "Переписки · " + source.displayName : "Переписки")
                                 .font(.caption.weight(.medium)).foregroundStyle(AppTheme.secondaryText)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 12).padding(.top, 14).padding(.bottom, 5)
@@ -367,6 +377,7 @@ private struct Sidebar: View {
             .padding(.horizontal, 12)
             .padding(.bottom, 13)
         }
+        .sheet(isPresented: $showHistory) { ConversationBrowser(isPresented: $showHistory) }
         .alert("Удалить «\(deletion?.name ?? "сотрудника")»?", isPresented: $confirmDeletion) {
             Button("Отмена", role: .cancel) {}
             Button("Удалить", role: .destructive) {
@@ -608,7 +619,7 @@ private struct ConversationView: View {
                 }
             }
 
-            if client.activeTelegramGroup != nil {
+            if client.activeTelegramChat != nil {
                 Text("Здесь можно обсудить переписку с помощником. Ответ останется в OpenStrudel.")
                     .font(.caption).foregroundStyle(AppTheme.secondaryText)
                     .frame(maxWidth: chatColumn, alignment: .leading).padding(.horizontal, chatInset)
@@ -671,10 +682,10 @@ private struct ConversationView: View {
         }
         #endif
         .sheet(isPresented: $showEmployees) {
-            EmployeePicker().environmentObject(client)
+            EmployeePicker(isPresented: $showEmployees).environmentObject(client)
         }
         .sheet(isPresented: $showBotDetails) {
-            if client.activeTelegramGroup != nil { TelegramChatsView() }
+            if client.activeTelegramChat != nil { TelegramChatsView() }
             else if let profile = client.activeProfile {
                 BotDetailsView(profile: profile).environmentObject(client)
             }
@@ -768,21 +779,12 @@ private struct ConversationHeader: View {
 private struct ConversationTitle: View {
     @EnvironmentObject private var client: HomeClient
     let openEmployee: () -> Void
-    private var chats: [TelegramChat] {
-        (client.telegram?.chats ?? []).filter { !$0.isGroup && $0.profileId == client.selectedProfileID && $0.conversationId != nil }
-    }
-    private var importedChats: [ImportedConversation] { client.importedConversations.filter { $0.profileId == client.selectedProfileID } }
-    private var chatName: String {
-        if let chat = chats.first(where: { $0.conversationId == client.selectedChatID }) { return "Telegram · " + chat.title }
-        if let chat = importedChats.first(where: { $0.id == client.selectedChatID }) { return "Архив · " + chat.title }
-        return "В приложении"
-    }
     var body: some View {
         VStack(spacing: 2) {
-            if let group = client.activeTelegramGroup {
+            if let group = client.activeTelegramChat {
                 Button(action: openEmployee) {
                     HStack(spacing: 8) {
-                        Image(systemName: "person.2").foregroundStyle(AppTheme.accent)
+                        Image(systemName: group.isGroup ? "person.2" : "bubble.left").foregroundStyle(AppTheme.accent)
                         VStack(spacing: 2) {
                             Text(group.title).font(.headline).lineLimit(1)
                             Text(group.enabled == false ? "Telegram · бот на паузе" : "Telegram")
@@ -806,35 +808,11 @@ private struct ConversationTitle: View {
             } else {
                 HStack(spacing: 7) { identity }.frame(minHeight: controlTarget)
             }
-                if client.activeTelegramGroup == nil && (!chats.isEmpty || !importedChats.isEmpty) {
-                    Menu {
-                        Button { Task { await client.selectChat(nil) } } label: {
-                            Label("В приложении", systemImage: client.selectedChatID == nil ? "checkmark" : "bubble.left")
-                        }
-                        ForEach(chats) { chat in
-                            Button { Task { await client.selectChat(chat.conversationId) } } label: {
-                                Label("Telegram · " + chat.title, systemImage: client.selectedChatID == chat.conversationId ? "checkmark" : "paperplane")
-                            }
-                        }
-                        if !importedChats.isEmpty {
-                            Section("Из экспорта") {
-                                ForEach(importedChats) { chat in
-                                    Button { Task { await client.selectChat(chat.id) } } label: {
-                                        if client.selectedChatID == chat.id { Label(chat.title, systemImage: "checkmark") }
-                                        else { Text(chat.title) }
-                                    }
-                                }
-                            }
-                        }
-                    } label: { Label(chatName, systemImage: client.selectedChatID == nil ? "bubble.left" : importedChats.contains(where: { $0.id == client.selectedChatID }) ? "archivebox" : "paperplane").lineLimit(1) }
-                        .font(.caption).foregroundStyle(AppTheme.secondaryText)
-                        .menuStyle(.borderlessButton)
-                        .frame(maxWidth: 260)
-                        .accessibilityLabel("Выбрать переписку")
-                        .accessibilityValue(client.activeAgentName + ", " + chatName)
-                        .accessibilityIdentifier("chooseConversation")
-                        .help("В приложении — разговор с вами. В Telegram — переписка с участниками группы.")
-                }
+            if let archive = client.importedConversations.first(where: { $0.id == client.selectedChatID }) {
+                Label("Архив · " + archive.title, systemImage: "archivebox")
+                    .labelStyle(.titleAndIcon)
+                    .font(.caption).foregroundStyle(AppTheme.secondaryText).lineLimit(1)
+            }
         }.frame(minHeight: controlTarget).contentShape(Rectangle())
     }
 
@@ -1214,15 +1192,22 @@ private struct EmployeePicker: View {
     @EnvironmentObject private var library: DeviceLibrary
     @EnvironmentObject private var client: HomeClient
     @Environment(\.dismiss) private var dismiss
+    @Binding var isPresented: Bool
 
     @State private var query = ""
     @State private var showingSettings = false
+    @State private var showingHistory = false
     private var searchTerm: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var showsMain: Bool { searchTerm.isEmpty || "OpenStrudel".localizedCaseInsensitiveContains(searchTerm) }
 
     var body: some View {
         NavigationStack {
             List {
+                if searchTerm.isEmpty {
+                    Button { showingHistory = true } label: {
+                        Label("Переписки", systemImage: "clock.arrow.circlepath")
+                    }.accessibilityIdentifier("openConversations")
+                }
                 if !showsMain && !library.visibleClients.contains(where: { source in source.profiles.contains { $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) } || source.telegramGroups.contains { $0.title.localizedCaseInsensitiveContains(searchTerm) } }) {
                     SearchEmptyState(query: query) { query = "" }
                 }
@@ -1236,15 +1221,15 @@ private struct EmployeePicker: View {
                             }
                         }
                         ForEach(people) { profile in
-                            EmployeePickerRow(name: profile.name, subtitle: profile.previewText.isEmpty ? profile.roleText : profile.previewText, selected: source === client && source.selectedProfileID == profile.id && source.activeTelegramGroup == nil, appearance: profile.resolvedAppearance) {
+                            EmployeePickerRow(name: profile.name, subtitle: profile.previewText.isEmpty ? profile.roleText : profile.previewText, selected: source === client && source.selectedProfileID == profile.id && source.selectedChatID == nil, appearance: profile.resolvedAppearance) {
                                 Task { await library.select(source, profile: profile.id); dismiss() }
                             }
                         }
                     } header: { if library.hasOtherDevices { Text(source.displayName) } }
                     }
-                    let groups = source.telegramGroups.filter { searchTerm.isEmpty || $0.title.localizedCaseInsensitiveContains(searchTerm) }
+                    let groups = source.telegramGroups.filter { !searchTerm.isEmpty && $0.title.localizedCaseInsensitiveContains(searchTerm) }
                     if !groups.isEmpty {
-                        Section(library.hasOtherDevices ? "Telegram · " + source.displayName : "Telegram") {
+                        Section(library.hasOtherDevices ? "Переписки · " + source.displayName : "Переписки") {
                             ForEach(groups) { group in
                                 EmployeePickerRow(name: group.title, subtitle: group.enabled == false ? "Бот на паузе" : "Группа в Telegram",
                                                   selected: source === client && source.selectedChatID == group.conversationId,
@@ -1259,6 +1244,7 @@ private struct EmployeePicker: View {
             .scrollContentBackground(.hidden)
             .background(HomeBackground())
             .navigationTitle("Чаты")
+            .navigationDestination(isPresented: $showingHistory) { ConversationBrowser(isPresented: $isPresented, embedded: true) }
             #if os(iOS)
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Найти чат")
             #else
@@ -1280,6 +1266,86 @@ private struct EmployeePicker: View {
     }
 }
 
+/// Employees are the primary entry points. Channel history is a separate,
+/// searchable destination; browsing it never changes bot routing or delivery.
+private struct ConversationBrowser: View {
+    @EnvironmentObject private var library: DeviceLibrary
+    @EnvironmentObject private var client: HomeClient
+    @Binding var isPresented: Bool
+    var embedded = false
+    @State private var query = ""
+    private var term: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var hasHistory: Bool {
+        library.visibleClients.contains { source in
+            source.telegram?.chats?.contains(where: { $0.conversationId != nil }) == true || !source.importedConversations.isEmpty
+        }
+    }
+
+    var body: some View {
+        Group {
+            if embedded { content }
+            else { NavigationStack { content } }
+        }
+        #if os(macOS)
+        .frame(minWidth: 480, idealWidth: 560, minHeight: 420, idealHeight: 560)
+        #endif
+    }
+
+    private var content: some View {
+        List {
+            if !hasHistory {
+                ContentUnavailableView("Пока нет переписок", systemImage: "bubble.left.and.bubble.right",
+                    description: Text("Разговоры с ботом в Telegram появятся здесь автоматически."))
+            } else {
+                ForEach(library.visibleClients) { source in
+                    let chats = (source.telegram?.chats ?? []).filter { $0.conversationId != nil && (term.isEmpty || $0.title.localizedCaseInsensitiveContains(term)) }
+                    let archives = source.importedConversations.filter { term.isEmpty || $0.title.localizedCaseInsensitiveContains(term) }
+                    if !chats.isEmpty || !archives.isEmpty {
+                        Section {
+                            ForEach(chats) { chat in
+                                EmployeePickerRow(name: chat.title,
+                                    subtitle: (chat.isGroup ? "Группа в Telegram" : "Личный разговор в Telegram") + (chat.enabled == false ? " · на паузе" : ""),
+                                    selected: source === client && source.selectedChatID == chat.conversationId,
+                                    appearance: nil, symbol: chat.isGroup ? "person.2" : "bubble.left") {
+                                        open(source, conversation: chat.conversationId)
+                                    }.accessibilityIdentifier("telegramConversation-" + chat.chatId)
+                            }
+                            ForEach(archives) { chat in
+                                EmployeePickerRow(name: chat.title, subtitle: "Из прежнего приложения",
+                                    selected: source === client && source.selectedChatID == chat.id,
+                                    appearance: nil, symbol: "archivebox") {
+                                        open(source, conversation: chat.id)
+                                    }
+                            }
+                        } header: { if library.hasOtherDevices { Text(source.displayName) } }
+                    }
+                }
+                if !term.isEmpty && !library.visibleClients.contains(where: { source in
+                    (source.telegram?.chats ?? []).contains { $0.conversationId != nil && $0.title.localizedCaseInsensitiveContains(term) }
+                        || source.importedConversations.contains { $0.title.localizedCaseInsensitiveContains(term) }
+                }) { SearchEmptyState(query: query) { query = "" } }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(HomeBackground())
+        .navigationTitle("Переписки")
+        .searchable(text: $query, prompt: "Найти переписку")
+        .toolbar {
+            if !embedded {
+                ToolbarItem(placement: .confirmationAction) { Button("Готово") { isPresented = false } }
+            }
+        }
+    }
+
+    private func open(_ source: HomeClient, conversation: String?) {
+        Task {
+            library.select(source)
+            await source.selectChat(conversation)
+            isPresented = false
+        }
+    }
+}
+
 private struct EmployeePickerRow: View {
     @Environment(\.dynamicTypeSize) private var textSize
     let name: String
@@ -1298,7 +1364,11 @@ private struct EmployeePickerRow: View {
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(.body.weight(.medium)).lineLimit(textSize.isAccessibilitySize ? nil : 2)
-                    if !subtitle.isEmpty { Text(subtitle).font(.caption).foregroundStyle(AppTheme.secondaryText).lineLimit(1) }
+                    if !subtitle.isEmpty {
+                        Text(subtitle).font(.caption).foregroundStyle(AppTheme.secondaryText)
+                            .lineLimit(textSize.isAccessibilitySize ? nil : 1)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 Spacer(minLength: 0)
                 if selected { Image(systemName: "checkmark").foregroundStyle(AppTheme.secondaryText) }

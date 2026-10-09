@@ -313,7 +313,8 @@ final class HomeClient: ObservableObject, Identifiable {
     }
 
     var telegramGroups: [TelegramChat] { (telegram?.chats ?? []).filter { $0.isGroup && $0.conversationId != nil } }
-    var activeTelegramGroup: TelegramChat? { telegramGroups.first { $0.conversationId == selectedChatID } }
+    var activeTelegramChat: TelegramChat? { (telegram?.chats ?? []).first { selectedChatID != nil && $0.conversationId == selectedChatID } }
+    var activeTelegramGroup: TelegramChat? { activeTelegramChat?.isGroup == true ? activeTelegramChat : nil }
 
     var isEmployeeDraft: Bool { selectedProfileID?.hasPrefix("draft:") == true }
 
@@ -785,8 +786,11 @@ final class HomeClient: ObservableObject, Identifiable {
     }
 
     func selectChat(_ id: String?) async {
-        if let group = telegramGroups.first(where: { $0.conversationId == id }) {
-            selectedProfileID = group.profileId
+        if let chat = telegram?.chats?.first(where: { id != nil && $0.conversationId == id }) {
+            selectedProfileID = chat.profileId
+            defaults.set(selectedProfileID, forKey: "openstrudel.profileID")
+        } else if let archive = importedConversations.first(where: { $0.id == id }) {
+            selectedProfileID = archive.profileId
             defaults.set(selectedProfileID, forKey: "openstrudel.profileID")
         }
         selectedChatID = id

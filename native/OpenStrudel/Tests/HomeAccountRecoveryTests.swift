@@ -4,6 +4,37 @@ import Testing
 
 @Suite(.serialized)
 @MainActor struct HomeAccountRecoveryTests {
+    @Test func historyBrowserSelectsTheEmployeeForPrivateChatsAndImportedArchives() async throws {
+        let state = AccountFixtureState()
+        state.customResponse = { request in
+            if request.url?.path == "/v1/profiles" {
+                return (200, Data(#"{"profiles":[],"importedConversations":[{"id":"archive","title":"Прежний разговор","profileId":"archived-employee"},{"id":"root-archive","title":"Архив помощника","profileId":null}]}"#.utf8))
+            }
+            if request.url?.path == "/v1/integrations" {
+                return (200, Data(#"{"telegram":{"configured":true,"running":true,"linkedChats":["7"],"chats":[{"chatId":"7","title":"Мой Telegram","conversationId":"private-chat","profileId":"personal-employee","allowedSenders":[]},{"chatId":"8","title":"Без истории","allowedSenders":[]}]}}"#.utf8))
+            }
+            return nil
+        }
+        let (client, session) = makeClient(state)
+        defer { session.invalidateAndCancel() }
+        await client.load()
+        #expect(!client.homeUnreachable)
+        #expect(client.importedConversations.count == 2)
+        await client.selectProfile("previous-employee")
+        await client.selectChat("private-chat")
+        #expect(client.selectedProfileID == "personal-employee")
+        #expect(client.selectedChatID == "private-chat")
+        await client.selectChat(nil)
+        #expect(client.selectedProfileID == "personal-employee")
+        #expect(client.selectedChatID == nil)
+        await client.selectChat("archive")
+        #expect(client.selectedProfileID == "archived-employee")
+        #expect(client.selectedChatID == "archive")
+        await client.selectChat("root-archive")
+        #expect(client.selectedProfileID == nil)
+        #expect(client.selectedChatID == "root-archive")
+    }
+
     @Test func groupSelectionSurvivesRelaunchAndClearsWhenOpeningAnEmployee() async throws {
         let suite = "OpenStrudel.chat-selection-test." + UUID().uuidString
         let defaults = try #require(UserDefaults(suiteName: suite))

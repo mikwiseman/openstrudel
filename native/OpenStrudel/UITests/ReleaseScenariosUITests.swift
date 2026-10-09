@@ -19,7 +19,10 @@ final class ReleaseScenariosUITests: XCTestCase {
         if consent.waitForExistence(timeout: 5) { consent.tap() }
         XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 15)); app.buttons["Чаты"].tap()
         XCTAssertTrue(app.buttons["Редактор"].waitForExistence(timeout: 10)); app.buttons["Редактор"].tap()
-        app.buttons["Настройки сотрудника"].tap()
+        let details = app.buttons["Настройки сотрудника"]
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: details)], timeout: 10), .completed)
+        details.tap()
+        XCTAssertTrue(app.textFields["Имя сотрудника"].waitForExistence(timeout: 10))
         let telegram = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Telegram")).firstMatch
         try reveal(telegram, in: app); telegram.tap()
         XCTAssertTrue(app.buttons["addTelegramGroup"].waitForExistence(timeout: 10))
@@ -49,6 +52,25 @@ final class ReleaseScenariosUITests: XCTestCase {
         app.buttons["saveEmployeeChanges"].tap()
         app.buttons["Чаты"].tap()
         let group = app.buttons["telegramConversation--100"]
+        XCTAssertFalse(group.exists)
+        app.buttons["openConversations"].tap()
+        capture("conversation-browser", app)
+        let privateChat = app.buttons["telegramConversation-42"]
+        XCTAssertTrue(privateChat.waitForExistence(timeout: 10)); privateChat.tap()
+        XCTAssertTrue(app.buttons["Telegram · Личный чат"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Пример личной переписки"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["telegramReplyDestination"].exists)
+        XCTAssertFalse(app.buttons["chooseConversation"].exists)
+        capture("telegram-private-history", app)
+        app.buttons["Чаты"].tap(); app.buttons["openConversations"].tap()
+        let archive = app.buttons["Старые заметки"]
+        XCTAssertTrue(archive.waitForExistence(timeout: 10)); archive.tap()
+        XCTAssertTrue(app.staticTexts["Сохранённая заметка"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Архив · Старые заметки"].exists)
+        XCTAssertFalse(app.staticTexts["telegramReplyDestination"].exists)
+        XCTAssertFalse(app.buttons["chooseConversation"].exists)
+        capture("imported-history", app)
+        app.buttons["Чаты"].tap(); app.buttons["openConversations"].tap()
         XCTAssertTrue(group.waitForExistence(timeout: 10)); group.tap()
         XCTAssertTrue(app.buttons["Telegram · Рабочая группа"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["chooseConversation"].exists)
