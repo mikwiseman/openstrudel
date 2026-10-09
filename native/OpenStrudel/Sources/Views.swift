@@ -435,11 +435,11 @@ private struct SidebarRow: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .frame(height: 60)
+            .frame(maxWidth: .infinity, minHeight: 60)
+            .contentShape(Rectangle())
             .background(selected ? Color.primary.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
-        .contentShape(Rectangle())
         .accessibilityLabel(name)
         .accessibilityValue(subtitle)
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -1616,6 +1616,7 @@ private struct EmployeePickerRow: View {
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(.body.weight(.medium)).lineLimit(textSize.isAccessibilitySize ? nil : 2)
+                        .foregroundStyle(Color.primary)
                     if !subtitle.isEmpty {
                         Text(subtitle).font(.caption).foregroundStyle(AppTheme.secondaryText)
                             .lineLimit(textSize.isAccessibilitySize ? nil : 1)
@@ -1626,9 +1627,10 @@ private struct EmployeePickerRow: View {
                 if selected { Image(systemName: "checkmark").foregroundStyle(AppTheme.secondaryText) }
             }
             .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.automatic)
         .accessibilityLabel(name)
         .accessibilityValue(subtitle)
         .accessibilityAddTraits(selected ? .isSelected : [])
