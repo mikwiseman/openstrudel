@@ -163,9 +163,10 @@ with a reproduction and evidence before adding a workaround.
   cancellation or scheduling instructions against current production data.
 - [x] Validate crash and memory regressions with bounded histories/attachments;
   record observed resource use and unresolved limitations rather than promises.
-- [ ] Update PR scope and evidence, run relevant checks, build the combined
-  icons/runtime/native release, deploy with backup and rollback, then merge and
-  publish matching Mac/Home artifacts. Preserve iOS review and release evidence.
+- [x] Update PR scope and evidence, run relevant checks, build the combined
+  icons/runtime/native release, deploy with backup and rollback, and publish
+  matching Mac/Home artifacts. Preserve iOS review and release evidence.
+- Merge status is tracked in [PR #8](https://github.com/mikwiseman/openstrudel/pull/8).
 
 ## Evidence
 
