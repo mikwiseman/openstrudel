@@ -30,6 +30,8 @@ Match User strudel-relay
     GatewayPorts clientspecified
     PermitListen 0.0.0.0:17789
     PermitOpen none
+    ClientAliveInterval 20
+    ClientAliveCountMax 3
     AllowAgentForwarding no
     X11Forwarding no
     PermitTTY no

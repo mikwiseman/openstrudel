@@ -37,6 +37,10 @@ describe("packaged Mac installation", () => {
       symlinkSync(process.execPath, join(runtime, "bin/node"));
       writeFileSync(join(runtime, "dist/cli.js"), "");
       writeFileSync(join(runtime, "release.txt"), "release-1");
+      const dataDirectory = join(directory, "data");
+      mkdirSync(dataDirectory);
+      const settings = "# User-owned connection settings\nOPENSTRUDEL_PUBLIC_HOST=home.example.com\nOPENSTRUDEL_PUBLIC_PORT=17789\n";
+      writeFileSync(join(dataDirectory, ".env"), settings);
       writeFileSync(join(commands, "sleep"), "#!/bin/bash\nexit 0\n", { mode: 0o755 });
       writeFileSync(join(commands, "launchctl"), `#!/bin/bash
 set -eu
@@ -79,6 +83,30 @@ esac
       rmSync(join(directory, "hung"));
       expect(run().status).toBe(0);
       expect(readFileSync(plist, "utf8")).toContain("release-3");
+      expect(readFileSync(join(dataDirectory, ".env"), "utf8")).toBe(settings);
     } finally { rmSync(directory, { recursive: true, force: true }); }
   }, 15_000);
+
+  it.skipIf(process.platform !== "darwin")("keeps an existing public endpoint and TLS identity when regenerating a Mac launch agent", async () => {
+    const { launchAgent } = await import("../scripts/mac-launch-agent.mjs");
+    const directory = mkdtempSync(join(tmpdir(), "strudel-network-update-"));
+    try {
+      const testHome = join(directory, "user");
+      const agents = join(testHome, "Library/LaunchAgents");
+      const runtime = join(directory, "new-runtime");
+      mkdirSync(agents, { recursive: true });
+      mkdirSync(runtime);
+      const old = join(agents, "is.openstrudel.home.plist");
+      const network = { OPENSTRUDEL_PUBLIC_HOST: "home.example.com", OPENSTRUDEL_PUBLIC_PORT: "17789", OPENSTRUDEL_TLS_CERT: "/certs/a & b.pem", OPENSTRUDEL_TLS_KEY: "/certs/private.pem" };
+      writeFileSync(old, launchAgent("/old-runtime", "/old-node", testHome, "/data", "old", network));
+      const prepared = join(directory, "prepared.plist");
+      execFileSync(process.execPath, ["scripts/mac-launch-agent.mjs", runtime, "/data", prepared], { env: { ...process.env, HOME: testHome } });
+      const result = JSON.parse(execFileSync("/usr/bin/plutil", ["-convert", "json", "-o", "-", prepared], { encoding: "utf8" }));
+      expect(result.EnvironmentVariables).toMatchObject(network);
+      expect(result.EnvironmentVariables.OPENSTRUDEL_DB).toBe("/data/.data/openstrudel.sqlite");
+      expect(result.ProgramArguments[1]).toBe(runtime + "/dist/cli.js");
+      expect(readFileSync(old, "utf8")).toContain("/old-runtime");
+      expect(readFileSync(old, "utf8")).not.toContain("new-runtime");
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
 });
