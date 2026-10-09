@@ -32,7 +32,7 @@ Evidence: `.data/wai-vds-readiness/2026-10-05-v12/`. Новых VM, счетов
 
 ```sh
 xcodegen generate --spec native/OpenStrudel/project.yml
-xcodebuild -project native/OpenStrudel/OpenStrudel.xcodeproj \
+python3 scripts/native-build.py -- \
   -scheme 'OpenStrudel macOS' -destination 'platform=macOS' \
   CODE_SIGNING_ALLOWED=NO test
 ```

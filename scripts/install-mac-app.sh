@@ -3,7 +3,6 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NATIVE="$ROOT/native/OpenStrudel"
-DERIVED="$ROOT/.data/OpenStrudelDerivedData"
 DEST="$HOME/Applications/OpenStrudel.app"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -21,17 +20,18 @@ fi
 
 cd "$NATIVE"
 xcodegen generate
-xcodebuild \
-  -project OpenStrudel.xcodeproj \
+STAGING="$(mktemp -d "${TMPDIR:-/tmp}/openstrudel-install.XXXXXX")"
+trap 'rm -rf "$STAGING"' EXIT
+python3 "$ROOT/scripts/native-build.py" \
+  --copy-product Build/Products/Release/OpenStrudel.app "$STAGING/OpenStrudel.app" -- \
   -scheme 'OpenStrudel macOS' \
   -configuration Release \
   -destination 'platform=macOS' \
-  -derivedDataPath "$DERIVED" \
   CODE_SIGNING_ALLOWED=NO \
   build
 
 mkdir -p "$HOME/Applications"
 rm -rf "$DEST"
-ditto "$DERIVED/Build/Products/Release/OpenStrudel.app" "$DEST"
+ditto "$STAGING/OpenStrudel.app" "$DEST"
 open "$DEST"
 echo "Installed $DEST"
