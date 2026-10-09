@@ -36,7 +36,7 @@ stand in for real device, microphone or assistive-technology evidence.
 7. [x] Inspect the source's Core Team access policy. Validate permitted reads and
    useful denied-access recovery. Any change to the shared audience's source
    permissions must be explicit and limited to the intended data and group.
-8. [ ] Run final regression/build checks after fixes, inspect diffs, then deploy
+8. [x] Run final regression/build checks after fixes, inspect diffs, then deploy
    verified changes with backup, atomic installation and rollback. Verify public
    artifacts and the installed update separately. Preserve pending iOS review.
 
@@ -105,3 +105,39 @@ refinement, notarization and signature checks, an atomic local installation with
 a healthy managed rollback snapshot, post-installation Telegram/network checks,
 and the isolated Sparkle update. Public artifact hashes and the installed runtime
 are checked independently. iOS 28's pending review must remain untouched.
+
+### Release result
+
+- PR [#9](https://github.com/mikwiseman/openstrudel/pull/9) merged as
+  `f5869d9`. Artifacts contain the verified source commit `a303b49`.
+- Mac app and DMG both received Accepted notarization results and were stapled.
+  Gatekeeper, code signatures, Sparkle archive and feed signatures passed.
+- Mini now runs 1.0 (30). The cutover preserved all five employees, 13
+  conversations, 1,792 messages, three schedules and every Telegram binding.
+  The consistent managed backup was marked healthy after the checks.
+- A disposable employee on the installed production runtime exercised actual
+  Codex queue execution. Editing and promotion took effect; the cancelled item
+  never ran. Exactly two replies appeared, including the edited `ПРОВЕРЕНО-30`.
+  The disposable employee was removed after completion; the existing five remain.
+- Private Telegram request 1677380 received one useful reply, 1677381, after
+  installation. No live working group received a release probe.
+- The external-network 14-check suite passed again after installation. An earlier
+  simultaneous attempt encountered the extra disposable employee while asserting
+  a five-employee catalog; that failed evidence is retained. The sequential rerun
+  passed without changing the assertion or production data.
+- The immutable Mac/Home downloads, stable aliases, checksums and signed public
+  feed were published and externally hash-verified. The installed app accepted
+  the public feed and reported it was up to date. No web service was restarted.
+- Computer Use exercised the separate signed Sparkle QA bundle from 29 through
+  discovery, download, verification, installation and relaunch. Its About panel
+  and installed bundle both reported 30. It remained signed out, with no runtime
+  or production endpoint. The temporary public test feed was removed afterward.
+- iOS 30 is VALID and IN_BETA_TESTING in the existing internal tester group.
+  iOS 28 remains WAITING_FOR_REVIEW.
+- Final installed health: Telegram running without a connection error, SQLite
+  integrity OK, five employees, zero unfinished messages. Observed Home RSS was
+  89 MiB. This is a point-in-time observation, not a memory guarantee.
+
+Deployment, public hashes, update, Apple and live test receipts are retained in
+`.data/full-acceptance-2026-10-09/release30-shipping/`. The physical and source-access
+boundaries above remain open; release completion does not mark them as passed.
