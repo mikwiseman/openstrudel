@@ -16,9 +16,16 @@ let privateTelegramLinked = true;
 let loginStarts = 0;
 let loginCanceled = 0;
 let serviceConnected = false;
+let releaseQueuedRun: (() => void) | undefined;
+let queueFixture: Record<string, string> | undefined;
 const engine: CodexEngine = {
   async run(input, options) {
     const message = input.split("Current user message:\n").at(-1)!;
+    options?.onEvent?.({ type: "thread.started", payload: { threadId: options.threadId ?? "qa-thread" } });
+    if (message === "Удерживаем ответ для проверки очереди") {
+      await new Promise<void>(done => { releaseQueuedRun = done; options?.signal?.addEventListener("abort", () => done(), { once: true }); });
+      releaseQueuedRun = undefined;
+    }
     if (message.includes("Проверка свободного места")) {
       throw new Error("ENOSPC: no space left on device, open '/private/qa/history.jsonl.tmp'");
     }
@@ -104,12 +111,24 @@ const control = createServer(async (req, res) => {
   if (path.pathname === "/offline") offline = path.searchParams.get("value") === "1";
   if (path.pathname === "/connect") serviceConnected = true;
   if (path.pathname === "/telegram-private") privateTelegramLinked = path.searchParams.get("value") !== "0";
-  res.end(JSON.stringify({ loginStarts, loginCanceled, serviceConnected, offline, profiles: runtime.store.listProfiles(), telegram: runtime.store.telegramChats() }));
+  if (path.pathname === "/queue-fixture" && !queueFixture) {
+    const submit = (text: string) => runtime.messages.submit({ channel: "api", profile: editor.id, text, mode: "queue" });
+    const active = await submit("Удерживаем ответ для проверки очереди");
+    const first = await submit("Первый черновик");
+    const second = await submit("Второй черновик");
+    for (const submission of [active, first, second]) void submission.completion.catch(() => undefined);
+    queueFixture = { conversationId: active.receipt.conversationId, active: active.receipt.messageId, first: first.receipt.messageId, second: second.receipt.messageId };
+  }
+  if (path.pathname === "/release-queue") releaseQueuedRun?.();
+  if (path.pathname === "/queue-fixture" || path.pathname === "/queue-state") {
+    res.end(JSON.stringify({ ...queueFixture, messages: queueFixture ? runtime.messages.queuedMessages(queueFixture.conversationId!) : [] })); return;
+  }
+  res.end(JSON.stringify({ editor: editor.id, loginStarts, loginCanceled, serviceConnected, offline, profiles: runtime.store.listProfiles(), telegram: runtime.store.telegramChats() }));
 });
 await new Promise<void>(done => control.listen(0, "127.0.0.1", done));
 controlURL = `http://127.0.0.1:${(control.address() as { port: number }).port}`;
 const address = await runtime.api.listen("127.0.0.1", 0);
 await writeFile(output, JSON.stringify({ url: controlURL, localURL: `http://127.0.0.1:${address.port}`, editor: editor.id, pid: process.pid }), { mode: 0o600 });
 console.log("Isolated release UI fixture ready.");
-const stop = async () => { control.close(); await runtime.stop(); await rm(directory, { recursive: true, force: true }); process.exit(0); };
+const stop = async () => { releaseQueuedRun?.(); control.close(); await runtime.stop(); await rm(directory, { recursive: true, force: true }); process.exit(0); };
 process.once("SIGTERM", stop); process.once("SIGINT", stop);

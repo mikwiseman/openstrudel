@@ -393,6 +393,69 @@ import Testing
         } catch { #expect(error.localizedDescription.contains("Обновите OpenStrudel")) }
     }
 
+    @Test func queueUsesServerOrderAndConflictLeavesTheExistingMessageIntact() async throws {
+        let state = AccountFixtureState()
+        var queued: [[String: Any]] = [1, 2].map { index in
+            var message = historyMessage(index); message["status"] = "queued"; return message
+        }
+        var writes = 0
+        var reject = false
+        state.customResponse = { request in
+            let path = request.url!.path
+            if path == "/health" { return (200, Data(#"{"ok":true,"turnControlVersion":1,"queueControlVersion":1}"#.utf8)) }
+            if request.httpMethod == "POST" {
+                writes += 1
+                if reject { return (409, Data(#"{"error":"Сообщение изменено на другом устройстве."}"#.utf8)) }
+                var data = request.httpBody ?? Data()
+                if data.isEmpty, let stream = request.httpBodyStream {
+                    stream.open(); defer { stream.close() }
+                    var buffer = [UInt8](repeating: 0, count: 1024)
+                    while stream.hasBytesAvailable {
+                        let count = stream.read(&buffer, maxLength: buffer.count)
+                        guard count > 0 else { break }; data.append(contentsOf: buffer.prefix(count))
+                    }
+                }
+                let body = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+                if path.hasSuffix("/queue") {
+                    #expect(body["expectedMessageIds"] as? [String] == ["m1", "m2"])
+                    #expect(body["messageIds"] as? [String] == ["m2", "m1"])
+                    queued.reverse()
+                } else {
+                    #expect(body["expectedText"] as? String == "Message 2")
+                    #expect(body["text"] as? String == "Revised")
+                    queued[0]["text"] = "Revised"
+                }
+                return (200, try! JSONSerialization.data(withJSONObject: ["queuedMessages": queued]))
+            }
+            if path == "/v1/conversation" {
+                var page = try! JSONSerialization.jsonObject(with: historyPage([], older: nil, newer: "m2")) as! [String: Any]
+                page["queuedMessages"] = queued
+                return (200, try! JSONSerialization.data(withJSONObject: page))
+            }
+            return nil
+        }
+        let (client, session) = makeClient(state)
+        defer { session.invalidateAndCancel() }
+        await client.load(); await client.refreshConversation()
+        #expect(client.messages.isEmpty) // Queue is independent of the loaded history page.
+        #expect(client.visibleQueuedMessages.map(\.id) == ["m1", "m2"])
+        let second = try #require(client.visibleQueuedMessages.last)
+        await client.moveQueuedMessageFirst(second)
+        #expect(client.visibleQueuedMessages.map(\.id) == ["m2", "m1"])
+        try await client.editQueuedMessage(second, text: "Revised")
+        #expect(client.visibleQueuedMessages.first?.text == "Revised")
+        reject = true
+        do { try await client.editQueuedMessage(second, text: "Stale"); Issue.record("Stale edit must fail") }
+        catch { #expect(error.localizedDescription.contains("другом устройстве")) }
+        #expect(client.visibleQueuedMessages.first?.text == "Revised")
+        #expect(writes == 3)
+        await client.selectProfile("another-employee")
+        #expect(client.visibleQueuedMessages.isEmpty)
+        do { try await client.editQueuedMessage(second, text: "Wrong chat"); Issue.record("Wrong chat must fail") }
+        catch { #expect(error is CancellationError) }
+        #expect(writes == 3)
+    }
+
     private func makeClient(_ state: AccountFixtureState, defaults supplied: UserDefaults? = nil) -> (HomeClient, URLSession) {
         let defaults = supplied ?? UserDefaults(suiteName: "OpenStrudel.account-test." + UUID().uuidString)!
         defaults.set("http://127.0.0.1:57575", forKey: "openstrudel.homeURL")

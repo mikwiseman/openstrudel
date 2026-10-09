@@ -87,3 +87,93 @@ it("stops only the selected active API message through the engine abort signal",
   await stopped;
   expect(engine.run).toHaveBeenCalledOnce();
 });
+
+it("edits waiting input with a compare-and-swap, keeps its receipt and runs the new text once", async () => {
+  const { store, engine, releases, service } = fixture();
+  const first = await service.submit({ channel: "api", text: "First" });
+  const later = await service.submit({ channel: "api", text: "Original", mode: "queue", externalId: "editable" });
+  const { conversationId, messageId } = later.receipt;
+  service.editQueuedMessage(conversationId, messageId, "Revised", "Original");
+  expect(() => service.editQueuedMessage(conversationId, messageId, "Stale overwrite", "Original")).toThrow("другом устройстве");
+  expect(() => service.editQueuedMessage(conversationId, messageId, "  ", "Revised")).toThrow("Напишите");
+  expect(service.queuedMessages(conversationId).map(m => m.text)).toEqual(["Revised"]);
+  // An old transport retry must never run the original instruction again.
+  await expect(service.submit({ channel: "api", text: "Original", externalId: "editable" })).rejects.toThrow("идентификатор");
+  releases[0]!(); await first.completion;
+  await vi.waitFor(() => expect(releases).toHaveLength(2));
+  expect(engine.run).toHaveBeenLastCalledWith("Revised", expect.anything());
+  expect(() => service.editQueuedMessage(conversationId, messageId, "Too late", "Revised")).toThrow("уже отправлено");
+  releases[1]!(); await later.completion;
+  expect(store.findMessageByExternal("api", "editable")?.text).toBe("Revised");
+  expect((await service.handle({ channel: "api", text: "Revised", externalId: "editable" })).text).toBe("Combined answer");
+  expect(engine.run).toHaveBeenCalledTimes(2);
+});
+
+it("reorders waiting requests atomically and rejects stale or cross-conversation changes", async () => {
+  const { store, engine, releases, service } = fixture();
+  const first = await service.submit({ channel: "api", text: "First" });
+  const second = await service.submit({ channel: "api", text: "Second", mode: "queue" });
+  const third = await service.submit({ channel: "api", text: "Third", mode: "queue" });
+  const chat = first.receipt.conversationId, a = second.receipt.messageId, b = third.receipt.messageId;
+  expect(() => service.reorderQueuedMessages(chat, [a, a], [a, b])).toThrow("Проверьте");
+  expect(() => service.reorderQueuedMessages("other", [b, a], [a, b])).toThrow("изменилась");
+  expect(() => service.editQueuedMessage("other", a, "Wrong chat", "Second")).toThrow("убрано");
+  service.reorderQueuedMessages(chat, [b, a], [a, b]);
+  expect(service.queuedMessages(chat).map(m => m.id)).toEqual([b, a]);
+  expect(() => service.reorderQueuedMessages(chat, [a, b], [a, b])).toThrow("изменилась");
+  releases[0]!(); await first.completion;
+  await vi.waitFor(() => expect(releases).toHaveLength(2));
+  expect(engine.run).toHaveBeenLastCalledWith("Third", expect.anything());
+  expect(() => service.reorderQueuedMessages(chat, [a, b], [b, a])).toThrow("изменилась");
+  releases[1]!(); await third.completion;
+  await vi.waitFor(() => expect(releases).toHaveLength(3));
+  expect(engine.run).toHaveBeenLastCalledWith("Second", expect.anything());
+  releases[2]!(); await second.completion;
+  expect(service.queuedMessages(chat)).toEqual([]);
+  expect(store.getSetting("context.checkpoint." + chat)).toBe(b);
+});
+
+it("cancels a queued request immediately while the active turn is still waiting", async () => {
+  const { releases, service } = fixture();
+  const first = await service.submit({ channel: "api", text: "First" });
+  const later = await service.submit({ channel: "api", text: "Later", mode: "queue" });
+  const rejected = expect(later.completion).rejects.toThrow("отменено");
+  service.cancel(later.receipt.conversationId, later.receipt.messageId);
+  await rejected;
+  expect(service.queuedMessages(first.receipt.conversationId)).toEqual([]);
+  expect(service.hasActiveRuns).toBe(true);
+  releases[0]!(); await first.completion;
+  expect(service.hasActiveRuns).toBe(false);
+});
+
+it("keeps Telegram input immutable and in place while app messages are reordered", async () => {
+  const { engine, releases, service } = fixture();
+  const first = await service.submit({ channel: "telegram", externalChatId: "17", text: "Start" });
+  const conversationId = first.receipt.conversationId;
+  const second = await service.submit({ channel: "api", conversationId, text: "Second" });
+  const telegram = await service.submit({ channel: "telegram", externalChatId: "17", text: "Telegram queued" });
+  const fourth = await service.submit({ channel: "api", conversationId, text: "Fourth" });
+  expect(() => service.editQueuedMessage(conversationId, telegram.receipt.messageId, "Spoof", "Telegram queued")).toThrow("убрано");
+  expect(() => service.cancel(conversationId, telegram.receipt.messageId)).toThrow("не найдено");
+  service.reorderQueuedMessages(conversationId, [fourth.receipt.messageId, second.receipt.messageId], [second.receipt.messageId, fourth.receipt.messageId]);
+  for (const [index, submission] of [first, fourth, telegram, second].entries()) {
+    await vi.waitFor(() => expect(releases).toHaveLength(index + 1));
+    releases[index]!(); await submission.completion;
+  }
+  expect(vi.mocked(engine.run).mock.calls.map(call => call[0])).toEqual(["Start", "Fourth", "Telegram queued", "Second"]);
+});
+
+it("does not start queued work during shutdown and accepts new work after an emptied queue", async () => {
+  const { engine, releases, service } = fixture();
+  const first = await service.submit({ channel: "api", text: "First" });
+  releases[0]!(); await first.completion;
+  const next = await service.submit({ channel: "api", text: "Next" });
+  const later = await service.submit({ channel: "api", text: "Never run" });
+  const rejected = expect(later.completion).rejects.toThrow("завершает работу");
+  const closed = service.close();
+  releases[1]!(); await next.completion;
+  await rejected; await closed;
+  expect(engine.run).toHaveBeenCalledTimes(2);
+  expect(service.hasActiveRuns).toBe(false);
+  expect(service.queuedMessages(first.receipt.conversationId)).toEqual([]);
+});

@@ -62,9 +62,11 @@ struct ConnectionCatalogView: View {
                         let layout = textSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10)) : AnyLayout(HStackLayout(spacing: 12))
                         layout {
                             Text(connection.name).frame(maxWidth: .infinity, alignment: .leading)
-                            Button(connecting == connection.id ? "Проверяем…" : waiting?.id == connection.id ? "Ожидаем входа" : connection.actionTitle) {
+                            Button {
                                 Task { await connect(connection) }
-                            }.buttonStyle(.bordered).disabled(connecting != nil || waiting != nil)
+                            } label: {
+                                AdaptiveActionLabel(title: connecting == connection.id ? "Проверяем…" : waiting?.id == connection.id ? "Ожидаем входа" : connection.actionTitle)
+                            }.adaptiveActionStyle(.bordered).disabled(connecting != nil || waiting != nil)
                                 .accessibilityLabel("\(connection.actionTitle) \(connection.name)")
                                 .accessibilityIdentifier("connect-service-" + connection.id)
                         }.padding(.vertical, 6)

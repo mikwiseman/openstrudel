@@ -169,11 +169,15 @@ private struct VoiceFailure: LocalizedError {
 
 struct VoiceRecordingRow: View {
     @ObservedObject var voice: VoiceCapture
+    @Environment(\.dynamicTypeSize) private var textSize
     let locale: String
     let canSend: Bool
     var body: some View {
-        HStack(spacing: 12) {
-            Button { voice.cancel() } label: { Image(systemName: "xmark").frame(width: 40, height: 40) }
+        let layout = textSize.isAccessibilitySize && voice.phase != .recording
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(spacing: 12))
+        layout {
+            Button { voice.cancel() } label: { Image(systemName: "xmark").font(.system(size: 18)).frame(width: 44, height: 44).contentShape(Rectangle()) }
                 .buttonStyle(.plain).accessibilityLabel("Отменить запись")
             if voice.phase == .recording {
                 Canvas { context, size in
@@ -188,15 +192,16 @@ struct VoiceRecordingRow: View {
                     }
                 }.frame(height: 28).accessibilityHidden(true)
                 Text(String(format: "%d:%02d", voice.seconds / 60, voice.seconds % 60)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                Button { voice.finish(send: false, locale: locale) } label: { Image(systemName: "stop.fill").frame(width: 40, height: 40) }
+                Button { voice.finish(send: false, locale: locale) } label: { Image(systemName: "stop.fill").font(.system(size: 18)).frame(width: 44, height: 44).contentShape(Rectangle()) }
                     .buttonStyle(.plain).accessibilityLabel("Остановить и проверить текст")
-                Button { voice.finish(send: true, locale: locale) } label: { Image(systemName: "arrow.up").frame(width: 40, height: 40) }
+                Button { voice.finish(send: true, locale: locale) } label: { Image(systemName: "arrow.up").font(.system(size: 18)).frame(width: 44, height: 44).contentShape(Rectangle()) }
                     .buttonStyle(.glassProminent).buttonBorderShape(.circle).disabled(!canSend).accessibilityLabel("Распознать и отправить")
             } else {
                 if voice.phase == .preparing || voice.phase == .transcribing { ProgressView().controlSize(.small) }
                 Text(voice.detail).font(.callout).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
                 if voice.phase == .saved {
-                    Button("Распознать") { voice.finish(send: false, locale: locale) }.buttonStyle(.glass)
+                    Button { voice.finish(send: false, locale: locale) } label: { AdaptiveActionLabel(title: "Распознать") }
+                        .adaptiveActionStyle(.glass)
                 }
             }
         }.padding(.horizontal, 8).padding(.vertical, 6)

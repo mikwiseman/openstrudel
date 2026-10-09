@@ -211,6 +211,7 @@ struct ServerSetupView: View {
 #endif
 
 struct AIDataConsentView: View {
+    @Environment(\.dynamicTypeSize) private var textSize
     let accept: () -> Void
 
     var body: some View {
@@ -229,9 +230,10 @@ struct AIDataConsentView: View {
                     .font(.callout)
                     .buttonStyle(.plain).foregroundStyle(AppTheme.accent)
                 Button(action: accept) {
-                    SetupActionLabel(title: "Разрешить и продолжить")
+                    SetupActionLabel(title: textSize.isAccessibilitySize ? "Разрешить" : "Разрешить и продолжить")
                 }
-                    .buttonStyle(.glassProminent).controlSize(.large)
+                    .adaptiveActionStyle(.glassProminent).controlSize(.large)
+                    .accessibilityLabel("Разрешить и продолжить")
                     .accessibilityIdentifier("acceptAIDataSharing")
             }.multilineTextAlignment(.center).padding(32).frame(maxWidth: 480)
                 .frame(maxWidth: .infinity)

@@ -94,6 +94,10 @@ final class HomeClient: ObservableObject, Identifiable {
     @Published var baseURLString: String
     @Published private(set) var health: HomeHealth?
     @Published private(set) var messages: [HomeMessage] = []
+    @Published private(set) var queuedMessages: [HomeMessage] = []
+    var visibleQueuedMessages: [HomeMessage] {
+        health?.queueControlVersion == 1 ? queuedMessages : messages.filter { $0.direction == "inbound" && $0.channel == "api" && $0.status == "queued" }
+    }
     @Published private(set) var profiles: [EmployeeProfile] = []
     @Published private(set) var importedConversations: [ImportedConversation] = []
     @Published private(set) var telegram: TelegramStatus?
@@ -716,6 +720,30 @@ final class HomeClient: ObservableObject, Identifiable {
         } catch { errorMessage = error.localizedDescription }
     }
 
+    func editQueuedMessage(_ message: HomeMessage, text: String) async throws {
+        try await changeQueue(conversation: message.conversationId, path: "/messages/" + message.id + "/edit", payload: ["text": text, "expectedText": message.text])
+    }
+
+    func moveQueuedMessageFirst(_ message: HomeMessage) async {
+        let expected = visibleQueuedMessages.map(\.id)
+        guard expected.contains(message.id), expected.first != message.id else { return }
+        do {
+            try await changeQueue(conversation: message.conversationId, path: "/queue", payload: ["messageIds": [message.id] + expected.filter { $0 != message.id }, "expectedMessageIds": expected])
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    private func changeQueue(conversation: String, path: String, payload: [String: Any]) async throws {
+        guard conversation == conversationID else { throw CancellationError() }
+        let connection = connectionGeneration
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let result: MessageQueueEnvelope = try await request("/v1/conversations/" + conversation + path, method: "POST", body: body)
+        guard connection == connectionGeneration, conversation == conversationID else { throw CancellationError() }
+        // A poll that started before this mutation must not put old text/order back.
+        refreshGeneration += 1
+        queuedMessages = result.queuedMessages
+        await refreshConversation()
+    }
+
     func previewFile(_ file: ChatAttachment) async -> URL? {
         do {
             return try await downloadFile(file)
@@ -760,6 +788,7 @@ final class HomeClient: ObservableObject, Identifiable {
             let envelope: ConversationEnvelope = try await request(path + query)
             guard generation == refreshGeneration, profileID == selectedProfileID else { return }
             if conversationID != envelope.conversation.id { conversationID = envelope.conversation.id }
+            if queuedMessages != envelope.queuedMessages ?? [] { queuedMessages = envelope.queuedMessages ?? [] }
             if let page = envelope.pagination {
                 if !pagedHistory { olderCursor = page.olderCursor; hasEarlierMessages = olderCursor != nil }
                 let updated = MessagePages.merge(existing: pagedHistory ? messages : [], page: envelope.messages, updates: envelope.updates ?? [])
@@ -874,6 +903,7 @@ final class HomeClient: ObservableObject, Identifiable {
 
     private func resetHistory() {
         refreshGeneration += 1
+        queuedMessages = []
         historyLimit = 100; olderCursor = nil; newerCursor = nil; pagedHistory = false
         hasEarlierMessages = false; isLoadingEarlier = false
     }
