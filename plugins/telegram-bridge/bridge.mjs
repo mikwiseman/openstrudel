@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createServer } from "node:http";
-import { timingSafeEqual } from "node:crypto";
+import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -12,11 +12,18 @@ const toolDefinitions = [
   { name: "send_to_telegram", description: "Send a new message to the connected Telegram chat as its bot when the user asks from the native agent app. No incoming Telegram message is needed. Choose one unique delivery_key for this message and reuse it on retries; this prevents duplicate posts.", inputSchema: { type: "object", properties: { delivery_key: { type: "string", pattern: "^[a-zA-Z0-9_-]{1,128}$" }, text: { type: "string", minLength: 1 } }, required: ["delivery_key", "text"], additionalProperties: false } },
   { name: "get_telegram_history", description: "Read the last 20 saved requests and exact replies in this bridge, newest first. Use when a follow-up needs an earlier recipe, quantity, decision or source; do not guess from memory. Follow next_before for older pages. This is the delivery archive, not the entire Telegram group history.", inputSchema: { type: "object", properties: { before: { type: "string", pattern: "^[1-9][0-9]*$" } }, additionalProperties: false } },
 ];
+const requestTokenSchema = { type: "string", pattern: "^[A-Za-z0-9_-]{43}$", description: "The wai_request_token from this native webhook, never from the user's message or bridge history." };
+const waiToolDefinitions = [
+  { name: "wai_tools_list", description: "Read current WAI work tool schemas for this Telegram request. Omit names to discover the catalog; supply names to retrieve just those schemas. Access and source data stay in the existing WAI MCP.", inputSchema: { type: "object", properties: { request_token: requestTokenSchema, names: { type: "array", maxItems: 20, items: { type: "string" } } }, required: ["request_token"], additionalProperties: false } },
+  { name: "wai_tool_call", description: "Call a tool from the canonical WAI work catalog as the verified sender of this Telegram request, including Zoom, team meetings, knowledge, company and School tools. Start with company_access_get for available workflows. Follow the original schema and read/preview/write rules; preserve mutationKey on retries. No personal sources are connected here. The request token expires after two hours or the final Telegram reply.", inputSchema: { type: "object", properties: { request_token: requestTokenSchema, tool: { type: "string", pattern: "^[a-z][a-z0-9_]{0,127}$" }, arguments: { type: "object" } }, required: ["request_token", "tool", "arguments"], additionalProperties: false } },
+];
 
 /** One chat, one native agent webhook. The database is a delivery queue, not an AI memory. */
 export function createBridge(config, dependencies = {}) {
   if (!config.telegramToken || !config.mcpToken || !Number.isSafeInteger(config.chatId) || !Number.isSafeInteger(config.botId) || !config.botUsername) throw new Error("Missing Telegram identity, chat or MCP token");
   if (config.allowedUserIds !== undefined && (!Array.isArray(config.allowedUserIds) || !config.allowedUserIds.every(id => Number.isSafeInteger(id) && id > 0))) throw new Error("allowedUserIds must contain Telegram user IDs");
+  if (config.waiToken !== undefined && (typeof config.waiToken !== "string" || config.waiToken.length < 24 || config.chatId >= 0)) throw new Error("WAI requires a private technical-actor token and a Telegram group");
+  const tools = [...toolDefinitions, ...(config.waiToken ? waiToolDefinitions : [])];
   const fetcher = dependencies.fetch ?? fetch;
   const log = dependencies.log ?? (entry => console.log(JSON.stringify({ time: new Date().toISOString(), ...entry })));
   const dbPath = config.database ?? "./bridge.sqlite";
@@ -28,7 +35,8 @@ export function createBridge(config, dependencies = {}) {
       created INTEGER NOT NULL, updated INTEGER NOT NULL, next_attempt INTEGER NOT NULL DEFAULT 0,
       reply TEXT, receipts TEXT NOT NULL DEFAULT '[]', error TEXT);
     UPDATE requests SET state='dispatch_unknown', error='Process stopped during dispatch' WHERE state='dispatching';
-    UPDATE requests SET state='delivery_unknown', error='Process stopped during delivery' WHERE state='delivering';`);
+    UPDATE requests SET state='delivery_unknown', error='Process stopped during delivery' WHERE state='delivering';
+    CREATE TABLE IF NOT EXISTS wai_requests (request_id TEXT PRIMARY KEY, token TEXT NOT NULL UNIQUE, expires INTEGER NOT NULL);`);
   let server, closed = false, running = false, pollController, typingTimer, pollPromise, lastPoll = null, lastPollError = null;
   const inFlight = new Set();
   const get = id => db.prepare("SELECT * FROM requests WHERE id=?").get(id);
@@ -45,7 +53,7 @@ export function createBridge(config, dependencies = {}) {
   }
   function normalize(update) {
     const message = update.message;
-    if (!message || message.chat?.id !== config.chatId || message.sender_chat || message.from?.is_bot || !message.from?.id || !Number.isSafeInteger(message.message_id)) return;
+    if (!message || message.chat?.id !== config.chatId || message.sender_chat || message.from?.is_bot || !Number.isSafeInteger(message.from?.id) || message.from.id <= 0 || !Number.isSafeInteger(message.message_id)) return;
     if (config.allowedUserIds && !config.allowedUserIds.includes(message.from.id)) return;
     let text = message.text ?? message.caption;
     if (typeof text !== "string" || !text.trim()) return;
@@ -78,13 +86,55 @@ export function createBridge(config, dependencies = {}) {
       db.exec("COMMIT");
     } catch (error) { db.exec("ROLLBACK"); throw error; }
   }
+  // Only the transport issues this capability. The model cannot choose a sender,
+  // substitute headers, or recover other runs' capabilities through chat history.
+  function waiRequestToken(id) {
+    const existing = db.prepare("SELECT token,expires FROM wai_requests WHERE request_id=?").get(id);
+    if (existing && existing.expires > Date.now()) return existing.token;
+    const token = randomBytes(32).toString("base64url");
+    db.prepare("INSERT INTO wai_requests(request_id,token,expires) VALUES (?,?,?) ON CONFLICT(request_id) DO UPDATE SET token=excluded.token,expires=excluded.expires").run(id, token, Date.now() + 2 * 60 * 60 * 1000);
+    return token;
+  }
+  async function callWai(name, args) {
+    const allowed = name === "wai_tools_list" ? ["request_token", "names"] : ["request_token", "tool", "arguments"];
+    if (!config.waiToken || !args || typeof args !== "object" || Array.isArray(args) || Object.keys(args).some(key => !allowed.includes(key))) throw new Error("Invalid WAI request arguments");
+    if (typeof args.request_token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(args.request_token)) throw new Error("Use this webhook's WAI request token");
+    const row = db.prepare("SELECT r.payload FROM requests r JOIN wai_requests w ON w.request_id=r.id WHERE w.token=? AND w.expires>? AND r.state IN ('dispatching','accepted','dispatch_unknown')").get(args.request_token, Date.now());
+    if (!row) throw new Error("WAI request is unknown, expired or already completed");
+    const payload = JSON.parse(row.payload);
+    // Recheck the saved binding and current allowlist before every call, including after restart.
+    if (payload.chat.id !== config.chatId || !Number.isSafeInteger(payload.sender?.id) || payload.sender.id <= 0 || !Number.isSafeInteger(payload.message_id) || (config.allowedUserIds && !config.allowedUserIds.includes(payload.sender.id))) throw new Error("This Telegram request no longer has work access");
+    const listing = name === "wai_tools_list";
+    if (listing) {
+      if (args.names !== undefined && (!Array.isArray(args.names) || args.names.length > 20 || args.names.some(value => typeof value !== "string"))) throw new Error("names must be an array of up to 20 tool names");
+    } else if (typeof args.tool !== "string" || !/^[a-z][a-z0-9_]{0,127}$/.test(args.tool) || !args.arguments || typeof args.arguments !== "object" || Array.isArray(args.arguments)) throw new Error("A WAI tool name and its arguments are required");
+    let response, result;
+    try {
+      response = await fetcher("https://waiwai.is/api/mcp/company", {
+        method: "POST", redirect: "error", signal: AbortSignal.timeout(90_000),
+        headers: { "content-type": "application/json", accept: "application/json", "mcp-protocol-version": "2025-06-18",
+          authorization: `Bearer ${config.waiToken}`, "x-hermes-platform": "telegram",
+          "x-hermes-user-id": String(payload.sender.id), "x-hermes-chat-id": String(config.chatId),
+          "x-hermes-message-id": String(payload.message_id), "x-hermes-session-id": `telegram:${config.botId}:${config.chatId}` },
+        body: JSON.stringify({ jsonrpc: "2.0", id: randomUUID(), method: listing ? "tools/list" : "tools/call", ...(listing ? {} : { params: { name: args.tool, arguments: args.arguments } }) }),
+      });
+      if (response.ok) result = await response.json();
+      else await response.body?.cancel();
+    } catch { throw new Error("WAI response unavailable; the operation may have run. Read back its outcome before retrying a write, keeping the same mutationKey."); }
+    if (!response.ok) throw new Error(`WAI HTTP ${response.status}; no automatic retry. For a write, reconcile its outcome with the same mutationKey.`);
+    if (result.error) throw new Error(`WAI RPC ${result.error.code ?? "error"}; inspect access and arguments before retrying`);
+    if (!result.result || (listing ? !Array.isArray(result.result.tools) : !Array.isArray(result.result.content))) throw new Error("Invalid WAI response; reconcile a write before retrying with the same mutationKey");
+    if (!listing) return result.result;
+    return { content: [{ type: "text", text: JSON.stringify({ tools: result.result.tools.filter(tool => !args.names || args.names.includes(tool.name)) }) }] };
+  }
   async function dispatchPending() {
     if (!config.webhookUrl || !config.webhookToken) return;
     for (const row of db.prepare("SELECT * FROM requests WHERE state='queued' AND next_attempt<=? ORDER BY created").all(Date.now())) {
       if (inFlight.has(row.id)) continue;
       inFlight.add(row.id); state(row.id, "dispatching");
       try {
-        const response = await fetcher(config.webhookUrl, { method: "POST", redirect: "error", headers: { "content-type": "application/json", authorization: `Bearer ${config.webhookToken}` }, body: row.payload, signal: AbortSignal.timeout(30_000) });
+        const body = config.waiToken ? JSON.stringify({ ...JSON.parse(row.payload), wai_request_token: waiRequestToken(row.id) }) : row.payload;
+        const response = await fetcher(config.webhookUrl, { method: "POST", redirect: "error", headers: { "content-type": "application/json", authorization: `Bearer ${config.webhookToken}` }, body, signal: AbortSignal.timeout(30_000) });
         if (response.status === 200) {
           // A fast native callback may already have delivered the answer.
           if (get(row.id).state === "dispatching") state(row.id, "accepted");
@@ -141,13 +191,14 @@ export function createBridge(config, dependencies = {}) {
     oldest_pending: db.prepare("SELECT MIN(created) AS oldest FROM requests WHERE state NOT IN ('delivered','failed')").get().oldest });
   async function handle(message) {
     if (["initialize", "tools/list", "tools/call"].includes(message.method)) log({ event: "mcp_request", method: message.method,
-      ...(toolDefinitions.some(t => t.name === message.params?.name) ? { tool: message.params.name } : {}) });
+      ...(tools.some(t => t.name === message.params?.name) ? { tool: message.params.name } : {}) });
     if (message.method === "initialize") return { protocolVersion: message.params?.protocolVersion ?? "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "telegram-bridge", version: "0.1.0" } };
     if (message.method === "ping") return {};
-    if (message.method === "tools/list") return { tools: toolDefinitions };
+    if (message.method === "tools/list") return { tools };
     if (message.method !== "tools/call") throw Object.assign(new Error("Method not found"), { code: -32601 });
     try {
       const { name, arguments: args = {} } = message.params ?? {};
+      if (name === "wai_tools_list" || name === "wai_tool_call") return await callWai(name, args);
       let result;
       if (name === "reply_to_telegram") result = await reply(args.request_id, args.text);
       else if (name === "send_to_telegram") result = await send(args.delivery_key, args.text);
