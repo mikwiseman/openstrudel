@@ -8,6 +8,8 @@ import { TelegramAdapter } from "../src/telegram.js";
 import { HttpApi } from "../src/server.js";
 import { digest } from "../src/home.js";
 import { homeRequest, requestJSON, resultJSON } from "../src/home-transport.js";
+import { saveTelegramAuthorization } from "../src/authorization.js";
+import { createHash } from "node:crypto";
 
 const nativeFetch = globalThis.fetch;
 const cleanups: Array<() => Promise<void>> = [];
@@ -194,4 +196,125 @@ it("uses the same scoped authentication through the remote HTTPS listener", asyn
   expect((await homeRequest(remote, "/hooks/telegram", "wrong", request, 5000, { "idempotency-key": "remote:1" })).status).toBe(401);
   const response = await homeRequest(remote, "/hooks/telegram", "notification-secret", request, 5000, { "idempotency-key": "remote:1" });
   expect(response.status).toBe(200); expect(resultJSON(response).sent).toBe(true); expect(send).toHaveBeenCalledTimes(1);
+});
+
+// Narrow keys: each relays to one chat of its own list per request, and only a key may reach a protected group the policy keeps enabled.
+const keys = (store: Store, list: unknown[], legacy: Record<string, unknown> = { chatId: "42" }) =>
+  store.setSetting("telegram.notification_hook", JSON.stringify({ ...legacy, tokenHash: digest("notification-secret"), keys: list }));
+const drafts = { id: "school-drafts", tokenHash: digest("drafts-secret"), chatIds: ["42"] };
+const reports = { id: "school-reports", tokenHash: digest("reports-secret"), chatIds: ["-100", "-200"] };
+const family = (enabled: boolean, revision: number) => ({ version: 1, revision,
+  connectors: { school: { url: "https://school.example/mcp", headers: { Authorization: "Bearer school-secret" } } },
+  policies: { family: { connectorId: "school", tools: [{ name: "family_report", capability: "report.read" }] },
+    mentor: { connectorId: "school", tools: [{ name: "mentor_schedule", capability: "schedule.read" }] } },
+  subjects: { "22": { enabled: true, privatePolicyId: "mentor", capabilities: ["schedule.read"] } },
+  chats: { "-100": { enabled, policyId: "family", defaultCapabilities: ["report.read"], members: {} } } });
+const journal = (store: Store) => store.db.prepare("SELECT caller,chat_id,idempotency_key,text_sha256,status,attempts FROM notification_deliveries ORDER BY created_at").all();
+const sentTo = (send: ReturnType<typeof vi.fn>) => send.mock.calls.map(call => JSON.parse(String(call[1]?.body)).chat_id);
+
+it("relays a narrow key's text to its one chat without running AI and journals the delivery", async () => {
+  const { post, store, engine, send } = await setup(); keys(store, [drafts]);
+  const first = await post({ text: "Черновик отчёта", summary: "ignored" }, "draft:lesson-1:v1", "drafts-secret");
+  expect(first.status).toBe(200); expect(await first.json()).toMatchObject({ sent: true, status: "delivered", chatId: "42" });
+  expect((await post({ text: "Черновик отчёта" }, "draft:lesson-1:v1", "drafts-secret")).status).toBe(200);
+  expect(sentTo(send)).toEqual(["42"]); expect(engine.run).not.toHaveBeenCalled();
+  expect(store.findMessageByExternal("telegram", "notification:" + digest("school-drafts\0" + "42\0draft:lesson-1:v1"))?.text).toBe("Черновик отчёта");
+  expect(journal(store)).toEqual([{ caller: "school-drafts", chat_id: "42", idempotency_key: "draft:lesson-1:v1",
+    text_sha256: createHash("sha256").update("Черновик отчёта").digest("hex"), status: "delivered", attempts: 2 }]);
+});
+
+it("makes a narrow key name one chat of its own list and never reach another chat", async () => {
+  const { post, store, send } = await setup(); keys(store, [drafts, reports]);
+  store.linkTelegramChat({ chatId: "-200", title: "Other family", allowedSenders: [] }); store.connectTelegramGroup("-200");
+  expect((await post({ text: "Отчёт" }, "report:1:v1", "reports-secret")).status).toBe(400);
+  for (const chatId of ["42", "-300", 100, ["-100"]]) expect((await post({ text: "Отчёт", chatId }, "report:1:v1", "reports-secret")).status, JSON.stringify(chatId)).toBe(chatId === "42" || chatId === "-300" ? 403 : 400);
+  expect((await post({ text: "Черновик", chatId: "-100" }, "draft:1:v1", "drafts-secret")).status).toBe(403);
+  expect(send).not.toHaveBeenCalled();
+  expect((await post({ text: "Отчёт", chatId: "-200" }, "report:1:v1", "reports-secret")).status).toBe(200);
+  // The original credential keeps its own destination and still ignores a requested chat.
+  expect((await post({ text: "Встреча", chatId: "-200" })).status).toBe(200);
+  expect(sentTo(send)).toEqual(["-200", "42"]);
+});
+
+it("lets only a narrow key post to a protected group, and only while the policy keeps it enabled", async () => {
+  const { post, store, send } = await setup();
+  saveTelegramAuthorization(store, family(true, 0));
+  keys(store, [reports, { id: "mentor-dm", tokenHash: digest("mentor-secret"), chatIds: ["22"] }], { chatIds: ["-100"] });
+  store.linkTelegramChat({ chatId: "22", title: "Mentor", allowedSenders: [] });
+  // The original credential never reaches a protected audience.
+  const legacy = await post({ text: "Внешнее уведомление" }); expect(legacy.status).toBe(400);
+  expect(await legacy.json()).toEqual({ error: "Отправка в чат с ограниченным доступом недоступна." });
+  // Neither does a key listing a limited participant's private chat.
+  expect((await post({ text: "Ученики" }, "dm:1", "mentor-secret")).status).toBe(403);
+  expect(send).not.toHaveBeenCalled();
+  const delivered = await post({ text: "Отчёт за неделю: https://wai.school/report/sasha-d12/3", chatId: "-100", linkPreview: true }, "report:3:v1", "reports-secret");
+  expect(delivered.status).toBe(200); expect(await delivered.json()).toMatchObject({ sent: true, chatId: "-100" });
+  expect(JSON.parse(String(send.mock.calls[0]?.[1]?.body))).toMatchObject({ chat_id: "-100", link_preview_options: { is_disabled: false } });
+  saveTelegramAuthorization(store, family(false, 1));
+  const closed = await post({ text: "Отчёт 4", chatId: "-100" }, "report:4:v1", "reports-secret"); expect(closed.status).toBe(403);
+  expect(await closed.json()).toEqual({ error: "Этот чат сейчас закрыт для отправки." });
+  expect(sentTo(send)).toEqual(["-100"]);
+  expect((await post({ text: "Отчёт", chatId: "-100", silent: "yes" }, "report:5:v1", "reports-secret")).status).toBe(400);
+});
+
+it("stops the rest of a delivery when its protected group is switched off between parts", async () => {
+  const { post, store, send } = await setup();
+  saveTelegramAuthorization(store, family(true, 0)); keys(store, [reports]);
+  send.mockImplementationOnce(async () => { saveTelegramAuthorization(store, family(false, 1)); return Response.json({ ok: true, result: { message_id: 123 } }); });
+  const response = await post({ text: "Отчёт. ".repeat(1200), chatId: "-100" }, "report:long:v1", "reports-secret");
+  expect(response.status).toBe(502); expect(send).toHaveBeenCalledTimes(1);
+  expect(journal(store)).toMatchObject([{ caller: "school-reports", chat_id: "-100", status: "partial" }]);
+});
+
+it("keeps each key's identities apart, repeats without resending and refuses changed text", async () => {
+  const { post, store, send } = await setup();
+  keys(store, [{ ...reports, chatIds: ["-100"] }, { id: "school-reminders", tokenHash: digest("reminders-secret"), chatIds: ["-100"] }]);
+  expect((await post({ text: "Отчёт" }, "same-key", "reports-secret")).status).toBe(200);
+  expect((await post({ text: "Отчёт" }, "same-key", "reports-secret")).status).toBe(200);
+  expect((await post({ text: "Другой текст" }, "same-key", "reports-secret")).status).toBe(409);
+  expect((await post({ text: "Напоминание" }, "same-key", "reminders-secret")).status).toBe(200);
+  expect(sentTo(send)).toEqual(["-100", "-100"]);
+});
+
+it("limits a key's new deliveries per hour but still answers its repeats", async () => {
+  const { post, store, send } = await setup(); keys(store, [{ ...drafts, maxPerHour: 2 }]);
+  for (const key of ["d:1", "d:2"]) expect((await post({ text: key }, key, "drafts-secret")).status).toBe(200);
+  const limited = await post({ text: "d:3" }, "d:3", "drafts-secret"); expect(limited.status).toBe(429);
+  expect((await post({ text: "d:1" }, "d:1", "drafts-secret")).status).toBe(200);
+  expect(send).toHaveBeenCalledTimes(2);
+  // Another key and the original credential have their own allowance.
+  expect((await post({ text: "Встреча" })).status).toBe(200);
+});
+
+it("ignores malformed or ambiguous keys and leaves the original credential working", async () => {
+  const { post, store, send } = await setup();
+  for (const list of [[{ ...drafts, id: "Drafts" }], [{ ...drafts, tokenHash: "x" }], [{ ...drafts, chatIds: [] }], [{ ...drafts, chatIds: ["42", "42"] }],
+    [{ ...drafts, maxPerHour: 0 }], [drafts, { ...reports, tokenHash: drafts.tokenHash }], [drafts, { ...reports, id: drafts.id }],
+    [{ ...drafts, tokenHash: digest("notification-secret") }], [drafts, null], Array.from({ length: 21 }, (_, i) => ({ ...drafts, id: "k" + i, tokenHash: digest("t" + i) }))]) {
+    keys(store, list);
+    expect((await post({ text: "Нет" }, "k:1", "drafts-secret")).status, JSON.stringify(list).slice(0, 80)).toBe(401);
+  }
+  store.setSetting("telegram.notification_hook", JSON.stringify({ tokenHash: digest("notification-secret"), chatId: "42", keys: "drafts" }));
+  expect((await post({ text: "Нет" }, "k:1", "drafts-secret")).status).toBe(401);
+  expect(send).not.toHaveBeenCalled();
+  expect((await post({ text: "Встреча" })).status).toBe(200);
+  // Keys alone, without the original credential, also work.
+  store.setSetting("telegram.notification_hook", JSON.stringify({ keys: [drafts] }));
+  expect((await post({ text: "Черновик" }, "k:2", "drafts-secret")).status).toBe(200);
+  expect((await post({ text: "Встреча" }, "k:3")).status).toBe(401);
+});
+
+it("moves a narrow key to the supergroup when Telegram upgrades its group", async () => {
+  const { post, store, send } = await setup(); keys(store, [drafts, { ...reports, chatIds: ["-100", "-200"] }]);
+  store.migrateTelegramGroup("-100", "-100200");
+  expect(JSON.parse(store.getSetting("telegram.notification_hook")!).keys).toEqual([drafts, { ...reports, chatIds: ["-100200", "-200"] }]);
+  expect((await post({ text: "Отчёт", chatId: "-100200" }, "report:1:v1", "reports-secret")).status).toBe(200);
+  expect(sentTo(send)).toEqual(["-100200"]);
+});
+
+it("accepts a narrow key through the remote HTTPS listener", async () => {
+  const { api, store, send } = await setup(); keys(store, [drafts]);
+  const endpoint = await api.mobile.endpoint(); const url = new URL(endpoint.url); url.hostname = "127.0.0.1";
+  const response = await homeRequest({ ...endpoint, url: url.toString() }, "/hooks/telegram", "drafts-secret", { method: "POST", body: requestJSON({ text: "Черновик" }) }, 5000, { "idempotency-key": "remote:draft:1" });
+  expect(response.status).toBe(200); expect(resultJSON(response).sent).toBe(true); expect(sentTo(send)).toEqual(["42"]);
 });

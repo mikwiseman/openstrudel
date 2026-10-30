@@ -109,6 +109,11 @@ export function isProtectedTelegramAudience(store: Store, chatId?: string | numb
   const id = chatId === undefined ? undefined : String(chatId);
   return isRestrictedChat(store, id) || isRestrictedSubject(store, id);
 }
+/** A protected group whose policy entry is switched on. Only a narrow delivery key that lists it may post there; a model turn never does. */
+export function isEnabledScopedGroup(store: Store, chatId?: string): boolean {
+  if (!chatId || !group.test(chatId) || isRestrictedSubject(store, chatId)) return false;
+  return telegramAuthorization(store).chats[chatId]?.enabled === true;
+}
 
 export function assertNativeAccess(store: Store, conversationId: string, userId?: string): void {
   const conversation = store.getConversation(conversationId);

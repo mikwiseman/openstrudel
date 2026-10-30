@@ -310,10 +310,13 @@ export class Store {
       }
       const legacy = jsonArray(this.getSetting("telegram.linked_chats"));
       if (legacy.includes(oldId)) this.setSetting("telegram.linked_chats", JSON.stringify([...new Set(legacy.map(id => id === oldId ? newId : id))]));
-      // The notification hook keeps relaying to the upgraded group.
+      // The notification hook and its narrow keys keep relaying to the upgraded group.
       const hook = jsonObject(this.getSetting("telegram.notification_hook")), rename = (chatId: unknown) => chatId === oldId ? newId : chatId;
-      if (hook.chatId === oldId || Array.isArray(hook.chatIds) && hook.chatIds.includes(oldId)) this.setSetting("telegram.notification_hook",
-        JSON.stringify({ ...hook, chatId: rename(hook.chatId), ...(Array.isArray(hook.chatIds) ? { chatIds: [...new Set(hook.chatIds.map(rename))] } : {}) }));
+      const keys = Array.isArray(hook.keys) ? hook.keys as unknown[] : undefined;
+      const listed = (key: unknown): key is { chatIds: unknown[] } => Boolean(key) && typeof key === "object" && Array.isArray((key as { chatIds?: unknown }).chatIds);
+      if (hook.chatId === oldId || Array.isArray(hook.chatIds) && hook.chatIds.includes(oldId) || keys?.some(key => listed(key) && key.chatIds.includes(oldId))) this.setSetting("telegram.notification_hook",
+        JSON.stringify({ ...hook, chatId: rename(hook.chatId), ...(Array.isArray(hook.chatIds) ? { chatIds: [...new Set(hook.chatIds.map(rename))] } : {}),
+          ...(keys ? { keys: keys.map(key => listed(key) ? { ...key, chatIds: [...new Set(key.chatIds.map(rename))] } : key) } : {}) }));
       this.db.exec("RELEASE telegram_group_migration");
     } catch (error) { this.db.exec("ROLLBACK TO telegram_group_migration; RELEASE telegram_group_migration"); throw error; }
   }
