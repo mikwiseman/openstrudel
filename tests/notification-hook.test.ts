@@ -281,6 +281,22 @@ it("refuses a key revoked while its request body was still arriving", async () =
   expect(status).toBe(401); expect(send).not.toHaveBeenCalled();
 });
 
+it("tells a key's sender whether an unconfirmed delivery may have arrived", async () => {
+  const { post, store, send } = await setup(); keys(store, [drafts]);
+  send.mockRejectedValueOnce(new Error("connection lost"));
+  const lost = await post({ text: "Черновик" }, "draft:1:v1", "drafts-secret");
+  expect(lost.status).toBe(502);
+  expect(await lost.json()).toMatchObject({ error: "Доставка не подтверждена; проверьте Telegram перед новой отправкой.", sent: false, status: "unknown", chatId: "42" });
+  // The same identity is never resent, and still says it may have arrived.
+  expect(await (await post({ text: "Черновик" }, "draft:1:v1", "drafts-secret")).json()).toMatchObject({ sent: false, status: "unknown" });
+  send.mockImplementationOnce(async () => Response.json({ ok: false, error_code: 403, description: "Forbidden: bot was blocked by the user" }, { status: 403 }));
+  const refused = await post({ text: "Черновик 2" }, "draft:2:v1", "drafts-secret");
+  expect(refused.status).toBe(502);
+  expect(await refused.json()).toMatchObject({ sent: false, status: "not_sent", chatId: "42" });
+  expect(send).toHaveBeenCalledTimes(2);
+  expect(journal(store)).toMatchObject([{ status: "unknown", attempts: 2 }, { status: "not_sent", attempts: 1 }]);
+});
+
 it("keeps each key's identities apart, repeats without resending and refuses changed text", async () => {
   const { post, store, send } = await setup();
   keys(store, [{ ...reports, chatIds: ["-100"] }, { id: "school-reminders", tokenHash: digest("reminders-secret"), chatIds: ["-100"] }]);

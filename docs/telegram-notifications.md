@@ -103,6 +103,10 @@ credential above. The same setting lists the keys:
   block each other's deliveries. Repeats, changed text (409) and unconfirmed
   delivery (502) behave as above. A repeat of an earlier delivery is answered even
   over the hourly limit; a new one over it gets 429.
+- A key's 502 also carries the receipt: `sent: false` and a `status`. `not_sent`
+  means Telegram refused the text and nothing arrived. `unknown` or `pending` means
+  it may have arrived: look at the chat before any new delivery, which needs a new
+  `Idempotency-Key`.
 - Supergroup upgrades move a key's chat IDs like the fields above.
 
 The Home journals every delivery of this endpoint in the `notification_deliveries`

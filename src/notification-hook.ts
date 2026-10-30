@@ -140,5 +140,7 @@ export async function receiveKeyedNotification(store: Store, telegram: TelegramA
     throw error;
   }
   log.result(delivery.externalId, receipt);
-  return receipt.sent ? [200, receipt] : [502, { error: UNCONFIRMED }];
+  // The receipt says whether Telegram refused it (not_sent) or the text may have arrived (unknown, pending), so the
+  // sender never resends what a family may already have.
+  return receipt.sent ? [200, receipt] : [502, { ...receipt, error: UNCONFIRMED }];
 }
