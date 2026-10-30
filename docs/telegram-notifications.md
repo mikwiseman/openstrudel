@@ -80,14 +80,20 @@ credential above. The same setting lists the keys:
 ]}
 ```
 
-- A key has an `id` (lowercase letters, digits and hyphens, up to 40), its own
-  `tokenHash` and 1 to 50 distinct `chatIds`. Up to 20 keys. `maxPerHour` (1 to
-  1000, default 30) caps its new deliveries per hour.
+- A key has an `id` (lowercase letters, digits and hyphens, up to 40; `legacy` is
+  reserved for the credential above), its own `tokenHash` and 1 to 50 distinct
+  `chatIds` written as Telegram gives them (no leading zeros). Up to 20 keys.
+  `maxPerHour` (1 to 1000, default 30) caps its new deliveries per hour.
 - If any key is malformed, or two keys share an `id` or a token, no key works. The
   credential above keeps working either way, and it may also be absent.
-- A request sends to one chat. With one listed chat, `chatId` may be omitted;
-  otherwise the body names it, and a chat the key does not list is refused (403).
-  `linkPreview` and `silent` (true or false) are optional.
+- A request sends one Telegram message to one chat: the text must fit one message
+  (4096 characters after formatting), so the hourly cap counts what a chat receives.
+  With one listed chat, `chatId` may be omitted; otherwise the body names it, and a
+  chat the key does not list is refused (403). `linkPreview` and `silent` (true or
+  false) are optional.
+- The Home reads the setting again once the request body has arrived (it allows 30
+  seconds for that), so removing a key or one of its chats also stops a request
+  that is still arriving.
 - A key may post to a protected group (see `scoped-telegram-access.md`) only when
   it lists that group and the access policy has the group enabled. Switching the
   group off refuses new requests (403) and stops a delivery between its parts.

@@ -194,9 +194,17 @@ export class HttpApi {
         if (request.method !== "POST") throw new HomeError("method_not_allowed", 405);
         if (this.store.getSetting("home.transfer")) throw new HomeError("Передаём управление. Повторите после завершения.", 409);
         this.activeWrites++; counted = true;
-        const key = request.headers["idempotency-key"], body = await this.body(request, 128 * 1024);
-        const [status, receipt] = caller.kind === "key" ? await receiveKeyedNotification(this.store, this.telegram, caller, key, body)
-          : await receiveNotification(this.store, this.telegram, caller.chatIds, key, body);
+        // A sender cannot hold a request open across a change of its credential: the body has 30 seconds,
+        // and the setting is read again once it has arrived, so a revoked key or chat never sends.
+        const reading = this.body(request, 128 * 1024); reading.catch(() => undefined);
+        let timer: NodeJS.Timeout | undefined;
+        const body = await Promise.race([reading, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new HomeError("Запрос пришёл слишком медленно.", 408)), 30_000); })])
+          .finally(() => clearTimeout(timer));
+        const current = notificationCaller(this.store, request.headers.authorization);
+        if (current.kind !== caller.kind || current.kind === "key" && caller.kind === "key" && current.id !== caller.id) throw new HomeError("unauthorized", 401);
+        const key = request.headers["idempotency-key"];
+        const [status, receipt] = current.kind === "key" ? await receiveKeyedNotification(this.store, this.telegram, current, key, body)
+          : await receiveNotification(this.store, this.telegram, current.chatIds, key, body);
         this.send(response, status, receipt); return;
       }
       if (await this.web.handle(request, response)) return;

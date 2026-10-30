@@ -10,6 +10,7 @@ import { digest } from "../src/home.js";
 import { homeRequest, requestJSON, resultJSON } from "../src/home-transport.js";
 import { saveTelegramAuthorization } from "../src/authorization.js";
 import { createHash } from "node:crypto";
+import { request as httpRequest } from "node:http";
 
 const nativeFetch = globalThis.fetch;
 const cleanups: Array<() => Promise<void>> = [];
@@ -209,7 +210,9 @@ const family = (enabled: boolean, revision: number) => ({ version: 1, revision,
     mentor: { connectorId: "school", tools: [{ name: "mentor_schedule", capability: "schedule.read" }] } },
   subjects: { "22": { enabled: true, privatePolicyId: "mentor", capabilities: ["schedule.read"] } },
   chats: { "-100": { enabled, policyId: "family", defaultCapabilities: ["report.read"], members: {} } } });
-const journal = (store: Store) => store.db.prepare("SELECT caller,chat_id,idempotency_key,text_sha256,status,attempts FROM notification_deliveries ORDER BY created_at").all();
+// The journal table appears with the first delivery attempt.
+const journal = (store: Store) => store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='notification_deliveries'").get()
+  ? store.db.prepare("SELECT caller,chat_id,idempotency_key,text_sha256,status,attempts FROM notification_deliveries ORDER BY created_at").all() : [];
 const sentTo = (send: ReturnType<typeof vi.fn>) => send.mock.calls.map(call => JSON.parse(String(call[1]?.body)).chat_id);
 
 it("relays a narrow key's text to its one chat without running AI and journals the delivery", async () => {
@@ -227,7 +230,7 @@ it("makes a narrow key name one chat of its own list and never reach another cha
   const { post, store, send } = await setup(); keys(store, [drafts, reports]);
   store.linkTelegramChat({ chatId: "-200", title: "Other family", allowedSenders: [] }); store.connectTelegramGroup("-200");
   expect((await post({ text: "Отчёт" }, "report:1:v1", "reports-secret")).status).toBe(400);
-  for (const chatId of ["42", "-300", 100, ["-100"]]) expect((await post({ text: "Отчёт", chatId }, "report:1:v1", "reports-secret")).status, JSON.stringify(chatId)).toBe(chatId === "42" || chatId === "-300" ? 403 : 400);
+  for (const chatId of ["42", "-300", 100, ["-100"], "-0100"]) expect((await post({ text: "Отчёт", chatId }, "report:1:v1", "reports-secret")).status, JSON.stringify(chatId)).toBe(chatId === "42" || chatId === "-300" ? 403 : 400);
   expect((await post({ text: "Черновик", chatId: "-100" }, "draft:1:v1", "drafts-secret")).status).toBe(403);
   expect(send).not.toHaveBeenCalled();
   expect((await post({ text: "Отчёт", chatId: "-200" }, "report:1:v1", "reports-secret")).status).toBe(200);
@@ -257,13 +260,25 @@ it("lets only a narrow key post to a protected group, and only while the policy 
   expect((await post({ text: "Отчёт", chatId: "-100", silent: "yes" }, "report:5:v1", "reports-secret")).status).toBe(400);
 });
 
-it("stops the rest of a delivery when its protected group is switched off between parts", async () => {
+it("keeps a key's request to one Telegram message", async () => {
   const { post, store, send } = await setup();
   saveTelegramAuthorization(store, family(true, 0)); keys(store, [reports]);
-  send.mockImplementationOnce(async () => { saveTelegramAuthorization(store, family(false, 1)); return Response.json({ ok: true, result: { message_id: 123 } }); });
-  const response = await post({ text: "Отчёт. ".repeat(1200), chatId: "-100" }, "report:long:v1", "reports-secret");
-  expect(response.status).toBe(502); expect(send).toHaveBeenCalledTimes(1);
-  expect(journal(store)).toMatchObject([{ caller: "school-reports", chat_id: "-100", status: "partial" }]);
+  const long = await post({ text: "Отчёт. ".repeat(1200), chatId: "-100" }, "report:long:v1", "reports-secret");
+  expect(long.status).toBe(400); expect(await long.json()).toEqual({ error: "Текст ключа — одно сообщение Telegram, до 4096 знаков." });
+  expect(send).not.toHaveBeenCalled(); expect(journal(store)).toEqual([]);
+});
+
+it("refuses a key revoked while its request body was still arriving", async () => {
+  const { store, send, base } = await setup(); keys(store, [drafts, reports]);
+  const url = new URL(base + "/hooks/telegram");
+  const status = await new Promise<number>((resolve, reject) => {
+    const request = httpRequest({ host: url.hostname, port: url.port, path: url.pathname, method: "POST",
+      headers: { authorization: "Bearer drafts-secret", "content-type": "application/json", "idempotency-key": "draft:slow:v1" } }, response => { response.resume(); resolve(response.statusCode ?? 0); });
+    request.on("error", reject);
+    request.write('{"text":"Черно');
+    setTimeout(() => { keys(store, [reports]); request.end('вик"}'); }, 50);
+  });
+  expect(status).toBe(401); expect(send).not.toHaveBeenCalled();
 });
 
 it("keeps each key's identities apart, repeats without resending and refuses changed text", async () => {
@@ -288,7 +303,7 @@ it("limits a key's new deliveries per hour but still answers its repeats", async
 
 it("ignores malformed or ambiguous keys and leaves the original credential working", async () => {
   const { post, store, send } = await setup();
-  for (const list of [[{ ...drafts, id: "Drafts" }], [{ ...drafts, tokenHash: "x" }], [{ ...drafts, chatIds: [] }], [{ ...drafts, chatIds: ["42", "42"] }],
+  for (const list of [[{ ...drafts, id: "Drafts" }], [{ ...drafts, id: "legacy" }], [{ ...drafts, chatIds: ["042"] }], [{ ...drafts, tokenHash: "x" }], [{ ...drafts, chatIds: [] }], [{ ...drafts, chatIds: ["42", "42"] }],
     [{ ...drafts, maxPerHour: 0 }], [drafts, { ...reports, tokenHash: drafts.tokenHash }], [drafts, { ...reports, id: drafts.id }],
     [{ ...drafts, tokenHash: digest("notification-secret") }], [drafts, null], Array.from({ length: 21 }, (_, i) => ({ ...drafts, id: "k" + i, tokenHash: digest("t" + i) }))]) {
     keys(store, list);
