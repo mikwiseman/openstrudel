@@ -307,7 +307,7 @@ export class MessageService {
     const group = this.store.telegramChats().find(chat => chat.conversationId === conversationId && Number(chat.chatId) < 0);
     return group?.chatId ?? (c?.channel === "telegram" && Number(c.externalId?.split("::")[0]) < 0 ? c.externalId!.split("::")[0]! : undefined);
   }
-  private isGroupChat(conversationId: string): boolean { return this.groupChatId(conversationId) !== undefined; }
+  isGroupChat(conversationId: string): boolean { return this.groupChatId(conversationId) !== undefined; }
 
   contextFor(conversationId: string): string {
     const c = this.store.getConversation(conversationId);

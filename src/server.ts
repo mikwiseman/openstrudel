@@ -284,7 +284,7 @@ export class HttpApi {
         const context = conversationId ? this.messages.contextFor(conversationId) : agent && agent !== "main" ? this.store.getSetting("employee.context." + agent) ?? this.store.getProfile(agent)?.domain ?? "personal" : "personal";
         const engine = this.engine?.forAgent?.(agent ?? "main",context,conversationId) ?? this.engine?.forContext?.(context) ?? this.engine;
         if (!engine?.models) throw new HomeError("Обновите OpenStrudel на устройстве сотрудника, чтобы выбирать модель.",501);
-        const models = (await engine.models(url.searchParams.get("refresh") === "true")).filter(model => !conversationId || !context.startsWith("group-") || providerInfo(model.provider ?? "chatgpt")?.engine !== "acp");
+        const models = (await engine.models(url.searchParams.get("refresh") === "true")).filter(model => !conversationId || !this.messages.isGroupChat(conversationId) || providerInfo(model.provider ?? "chatgpt")?.engine !== "acp");
         const automatic = automaticProvider(this.store);
         if (request.method === "POST") {
           const input = await this.body(request), selection = parseModelSelection(input,Boolean(agent));

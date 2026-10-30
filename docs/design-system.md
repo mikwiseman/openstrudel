@@ -108,6 +108,15 @@ Liquid Glass, radius 24, minimum height 48, growing to 8 lines and then scrollin
 
 The character, one sentence, at most one action. Empty conversation: character 96 at 40 % of the height, the name in display, the role in at most two lines of 13 secondary within 360; the composer is the action. On the Mac the keyboard stays on the chosen sidebar row, so arrows and Delete keep working; Tab reaches the composer after the search field. A new employee's draft focuses its composer. Welcome and onboarding: character 96, display title, body leading-aligned when it runs past two lines, one prominent capsule button in ink (canvas-coloured label); secondary actions are plain text buttons. Optically centred at 40 % from the top.
 
+## News reader
+
+The one deliberate exception to the chat's type and colour rules, approved by Mik on 30 October 2026 with the News prototype. An employee with stories opens on tabs **Утренний выпуск · Радар · Чат** (`NewsViews.swift`).
+
+- Headlines use the system serif (New York, `design: .serif`): edition date 48, lead 36, list 26, radar 22, story 42, our view 21 (iOS: Dynamic Type styles). Reading text stays SF at the reading size.
+- Kickers: 10.5 Semibold, upper case, tracking 1.4–2. Column 720 for lists, 640 for a story.
+- `NewsStatusFill` `#E3EADA` / `#26331F` / `#D6E1CA` / `#1E2A18` and `NewsStatusText` `#3B5636` / `#B5CFAA` / `#253D21` / `#D6EBCC` mark a story's factual status and section labels (6.6–11.9:1). Always with words.
+- Back from a story returns to the same place in the list.
+
 ## Motion
 
 Layout: `.smooth(duration: 0.25)`, no bounce, under 300 ms. Characters only: springs with response 0.35 to 0.5 and damping 0.55 to 0.8. Press feedback on press. Reduce Motion: fades only.
