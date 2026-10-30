@@ -1,4 +1,5 @@
 import type { Store } from "./store.js";
+import { assertNativeAccess } from "./authorization.js";
 import type { Attachment, CodexEngine, DynamicTool, EmployeeProfile } from "./types.js";
 import { Interactions, safeURL } from "./interactions.js";
 import type { Scheduler } from "./scheduler.js";
@@ -35,6 +36,7 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
   if (context.profile) definitions.push(storyTool);
   if (!context.profile) definitions.push(tool("create_employee", "Create a permanent employee only when the user asks to create one. Return its actual identity.", profileSchema), tool("list_employees", "List permanent employees so the user can address one by @name.", schema({})));
   return { definitions, attachments, call: async (name: string, args: Record<string, unknown>): Promise<unknown> => {
+    assertNativeAccess(store, context.conversationId, context.telegramSenderId);
     if (!definitions.some(t => t.name === name)) throw new Error("Tool unavailable for this employee");
     if (telegram.definitions.some(t => t.name === name)) return telegram.call(name,args);
     if (name === "transcribe_audio") {

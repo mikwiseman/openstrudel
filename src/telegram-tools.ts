@@ -3,6 +3,7 @@ import type { Store } from "./store.js";
 import type { ConversationFiles } from "./files.js";
 import type { TelegramAdapter } from "./telegram.js";
 import type { DynamicTool } from "./types.js";
+import { assertNativeAccess, isProtectedTelegramAudience, isRestrictedSubject } from "./authorization.js";
 
 export interface TelegramToolContext {
   conversationId: string;
@@ -20,7 +21,7 @@ export interface TelegramToolContext {
 }
 
 /** A Telegram user who paired their private chat with this Home: an owner. */
-const paired = (store: Store, sender: string) => Number(sender) > 0 && store.getTelegramChat(sender)?.allowedSenders.includes(sender) === true;
+const paired = (store: Store, sender: string) => Number(sender) > 0 && !isRestrictedSubject(store, sender) && store.getTelegramChat(sender)?.allowedSenders.includes(sender) === true;
 
 /** The adapter's verified sender is the paired owner, whatever the chat. Never from model arguments. */
 export function ownerSender(store: Store, context: TelegramToolContext): boolean {
@@ -37,7 +38,7 @@ export function accessPeople(store: Store): string[] {
 }
 export const accessOwners = (store: Store) => store.telegramChats().filter(chat => paired(store, chat.chatId)).map(chat => chat.chatId);
 /** Only from the adapter's verified sender id: a paired owner or someone on the access list. */
-export const hasAccess = (store: Store, sender?: string) => Boolean(sender && (paired(store, sender) || accessPeople(store).includes(sender)));
+export const hasAccess = (store: Store, sender?: string) => Boolean(sender && !isRestrictedSubject(store, sender) && (paired(store, sender) || accessPeople(store).includes(sender)));
 
 /** The already connected bot is a native capability, not another MCP sign-in. */
 export function telegramTools(store: Store, context: TelegramToolContext) {
@@ -49,11 +50,13 @@ export function telegramTools(store: Store, context: TelegramToolContext) {
   ] : [];
   const chats = () => {
     const owner = ownerTurn(store, context);
-    return store.telegramChats().filter(chat => chat.enabled !== false && (context.scheduled
+    // A model turn never posts to a protected audience, even the owner's: only its own verified answers reach it.
+    return store.telegramChats().filter(chat => chat.enabled !== false && !isProtectedTelegramAudience(store, chat.chatId) && (context.scheduled
       ? chat.chatId === context.scheduleTelegramChatId
       : owner || chat.conversationId === context.conversationId));
   };
   return { definitions, async call(name: string, args: Record<string, unknown>) {
+    assertNativeAccess(store, context.conversationId, context.telegramSenderId);
     if (!context.telegram?.enabled()) throw new Error("Подключите бота в настройках устройства → Telegram. Дополнительный сервис Telegram сотруднику не нужен.");
     if (name === "list_telegram_chats") {
       if (args.query != null && (typeof args.query !== "string" || args.query.length > 240)) throw new Error("Укажите короткое название чата.");

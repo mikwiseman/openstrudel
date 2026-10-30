@@ -14,13 +14,13 @@ afterEach(() => {
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
 
-function start(processHome?: string) {
+function start(processHome?: string, processWorkingDirectory?: string) {
   const directory = mkdtempSync(join(tmpdir(), "openstrudel-rpc-home-"));
   directories.push(directory);
   const child = Object.assign(new EventEmitter(), { stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), kill: vi.fn() });
   spawn.mockReturnValue(child);
   const codexHome = join(directory, "credentials");
-  const rpc = new CodexRpc(codexHome, undefined, undefined, undefined, processHome);
+  const rpc = new CodexRpc(codexHome, undefined, undefined, undefined, processHome, {}, processWorkingDirectory);
   return { rpc, codexHome, env: spawn.mock.calls.at(-1)![2].env as NodeJS.ProcessEnv };
 }
 
@@ -36,6 +36,21 @@ it("isolates account discovery from the owner's global skills, shell startup and
     expect(env.TELEGRAM_BOT_TOKEN).toBeUndefined();
     expect(process.env.HOME).toBe("/owner-with-protected-Documents");
     expect(process.env.CODEX_HOME).toBe("/unrelated-codex-account");
+  } finally { rpc.close(); }
+});
+
+it("starts restricted workers outside the Home project while keeping a separate empty user home", () => {
+  const directory = mkdtempSync(join(tmpdir(), "openstrudel-restricted-cwd-"));
+  directories.push(directory);
+  vi.stubEnv("WAI_SCHOOL_FAMILY_CHAT_SECRET", "synthetic-family-secret");
+  vi.stubEnv("COMPANY_MCP_TOKEN", "synthetic-mcp-token");
+  const { rpc, env, codexHome } = start(undefined, directory);
+  try {
+    expect(spawn.mock.calls.at(-1)![2].cwd).toBe(directory);
+    expect(env.HOME).toBe(join(codexHome, "user-home"));
+    expect(env.HOME).not.toBe(directory);
+    expect(env.WAI_SCHOOL_FAMILY_CHAT_SECRET).toBeUndefined();
+    expect(env.COMPANY_MCP_TOKEN).toBeUndefined();
   } finally { rpc.close(); }
 });
 

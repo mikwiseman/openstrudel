@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 const wire = vi.hoisted(() => ({ request: vi.fn(), onRequest: undefined as undefined | ((method: string, params: any) => Promise<any>) }));
 vi.mock("../src/rpc.js", () => ({ CodexRpc: class {
   closed = false;
+  exited = Promise.resolve();
   constructor(_home: unknown, _notify: unknown, request: typeof wire.onRequest) { wire.onRequest = request; }
   initialize = async () => undefined;
   request = wire.request;

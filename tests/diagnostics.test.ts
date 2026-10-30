@@ -32,3 +32,12 @@ it("bounds persistent history and projects metadata so secrets and transcript te
   expect(JSON.stringify(report)).not.toMatch(/secret|private transcript/);
   expect(reopened.db.prepare("SELECT COUNT(*) AS n FROM diagnostic_events").get()?.n).toBe(200);
 });
+
+it("keeps a restricted turn's stage, error class and fixed reason, never free text", () => {
+  const s = store();
+  recordDiagnostic(s, "restricted.failed", { stage: "runtime", errorClass: "Error", reason: "sandbox", durationMs: 12.4 });
+  recordDiagnostic(s, "restricted.failed", { stage: "everywhere", errorClass: "Error: bwrap failed for /data/secret", reason: "fs sandbox helper failed", status: 502 } as any);
+  const [latest, first] = diagnosticReport(s).events;
+  expect(first).toEqual({ id: expect.any(Number), time: expect.any(String), event: "restricted.failed", stage: "runtime", errorClass: "Error", reason: "sandbox", durationMs: 12 });
+  expect(latest).toEqual({ id: expect.any(Number), time: expect.any(String), event: "restricted.failed", status: 502 });
+});

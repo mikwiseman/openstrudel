@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { Attachment, Channel, Conversation, EmployeeProfile, Message, NewsStory, TelegramChat, HistoryEntry } from "./types.js";
 import { id, jsonArray, jsonObject, nowIso } from "./util.js";
 import { defaultAppearance, parseAppearance, type AgentAppearance } from "./agent-appearance.js";
+import { protectScopedTelegramTransport } from "./authorization.js";
 
 type Row = Record<string, unknown>;
 
@@ -116,6 +117,11 @@ export class Store {
     if (!columns.has("attachments_json")) this.db.exec("ALTER TABLE messages ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]'");
     if (!columns.has("hidden")) this.db.exec("ALTER TABLE messages ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0");
     if (!columns.has("context_only")) this.db.exec("ALTER TABLE messages ADD COLUMN context_only INTEGER NOT NULL DEFAULT 0");
+    // Historical messages deliberately have no verified identity. Never infer it from display names.
+    this.db.exec(`CREATE TABLE IF NOT EXISTS message_authorizations (
+      message_id TEXT PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE, user_id TEXT NOT NULL,
+      chat_id TEXT NOT NULL, external_message_id TEXT NOT NULL, fingerprint TEXT NOT NULL
+    )`);
     this.db.exec("CREATE INDEX IF NOT EXISTS messages_page_idx ON messages(conversation_id, hidden, created_at)");
     if (!columns.has("story_id")) this.db.exec("ALTER TABLE messages ADD COLUMN story_id TEXT");
     if (!columns.has("story_json")) this.db.exec("ALTER TABLE messages ADD COLUMN story_json TEXT");
@@ -236,8 +242,9 @@ export class Store {
 
   linkTelegramChat(input: { chatId: string; title: string; allowedSenders: string[] }): TelegramChat {
     if (!/^-?\d+$/.test(input.chatId) || input.allowedSenders.some(s => !/^\d+$/.test(s))) throw new Error("Некорректный Telegram-чат или участник");
-    this.db.prepare("INSERT INTO telegram_chats(chat_id,title,allowed_senders_json) VALUES(?,?,?) ON CONFLICT(chat_id) DO UPDATE SET title=excluded.title, allowed_senders_json=excluded.allowed_senders_json")
-      .run(input.chatId, input.title, JSON.stringify([...new Set(input.allowedSenders)]));
+    const scoped = protectScopedTelegramTransport(this, input.chatId);
+    this.db.prepare("INSERT INTO telegram_chats(chat_id,title,allowed_senders_json,access,replies) VALUES(?,?,?,'approved',?) ON CONFLICT(chat_id) DO UPDATE SET title=excluded.title, allowed_senders_json=excluded.allowed_senders_json")
+      .run(input.chatId, input.title, JSON.stringify(scoped ? [] : [...new Set(input.allowedSenders)]), scoped && Number(input.chatId) < 0 ? "mentions" : "instructions");
     return this.getTelegramChat(input.chatId)!;
   }
 
@@ -246,10 +253,11 @@ export class Store {
     const chat = this.getTelegramChat(chatId);
     if (!chat || Number(chatId) >= 0 || !title.trim() || chat.title === title) return;
     this.db.prepare("UPDATE telegram_chats SET title=? WHERE chat_id=?").run(title, chatId);
-    this.db.prepare("UPDATE conversations SET title=? WHERE channel='telegram' AND (external_id=? OR external_id LIKE ?)").run(title, chatId, chatId + "::employee::%");
+    this.db.prepare("UPDATE conversations SET title=? WHERE channel='telegram' AND (external_id=? OR external_id=? OR external_id LIKE ?)").run(title, chatId, chatId + "::restricted", chatId + "::employee::%");
   }
 
   bindTelegramChat(chatId: string, profileId: string | null): TelegramChat {
+    protectScopedTelegramTransport(this, chatId);
     const chat = this.getTelegramChat(chatId);
     if (!chat) throw new Error("Сначала подключите этот Telegram-чат");
     if (chat.profileId === profileId && chat.conversationId && (Number(chatId) > 0 || this.getConversation(chat.conversationId)?.externalId === `${chatId}::employee::${profileId}`)) return chat;
@@ -267,24 +275,26 @@ export class Store {
 
   /** A connected bot is sufficient: root assistant, isolated group history. */
   connectTelegramGroup(chatId: string): TelegramChat {
+    const scoped = protectScopedTelegramTransport(this, chatId);
     const chat = this.getTelegramChat(chatId);
     if (!chat || Number(chatId) >= 0) throw new Error("Группа Telegram не найдена");
     if (chat.conversationId || chat.profileId) return chat;
-    const conversation = this.getOrCreateConversation({ channel: "telegram", externalId: chatId, title: chat.title });
-    this.db.prepare("UPDATE telegram_chats SET conversation_id=?,access='members',replies='instructions' WHERE chat_id=?").run(conversation.id, chatId);
+    const conversation = this.getOrCreateConversation({ channel: "telegram", externalId: scoped ? `${chatId}::restricted` : chatId, title: chat.title });
+    this.db.prepare("UPDATE telegram_chats SET conversation_id=?,access=?,replies=? WHERE chat_id=?").run(conversation.id, scoped ? "approved" : "members", scoped ? "mentions" : "instructions", chatId);
     return this.getTelegramChat(chatId)!;
   }
 
   /** Telegram upgrades ordinary groups when admin rights are configured. */
   migrateTelegramGroup(oldId: string, newId: string): void {
     if (!/^-[1-9]\d*$/.test(oldId) || !/^-[1-9]\d*$/.test(newId) || oldId === newId || !this.getTelegramChat(oldId)) return;
-    this.db.exec("BEGIN IMMEDIATE");
+    this.db.exec("SAVEPOINT telegram_group_migration");
     try {
       // Membership discovery can create the destination before this service event.
       // Keep the established binding, participants, threads and file workspace.
       this.db.prepare("DELETE FROM telegram_chats WHERE chat_id=?").run(newId);
       this.db.prepare("UPDATE telegram_chats SET chat_id=? WHERE chat_id=?").run(newId, oldId);
-      const conversations = this.db.prepare("SELECT id,external_id FROM conversations WHERE channel='telegram' AND (external_id=? OR external_id LIKE ?)").all(oldId, oldId + "::employee::%") as Row[];
+      protectScopedTelegramTransport(this, newId);
+      const conversations = this.db.prepare("SELECT id,external_id FROM conversations WHERE channel='telegram' AND (external_id=? OR external_id=? OR external_id LIKE ?)").all(oldId, oldId + "::restricted", oldId + "::employee::%") as Row[];
       for (const row of conversations) {
         const externalId = newId + String(row.external_id).slice(oldId.length);
         // Preserve any already-created destination history rather than delete it.
@@ -304,8 +314,8 @@ export class Store {
       const hook = jsonObject(this.getSetting("telegram.notification_hook")), rename = (chatId: unknown) => chatId === oldId ? newId : chatId;
       if (hook.chatId === oldId || Array.isArray(hook.chatIds) && hook.chatIds.includes(oldId)) this.setSetting("telegram.notification_hook",
         JSON.stringify({ ...hook, chatId: rename(hook.chatId), ...(Array.isArray(hook.chatIds) ? { chatIds: [...new Set(hook.chatIds.map(rename))] } : {}) }));
-      this.db.exec("COMMIT");
-    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
+      this.db.exec("RELEASE telegram_group_migration");
+    } catch (error) { this.db.exec("ROLLBACK TO telegram_group_migration; RELEASE telegram_group_migration"); throw error; }
   }
 
   importHistory(conversationId: string, entries: HistoryEntry[]): number {

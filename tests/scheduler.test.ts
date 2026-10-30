@@ -3,6 +3,7 @@ import { Store } from "../src/store.js";
 import { MessageService } from "../src/messages.js";
 import { Scheduler } from "../src/scheduler.js";
 import { scheduleTiming } from "../src/schedule-timing.js";
+import { saveTelegramAuthorization } from "../src/authorization.js";
 
 const stores: Store[] = [];
 afterEach(() => { for (const store of stores.splice(0)) store.close(); });
@@ -13,6 +14,36 @@ function setup() {
   const scheduler = new Scheduler(store, messages);
   return { store, messages, scheduler, calls: () => calls };
 }
+describe("restricted audience recovery", () => {
+  it.each([
+    ["-100", "ready", true],
+    ["-100", "running", false],
+    ["123", "ready", true],
+    ["123", "running", false],
+  ] as const)("does not deliver legacy %s / %s output after restrictions are enabled or revoked", async (chatId, status, enabled) => {
+    const { store, scheduler, calls } = setup(), conversation = store.primaryConversation();
+    store.linkTelegramChat({ chatId, title: "Synthetic destination", allowedSenders: ["123"] });
+    const saved = scheduler.save({ conversationId: conversation.id, name: "Legacy digest", prompt: "Read legacy private data",
+      cron: "0 9 * * *", timezone: "UTC", telegramChatId: chatId, delivery: "telegram", enabled: false }, new Date("2030-01-01T00:00:00Z"));
+    const inbound = store.addMessage({ conversationId: conversation.id, channel: "api", direction: "inbound", externalId: "schedule:legacy-run", text: "Legacy request" });
+    const outbound = store.addMessage({ conversationId: conversation.id, channel: "api", direction: "outbound", replyToId: inbound.id, text: "SYNTHETIC PRIVATE DRAFT" });
+    store.db.prepare("INSERT INTO schedule_runs(id,schedule_id,conversation_id,scheduled_for,status,created_at,message_id) VALUES(?,?,?,?,?,?,?)")
+      .run("legacy-run", saved.id, conversation.id, saved.nextRunAt, status, saved.nextRunAt, status === "ready" ? outbound.id : null);
+    saveTelegramAuthorization(store, { version: 1, revision: 0,
+      connectors: { school: { url: "https://school.invalid/api/mcp/company", headers: {} } },
+      policies: { school: { connectorId: "school", tools: [] } },
+      subjects: chatId === "123" ? { "123": { enabled, capabilities: [], privatePolicyId: "school" } } : {},
+      chats: chatId === "-100" ? { "-100": { enabled, policyId: "school", defaultCapabilities: [], members: {} } } : {} });
+    const deliver = vi.fn(async () => {}); scheduler.deliver = deliver;
+    scheduler.recover();
+    expect(scheduler.runs(conversation.id)[0]?.status).toBe("ready");
+    await scheduler.tick(new Date("2030-01-02T00:00:00Z")); await scheduler.idle();
+    expect(deliver).not.toHaveBeenCalled(); expect(calls()).toBe(0);
+    expect(scheduler.runs(conversation.id)[0]).toMatchObject({ status: "failed", error: expect.stringContaining("ограниченным доступом") });
+    await scheduler.tick(new Date("2030-01-03T00:00:00Z")); await scheduler.idle();
+    expect(deliver).not.toHaveBeenCalled();
+  });
+});
 describe("durable one-time reminders", () => {
   const now = new Date("2030-01-15T06:00:00Z");
   const request = { name: "Reminder", prompt: "Send the requested reminder here", cron: "@once 2030-01-15T09:01:00+03:00", timezone: "Europe/Moscow" };

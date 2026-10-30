@@ -10,7 +10,7 @@ describe("Telegram ownership and delivery", () => {
   it("ignores strangers and binds an explicitly paired chat to Home", async () => {
     const store = new Store(":memory:"); stores.push(store);
     const handle = vi.fn(async () => ({ conversationId: "home", messageId: "reply", text: "done" }));
-    const adapter = new TelegramAdapter("123:test", store, { handle } as unknown as MessageService);
+    const adapter = new TelegramAdapter("123:test", store, { handle, assertDelivery: vi.fn() } as unknown as MessageService);
     const calls: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (url: string) => { calls.push(url); return Response.json({ ok: true, result: {} }); }));
     await adapter.processUpdate({ update_id: 1, message: { message_id: 1, text: "read my files", chat: { id: 42, type: "private" } } });

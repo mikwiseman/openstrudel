@@ -7,6 +7,7 @@ import type { EmployeeProfile } from '../src/types.js';
 const wire = vi.hoisted(() => ({ request: vi.fn(), notify: undefined as any, incoming: undefined as any }));
 vi.mock('../src/rpc.js', () => ({ CodexRpc: class {
   closed = false;
+  exited = Promise.resolve();
   constructor(_home: unknown, notify: any, incoming: any) { wire.notify = notify; wire.incoming = incoming; }
   initialize = async () => undefined;
   request = wire.request;

@@ -13,12 +13,14 @@ export class CodexRpc {
   private readonly pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   private nextId = 1;
   closed = false;
+  /** Settles when the app-server process is gone; it may still write to CODEX_HOME until then. */
+  readonly exited: Promise<void>;
   get busy(): boolean { return this.pending.size > 0; }
 
   constructor(codexHome?: string, private readonly onNotification?: (m: RpcMessage) => void,
     private readonly onRequest?: (method: string, params: any) => Promise<unknown>,
     private readonly onClose?: (error: Error) => void, processHome?: string,
-    overrides: Record<string, string | number> = {}) {
+    overrides: Record<string, string | number> = {}, processWorkingDirectory?: string) {
     const executable = resolve(dirname(createRequire(import.meta.url).resolve("@openai/codex/package.json")), "bin/codex.js");
     // Bot/server credentials must not become readable tool environment variables.
     const env: NodeJS.ProcessEnv = {};
@@ -34,7 +36,8 @@ export class CodexRpc {
       mkdirSync(env.HOME, { recursive: true, mode: 0o700 });
     }
     const config = Object.entries(overrides).flatMap(([key, value]) => ["-c", `${key}=${JSON.stringify(value)}`]);
-    this.child = spawn(process.execPath, [executable, ...config, "app-server"], { env, stdio: "pipe" });
+    this.child = spawn(process.execPath, [executable, ...config, "app-server"], { env, stdio: "pipe", ...(processWorkingDirectory ? { cwd: processWorkingDirectory } : {}) });
+    this.exited = new Promise(resolve => { this.child.once("exit", () => resolve()); this.child.once("error", () => resolve()); });
     this.lines = createInterface({ input: this.child.stdout, crlfDelay: Infinity });
     this.lines.on("line", line => { void this.receive(line); });
     this.child.stderr.resume();

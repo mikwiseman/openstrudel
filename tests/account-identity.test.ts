@@ -9,6 +9,7 @@ import { Accounts } from "../src/accounts.js";
 const wire = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock("../src/rpc.js", () => ({ CodexRpc: class {
   initialize = async () => {};
+  exited = Promise.resolve();
   request = wire.request;
   close() {}
 } }));

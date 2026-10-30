@@ -1,5 +1,6 @@
 import { CronExpressionParser } from "cron-parser";
 import { randomUUID } from "node:crypto";
+import { isRestrictedChat, isRestrictedSubject } from "./authorization.js";
 import type { Store } from "./store.js";
 import type { MessageService } from "./messages.js";
 import type { Attachment } from "./types.js";
@@ -166,6 +167,8 @@ export class Scheduler {
       }
       const destination = this.destination(conversationId, chatId, delivery);
       if (destination) {
+        // Includes ready editions recovered after a policy was enabled.
+        if (isRestrictedChat(this.store, destination) || isRestrictedSubject(this.store, destination)) throw new Error("Фоновая доставка в чат с ограниченным доступом недоступна.");
         if (!this.deliver) throw new Error("Доставка Telegram недоступна");
         const profileId=this.store.getConversation(conversationId)?.profileId;
         const name=profileId ? this.store.getProfile(profileId)?.name : null;

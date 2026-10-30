@@ -10,6 +10,7 @@ const wire = vi.hoisted(() => ({
 }));
 vi.mock("../src/rpc.js", () => ({ CodexRpc: class {
   closed = false;
+  exited = Promise.resolve();
   constructor(public home?: string, public notify?: (message: any) => void) { wire.clients.push(this); }
   initialize = wire.initialize;
   request = wire.request;
