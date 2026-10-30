@@ -94,19 +94,32 @@ private struct Kicker: View {
     let section: String
     let status: String?
     var body: some View {
-        HStack(spacing: 8) {
-            Text(section.uppercased()).tracking(1.4).foregroundStyle(AppTheme.secondaryText).lineLimit(1)
-            if let status {
-                Text("•").foregroundStyle(AppTheme.secondaryText).accessibilityHidden(true)
-                Text(status.uppercased()).tracking(1)
-                    .foregroundStyle(Color("NewsStatusText"))
-                    .padding(.horizontal, 6).padding(.vertical, 3)
-                    .background(Color("NewsStatusFill"), in: .rect(cornerRadius: 4, style: .continuous))
-                    .fixedSize()
+        // Large text moves the status under the section rather than breaking the section's words.
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                label.fixedSize()
+                if let status {
+                    Text("•").foregroundStyle(AppTheme.secondaryText).accessibilityHidden(true)
+                    pill(status)
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                label
+                if let status { pill(status) }
             }
         }
         .font(NewsType.kicker)
         .accessibilityElement(children: .combine)
+    }
+
+    private var label: some View { Text(section.uppercased()).tracking(1.4).foregroundStyle(AppTheme.secondaryText) }
+
+    private func pill(_ status: String) -> some View {
+        Text(status.uppercased()).tracking(1)
+            .foregroundStyle(Color("NewsStatusText"))
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .background(Color("NewsStatusFill"), in: .rect(cornerRadius: 4, style: .continuous))
+            .fixedSize()
     }
 }
 
@@ -125,13 +138,23 @@ private struct ArrowLabel: View {
 struct NewsSwitcher: View {
     @Binding var mode: NewsPlace.Mode
     var body: some View {
+        // Large text keeps the three words on one line by dropping the symbols first.
+        ViewThatFits(in: .horizontal) {
+            tabs.labelStyle(.titleAndIcon)
+            tabs.labelStyle(.titleOnly)
+            ScrollView(.horizontal) { tabs.labelStyle(.titleOnly) }.scrollIndicators(.hidden)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var tabs: some View {
         HStack(spacing: 24) {
             tab(L("Утренний выпуск"), symbol: "newspaper", .edition)
             tab(L("Радар"), symbol: "dot.radiowaves.left.and.right", .radar)
             tab(L("Чат"), symbol: "bubble.left", .chat)
-            Spacer(minLength: 0)
         }
-        .accessibilityElement(children: .contain)
+        .fixedSize()
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func tab(_ title: String, symbol: String, _ value: NewsPlace.Mode) -> some View {
@@ -153,18 +176,38 @@ struct NewsDeskView: View {
     @Binding var place: NewsPlace
 
     var body: some View {
-        let desk = NewsDesk(client.newsMessages)
-        if let open = desk.item(place.story) {
-            let list = place.mode == .radar ? desk.radarItems : desk.editionItems
-            let next = list.firstIndex { $0.id == open.id }.flatMap { list.indices.contains($0 + 1) ? list[$0 + 1] : nil }
-            NewsStoryReader(item: open, next: next, backTitle: place.mode == .radar ? L("К радару") : L("К выпуску"),
-                            back: { place.story = nil }, open: { place.story = $0 })
-                .id(open.id)
-        } else if place.mode == .radar {
-            NewsRadarView(items: desk.radarItems, anchor: $place.radarAnchor) { place.story = $0 }
-        } else {
+        let desk = NewsDesk(client.newsMessages), open = desk.item(place.story)
+        // Both lists stay alive under the story, so going back lands exactly where the reader left.
+        ZStack {
             NewsEditionView(desk: desk, anchor: $place.editionAnchor, showRadar: { place.mode = .radar }) { place.story = $0 }
+                .shown(open == nil && place.mode == .edition)
+            NewsRadarView(items: desk.radarItems, anchor: $place.radarAnchor) { place.story = $0 }
+                .shown(open == nil && place.mode == .radar)
+            if let open {
+                let list = place.mode == .radar ? desk.radarItems : desk.editionItems
+                let next = list.firstIndex { $0.id == open.id }.flatMap { list.indices.contains($0 + 1) ? list[$0 + 1] : nil }
+                NewsStoryReader(item: open, next: next, backTitle: place.mode == .radar ? L("К радару") : L("К выпуску"),
+                                back: { place.story = nil }, open: { place.story = $0 })
+                    .id(open.id)
+            }
         }
+    }
+}
+
+private extension View {
+    func shown(_ visible: Bool) -> some View {
+        opacity(visible ? 1 : 0).allowsHitTesting(visible).accessibilityHidden(!visible)
+    }
+}
+
+private extension View {
+    /// Under the Mac toolbar and the tabs, text scrolls behind a hard edge, as in the chat.
+    func newsScrollEdge() -> some View {
+        #if os(macOS)
+        scrollEdgeEffectStyle(.hard, for: .top)
+        #else
+        self
+        #endif
     }
 }
 
@@ -184,6 +227,7 @@ private struct NewsPage<Content: View>: View {
         // Back from a story, the list opens where the reader left it.
         .scrollPosition(id: $anchor, anchor: .top)
         .scrollIndicators(.hidden)
+        .newsScrollEdge()
     }
 }
 
@@ -369,15 +413,10 @@ struct NewsStoryReader: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Button(action: back) { Label(backTitle, systemImage: "arrow.left") }
-                            .buttonStyle(.plain).font(AppTypography.interface).foregroundStyle(AppTheme.secondaryText)
-                            .keyboardShortcut(.cancelAction)
-                        Spacer(minLength: 16)
-                        if let checked = item.latest.sentAt {
-                            Text(L("Проверено \(checked.formatted(.dateTime.day().month(.wide).hour().minute().locale(L10n.locale)))"))
-                                .font(AppTypography.meta).foregroundStyle(AppTheme.secondaryText)
-                        }
+                    // Large text puts the date under the way back instead of squeezing both.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .firstTextBaseline) { backButton; Spacer(minLength: 16); checked }
+                        VStack(alignment: .leading, spacing: 8) { backButton; checked }
                     }
                     .padding(.bottom, 32)
 
@@ -424,10 +463,24 @@ struct NewsStoryReader: View {
                 .frame(maxWidth: .infinity)
             }
             .scrollIndicators(.hidden)
+            .newsScrollEdge()
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: item.thread.count) { old, new in
                 if new > old { withAnimation { proxy.scrollTo("discussion-end", anchor: .bottom) } }
             }
+        }
+    }
+
+    private var backButton: some View {
+        Button(action: back) { Label(backTitle, systemImage: "arrow.left") }
+            .buttonStyle(.plain).font(AppTypography.interface).foregroundStyle(AppTheme.secondaryText)
+            .keyboardShortcut(.cancelAction).fixedSize()
+    }
+
+    @ViewBuilder private var checked: some View {
+        if let checked = item.latest.sentAt {
+            Text(L("Проверено \(checked.formatted(.dateTime.day().month(.wide).hour().minute().locale(L10n.locale)))"))
+                .font(AppTypography.meta).foregroundStyle(AppTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
         }
     }
 

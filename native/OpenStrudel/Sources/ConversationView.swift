@@ -286,7 +286,7 @@ struct ConversationView: View {
                         .font(AppTypography.meta).foregroundStyle(AppTheme.secondaryText).lineLimit(1)
                 }
             }
-            .frame(maxWidth: showsNewsDesk ? NewsLayout.column : Layout.column, alignment: .leading)
+            .frame(maxWidth: showsNews ? NewsLayout.column : Layout.column, alignment: .leading)
             .padding(.horizontal, Layout.edge)
             .padding(.top, 16)
             .frame(maxWidth: .infinity)
@@ -606,7 +606,7 @@ struct ConversationSources: View {
 
 /// The conversation's edges: 32 from the detail edges and under the Mac toolbar, the 16 margin on iOS;
 /// the composer 24 above the Mac window edge and 20 above the iOS safe area.
-private extension Layout {
+extension Layout {
     #if os(macOS)
     static let edge: CGFloat = 32
     static let belowToolbar: CGFloat = 32
