@@ -6,7 +6,7 @@ import { dirname, resolve } from "node:path";
 import { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { stringify } from "smol-toml";
-import { toolBridge } from "./acp-mcp.js";
+import { stdioBridge, toolBridge } from "./acp-mcp.js";
 import { agentInstructions, contextServers, hostEnvironment, imageType, insideWorkspace } from "./claude.js";
 import { modelReasoning, reasoningChoices, type ModelChoice } from "./model-settings.js";
 import { ProviderIncident, type ProviderInfo } from "./providers.js";
@@ -111,6 +111,7 @@ export class AcpEngine implements CodexEngine {
     const agent = this.launch(resolve(root, ".data/workspace", context)), cwd = agent.cwd, calls = new Map<string, acp.ToolCallUpdate>();
     let sessionId = options.threadId?.slice(0, -signed.length) ?? "", response = "", afterTool = false, prompting = false, halted = false, timer: NodeJS.Timeout | undefined;
     let ctx: acp.ClientContext | undefined, bridge: Awaited<ReturnType<typeof toolBridge>> | undefined;
+    const bridges: Array<Awaited<ReturnType<typeof stdioBridge>>> = [];
     // Grok gets session/cancel and its pending questions answer "cancelled"; one that ignores it is killed after 5 s.
     let halt!: (error: Error) => void;
     const halting = new Promise<never>((_, reject) => { halt = reject; });
@@ -172,7 +173,7 @@ export class AcpEngine implements CodexEngine {
           ctx = client;
           const init = await open(client);
           bridge = options.tools ? await toolBridge(options.tools) : undefined;
-          const mcpServers = [...bridge ? [http("openstrudel", bridge.url, { Authorization: "Bearer " + bridge.token })] : [], ...services(root, context, options)];
+          const mcpServers = [...bridge ? [http("openstrudel", bridge.url, { Authorization: "Bearer " + bridge.token })] : [], ...await services(root, context, options, cwd, bridges)];
           let configOptions: acp.SessionConfigOption[] | null | undefined;
           if (sessionId) {
             try { ({ configOptions } = await client.request("session/load", { sessionId, cwd, mcpServers })); }
@@ -209,7 +210,7 @@ export class AcpEngine implements CodexEngine {
       await agent.closed;
       clearTimeout(grace); clearTimeout(timer);
       this.running.delete(end);
-      await bridge?.close();
+      await Promise.all([bridge, ...bridges].map(b => b?.close()));
     }
     if (failure instanceof AcpSessionLost) throw failure;
     if (signedOut(failure)) throw new ProviderSignInError(provider);
@@ -227,11 +228,15 @@ async function open(ctx: acp.ClientContext): Promise<acp.InitializeResponse> {
   return init;
 }
 
-/** The context's MCP services in ACP's shape; "openstrudel" is the employee tools' name. */
-function services(root: string, context: string, options: RunOptions): acp.McpServer[] {
-  return Object.entries(contextServers(root, context, options)).flatMap(([name, s]: [string, any]): acp.McpServer[] => name === "openstrudel" ? []
-    : s.type === "http" ? [http(name, s.url, s.headers)]
-      : [{ name, command: s.command, args: s.args ?? [], env: Object.entries(s.env ?? {}).map(([name, value]) => ({ name, value: String(value) })) }]);
+/** The context's MCP services in ACP's shape; "openstrudel" is the employee tools' name. A stdio service runs outside Grok's sandbox
+ * behind a loopback endpoint of this turn (stdioBridge), kept in `bridges` to stop with the turn. */
+async function services(root: string, context: string, options: RunOptions, cwd: string, bridges: Array<Awaited<ReturnType<typeof stdioBridge>>>): Promise<acp.McpServer[]> {
+  return Promise.all(Object.entries(contextServers(root, context, options)).filter(([name]) => name !== "openstrudel").map(async ([name, s]: [string, any]) => {
+    if (s.type === "http") return http(name, s.url, s.headers);
+    const bridge = await stdioBridge({ command: s.command, args: s.args, env: Object.fromEntries(Object.entries(s.env ?? {}).map(([k, v]) => [k, String(v)])) }, cwd);
+    bridges.push(bridge);
+    return http(name, bridge.url, { Authorization: "Bearer " + bridge.token });
+  }));
 }
 
 const http = (name: string, url: string, headers: Record<string, string> = {}): acp.McpServer =>

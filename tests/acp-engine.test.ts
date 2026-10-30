@@ -65,7 +65,8 @@ it("runs the pinned agent in the workspace with a private home, the employee too
     expect(created.mcpServers).toEqual([
       { type: "http", name: "openstrudel", url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/[0-9a-f]{32}$/), headers: [{ name: "Authorization", value: expect.stringMatching(/^Bearer [0-9a-f]{64}$/) }] },
       { type: "http", name: "linear", url: "https://mcp.linear.app/mcp", headers: [{ name: "Authorization", value: "Bearer lin" }] },
-      { name: "files", command: "files-mcp", args: ["--ro"], env: [{ name: "ROOT", value: "/srv" }] },
+      // A stdio service runs outside Grok's sandbox, behind its own endpoint of this turn.
+      { type: "http", name: "files", url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/[0-9a-f]{32}$/), headers: [{ name: "Authorization", value: expect.stringMatching(/^Bearer [0-9a-f]{64}$/) }] },
     ]);
     expect(g.calls("session/set_config_option")).toEqual([{ sessionId: "s-new", configId: "model", value: "grok-4.6" }]);
     expect(g.calls("session/prompt")).toEqual([{ sessionId: "s-new", prompt: [{ type: "text", text: "Привет" }] }]);
