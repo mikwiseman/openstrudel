@@ -66,6 +66,8 @@ struct HomeHealth: Decodable {
 
 struct HomeConversation: Decodable {
     var effectiveModel: ModelSelection? = nil
+    /// Present when the chat has News stories; changes whenever the reader has something new.
+    var news: String? = nil
     let id: String
     let channel: String
     let externalId: String?
@@ -93,6 +95,27 @@ struct ConversationEnvelope: Decodable {
 }
 
 struct MessageQueueEnvelope: Decodable { let queuedMessages: [HomeMessage] }
+
+/// One event as News told it at one moment. Later developments are new versions with the same id.
+struct NewsStory: Codable, Hashable {
+    struct Source: Codable, Hashable { let title: String; let url: String; let role: String; let publishedAt: String? }
+    let id: String
+    let edition: String?
+    let rank: Int?
+    let section: String
+    let status: String
+    let title: String
+    let summary: String
+    let body: String
+    let view: String?
+    let check: String?
+    let verification: String
+    let eventAt: String?
+    let change: String?
+    let sources: [Source]
+}
+
+struct NewsFeedEnvelope: Decodable { let messages: [HomeMessage]; let stamp: String? }
 
 struct TelegramStatus: Codable {
     let configured: Bool
@@ -220,6 +243,10 @@ struct HomeMessage: Codable, Identifiable, Hashable {
     var attachments: [ChatAttachment]? = nil
     var origin: MessageOrigin? = nil
     var delivery: MessageDelivery? = nil
+    /// A version of a News story; `text` is the same story as Markdown for the chat.
+    var story: NewsStory? = nil
+    /// The story this message belongs to: a version, or a question and answer about it.
+    var storyId: String? = nil
 
     var scheduleTitle: String? {
         guard direction == "inbound", externalId?.hasPrefix("schedule:") == true else { return nil }
@@ -314,6 +341,8 @@ struct PendingHomeMessage: Codable, Identifiable, Equatable {
     var mode: ComposerSendMode? = nil
     var telegramReplyToID: String? = nil
     var telegramChatTitle: String? = nil
+    /// A question from a News story's reader: the story version it asks about.
+    var storyReplyToID: String? = nil
 }
 
 enum ComposerSendMode: String, Codable, CaseIterable {

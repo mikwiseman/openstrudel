@@ -23,6 +23,7 @@ struct ConversationView: View {
     @State private var followsLatest = true
     @State private var userIsScrolling = false
     @State private var hasNewMessages = false
+    @State private var newsPlace = NewsPlace()
     @FocusState private var focused: Bool
     private var draftKey: String { HomeDrafts.key(home: client.baseURLString, profile: client.selectedProfileID, chat: client.selectedChatID) }
 
@@ -30,9 +31,14 @@ struct ConversationView: View {
         ScrollViewReader { proxy in
             #if os(macOS)
             // The transcript runs under the toolbar and the composer; the system draws the scroll edges.
-            transcript(proxy)
-                .safeAreaBar(edge: .top, spacing: 0) { topBar }
-                .safeAreaBar(edge: .bottom, spacing: 0) { bottomBar(proxy) }
+            if showsNewsDesk {
+                NewsDeskView(place: $newsPlace)
+                    .safeAreaBar(edge: .top, spacing: 0) { topBar }
+            } else {
+                transcript(proxy)
+                    .safeAreaBar(edge: .top, spacing: 0) { topBar }
+                    .safeAreaBar(edge: .bottom, spacing: 0) { bottomBar(proxy) }
+            }
             #else
             VStack(spacing: 0) {
                 EmployeeMoveStatusButton()
@@ -47,14 +53,24 @@ struct ConversationView: View {
                     OpenAIRecoveryNotice()
                         .padding(.horizontal, Layout.edge).padding(.vertical, 8)
                 }
-                // Animate scrolling, not pending-row replacement: an implicit
-                // layout animation can loop while the iPad keyboard is visible.
-                transcript(proxy)
-                    .safeAreaBar(edge: .bottom, spacing: 0) { bottomBar(proxy) }
+                if showsNews {
+                    NewsSwitcher(mode: $newsPlace.mode).padding(.horizontal, Layout.edge)
+                        .overlay(alignment: .bottom) { Hairline() }
+                }
+                if showsNewsDesk {
+                    NewsDeskView(place: $newsPlace)
+                } else {
+                    // Animate scrolling, not pending-row replacement: an implicit
+                    // layout animation can loop while the iPad keyboard is visible.
+                    transcript(proxy)
+                        .safeAreaBar(edge: .bottom, spacing: 0) { bottomBar(proxy) }
+                }
             }
             #endif
         }
         .task { draft = library.draft(for: draftKey); pickedFiles = library.fileDrafts[draftKey] ?? [] }
+        // Another employee opens on its own first screen.
+        .onChange(of: client.selectedProfileID) { _, _ in newsPlace = NewsPlace() }
         .onChange(of: client.openAIAccount?.connected) { _, connected in
             if connected == false { focused = false }
         }
@@ -208,6 +224,10 @@ struct ConversationView: View {
         client.health != nil && !client.usesEmployeeTimeline && !client.isEmployeeDraft && !client.employeeTelegramChats.isEmpty
     }
 
+    /// An employee with News stories reads them as an edition and a radar; the chat stays one tab away.
+    private var showsNews: Bool { client.newsStamp != nil && !client.isEmployeeDraft }
+    private var showsNewsDesk: Bool { showsNews && newsPlace.mode != .chat }
+
     private var showsConnectionBanner: Bool { client.connectionNeedsPairing || client.homeUnreachable || client.health == nil }
     private var showsRecoveryNotice: Bool { client.openAIAccount?.connected == false && !client.homeUnreachable && client.health != nil }
 
@@ -256,8 +276,9 @@ struct ConversationView: View {
     /// Connection state, the OpenAI notice and the archive name sit above the transcript in the column.
     @ViewBuilder private var topBar: some View {
         let archive = client.importedConversations.first { $0.id == client.selectedChatID }
-        if showsConnectionBanner || showsRecoveryNotice || archive != nil {
+        if showsConnectionBanner || showsRecoveryNotice || archive != nil || showsNews {
             VStack(alignment: .leading, spacing: 8) {
+                if showsNews { NewsSwitcher(mode: $newsPlace.mode) }
                 if showsConnectionBanner { connectionBanner }
                 if showsRecoveryNotice { OpenAIRecoveryNotice() }
                 if let archive {
@@ -265,7 +286,7 @@ struct ConversationView: View {
                         .font(AppTypography.meta).foregroundStyle(AppTheme.secondaryText).lineLimit(1)
                 }
             }
-            .frame(maxWidth: Layout.column, alignment: .leading)
+            .frame(maxWidth: showsNews ? NewsLayout.column : Layout.column, alignment: .leading)
             .padding(.horizontal, Layout.edge)
             .padding(.top, 16)
             .frame(maxWidth: .infinity)
@@ -585,7 +606,7 @@ struct ConversationSources: View {
 
 /// The conversation's edges: 32 from the detail edges and under the Mac toolbar, the 16 margin on iOS;
 /// the composer 24 above the Mac window edge and 20 above the iOS safe area.
-private extension Layout {
+extension Layout {
     #if os(macOS)
     static let edge: CGFloat = 32
     static let belowToolbar: CGFloat = 32

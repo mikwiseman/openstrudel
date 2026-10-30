@@ -6,6 +6,7 @@ import type { Scheduler } from "./scheduler.js";
 import { ownerTimezone, scheduleTimezone, localScheduleTime } from "./timezone.js";
 import { ownerSender, ownerTurn, telegramTools, type TelegramToolContext } from "./telegram-tools.js";
 import { MAX_SPEECH_TEXT, generateSpeech, isSpeechFile, speechSettings, transcribeRecording } from "./speech.js";
+import { publishStory, storyTool } from "./news.js";
 
 const schema = (properties: Record<string, unknown>, required = Object.keys(properties)) => ({ type: "object", properties, required, additionalProperties: false });
 const text = { type: "string" };
@@ -31,6 +32,8 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
     tool("save_schedule", "Only on an explicit user request, save a reminder or recurring request in this conversation. cron is five-field cron for repetition, or @once followed by an ISO 8601 date with offset for one execution, e.g. @once 2030-01-15T09:30:00+03:00. IANA timezone; list_schedules reports the owner's zone and current time. Null id creates. A Telegram request returns to that chat; an app request stays in the app unless the user names a connected chat ID. Preserve other schedules. Confirm only a successful save, answer immediately, and let the clock handle the later task.", schema({ id: { type:["string","null"] }, name:text, prompt:text, cron:text, timezone:text, enabled:{ type:"boolean" }, telegramChatId:{ type:["string","null"] } })),
     tool("pause_schedule", "Pause a schedule belonging to this chat when the user asks to stop or remove it. The owner can pause any schedule from list_schedules with scope \"home\".", schema({ id:text })),
   );
+  // An employee's own reader in the app; the main assistant has no news desk.
+  if (context.profile) definitions.push(storyTool);
   if (!context.profile) definitions.push(tool("create_employee", "Create a permanent employee only when the user asks to create one. Return its actual identity.", profileSchema), tool("list_employees", "List permanent employees so the user can address one by @name.", schema({})));
   return { definitions, attachments, call: async (name: string, args: Record<string, unknown>): Promise<unknown> => {
     assertNativeAccess(store, context.conversationId, context.telegramSenderId);
@@ -58,6 +61,11 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
     // The owner may set a group employee's standing rules from inside its group. Members never change its character,
     // and a group served by the main assistant never rewrites the SOUL every other chat uses.
     if (context.scope?.startsWith("group-") && (name === "create_employee" || name === "update_employee" && !(context.profile && ownerSender(store, context)))) throw new Error("Характер меняется в личном чате владельца. У группы свой разговор и доступ.");
+    // The reader is the owner's: schedules, the owner's pipelines and his own requests publish there, a group member's mention does not.
+    if (name === "publish_story") {
+      if (!context.scheduled && !ownerTurn(store, context)) throw new Error("Новости в приложение News публикует по расписанию или по просьбе владельца.");
+      return publishStory(store, context.conversationId, args);
+    }
     if (name === "attach_file") {
       const file=context.files!.output(context.conversationId,context.scope!,String(args.path ?? ""));
       attachments.push(file); return {attached:true,file};
