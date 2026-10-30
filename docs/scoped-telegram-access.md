@@ -86,6 +86,16 @@ current-policy check at execution. Transport credentials never enter the model
 configuration or tool arguments. The model cannot administer Home, create
 Home schedules or send to another chat through this route.
 
+A protected turn answers one bounded question with a few business tool calls.
+Unless the owner chose a model for that chat, it runs the device's model and
+reasoning level at Fast speed where the model offers it (`models.restricted`,
+default `{"reasoningEffort":null,"fast":true}`). The device owner changes it with
+`POST /v1/settings/models` and `restricted: {reasoningEffort, fast}`: a level
+such as `high` or `low` answers two to three times faster but searches lesson
+recordings less deeply (measured 30.10.2026), `fast: false` keeps the ordinary
+speed, and `restricted: null` restores the default. A level the model does not
+offer falls back to the model's own. Isolation does not depend on this choice.
+
 Old conversations remain stored for the owner. They are not loaded into the
 restricted runtime. Limited follow-ups can use the same sender's recent input
 and Telegram's quoted reply; previous assistant/tool output is not replayed.

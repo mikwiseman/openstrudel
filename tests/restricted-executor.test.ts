@@ -8,14 +8,15 @@ import type { ScopedAuthorization } from "../src/authorization.js";
 import { AccountUnavailableError } from "../src/account-errors.js";
 import { diagnosticReport } from "../src/diagnostics.js";
 import { Store } from "../src/store.js";
-import { saveConversationModelSelection, saveModelSelection } from "../src/model-settings.js";
+import { normalizeModels, saveConversationModelSelection, saveModelSelection } from "../src/model-settings.js";
 
-const runtime = vi.hoisted(() => ({ options: [] as any[], run: vi.fn(), close: vi.fn(), settled: vi.fn() }));
+const runtime = vi.hoisted(() => ({ options: [] as any[], run: vi.fn(), close: vi.fn(), settled: vi.fn(), models: vi.fn() }));
 vi.mock("../src/codex.js", async original => ({ ...await original<object>(), CodexEngineAdapter: class {
   constructor(options: unknown) { runtime.options.push(options); }
   run = runtime.run;
   close = runtime.close;
   settled = runtime.settled;
+  models = runtime.models;
 } }));
 import { RestrictedExecutor, restrictedRunsDirectory } from "../src/restricted-executor.js";
 
@@ -28,6 +29,7 @@ const stores: Store[] = [], executors: RestrictedExecutor[] = [], homes: string[
 const calls: Array<{ body: any; headers: Headers; init: RequestInit }> = [];
 let respond: (body: any, headers: Headers) => Response | Promise<Response>;
 const result = (id: number, value: unknown, headers: Record<string, string> = {}) => Response.json({ jsonrpc: "2.0", id, result: value }, { headers });
+const catalog = (efforts: string[]) => normalizeModels(["pinned-model", "chat-model"].map(model => ({ model, supportedReasoningEfforts: efforts.map(reasoningEffort => ({ reasoningEffort })), serviceTiers: [{ id: "priority", name: "Fast" }] })), null);
 
 function fixture(auth = authorization()) {
   const store = new Store(":memory:"); stores.push(store);
@@ -42,6 +44,7 @@ function fixture(auth = authorization()) {
 
 beforeEach(() => {
   calls.length = 0; runtime.options.length = 0; runtime.run.mockReset(); runtime.close.mockReset(); runtime.settled.mockReset().mockResolvedValue(undefined);
+  runtime.models.mockReset().mockResolvedValue(catalog(["low", "medium", "xhigh"]));
   respond = body => {
     if (body.method === "initialize") return result(body.id, { protocolVersion: "2025-03-26", capabilities: { tools: {} } }, { "mcp-session-id": "synthetic-session" });
     if (body.method === "notifications/initialized") return new Response(null, { status: 202 });
@@ -349,4 +352,32 @@ it("removes the turn folder only after Codex has exited, because it writes threa
   await executor.run("test", options);
   expect(existedAtExit).toBe(true);
   expect(existsSync(folder)).toBe(false);
+});
+
+it("runs the device model and level at Fast unless the owner set another level or chose this chat's model", async () => {
+  const { executor, options, store } = fixture();
+  const turn = async () => { runtime.run.mockClear(); await executor.run("test", options); return runtime.run.mock.calls[0]![1]; };
+  saveModelSelection(store, { provider: "chatgpt", model: "pinned-model", serviceTier: "default", reasoningEffort: "xhigh" });
+  expect(await turn()).toMatchObject({ model: "pinned-model", serviceTier: "default", reasoningEffort: "xhigh", fast: true });
+  // The owner can trade depth for speed, or return these chats to the device's own speed.
+  store.setSetting("models.restricted", JSON.stringify({ reasoningEffort: "medium", fast: true }));
+  expect(await turn()).toMatchObject({ reasoningEffort: "medium", fast: true });
+  store.setSetting("models.restricted", JSON.stringify({ reasoningEffort: null, fast: false }));
+  expect(await turn()).toMatchObject({ model: "pinned-model", reasoningEffort: "xhigh", fast: false });
+  // A damaged value falls back to the default instead of failing the turn.
+  store.setSetting("models.restricted", "{broken");
+  expect(await turn()).toMatchObject({ reasoningEffort: "xhigh", fast: true });
+  // A model chosen for this chat runs exactly as chosen.
+  saveConversationModelSelection(store, options.conversationId, { provider: "chatgpt", model: "chat-model", serviceTier: "default", reasoningEffort: "medium" });
+  expect(await turn()).toMatchObject({ model: "chat-model", reasoningEffort: "medium", fast: false });
+});
+
+it("falls back to the model's own level when the chosen model does not offer the restricted one", async () => {
+  const { executor, options, store } = fixture();
+  store.setSetting("models.restricted", JSON.stringify({ reasoningEffort: "low", fast: true }));
+  runtime.models.mockResolvedValue(catalog(["medium", "high"]));
+  await executor.run("test", options);
+  const turn = runtime.run.mock.calls[0]![1];
+  expect(turn).toMatchObject({ model: "pinned-model", fast: true });
+  expect(turn.reasoningEffort).toBeUndefined();
 });

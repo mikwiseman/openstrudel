@@ -101,6 +101,35 @@ export function resolveModelSelection(store: Store, agent?: string, models?: Mod
   return {provider,model:catalog && (catalog.length || !reported) ? recommendedModel(catalog).id : null,serviceTier:registry ? 'default' : resolved.serviceTier,
     ...(resolved.reasoningEffort != null ? {reasoningEffort:resolved.reasoningEffort} : {})};
 }
+/** A restricted turn (a family chat, a mentor's own students) answers one bounded question with a few
+ * business tool calls. Unless the owner chose a model for that chat, it runs the device's model at Fast
+ * speed where the model offers it. `null` effort keeps the device's level: measured on 30.10, a lower one
+ * answered two to three times faster but searched lesson recordings less deeply, so it is the owner's call. */
+export type RestrictedModel = { reasoningEffort: string | null; fast: boolean };
+export const restrictedModelDefault: RestrictedModel = { reasoningEffort: null, fast: true };
+const effortPattern = /^[a-z][a-z0-9_-]{0,39}$/;
+export function readRestrictedModel(store: Store): RestrictedModel {
+  try {
+    const value = JSON.parse(store.getSetting('models.restricted') ?? 'null');
+    if (value && typeof value === 'object' && typeof value.fast === 'boolean' && (value.reasoningEffort === null || typeof value.reasoningEffort === 'string' && effortPattern.test(value.reasoningEffort)))
+      return { reasoningEffort: value.reasoningEffort, fast: value.fast };
+  } catch { /* A damaged value falls back to the default. */ }
+  return { ...restrictedModelDefault };
+}
+/** `null` restores the default. */
+export function parseRestrictedModel(value: any): RestrictedModel | null {
+  if (value === null) return null;
+  if (!value || typeof value !== 'object' || typeof value.fast !== 'boolean' || !(value.reasoningEffort === null || typeof value.reasoningEffort === 'string' && effortPattern.test(value.reasoningEffort)))
+    throw new HomeError('Выберите уровень обдумывания и скорость для чатов с ограниченным доступом.');
+  return { reasoningEffort: value.reasoningEffort, fast: value.fast };
+}
+/** The chat's own model as chosen; otherwise the device model with the restricted level and speed. */
+export function restrictedModelSelection(store: Store, conversationId: string): ModelSelection & { fast: boolean } {
+  const chat = readConversationModelSelection(store, conversationId);
+  if (chat.model) return { ...chat, fast: false };
+  const device = resolveModelSelection(store, 'main'), restricted = readRestrictedModel(store);
+  return { ...device, ...(restricted.reasoningEffort !== null ? { reasoningEffort: restricted.reasoningEffort } : {}), fast: restricted.fast };
+}
 /** `models` is one provider's catalog. */
 export function validateModelSelection(value: Pick<ModelSelection, 'model' | 'serviceTier' | 'reasoningEffort'>, models: ModelChoice[]) {
   const model = value.model ? models.find(m=>m.id === value.model) : recommendedModel(models);

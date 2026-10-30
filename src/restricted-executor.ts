@@ -7,7 +7,7 @@ import type { Accounts } from "./accounts.js";
 import type { ScopedAuthorization } from "./authorization.js";
 import { CodexEngineAdapter, restrictedCodexConfig } from "./codex.js";
 import { recordDiagnostic, type DiagnosticReason, type RestrictedStage } from "./diagnostics.js";
-import { resolveModelSelection } from "./model-settings.js";
+import { recommendedModel, restrictedModelSelection } from "./model-settings.js";
 import type { DynamicTool } from "./types.js";
 import { ownerTimezone } from "./timezone.js";
 
@@ -121,7 +121,7 @@ export class RestrictedExecutor {
       current();
       const version = JSON.parse(readFileSync(createRequire(import.meta.url).resolve("@openai/codex/package.json"), "utf8")).version;
       if (version !== supportedCodexVersion) throw unavailable("runtime_version");
-      const selection = resolveModelSelection(this.accounts.store, "main", undefined, options.conversationId);
+      const selection = restrictedModelSelection(this.accounts.store, options.conversationId);
       if (selection.provider !== "chatgpt") throw unavailable("model_provider");
       stage = "account";
       // Deliberately no provider or quota fallback and no retry of a partial turn.
@@ -156,6 +156,11 @@ export class RestrictedExecutor {
         restrictedInstructions: [clock, proxy.instructions].filter(Boolean).join("\n\n"),
         authTokens: async refresh => { current(); const tokens = await chosen.service.authTokens(refresh); current(); return tokens; } });
       run.engine = engine;
+      // A level the chosen model does not offer falls back to the model's own instead of failing the turn.
+      const models = await engine.models();
+      const model = selection.model ? models.find(choice => choice.id === selection.model) : recommendedModel(models);
+      if (selection.reasoningEffort != null && model && !model.reasoningEfforts?.some(effort => effort.id === selection.reasoningEffort)) delete selection.reasoningEffort;
+      current();
       const result = await engine.run(text, { ...selection, conversationId: options.conversationId, messageId: options.messageId,
         signal, employees: [], approvalMode: "approve_all", tools: { definitions, call: (name, args) => proxy.call(name, args) },
         onEvent: event => { if (event.type === "thread.started") stage = "turn"; } });

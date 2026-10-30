@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../src/store.js';
 import { MessageService } from '../src/messages.js';
-import { normalizeModels, readModelSelection, saveModelSelection, readConversationModelSelection, saveConversationModelSelection, resolveModelSelection, validateModelSelection, recommendedModel, parseModelSelection } from '../src/model-settings.js';
+import { normalizeModels, readModelSelection, saveModelSelection, readConversationModelSelection, saveConversationModelSelection, resolveModelSelection, validateModelSelection, recommendedModel, parseModelSelection, restrictedModelSelection } from '../src/model-settings.js';
 const catalog = normalizeModels([
  {model:'m1',displayName:'Model One',isDefault:true,supportedReasoningEfforts:[{reasoningEffort:'low'},{reasoningEffort:'high'}],serviceTiers:[{id:'priority',name:'Fast',description:'Increased usage'}]},
  {model:'m2',displayName:'Model Two',supportedReasoningEfforts:[{reasoningEffort:'medium'}],serviceTiers:[{id:'priority',name:'Fast'},{id:'ultra',name:'Ultra Fast'}]},
@@ -307,5 +307,30 @@ it('keeps Fast for direct chats on by default, saves the switch on the device on
   expect([saved.directFast,saved.selection]).toEqual([false,device]);
   expect([await tier(direct),await envelope()]).toEqual(['default','default']);
   expect((await (await call('/v1/settings/models',{...device,directFast:true})).json()).directFast).toBe(true);
+ }finally{await runtime.stop();}
+});
+
+it('runs restricted chats at the device level and Fast by default; the device owner can change or reset it', async()=>{
+ const {OpenStrudelRuntime}=await import('../src/runtime.js');
+ const runtime=new OpenStrudelRuntime({dbPath:':memory:',startTelegram:false,apiToken:'owner',engine:{models:async()=>catalog,run:async()=>({threadId:'t',response:'OK',events:[]})}});
+ const addr=await runtime.api.listen('127.0.0.1',0);
+ const call=(path:string,body?:any)=>fetch(`http://127.0.0.1:${addr.port}${path}`,{method:body?'POST':'GET',headers:{'content-type':'application/json',authorization:'Bearer owner'},body:body&&JSON.stringify(body)});
+ const device={provider:'chatgpt',model:'m1',serviceTier:'default'};
+ try {
+  const family=runtime.store.getOrCreateConversation({channel:'telegram',externalId:'-42::restricted',title:'Family'}).id;
+  expect((await (await call('/v1/settings/models')).json()).restricted).toEqual({reasoningEffort:null,fast:true});
+  expect((await call('/v1/settings/models?agentId=main',{provider:null,model:null,serviceTier:null,restricted:{reasoningEffort:'high',fast:false}})).status).toBe(400);
+  for (const restricted of [{reasoningEffort:'LOW',fast:true},{reasoningEffort:'low'},{fast:true},'fast'])
+   expect((await call('/v1/settings/models',{...device,restricted})).status).toBe(400);
+  // The level must exist for the device model: m1 offers Low and High only.
+  expect((await call('/v1/settings/models',{...device,restricted:{reasoningEffort:'medium',fast:true}})).status).toBe(409);
+  const saved=await (await call('/v1/settings/models',{...device,restricted:{reasoningEffort:'high',fast:false}})).json();
+  expect(saved.restricted).toEqual({reasoningEffort:'high',fast:false});
+  expect(restrictedModelSelection(runtime.store,family)).toMatchObject({provider:'chatgpt',model:'m1',reasoningEffort:'high',fast:false});
+  // The device's own level stays when the restricted level is null.
+  await call('/v1/settings/models',{...device,reasoningEffort:'low',restricted:{reasoningEffort:null,fast:true}});
+  expect(restrictedModelSelection(runtime.store,family)).toMatchObject({model:'m1',reasoningEffort:'low',fast:true});
+  expect((await (await call('/v1/settings/models',{...device,restricted:null})).json()).restricted).toEqual({reasoningEffort:null,fast:true});
+  expect(runtime.store.getSetting('models.restricted')).toBeNull();
  }finally{await runtime.stop();}
 });
