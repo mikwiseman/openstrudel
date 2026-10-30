@@ -13,7 +13,7 @@ import { errorProblem, quietReply } from "./operations.js";
 import type { MessageService } from "./messages.js";
 import type { Store } from "./store.js";
 import { agentTransfer, assertAgentWritable } from "./agent-move.js";
-import { isProtectedTelegramAudience, isRestrictedChat, isRestrictedSubject, telegramAuthorization, migrateScopedChat, protectScopedTelegramTransport } from "./authorization.js";
+import { isEnabledScopedGroup, isProtectedTelegramAudience, isRestrictedChat, isRestrictedSubject, telegramAuthorization, migrateScopedChat, protectScopedTelegramTransport } from "./authorization.js";
 
 export interface TelegramUpdate {
   update_id: number;
@@ -421,11 +421,12 @@ export class TelegramAdapter {
   }
 
   /** Checks without sending that a chat can receive a requested delivery, so a caller can check several chats before sending to any. Album and file checks stay in sendToChat. */
-  deliveryTarget(chatId:string, externalId:string) {
+  deliveryTarget(chatId:string, externalId:string, options:{scopedGroup?:boolean} = {}) {
     if (!this.token) throw new Error("Telegram не подключён");
     // Model turns and the notification hook never post to a protected audience, as the scheduler already refuses.
-    // Restricted answers use sendAnswer for their own verified request and are not affected.
-    if (isProtectedTelegramAudience(this.store, chatId)) throw new Error("Отправка в чат с ограниченным доступом недоступна.");
+    // Restricted answers use sendAnswer for their own verified request and are not affected. A narrow delivery key
+    // that lists a protected group may post there, and only while the access policy keeps that group enabled.
+    if (isProtectedTelegramAudience(this.store, chatId) && !(options.scopedGroup && isEnabledScopedGroup(this.store, chatId))) throw new Error("Отправка в чат с ограниченным доступом недоступна.");
     const chat = this.store.getTelegramChat(chatId);
     if (!chat || chat.enabled === false) throw new Error("Бот больше не подключён к этому чату.");
     assertAgentWritable(this.store,chat.profileId ?? "main");
@@ -438,8 +439,8 @@ export class TelegramAdapter {
   }
 
   /** A requested cross-chat delivery uses the same durable outbox as ordinary replies. */
-  async sendToChat(input: {chatId:string;text:string;files:Array<{name:string;mimeType?:string;contentBase64:string}>;externalId:string;silent?:boolean;linkPreview?:boolean;album?:boolean}) {
-    const {chat,conversation,previous} = this.deliveryTarget(input.chatId,input.externalId);
+  async sendToChat(input: {chatId:string;text:string;files:Array<{name:string;mimeType?:string;contentBase64:string}>;externalId:string;silent?:boolean;linkPreview?:boolean;album?:boolean;scopedGroup?:boolean}) {
+    const {chat,conversation,previous} = this.deliveryTarget(input.chatId,input.externalId,{scopedGroup:input.scopedGroup});
     const receipt = (messageId:string) => {
       const message = this.store.getMessage(conversation.id,messageId)!;
       const prefix=`${chat.chatId}:reply:${messageId}:`;
@@ -471,8 +472,10 @@ export class TelegramAdapter {
     try {
       if (input.album) await this.sendPhotos(chat.chatId,files,"reply:"+message.id,0,{silent:input.silent,caption:captionFor(input.text)!});
       else {
-        await this.sendMessage(chat.chatId,input.text,"reply:"+message.id,undefined,input);
-        await this.sendFiles(chat.chatId,files,"reply:"+message.id,input);
+        // A protected group is rechecked before every part, so switching it off in the policy stops the rest.
+        const options = input.scopedGroup ? {...input, assertCurrent: () => { this.deliveryTarget(input.chatId,input.externalId,{scopedGroup:true}); }} : input;
+        await this.sendMessage(chat.chatId,input.text,"reply:"+message.id,undefined,options);
+        await this.sendFiles(chat.chatId,files,"reply:"+message.id,options);
       }
       this.store.setMessageStatus(message.id,"completed");
     } catch (error) {

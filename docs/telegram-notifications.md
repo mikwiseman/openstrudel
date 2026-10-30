@@ -67,6 +67,49 @@ repeated request sends the text there once it is available again.
 Inspect Telegram and the saved receipts before any manual recovery. Removing the
 setting disables the endpoint.
 
+## Narrow keys
+
+A service that sends approved material to one chat at a time, such as a school
+sending a parent's report to that family's group, gets its own key instead of the
+credential above. The same setting lists the keys:
+
+```json
+{"keys":[
+  {"id":"school-drafts","tokenHash":"<SHA-256 hex of its own random token>","chatIds":["<owner's private chat>"]},
+  {"id":"school-reports","tokenHash":"<SHA-256 hex of another token>","chatIds":["<family group>","<another family group>"],"maxPerHour":30}
+]}
+```
+
+- A key has an `id` (lowercase letters, digits and hyphens, up to 40; `legacy` is
+  reserved for the credential above), its own `tokenHash` and 1 to 50 distinct
+  `chatIds` written as Telegram gives them (no leading zeros). Up to 20 keys.
+  `maxPerHour` (1 to 1000, default 30) caps its new deliveries per hour.
+- If any key is malformed, or two keys share an `id` or a token, no key works. The
+  credential above keeps working either way, and it may also be absent.
+- A request sends one Telegram message to one chat: the text must fit one message
+  (4096 characters after formatting), so the hourly cap counts what a chat receives.
+  With one listed chat, `chatId` may be omitted; otherwise the body names it, and a
+  chat the key does not list is refused (403). `linkPreview` and `silent` (true or
+  false) are optional.
+- The Home reads the setting again once the request body has arrived (it allows 30
+  seconds for that), so removing a key or one of its chats also stops a request
+  that is still arriving.
+- A key may post to a protected group (see `scoped-telegram-access.md`) only when
+  it lists that group and the access policy has the group enabled. Switching the
+  group off refuses new requests (403) and stops a delivery between its parts.
+  A limited participant's private chat is never reachable. The credential above,
+  model turns and schedules still never post to a protected audience.
+- The key's `id` is part of each delivery's identity, so two keys never share or
+  block each other's deliveries. Repeats, changed text (409) and unconfirmed
+  delivery (502) behave as above. A repeat of an earlier delivery is answered even
+  over the hourly limit; a new one over it gets 429.
+- Supergroup upgrades move a key's chat IDs like the fields above.
+
+The Home journals every delivery of this endpoint in the `notification_deliveries`
+table: the caller (`legacy` or the key's `id`), chat, `Idempotency-Key`, SHA-256 of
+the text, status, the Home message ID and Telegram message IDs, attempts and times.
+It keeps no text. A narrow key sends nothing unless its journal row is written.
+
 Remote callers must verify TLS. For a Home using its self-signed certificate,
 pin the SHA-256 digest of the DER-encoded public key (SPKI), obtained through
 the trusted deployment connection. Do not disable TLS verification globally.

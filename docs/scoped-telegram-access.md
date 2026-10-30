@@ -121,9 +121,12 @@ Queued work and final delivery are rechecked, including each photo batch and fil
 Completed requests cannot replay old private output. A Telegram message ID names
 its chat: no app/API message may claim a protected chat's or a limited person's
 message ID, and approval cards are never posted to a protected audience. Model
-turns (including the owner's) and the notification hook cannot send to a
-protected audience; only its own verified answers reach it, and the owner can
-still reply manually from the app. Scheduled delivery is refused there too.
+turns (including the owner's) and the notification hook's original credential
+cannot send to a protected audience; only its own verified answers reach it, and
+the owner can still reply manually from the app. Scheduled delivery is refused
+there too. The one server-side exception is a narrow notification key that lists
+a protected group: it relays a service's prepared text there while the policy
+keeps that group enabled, without a model turn (`telegram-notifications.md`).
 A protected conversation holds at most five queued or running turns: a further
 message is kept as context without a turn, and a burst beyond ten is refused.
 A failed protected turn is never explained in the group; the owner gets one
