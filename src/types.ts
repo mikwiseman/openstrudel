@@ -30,6 +30,16 @@ export interface Message {
   /** Presentation metadata only. Never changes the conversation's audience or model context. */
   origin?: { channel: "api" | "telegram" | "archive"; title: string; chatId?: string; url?: string; canReply?: boolean };
   delivery?: { state: "pending" | "delivered" | "unknown" | "not_sent"; error?: string };
+  /** A version of a News story; its text is the same story as Markdown. */
+  story?: NewsStory;
+  /** The story this message belongs to: a version, or a question and answer about it. */
+  storyId?: string;
+}
+
+export interface NewsStory {
+  id: string; edition: string | null; rank: number | null; section: string; status: string; title: string; summary: string; body: string;
+  view: string | null; check: string | null; verification: string; eventAt: string | null; change: string | null;
+  sources: Array<{ title: string; url: string; role: string; publishedAt: string | null }>;
 }
 
 export interface Attachment { id: string; conversationId: string; name: string; mimeType: string; size: number; }
@@ -94,6 +104,8 @@ export interface CodexEngine {
       /** Snapshotted when the queued turn starts on its execution device. */
       approvalMode?: import("./approval-mode.js").ApprovalMode;
       groupContext?: boolean;
+      /** Trusted: this chat is a Telegram group itself, not an owner's chat that only keeps its files with one. Set by MessageService. */
+      groupChat?: boolean;
       /** Trusted: the device owner sent this turn. Set by the server from the owner's session and by the Telegram adapter, never from a request body. */
       byOwner?: boolean;
       /** Trusted: false when the Telegram sender is not on this Home's access list. Set only by MessageService from the adapter's sender id, never from a request body. */
@@ -142,6 +154,8 @@ export interface MessageInput {
   replyToAssistant?: boolean;
   /** The Telegram message this one replies to, as Telegram delivered it. */
   replyTo?: { messageId: number; author?: string; text: string };
+  /** An app question about a News story in this chat: the story's message id. */
+  replyToId?: string;
   telegramSenderId?: string;
   /** Trusted adapter input: preserve group context without invoking the model. */
   contextOnly?: boolean;

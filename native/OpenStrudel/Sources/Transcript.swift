@@ -711,8 +711,9 @@ struct TranscriptRows: View {
 extension HomeClient {
     /// The messages the feed shows. In a group where the employee decides by its rules, a message waits
     /// for that decision; a mention group sends the employee only real requests.
+    /// News stories live in the reader; the chat keeps the conversation with the employee.
     var feedMessages: [HomeMessage] {
-        MessagePages.feed(messages, decidingChats: Set((telegram?.chats ?? []).filter { $0.isGroup && $0.replies != "mentions" }.map(\.chatId)),
+        MessagePages.feed(messages.filter { $0.story == nil }, decidingChats: Set((telegram?.chats ?? []).filter { $0.isGroup && $0.replies != "mentions" }.map(\.chatId)),
                           awaiting: Set(interactions.map(\.messageId)))
     }
 

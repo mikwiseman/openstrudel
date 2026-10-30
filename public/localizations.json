@@ -10442,5 +10442,257 @@
     "fr": "Un enregistrement n’a pas pu être transcrit. Les détails sont conservés dans la conversation d’origine.",
     "es": "No se pudo transcribir una grabación. Los detalles están guardados en el chat original.",
     "he": "לא ניתן היה לתמלל הקלטה. הפרטים נשמרו בשיחה המקורית."
+  },
+  "News отвечает…": {
+    "en": "News is answering…",
+    "fr": "News répond…",
+    "es": "News está respondiendo…",
+    "he": "News עונה…",
+    "ru": "News отвечает…"
+  },
+  "{0} история": {
+    "en": "{0} story",
+    "fr": "{0} article",
+    "es": "{0} noticia",
+    "he": "כתבה {0}",
+    "ru": "{0} история"
+  },
+  "{0} истории": {
+    "en": "{0} stories",
+    "fr": "{0} articles",
+    "es": "{0} noticias",
+    "he": "{0} כתבות",
+    "ru": "{0} истории"
+  },
+  "{0} историй": {
+    "en": "{0} stories",
+    "fr": "{0} articles",
+    "es": "{0} noticias",
+    "he": "{0} כתבות",
+    "ru": "{0} историй"
+  },
+  "Важное за день News показывает на радаре по мере появления.": {
+    "en": "During the day, News puts what matters on the radar as it happens.",
+    "fr": "Pendant la journée, News place l’essentiel sur le radar dès que cela arrive.",
+    "es": "Durante el día, News muestra lo importante en el radar a medida que ocurre.",
+    "he": "במהלך היום News מציג את מה שחשוב ברדאר ברגע שזה קורה.",
+    "ru": "Важное за день News показывает на радаре по мере появления."
+  },
+  "Важное по мере появления": {
+    "en": "What matters, as it happens",
+    "fr": "L’essentiel, en direct",
+    "es": "Lo importante, a medida que ocurre",
+    "he": "מה שחשוב, ברגע שזה קורה",
+    "ru": "Важное по мере появления"
+  },
+  "Дальше": {
+    "en": "Next",
+    "fr": "Suivant",
+    "es": "Siguiente",
+    "he": "הבא",
+    "ru": "Дальше"
+  },
+  "Ещё в выпуске": {
+    "en": "Also in this edition",
+    "fr": "Aussi dans cette édition",
+    "es": "También en esta edición",
+    "he": "עוד במהדורה",
+    "ru": "Ещё в выпуске"
+  },
+  "Источники · {0}": {
+    "en": "Sources · {0}",
+    "fr": "Sources · {0}",
+    "es": "Fuentes · {0}",
+    "he": "מקורות · {0}",
+    "ru": "Источники · {0}"
+  },
+  "К выпуску": {
+    "en": "Back to the edition",
+    "fr": "Retour à l’édition",
+    "es": "Volver a la edición",
+    "he": "חזרה למהדורה",
+    "ru": "К выпуску"
+  },
+  "К радару": {
+    "en": "Back to the radar",
+    "fr": "Retour au radar",
+    "es": "Volver al radar",
+    "he": "חזרה לרדאר",
+    "ru": "К радару"
+  },
+  "На чём основана история": {
+    "en": "What this story is based on",
+    "fr": "Sur quoi repose cet article",
+    "es": "En qué se basa esta noticia",
+    "he": "על מה מבוססת הכתבה",
+    "ru": "На чём основана история"
+  },
+  "Наш взгляд": {
+    "en": "Our view",
+    "fr": "Notre analyse",
+    "es": "Nuestra lectura",
+    "he": "הניתוח שלנו",
+    "ru": "Наш взгляд"
+  },
+  "Обсудить": {
+    "en": "Discuss",
+    "fr": "Discuter",
+    "es": "Comentar",
+    "he": "לדיון",
+    "ru": "Обсудить"
+  },
+  "Ответ не получен.": {
+    "en": "No answer came back.",
+    "fr": "Aucune réponse reçue.",
+    "es": "No llegó ninguna respuesta.",
+    "he": "לא התקבלה תשובה.",
+    "ru": "Ответ не получен."
+  },
+  "Ответ останется с этой историей; общий чат с News — во вкладке «Чат».": {
+    "en": "The answer stays with this story; your general chat with News is in the Chat tab.",
+    "fr": "La réponse reste avec cet article ; la discussion générale avec News est dans l’onglet Chat.",
+    "es": "La respuesta queda con esta noticia; el chat general con News está en la pestaña Chat.",
+    "he": "התשובה נשארת עם הכתבה הזו; הצ׳אט הכללי עם News נמצא בלשונית צ׳אט.",
+    "ru": "Ответ останется с этой историей; общий чат с News — во вкладке «Чат»."
+  },
+  "Открыть историю": {
+    "en": "Opens the story",
+    "fr": "Ouvre l’article",
+    "es": "Abre la noticia",
+    "he": "פותח את הכתבה",
+    "ru": "Открыть историю"
+  },
+  "Открыть радар": {
+    "en": "Open the radar",
+    "fr": "Ouvrir le radar",
+    "es": "Abrir el radar",
+    "he": "פתיחת הרדאר",
+    "ru": "Открыть радар"
+  },
+  "Отправляется…": {
+    "en": "Sending…",
+    "fr": "Envoi…",
+    "es": "Enviando…",
+    "he": "נשלח…",
+    "ru": "Отправляется…"
+  },
+  "Первое сообщение": {
+    "en": "First report",
+    "fr": "Première annonce",
+    "es": "Primer aviso",
+    "he": "הדיווח הראשון",
+    "ru": "Первое сообщение"
+  },
+  "Подробнее": {
+    "en": "Read more",
+    "fr": "Lire la suite",
+    "es": "Leer más",
+    "he": "להמשך קריאה",
+    "ru": "Подробнее"
+  },
+  "Пока ничего существенного. News молчит, пока не появится новый факт.": {
+    "en": "Nothing significant yet. News stays quiet until there is a new fact.",
+    "fr": "Rien d’important pour l’instant. News reste silencieux jusqu’au prochain fait nouveau.",
+    "es": "Nada importante por ahora. News guarda silencio hasta que haya un hecho nuevo.",
+    "he": "עדיין אין משהו משמעותי. News שותק עד שתהיה עובדה חדשה.",
+    "ru": "Пока ничего существенного. News молчит, пока не появится новый факт."
+  },
+  "Проверено {0}": {
+    "en": "Checked {0}",
+    "fr": "Vérifié le {0}",
+    "es": "Verificado el {0}",
+    "he": "נבדק {0}",
+    "ru": "Проверено {0}"
+  },
+  "Радар": {
+    "en": "Radar",
+    "fr": "Radar",
+    "es": "Radar",
+    "he": "רדאר",
+    "ru": "Радар"
+  },
+  "Разберёмся?": {
+    "en": "Shall we dig in?",
+    "fr": "On creuse ?",
+    "es": "¿Lo analizamos?",
+    "he": "נעמיק?",
+    "ru": "Разберёмся?"
+  },
+  "Развитие истории": {
+    "en": "How the story developed",
+    "fr": "Évolution de l’article",
+    "es": "Cómo evolucionó la noticia",
+    "he": "התפתחות הכתבה",
+    "ru": "Развитие истории"
+  },
+  "Событие: {0}.": {
+    "en": "Event: {0}.",
+    "fr": "Événement : {0}.",
+    "es": "Suceso: {0}.",
+    "he": "האירוע: {0}.",
+    "ru": "Событие: {0}."
+  },
+  "Спросить News об этой истории": {
+    "en": "Ask News about this story",
+    "fr": "Demander à News à propos de cet article",
+    "es": "Pregunta a News sobre esta noticia",
+    "he": "לשאול את News על הכתבה",
+    "ru": "Спросить News об этой истории"
+  },
+  "Утренний выпуск": {
+    "en": "Morning edition",
+    "fr": "Édition du matin",
+    "es": "Edición matinal",
+    "he": "מהדורת בוקר",
+    "ru": "Утренний выпуск"
+  },
+  "Утренний выпуск выйдет в 07:00": {
+    "en": "The morning edition comes out at 7:00",
+    "fr": "L’édition du matin paraît à 7 h 00",
+    "es": "La edición matinal sale a las 7:00",
+    "he": "מהדורת הבוקר תצא ב־07:00",
+    "ru": "Утренний выпуск выйдет в 07:00"
+  },
+  "Чат": {
+    "en": "Chat",
+    "fr": "Chat",
+    "es": "Chat",
+    "he": "צ׳אט",
+    "ru": "Чат"
+  },
+  "Читать и обсудить": {
+    "en": "Read and discuss",
+    "fr": "Lire et discuter",
+    "es": "Leer y comentar",
+    "he": "לקרוא ולדון",
+    "ru": "Читать и обсудить"
+  },
+  "Что изменилось": {
+    "en": "What changed",
+    "fr": "Ce qui a changé",
+    "es": "Qué cambió",
+    "he": "מה השתנה",
+    "ru": "Что изменилось"
+  },
+  "Что нового": {
+    "en": "What’s new",
+    "fr": "Ce qui est nouveau",
+    "es": "Qué hay de nuevo",
+    "he": "מה חדש",
+    "ru": "Что нового"
+  },
+  "Что стоит проверить": {
+    "en": "Worth checking",
+    "fr": "À vérifier",
+    "es": "Qué conviene comprobar",
+    "he": "מה כדאי לבדוק",
+    "ru": "Что стоит проверить"
+  },
+  "Новость не найдена в этом чате. Обновите выпуск.": {
+    "en": "This story isn’t in this chat. Refresh the edition.",
+    "fr": "Cet article n’est pas dans cette discussion. Actualisez l’édition.",
+    "es": "Esta noticia no está en este chat. Actualiza la edición.",
+    "he": "הכתבה לא נמצאת בצ׳אט הזה. רעננו את המהדורה.",
+    "ru": "Новость не найдена в этом чате. Обновите выпуск."
   }
 }

@@ -162,6 +162,9 @@ final class HomeClient: ObservableObject, Identifiable {
     private var employeeConversationPath: String { selectedProfileID.map { "/v1/agents/" + $0 + "/conversation" } ?? "/v1/conversation" }
     @Published private(set) var messages: [HomeMessage] = []
     @Published private(set) var queuedMessages: [HomeMessage] = []
+    /// The open chat's News stories with their questions and answers, loaded only when its stamp changes.
+    @Published private(set) var newsMessages: [HomeMessage] = []
+    @Published private(set) var newsStamp: String?
     var visibleQueuedMessages: [HomeMessage] {
         health?.queueControlVersion == 1 ? queuedMessages : messages.filter { $0.direction == "inbound" && $0.channel == "api" && $0.status == "queued" }
     }
@@ -997,6 +1000,7 @@ final class HomeClient: ObservableObject, Identifiable {
                 if health?.turnControlVersion == 1 { payload["mode"] = (pending.mode ?? .queue).rawValue }
                 if let profileID { payload["profile"] = profileID }
                 if let conversationID = pending.conversationID { payload["conversationId"] = conversationID }
+                if let story = pending.storyReplyToID { payload["replyToId"] = story; payload["mode"] = ComposerSendMode.queue.rawValue }
                 if !pending.files.isEmpty {
                     let path = pending.conversationID.map { "/v1/conversations/" + $0 } ?? profileID.map { "/v1/agents/" + $0 + "/conversation" } ?? "/v1/conversation"
                     let chat: ConversationEnvelope = try await request(path)
@@ -1137,6 +1141,7 @@ final class HomeClient: ObservableObject, Identifiable {
                 timelineSupport[profileID ?? "main"] = envelope.timeline == true
             }
             if conversationID != envelope.conversation.id { conversationID = envelope.conversation.id }
+            if newsStamp != envelope.conversation.news { await loadNews(conversation: envelope.conversation.id, stamp: envelope.conversation.news, generation: generation) }
             if conversationModel != envelope.conversation.effectiveModel { conversationModel = envelope.conversation.effectiveModel }
             if queuedMessages != envelope.queuedMessages ?? [] { queuedMessages = envelope.queuedMessages ?? [] }
             if let page = envelope.pagination {
@@ -1160,6 +1165,27 @@ final class HomeClient: ObservableObject, Identifiable {
             if case HomeClientError.authenticationExpired = error { connectionNeedsPairing = true; health = nil }
             syncError = L("Нет связи. Сообщения появятся после подключения.")
         }
+    }
+
+    private func loadNews(conversation: String, stamp: String?, generation: Int) async {
+        guard stamp != nil else { newsMessages = []; newsStamp = nil; return }
+        do {
+            let feed: NewsFeedEnvelope = try await request("/v1/conversations/" + conversation + "/stories")
+            guard generation == refreshGeneration, conversationID == conversation else { return }
+            if newsMessages != feed.messages { newsMessages = feed.messages }
+            newsStamp = stamp
+        } catch { /* The next refresh tries again; the reader keeps what it showed. */ }
+    }
+
+    /// A question from a story's reader. It waits behind the employee's running work and stays with the story.
+    func askNews(about version: HomeMessage, text: String) async {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isSignedOut, !isSigningOut, !value.isEmpty else { return }
+        pendingMessages.append(PendingHomeMessage(text: value, profileID: selectedProfileID, conversationID: version.conversationId, mode: .queue, storyReplyToID: version.id))
+        do { try savePending() } catch { errorMessage = error.localizedDescription; pendingMessages[pendingMessages.count - 1].error = L("Не удалось сохранить отправку на устройстве. Освободите место и повторите."); return }
+        guard !isDrainingSendQueue else { return }
+        isDrainingSendQueue = true
+        await drainSendQueue()
     }
 
     private func checkPendingRequests() async {
@@ -1262,6 +1288,7 @@ final class HomeClient: ObservableObject, Identifiable {
     private func resetHistory() {
         refreshGeneration += 1
         queuedMessages = []
+        newsMessages = []; newsStamp = nil
         historyLimit = 100; olderCursor = nil; newerCursor = nil; pagedHistory = false
         hasEarlierMessages = false; isLoadingEarlier = false
     }

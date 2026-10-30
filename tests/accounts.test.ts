@@ -297,6 +297,22 @@ describe("Grok subscription", () => {
     expect(engines.run).toHaveBeenCalledTimes(2);
     await messages.close();
   });
+  it("serves the owner's employee chat that keeps its files with a Telegram group, but not that group", async () => {
+    const { store, pool } = fixture(); signedIn(store);
+    const news = store.createProfile({ name: "News" }), chat = store.profileConversation(news.id);
+    saveModelSelection(store, { provider: "grok", model: "grok-4.7", serviceTier: "default" }, news.id);
+    const workspace = "group-" + "a".repeat(64);
+    store.setSetting("conversation.context." + chat.id, workspace);
+    store.linkTelegramChat({ chatId: "-100", title: "Wai News", allowedSenders: [] }); store.bindTelegramChat("-100", news.id);
+    engines.run.mockResolvedValue({ threadId: "s-1", response: "NO_REPLY", events: [] });
+    const messages = new MessageService(store, pool);
+    await messages.handle({ channel: "api", conversationId: chat.id, text: "Radar", scheduled: true });
+    expect(engines.run.mock.calls[0]).toEqual(["acp-grok", workspace, expect.any(String), expect.objectContaining({ provider: "grok", groupContext: true, groupChat: false })]);
+    await expect(messages.handle({ channel: "telegram", externalChatId: "-100", externalId: "1", text: "@News что нового?", telegramSenderId: "139287108", byOwner: true }))
+      .rejects.toThrow("Подписка Grok работает только в чатах владельца");
+    expect(engines.run).toHaveBeenCalledTimes(1);
+    await messages.close();
+  });
   it("reads the agent's catalog once when none is stored, so a failed read at sign-in does not hide Grok's models", async () => {
     const { store, pool } = fixture();
     store.setSetting("providers.grok.signedIn", "2026-10-15T10:00:00.000Z");

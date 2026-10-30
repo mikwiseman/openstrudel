@@ -1,7 +1,7 @@
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { Attachment, Channel, Conversation, EmployeeProfile, Message, TelegramChat, HistoryEntry } from "./types.js";
+import type { Attachment, Channel, Conversation, EmployeeProfile, Message, NewsStory, TelegramChat, HistoryEntry } from "./types.js";
 import { id, jsonArray, jsonObject, nowIso } from "./util.js";
 import { defaultAppearance, parseAppearance, type AgentAppearance } from "./agent-appearance.js";
 
@@ -117,6 +117,9 @@ export class Store {
     if (!columns.has("hidden")) this.db.exec("ALTER TABLE messages ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0");
     if (!columns.has("context_only")) this.db.exec("ALTER TABLE messages ADD COLUMN context_only INTEGER NOT NULL DEFAULT 0");
     this.db.exec("CREATE INDEX IF NOT EXISTS messages_page_idx ON messages(conversation_id, hidden, created_at)");
+    if (!columns.has("story_id")) this.db.exec("ALTER TABLE messages ADD COLUMN story_id TEXT");
+    if (!columns.has("story_json")) this.db.exec("ALTER TABLE messages ADD COLUMN story_json TEXT");
+    this.db.exec("CREATE INDEX IF NOT EXISTS messages_story_idx ON messages(conversation_id, story_id) WHERE story_id IS NOT NULL");
     const conversationColumns = new Set((this.db.prepare("PRAGMA table_info(conversations)").all() as Row[]).map(r => String(r.name)));
     if (!conversationColumns.has("profile_id")) this.db.exec("ALTER TABLE conversations ADD COLUMN profile_id TEXT REFERENCES employee_profiles(id)");
     if (!conversationColumns.has("model_selection")) this.db.exec("ALTER TABLE conversations ADD COLUMN model_selection TEXT");
@@ -353,6 +356,8 @@ export class Store {
     kind?: "text" | "notice";
     author?: string;
     attachments?: Attachment[];
+    story?: NewsStory;
+    storyId?: string;
   }): Message {
     if (input.externalId) {
       const duplicate = this.db.prepare("SELECT * FROM messages WHERE channel = ? AND external_id = ?").get(input.channel, input.externalId) as Row | undefined;
@@ -375,7 +380,9 @@ export class Store {
     if (input.kind) this.db.prepare("UPDATE messages SET kind = ? WHERE id = ?").run(input.kind, message.id);
     if (input.author) this.db.prepare("UPDATE messages SET author = ? WHERE id = ?").run(input.author, message.id);
     if (input.attachments?.length) this.db.prepare("UPDATE messages SET attachments_json=? WHERE id=?").run(JSON.stringify(input.attachments),message.id);
-    return { ...message, kind: input.kind ?? "text", status: "completed", attachments: input.attachments ?? [] };
+    const storyId = input.story?.id ?? input.storyId;
+    if (storyId) this.db.prepare("UPDATE messages SET story_id=?, story_json=? WHERE id=?").run(storyId, input.story ? JSON.stringify(input.story) : null, message.id);
+    return { ...message, kind: input.kind ?? "text", status: "completed", attachments: input.attachments ?? [], ...input.story ? { story: input.story } : {}, ...storyId ? { storyId } : {} };
   }
 
   setMessageStatus(messageId: string, status: NonNullable<Message["status"]>, error?: string): void {
@@ -645,6 +652,8 @@ export class Store {
       attachments: JSON.parse(String(row.attachments_json ?? "[]")) as Attachment[],
       externalId: row.external_id == null ? null : String(row.external_id),
       createdAt: String(row.created_at),
+      ...row.story_json ? { story: JSON.parse(String(row.story_json)) as NewsStory } : {},
+      ...row.story_id ? { storyId: String(row.story_id) } : {},
     };
   }
 

@@ -244,7 +244,7 @@ export class AccountEngines implements CodexEngine {
         const provider = options?.provider ?? providerForChat();
         const keyed = provider !== "chatgpt" ? this.keyed(provider) : undefined;
         // A subscription serves its subscriber: the owner's own chats and schedules, never colleagues or groups.
-        if (keyed?.info.engine === "acp" && (options?.groupContext || !(options?.byOwner || options?.scheduled)))
+        if (keyed?.info.engine === "acp" && ((options?.groupChat ?? options?.groupContext) || !(options?.byOwner || options?.scheduled)))
           throw new ProviderIncident(`Подписка ${keyed.info.name} работает только в чатах владельца. Для коллег и групп выберите модель xAI с ключом API.`, 409, "policy:" + provider);
         const { id, service } = keyed ? { id: "provider-" + provider, service: undefined } : await this.accounts.choose(agent, true, excluded);
         chosen(id);
@@ -307,7 +307,7 @@ export class AccountEngines implements CodexEngine {
         const provider = candidate.provider!, ref = JSON.stringify([provider,candidate.model]);
         if (tried.has(ref)) continue; tried.add(ref);
         // A personal subscription in the reserve cannot serve a group or a colleague.
-        if (index && providerInfo(provider)?.engine === "acp" && (options.groupContext || !(options.byOwner || options.scheduled))) continue;
+        if (index && providerInfo(provider)?.engine === "acp" && ((options.groupChat ?? options.groupContext) || !(options.byOwner || options.scheduled))) continue;
         const excluded = new Set<string>();
         for (const [id, limit] of this.limited) {
           const usage = !id.startsWith("provider-") && this.accounts.entries().some(a=>a.id===id) ? this.accounts.get(id).usageSnapshot() : undefined;

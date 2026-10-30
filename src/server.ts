@@ -31,6 +31,7 @@ import type { ServiceSignIn } from "./types.js";
 import { MAX_SPEECH_BYTES, isSpeechFile, saveSpeechSettings, speechSettings, transcribeRecording } from "./speech.js";
 import { diagnosticReport, recordDiagnostic, saveDiagnosticLevel } from "./diagnostics.js";
 import { runtimeIssues } from "./operations.js";
+import { newsFeed, newsStamp } from "./news.js";
 
 const MAX_BODY_BYTES = 1_048_576;
 
@@ -646,6 +647,11 @@ export class HttpApi {
           text: String(body.text ?? ""), externalId: String(body.externalId ?? ""), attachments: body.attachments as string[] | undefined });
         this.send(response, 200, receipt); return;
       }
+      const stories = path.match(/^\/v1\/conversations\/([^/]+)\/stories$/);
+      if (request.method === "GET" && stories) {
+        if (!this.store.getConversation(stories[1]!)) throw new HomeError("Чат не найден", 404);
+        this.send(response, 200, newsFeed(this.store, stories[1]!)); return;
+      }
       const singleConversation=path.match(/^\/v1\/conversations\/([^/]+)$/);
       if(request.method==="GET" && singleConversation) {
         const conversation=this.store.getConversation(singleConversation[1]!);
@@ -769,6 +775,7 @@ export class HttpApi {
           conversationId: body.conversationId == null ? undefined : String(body.conversationId),
           profile: body.profile == null ? undefined : String(body.profile),
           attachments: body.attachments as string[] | undefined,
+          replyToId: body.replyToId == null ? undefined : String(body.replyToId),
           byOwner: canManageAccount,
         });
         this.send(response, url.searchParams.get("async") === "true" ? 202 : 200, url.searchParams.get("async") === "true" ? submission.receipt : await submission.completion);
@@ -806,7 +813,9 @@ export class HttpApi {
     // Clients refresh the chat's model control when this changes. Without the catalog: only OpenAI providers have speeds.
     if (fastChat(this.store,agent,conversation.id,this.messages.contextFor(conversation.id).startsWith("group-")))
       effectiveModel.serviceTier = turnSpeed(["chatgpt","openai"].includes(effectiveModel.provider ?? ""),effectiveModel.serviceTier);
-    return {...conversation,effectiveModel};
+    // The app opens the News reader for a chat with stories and reloads it only when this changes.
+    const news = newsStamp(this.store, conversation.id);
+    return {...conversation,effectiveModel,...news ? { news } : {}};
   }
 
   private employeeTimeline(conversation: import("./types.js").Conversation, query: URLSearchParams) {
