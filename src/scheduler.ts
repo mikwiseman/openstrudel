@@ -37,7 +37,7 @@ export class Scheduler {
     if (!columns.some(c => c.name === "delivery")) store.db.exec("ALTER TABLE schedules ADD COLUMN delivery TEXT NOT NULL DEFAULT 'bound'");
     if (!columns.some(c => c.name === "backup_of")) store.db.exec("ALTER TABLE schedules ADD COLUMN backup_of TEXT REFERENCES schedules(id)");
   }
-  save(input: ScheduleInput, now = new Date()): Schedule {
+  save(input: ScheduleInput, now = new Date(), moveFrom?: string): Schedule {
     if (!this.store.getConversation(input.conversationId)) throw new Error("Чат не найден");
     if (!input.name?.trim() || !input.prompt?.trim() || input.name.length > 120) throw new Error("Укажите название и поручение");
     const timing = scheduleTiming(input.cron, input.timezone, now), next = timing.nextRunAt;
@@ -46,13 +46,31 @@ export class Scheduler {
     const delivery = input.delivery ?? (input.telegramChatId ? "telegram" : "app");
     if (!["app", "telegram", "bound"].includes(delivery)) throw new Error("Выберите место доставки");
     if (delivery === "telegram" && !input.telegramChatId) throw new Error("Выберите подключённый Telegram-чат");
-    if (input.id && !this.list(input.conversationId).some(s => s.id === input.id)) throw new Error("Расписание этого чата не найдено");
+    const previous = input.id ? this.list(moveFrom ?? input.conversationId).find(s => s.id === input.id) : undefined;
+    if (input.id && !previous) throw new Error("Расписание этого чата не найдено");
+    const moving = previous && previous.conversationId !== input.conversationId;
+    const backups = moving ? this.list(previous.conversationId).filter(s => s.backupOf === input.id) : [];
+    if (moving) {
+      if (previous.backupOf) throw new Error("Перенесите основное расписание: резерв переносится вместе с ним.");
+      for (const schedule of [previous,...backups]) {
+        if (this.active.has(schedule.id) || this.store.db.prepare("SELECT 1 FROM schedule_runs WHERE schedule_id=? AND status IN ('running','ready','uncertain') LIMIT 1").get(schedule.id)) throw new Error("Сначала дождитесь выполнения и подтвердите доставку текущего поручения.");
+      }
+    }
     if (input.backupOf && (input.backupOf === input.id || !this.list(input.conversationId).some(s => s.id === input.backupOf && !s.backupOf))) throw new Error("Основное расписание этого чата не найдено");
     const id = input.id ?? randomUUID();
-    this.store.db.prepare(`INSERT INTO schedules(id,conversation_id,name,prompt,cron,timezone,enabled,next_run_at,telegram_chat_id,delivery,backup_of) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
-      name=excluded.name,prompt=excluded.prompt,cron=excluded.cron,timezone=excluded.timezone,
+    this.store.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.store.db.prepare(`INSERT INTO schedules(id,conversation_id,name,prompt,cron,timezone,enabled,next_run_at,telegram_chat_id,delivery,backup_of) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+      conversation_id=excluded.conversation_id,name=excluded.name,prompt=excluded.prompt,cron=excluded.cron,timezone=excluded.timezone,
       enabled=excluded.enabled,next_run_at=excluded.next_run_at,telegram_chat_id=excluded.telegram_chat_id,delivery=excluded.delivery,backup_of=excluded.backup_of`)
       .run(id,input.conversationId,input.name.trim(),input.prompt.trim(),input.cron.trim(),input.timezone,input.enabled === false ? 0 : 1,next,input.telegramChatId ?? null,delivery,input.backupOf ?? null);
+      for (const backup of backups) {
+        const chatId = backup.telegramChatId ?? (backup.delivery === "bound" ? this.store.telegramChats().find(c=>c.conversationId === backup.conversationId)?.chatId : null) ?? null;
+        this.store.db.prepare("UPDATE schedules SET conversation_id=?,telegram_chat_id=?,delivery=? WHERE id=?")
+          .run(input.conversationId,chatId,backup.delivery === "bound" ? chatId ? "telegram" : "app" : backup.delivery ?? "app",backup.id);
+      }
+      this.store.db.exec("COMMIT");
+    } catch (error) { this.store.db.exec("ROLLBACK"); throw error; }
     this.armClock();
     return this.list(input.conversationId).find(s => s.id === id)!;
   }

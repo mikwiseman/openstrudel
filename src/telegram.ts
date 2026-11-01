@@ -121,6 +121,7 @@ export class TelegramAdapter {
   private cleaningInteractions?: Promise<void>;
   private readonly preparations = new Map<string, Promise<Pick<MessageInput,"text"|"uploads"> & { transcript?: string }>>();
   private readonly activeChats = new Map<string, number>();
+  private readonly controlReplies = new Map<string, string>();
   private readonly typing = new Map<string, { users: number; timer: ReturnType<typeof setInterval> }>();
   transcribe = (bytes: Uint8Array, extension = "ogg") => transcribeRecording(this.store, bytes, "voice." + extension);
   convertGif = gifToMp4;
@@ -250,22 +251,33 @@ export class TelegramAdapter {
     return { code, expiresAt, url: username ? `https://t.me/${username}?${kind === "group" ? "startgroup" : "start"}=${code}` : null };
   }
 
-  bindChat(chatId: string, profileId: string | null): void {
-    if (this.activeChats.has(chatId)) throw new Error("В этом чате ещё идёт ответ. Дождитесь его и повторите.");
+  /** Only the sole running request in this very group can change its own binding mid-answer. */
+  private controlRequest(chatId: string, origin?: { conversationId: string; messageId: string }): string | undefined {
+    if (!origin || Number(chatId) >= 0 || this.activeChats.get(chatId) !== 1 || isProtectedTelegramAudience(this.store,chatId)) return;
+    const message = this.store.getMessage(origin.conversationId,origin.messageId);
+    return this.store.getTelegramChat(chatId)?.conversationId === origin.conversationId && message?.channel === "telegram" && message.direction === "inbound" && message.status === "running" && message.externalId?.startsWith(chatId + ":") ? message.externalId : undefined;
+  }
+
+  bindChat(chatId: string, profileId: string | null, origin?: { conversationId: string; messageId: string }): void {
+    const request = this.controlRequest(chatId,origin);
+    if (this.activeChats.has(chatId) && !request) throw new Error("В этом чате ещё идёт ответ. Дождитесь его и повторите.");
     const previous = this.store.getTelegramChat(chatId);
     this.store.bindTelegramChat(chatId, profileId);
     // Only groups pause; a private chat always answers.
     if (profileId || Number(chatId) > 0) this.store.deleteSetting("telegram.paused." + chatId);
     else this.store.setSetting("telegram.paused." + chatId, "true");
     if (Number(chatId) < 0 && profileId && !previous?.profileId && !previous?.conversationId && !protectScopedTelegramTransport(this.store, chatId)) this.store.db.prepare("UPDATE telegram_chats SET access='members',replies='instructions' WHERE chat_id=?").run(chatId);
+    if (request) this.controlReplies.set(request,profileId ? `Назначен сотрудник: ${this.store.getProfile(profileId)!.name}.` : "Бот в этой группе приостановлен.");
   }
 
-  setGroupEnabled(chatId: string, enabled: boolean): void {
+  setGroupEnabled(chatId: string, enabled: boolean, origin?: { conversationId: string; messageId: string }): void {
     if (Number(chatId) >= 0 || !this.store.getTelegramChat(chatId)) throw new Error("Группа Telegram не найдена");
     // Pausing a protected group revokes its running turns at their next check; it never waits for participants.
-    if (this.activeChats.has(chatId) && (enabled || !isRestrictedChat(this.store, chatId))) throw new Error("Дождитесь текущего ответа и повторите.");
+    const request = this.controlRequest(chatId,origin);
+    if (this.activeChats.has(chatId) && !request && (enabled || !isRestrictedChat(this.store, chatId))) throw new Error("Дождитесь текущего ответа и повторите.");
     if (enabled) { this.store.connectTelegramGroup(chatId); this.store.deleteSetting("telegram.paused." + chatId); }
     else this.store.setSetting("telegram.paused." + chatId, "true");
+    if (request) this.controlReplies.set(request,enabled ? "Бот в этой группе включён." : "Бот в этой группе приостановлен.");
   }
 
   linkStatus(code: string): { status: "waiting" | "connected" | "expired"; error?: string } {
@@ -778,7 +790,10 @@ export class TelegramAdapter {
     try {
       this.messages.assertDelivery(submission, result.messageId);
       // The chat changed hands during the turn. Record that nothing was sent.
-      if (!currentBinding || currentBinding.profileId !== binding?.profileId) this.store.db.prepare("INSERT OR IGNORE INTO telegram_outbox(key,chat_id,payload,status,error) VALUES(?,?,'{}','not_sent',?)")
+      // A management request gets a narrow native receipt, never the old employee's answer after reassignment.
+      const control = this.controlReplies.get(externalId);
+      if (control) await this.sendMessage(chatId,control,`control:${externalId}`,message.message_id, { assertCurrent: () => this.messages.assertDelivery(submission,result.messageId) });
+      else if (!currentBinding || currentBinding.profileId !== binding?.profileId) this.store.db.prepare("INSERT OR IGNORE INTO telegram_outbox(key,chat_id,payload,status,error) VALUES(?,?,'{}','not_sent',?)")
         .run(`${chatId}:reply:${result.messageId}:0`, chatId, "Подключение этого чата изменилось. Ответ не отправлен в Telegram.");
       else if (Number(chatId) >= 0 || !quietReply(result.text)) await this.sendAnswer(message.chat.id, result.text, result.attachments, `reply:${result.messageId}`, Number(chatId) < 0 ? message.message_id : undefined, () => this.messages.assertDelivery(submission, result.messageId));
     }
@@ -808,6 +823,7 @@ export class TelegramAdapter {
       }
     } finally {
       stopTyping();
+      this.controlReplies.delete(externalId);
       if(this.preparations.get(chatId)===prepared) this.preparations.delete(chatId);
       const remaining = (this.activeChats.get(chatId) ?? 1) - 1;
       if (remaining) this.activeChats.set(chatId, remaining); else this.activeChats.delete(chatId);

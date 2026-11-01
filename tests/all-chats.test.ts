@@ -174,14 +174,19 @@ it("lets the owner keep this Home's access list through the Home API", async () 
     return { status: r.status, value: await r.json() };
   };
   try {
-    expect(await call("GET")).toEqual({ status: 200, value: { people: [], owners: ["139287108"] } });
-    expect(await call("POST", { people: ["139287108", "241196252"] })).toEqual({ status: 200, value: { people: ["139287108", "241196252"], owners: ["139287108"] } });
+    expect(await call("GET")).toEqual({ status: 200, value: { people: [], owners: ["139287108"], managers: [] } });
+    expect(await call("POST", { people: ["139287108", "241196252"] })).toEqual({ status: 200, value: { people: ["139287108", "241196252"], owners: ["139287108"], managers: [] } });
     expect(JSON.parse(runtime.store.getSetting("access.people")!)).toEqual(["139287108", "241196252"]);
     for (const people of ["241196252", ["-100"], ["abc"], [241196252], ["0"]]) expect((await call("POST", { people })).status, JSON.stringify(people)).toBe(400);
+    expect((await call("POST", { managers: ["77", "77"] })).value).toMatchObject({ managers: ["77"], people: ["139287108", "241196252"] });
+    expect((await call("POST", { people: [], managers: ["-100"] })).status).toBe(400);
+    expect((await call("GET")).value.managers).toEqual(["77"]);
     const session = await fetch(`http://127.0.0.1:${address.port}/auth/session`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: runtime.api.web.invite(false).key }) });
     const { csrf } = await session.json();
     const member = { cookie: session.headers.get("set-cookie")!.split(";")[0]!, "x-openstrudel-csrf": csrf, "x-openstrudel-owner": "1" };
     expect((await call("POST", { people: [] }, member)).status).toBe(403);
+    expect((await call("POST", { managers: [] }, member)).status).toBe(403);
+    expect((await call("GET")).value.managers).toEqual(["77"]);
     expect(JSON.parse(runtime.store.getSetting("access.people")!)).toEqual(["139287108", "241196252"]);
   } finally { await runtime.stop(); }
 });
