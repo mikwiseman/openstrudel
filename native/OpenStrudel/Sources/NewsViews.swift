@@ -2,43 +2,6 @@ import SwiftUI
 
 /// The News employee's stories, arranged for reading: the morning edition, the radar of events as they come,
 /// and one story with its sources, history and a discussion. Every story is a message in the employee's chat.
-struct NewsDesk {
-    struct Item: Identifiable {
-        let id: String
-        /// Oldest first; the last one is the story as it stands now.
-        var versions: [HomeMessage] = []
-        /// Questions about this story and their answers, oldest first.
-        var thread: [HomeMessage] = []
-        var latest: HomeMessage { versions[versions.count - 1] }
-        var story: NewsStory { latest.story! }
-    }
-
-    let items: [Item]
-    let edition: String?
-    let editionItems: [Item]
-    let radarItems: [Item]
-
-    init(_ messages: [HomeMessage]) {
-        var byID: [String: Item] = [:], order: [String] = []
-        for message in messages {
-            guard let id = message.story?.id ?? message.storyId else { continue }
-            if byID[id] == nil { byID[id] = Item(id: id); order.append(id) }
-            if message.story != nil { byID[id]!.versions.append(message) } else { byID[id]!.thread.append(message) }
-        }
-        let all = order.compactMap { byID[$0] }.filter { !$0.versions.isEmpty }
-        let latest = all.flatMap { $0.versions.compactMap(\.story?.edition) }.max()
-        func rank(_ item: Item) -> Int { item.versions.last { $0.story?.edition == latest }?.story?.rank ?? .max }
-        func activity(_ item: Item) -> String { item.versions.last { $0.story?.edition == nil }?.createdAt ?? "" }
-        items = all
-        edition = latest
-        editionItems = latest == nil ? [] : all.filter { $0.versions.contains { $0.story?.edition == latest } }
-            .sorted { rank($0) == rank($1) ? $0.latest.createdAt < $1.latest.createdAt : rank($0) < rank($1) }
-        radarItems = all.filter { !activity($0).isEmpty }.sorted { activity($0) > activity($1) }
-    }
-
-    func item(_ id: String?) -> Item? { items.first { $0.id == id } }
-}
-
 /// Where the reader is: the open list, the story on top of it, and each list's place, kept across chat visits.
 struct NewsPlace: Equatable {
     enum Mode: Hashable { case edition, radar, chat }
@@ -442,7 +405,7 @@ struct NewsStoryReader: View {
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
 
                     sources.id("sources").padding(.top, 32)
-                    if item.versions.count > 1 { history.padding(.top, 32) }
+                    if item.developments.count > 1 { history.padding(.top, 32) }
                     discussion.id("discussion").padding(.top, 48)
                     if let next {
                         Button { open(next.id) } label: {
@@ -556,7 +519,7 @@ struct NewsStoryReader: View {
     private var history: some View {
         VStack(alignment: .leading, spacing: 12) {
             label(L("Развитие истории"))
-            ForEach(item.versions) { version in
+            ForEach(item.developments) { version in
                 HStack(alignment: .firstTextBaseline, spacing: 16) {
                     Text(version.sentAt.map { ChatClock.cluster($0, hasTime: true) } ?? "").font(AppTypography.meta).monospacedDigit()
                         .foregroundStyle(AppTheme.secondaryText).frame(minWidth: 120, alignment: .leading)

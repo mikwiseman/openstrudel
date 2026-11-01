@@ -17,7 +17,7 @@ settings:
   SWIFT_VERSION: "6.0"
   DEVELOPMENT_TEAM: R4A779QVVY
   MARKETING_VERSION: "1.0"
-  CURRENT_PROJECT_VERSION: 63
+  CURRENT_PROJECT_VERSION: 64
   ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
 targets:
   OpenStrudel iOS:
@@ -188,6 +188,7 @@ targets:
       - path: ../../public/localizations.json
         buildPhase: resources
       - path: Sources/Models.swift
+      - path: Sources/NewsDesk.swift
       - path: Sources/AgentAppearance.swift
       - path: Sources/HomeClient.swift
       - path: Sources/ConnectionDiagnostics.swift
