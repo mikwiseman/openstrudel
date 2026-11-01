@@ -1,0 +1,9 @@
+# News editorial contract
+
+The existing News employee uses Grok CLI, the existing source collectors and delivery ledger. These four files are the standing profile (`soul.md`), the two existing schedule prompts (`radar.md`, `morning.md`) and its workspace skill (`SKILL.md`). They do not create services or schedules.
+
+The radar reviews overlapping 90-minute discovery windows every 15 minutes and catches up over 24 hours once an hour. Its X search includes both known primary sources and open topic searches. Morning curation includes the best already-published stories; `read_news` supplies stable story IDs and complete source material without paging through quiet scheduled turns. The atomic `publish_edition` selection can replace a weak lead or remove a story from a revised edition while preserving stored history, radar versions and discussion. The workspace skill is explicitly located at `.agents/skills/wai-news/SKILL.md`. It does not authorize another Telegram delivery.
+
+Apply only to the selected News profile and its existing schedules, with a snapshot and a comparison against the current values. Preserve the schedule IDs, time zone, delivery destination, provider and enabled state. The runtime must expose `read_news` and `publish_edition` before applying the prompts. Keep the existing skill's scripts in place when replacing SKILL.md.
+
+Acceptance: verify the real X calls include an unrestricted topic query; examine the selected stories against primary sources; confirm important radar stories can enter an edition with the same IDs and remain in the radar; verify the rendered app and an ordinary scheduled run. A preview must leave the publication and delivery ledgers unchanged. Measure actual discovery and delivery times; a passing preview does not establish exhaustive coverage or long-term reliability.
