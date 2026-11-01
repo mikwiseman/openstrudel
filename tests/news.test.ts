@@ -26,6 +26,29 @@ function newsDesk() {
 }
 
 describe("News stories", () => {
+  it("lets the editor curate recent stories despite scheduled chatter, preserving identity and scope", async () => {
+    const { store, conversation, tools } = newsDesk();
+    const first = await tools().call("publish_story", story({ edition: null, rank: null })) as { messageId: string };
+    const updated = await tools().call("publish_story", story({ edition: null, rank: null, change: "Добавлена проверенная цена." })) as { messageId: string };
+    const old = await tools().call("publish_story", story({ storyId: "old-event" })) as { messageId: string };
+    store.db.prepare("UPDATE messages SET created_at=? WHERE id=?").run(new Date(Date.now() - 72 * 3600000).toISOString(), old.messageId);
+    const hidden = await tools().call("publish_story", story({ storyId: "hidden-event" })) as { messageId: string };
+    store.db.prepare("UPDATE messages SET hidden=1 WHERE id=?").run(hidden.messageId);
+    for (let n = 0; n < 120; n++) store.addMessage({ conversationId: conversation.id, channel: "api", direction: "inbound", text: "Scheduled request" });
+    const other = store.createProfile({ name: "Private desk" });
+    const otherChat = store.profileConversation(other.id);
+    store.addMessage({ conversationId: otherChat.id, channel: "api", direction: "outbound", text: "private", story: { ...store.getMessage(conversation.id, first.messageId)!.story!, id: "private-story" } });
+
+    const desk = await tools().call("read_news", {}) as { stories: Array<{ story: { id: string; change: string }; messageId: string }> };
+    expect(desk.stories).toHaveLength(1);
+    expect(desk.stories[0]).toMatchObject({ messageId: updated.messageId, story: { id: "granola-voice-typing", change: "Добавлена проверенная цена." } });
+    // Curation reuses the story rather than duplicating it or losing its radar history.
+    await tools().call("publish_story", story({ change: "Добавлена проверенная цена.", edition: "2026-11-01", rank: 1 }));
+    const versions = newsFeed(store, conversation.id).messages.filter(m => m.story?.id === "granola-voice-typing");
+    expect(versions.map(m => m.story!.edition)).toEqual([null, null, "2026-11-01"]);
+    store.close();
+  });
+
   it("publishes a typed story once and keeps each later development as a version of the same story", async () => {
     const { store, conversation, tools } = newsDesk();
     const first = await tools().call("publish_story", story()) as { storyId: string; version: number; messageId: string };
@@ -53,6 +76,7 @@ describe("News stories", () => {
     await expect(member.call("publish_story", story())).rejects.toThrow(/владельца/);
     const main = employeeTools(store, {} as CodexEngine, new Interactions(), { profile: null, conversationId: store.primaryConversation().id, messageId: "m", channel: "api" });
     expect(main.definitions.some(d => d.name === "publish_story")).toBe(false);
+    expect(main.definitions.some(d => d.name === "read_news")).toBe(false);
     expect(newsStamp(store, store.primaryConversation().id)).toBeNull();
     store.close();
   });

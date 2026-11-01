@@ -6,7 +6,7 @@ import type { Scheduler } from "./scheduler.js";
 import { ownerTimezone, scheduleTimezone, localScheduleTime } from "./timezone.js";
 import { ownerSender, ownerTurn, telegramTools, type TelegramToolContext } from "./telegram-tools.js";
 import { MAX_SPEECH_TEXT, generateSpeech, isSpeechFile, speechSettings, transcribeRecording } from "./speech.js";
-import { publishStory, storyTool } from "./news.js";
+import { publishStory, readNews, storyTool } from "./news.js";
 
 const schema = (properties: Record<string, unknown>, required = Object.keys(properties)) => ({ type: "object", properties, required, additionalProperties: false });
 const text = { type: "string" };
@@ -33,7 +33,8 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
     tool("pause_schedule", "Pause a schedule belonging to this chat when the user asks to stop or remove it. The owner can pause any schedule from list_schedules with scope \"home\".", schema({ id:text })),
   );
   // An employee's own reader in the app; the main assistant has no news desk.
-  if (context.profile) definitions.push(storyTool);
+  if (context.profile) definitions.push(storyTool,
+    tool("read_news", "Read the latest version of each story published or updated in THIS conversation's reader in the last 48 hours, with its stable id and full sources. Use to avoid duplicates and curate the morning edition, including important stories already in the radar. updatedAt is publication in the app, not the event time; use story.eventAt and source dates. To include an existing story in an edition, reuse its id as publish_story.storyId and preserve its facts, sources and event time; change only edition and rank unless facts changed. This does not send anything to Telegram.", schema({})));
   if (!context.profile) definitions.push(tool("create_employee", "Create a permanent employee only when the user asks to create one. Return its actual identity.", profileSchema), tool("list_employees", "List permanent employees so the user can address one by @name.", schema({})));
   return { definitions, attachments, call: async (name: string, args: Record<string, unknown>): Promise<unknown> => {
     assertNativeAccess(store, context.conversationId, context.telegramSenderId);
@@ -57,6 +58,7 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
       return { messages:page.messages.map(m=>({id:m.id,date:m.createdAt,author:m.author,role:m.direction==="inbound"?"user":"assistant",text:m.text,
         files:context.files && context.scope ? context.files.forMessage(context.conversationId,(m.attachments ?? []).map(f=>f.id)).map(f=>({name:f.name,mimeType:f.mimeType,path:f.path})) : m.attachments})), olderCursor:page.pagination.olderCursor };
     }
+    if (name === "read_news") return readNews(store, context.conversationId);
     if (context.scope?.startsWith("group-") && name === "connect_service") throw new Error("Сервисы для группы подключает владелец в приложении OpenStrudel: эта группа → «Сервисы и навыки». Если он делится сервисами главного чата со всеми чатами, их достаточно подключить там.");
     // The owner may set a group employee's standing rules from inside its group. Members never change its character,
     // and a group served by the main assistant never rewrites the SOUL every other chat uses.

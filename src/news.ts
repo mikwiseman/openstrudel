@@ -85,3 +85,14 @@ export function newsFeed(store: Store, conversationId: string, days = 14): { mes
   const rows = store.db.prepare("SELECT id FROM messages WHERE conversation_id=? AND story_id IS NOT NULL AND hidden=0 AND created_at>=? ORDER BY created_at, rowid").all(conversationId, since) as Array<{ id: string }>;
   return { messages: rows.flatMap(r => store.getMessage(conversationId, r.id) ?? []), stamp: newsStamp(store, conversationId) };
 }
+
+/** The editor needs the stories themselves, even after hundreds of quiet scheduled turns. */
+export function readNews(store: Store, conversationId: string) {
+  const latest = new Map<string, Message>();
+  for (const message of newsFeed(store, conversationId, 2).messages) {
+    if (message.story) latest.set(message.story.id, message);
+  }
+  return { stories: [...latest.values()].reverse().map(message => ({
+    messageId: message.id, updatedAt: message.createdAt, story: message.story!,
+  })) };
+}
