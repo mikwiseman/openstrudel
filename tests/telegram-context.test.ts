@@ -85,6 +85,22 @@ it("includes new context once in an existing thread and retains it across a fail
   expect(store.contextMessages(chat.conversationId!,previous.id,true)).toEqual([]);
 });
 
+it("gives an existing thread what a notification key delivered meanwhile, once", async () => {
+  const {store,chat,run,adapter,update}=setup();
+  await adapter.processUpdate(update(1,"@strudel_bot hello"));
+  // A server delivery between turns, as notification-hook records it.
+  store.addMessage({conversationId:chat.conversationId!,channel:"telegram",direction:"outbound",externalId:"notification:abc123",
+    author:"Wolf from Baumanskaya",text:"Sasha · Lesson 4 · draft. No video yet."});
+  await adapter.processUpdate(update(2,"@strudel_bot why is there no video?"));
+  expect(run.mock.calls[1]![0]).toContain("Sasha · Lesson 4 · draft");
+  await adapter.processUpdate(update(3,"@strudel_bot thanks"));
+  expect(run.mock.calls[2]![0]).not.toContain("Sasha · Lesson 4 · draft");
+  // The model's own replies are in its thread already and never come back as context.
+  store.addMessage({conversationId:chat.conversationId!,channel:"telegram",direction:"outbound",text:"Own earlier answer"});
+  await adapter.processUpdate(update(4,"@strudel_bot and now?"));
+  expect(run.mock.calls[3]![0]).not.toContain("Own earlier answer");
+});
+
 it("bounds initial context and excludes messages received after the request", async () => {
   const {store,chat,run,messages}=setup();
   for (let i=0;i<70;i++) store.addMessage({conversationId:chat.conversationId!,channel:"telegram",direction:"inbound",text:`History ${i}: `+"x".repeat(3000),author:"Grisha"});
