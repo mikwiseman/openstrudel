@@ -26,6 +26,32 @@ function newsDesk() {
 }
 
 describe("News stories", () => {
+  it("replaces an edition atomically without losing radar history or sending a duplicate", async () => {
+    const { store, conversation, tools } = newsDesk();
+    const first = await tools().call("publish_story", story({ edition: null, rank: null })) as { messageId: string };
+    const second = await tools().call("publish_story", story({ storyId: "second-story", edition: null, rank: null })) as { messageId: string };
+    const weak = await tools().call("publish_story", story({ storyId: "weak-story", edition: "2026-11-01", rank: 1 })) as { messageId: string };
+    const selection = { edition: "2026-11-01", storyIds: ["second-story", "granola-voice-typing"] };
+    await tools().call("publish_edition", selection);
+    const ids = () => newsFeed(store, conversation.id).messages.filter(m => m.story?.edition === selection.edition).map(m => m.story!.id);
+    expect(ids()).toEqual(["second-story", "granola-voice-typing"]);
+    expect(store.getMessage(conversation.id, first.messageId)!.story!.edition).toBeNull();
+    expect(store.getMessage(conversation.id, second.messageId)!.story!.edition).toBeNull();
+    expect(store.getMessage(conversation.id, weak.messageId)).toBeTruthy();
+    const stamp = newsStamp(store, conversation.id);
+    await tools().call("publish_edition", selection);
+    expect(newsStamp(store, conversation.id)).toBe(stamp);
+    await expect(tools().call("publish_edition", { ...selection, storyIds: ["second-story", "missing"] })).rejects.toThrow();
+    expect(newsStamp(store, conversation.id)).toBe(stamp);
+    expect(ids()).toEqual(["second-story", "granola-voice-typing"]);
+    await tools().call("publish_edition", { ...selection, storyIds: ["granola-voice-typing"] });
+    expect(ids()).toEqual(["granola-voice-typing", "granola-voice-typing"]);
+    expect(newsFeed(store, conversation.id).messages.some(m => m.id === second.messageId)).toBe(true);
+    const desk = await tools().call("read_news", {}) as { stories: Array<{ story: { id: string } }> };
+    expect(desk.stories.some(m => m.story.id === "weak-story")).toBe(true);
+    store.close();
+  });
+
   it("lets the editor curate recent stories despite scheduled chatter, preserving identity and scope", async () => {
     const { store, conversation, tools } = newsDesk();
     const first = await tools().call("publish_story", story({ edition: null, rank: null })) as { messageId: string };
@@ -74,9 +100,11 @@ describe("News stories", () => {
     await expect(tools().call("publish_story", story({ sources: [{ title: "x", url: "javascript:alert(1)", role: "Первоисточник", publishedAt: null }] }))).rejects.toThrow(/ссылк/);
     const member = employeeTools(store, {} as CodexEngine, new Interactions(), { profile: store.listProfiles()[0]!, conversationId: store.primaryConversation().id, messageId: "m", channel: "telegram", telegramSenderId: "42" });
     await expect(member.call("publish_story", story())).rejects.toThrow(/владельца/);
+    await expect(member.call("publish_edition", { edition: "2026-11-01", storyIds: ["granola-voice-typing"] })).rejects.toThrow(/владельца/);
     const main = employeeTools(store, {} as CodexEngine, new Interactions(), { profile: null, conversationId: store.primaryConversation().id, messageId: "m", channel: "api" });
     expect(main.definitions.some(d => d.name === "publish_story")).toBe(false);
     expect(main.definitions.some(d => d.name === "read_news")).toBe(false);
+    expect(main.definitions.some(d => d.name === "publish_edition")).toBe(false);
     expect(newsStamp(store, store.primaryConversation().id)).toBeNull();
     store.close();
   });

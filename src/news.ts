@@ -19,6 +19,12 @@ export const storyTool: DynamicTool = { type: "function", name: "publish_story",
   }),
 };
 
+export const editionTool: DynamicTool = { type: "function", name: "publish_edition",
+  description: "Publish or replace the complete morning selection in THIS conversation's app reader. First read_news; pass existing story IDs in importance order, including good stories already in the radar. Publish new stories with publish_story first. One atomic selection removes unselected stories from this edition, preserves their stored history and radar versions, and gives the first story rank 1. It never sends to Telegram or changes the delivery ledger. Identical retries are safe.",
+  inputSchema: strict({ edition: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+    storyIds: { type: "array", minItems: 1, maxItems: 100, uniqueItems: true, items: text(120) } }),
+};
+
 const field = (value: unknown, name: string, max: number, required = true): string | null => {
   if (value == null || value === "") { if (required) throw new Error(`Укажите ${name}.`); return null; }
   if (typeof value !== "string" || value.length > max) throw new Error(`Проверьте ${name}.`);
@@ -65,6 +71,23 @@ export function publishStory(store: Store, conversationId: string, args: Record<
   return { published: true, storyId: story.id, version, messageId: message.id };
 }
 
+const editionKey = (conversationId: string) => `news.edition.${conversationId}`;
+
+export function publishEdition(store: Store, conversationId: string, args: Record<string, unknown>) {
+  const edition = String(args.edition ?? ""), ids = args.storyIds;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(edition) || Number.isNaN(Date.parse(edition)) || new Date(edition).toISOString().slice(0, 10) !== edition) throw new Error("Укажите дату выпуска YYYY-MM-DD.");
+  if (!Array.isArray(ids) || !ids.length || ids.length > 100 || ids.some(id => typeof id !== "string") || new Set(ids).size !== ids.length) throw new Error("Укажите разные storyIds по порядку значимости.");
+  const available = new Map(readNews(store, conversationId).stories.map(m => [m.story.id, m.story]));
+  const selected = ids.map(id => { const story = available.get(id); if (!story) throw new Error(`История ${id} не найдена в недавних новостях этого чата.`); return story; });
+  store.db.exec("BEGIN IMMEDIATE");
+  try {
+    for (const [index, story] of selected.entries()) publishStory(store, conversationId, { ...story, storyId: story.id, edition, rank: index + 1, change: null });
+    store.setSetting(editionKey(conversationId), JSON.stringify({ edition, storyIds: ids }));
+    store.db.exec("COMMIT");
+  } catch (error) { store.db.exec("ROLLBACK"); throw error; }
+  return { published: true, edition, storyIds: ids };
+}
+
 /** A question asked from a story's reader: the question joins that story's thread and the turn reads the story as quoted data. */
 export function storyQuestion(store: Store, conversationId: string, replyToId: string) {
   const target = store.getMessage(conversationId, replyToId);
@@ -76,20 +99,28 @@ export function storyQuestion(store: Store, conversationId: string, replyToId: s
 export function newsStamp(store: Store, conversationId: string): string | null {
   const row = store.db.prepare("SELECT count(*) AS n, max(rowid) AS last, sum(status IN ('queued','running')) AS waiting FROM messages WHERE conversation_id=? AND story_id IS NOT NULL AND hidden=0")
     .get(conversationId) as { n: number; last: number | null; waiting: number | null };
-  return row.n ? `${row.n}-${row.last}-${row.waiting ?? 0}` : null;
+  const selection = store.getSetting(editionKey(conversationId));
+  return row.n ? `${row.n}-${row.last}-${row.waiting ?? 0}${selection ? "-" + createHash("sha256").update(selection).digest("hex").slice(0, 12) : ""}` : null;
 }
 
-/** Stories and their threads of the last two weeks, oldest first. */
-export function newsFeed(store: Store, conversationId: string, days = 14): { messages: Message[]; stamp: string | null } {
+function storyMessages(store: Store, conversationId: string, days: number): Message[] {
   const since = new Date(Date.now() - days * 86_400_000).toISOString();
   const rows = store.db.prepare("SELECT id FROM messages WHERE conversation_id=? AND story_id IS NOT NULL AND hidden=0 AND created_at>=? ORDER BY created_at, rowid").all(conversationId, since) as Array<{ id: string }>;
-  return { messages: rows.flatMap(r => store.getMessage(conversationId, r.id) ?? []), stamp: newsStamp(store, conversationId) };
+  return rows.flatMap(r => store.getMessage(conversationId, r.id) ?? []);
+}
+
+/** Stories and their threads of the last two weeks, oldest first. Curation never deletes stored history. */
+export function newsFeed(store: Store, conversationId: string, days = 14): { messages: Message[]; stamp: string | null } {
+  const saved = store.getSetting(editionKey(conversationId));
+  const selection = saved ? JSON.parse(saved) as { edition: string; storyIds: string[] } : null;
+  const messages = storyMessages(store, conversationId, days).filter(m => !selection || !m.story || m.story.edition !== selection.edition || selection.storyIds.includes(m.story.id));
+  return { messages, stamp: newsStamp(store, conversationId) };
 }
 
 /** The editor needs the stories themselves, even after hundreds of quiet scheduled turns. */
 export function readNews(store: Store, conversationId: string) {
   const latest = new Map<string, Message>();
-  for (const message of newsFeed(store, conversationId, 2).messages) {
+  for (const message of storyMessages(store, conversationId, 2)) {
     if (message.story) latest.set(message.story.id, message);
   }
   return { stories: [...latest.values()].reverse().map(message => ({
