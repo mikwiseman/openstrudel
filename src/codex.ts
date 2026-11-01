@@ -216,7 +216,10 @@ export class CodexEngineAdapter implements CodexEngine {
     const filesystem=(settings as any).permissions?.openstrudel?.filesystem && Object.fromEntries(Object.entries((settings as any).permissions.openstrudel.filesystem).filter(([path])=>path !== memories));
     const paths=options.byOwner && !options.groupContext ? options.readPaths ?? [] : [];
     const sourceAccess=filesystem ? {"permissions.openstrudel.filesystem":{...Object.fromEntries(paths.map(path=>[path,"read"])),...filesystem}} : {};
-    const homeTools = this.options.restricted ? {} : bridge ? { "mcp_servers.openstrudel_runtime": { url:bridge.url,http_headers:{Authorization:"Bearer " + bridge.token},enabled:true,required:true } } : { "mcp_servers.openstrudel_runtime.enabled":false };
+    // Even a disabled server needs a valid transport in Codex's config parser.
+    const homeTools = this.options.restricted ? {} : { "mcp_servers.openstrudel_runtime": bridge
+      ? { url:bridge.url,http_headers:{Authorization:"Bearer " + bridge.token},enabled:true,required:true }
+      : { url:"http://127.0.0.1:1",enabled:false } };
     const config = { ...overrides, ...guest, ...roles, ...(effort ? {model_reasoning_effort:effort} : {}), ...custom, ...sourceAccess, ...nativeApprovalConfig(mode,settings,this.extensionManager?.pluginServers()), ...homeTools, approval_policy: policy.approvalPolicy, approvals_reviewer: policy.approvalsReviewer, ...(this.options.restricted ? restrictedCodexConfig(cwd) : {}) };
     const configKey = createHash("sha256").update(JSON.stringify([config, employees])).digest("hex");
     let threadId = options.threadId ?? "";

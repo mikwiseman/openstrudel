@@ -311,8 +311,8 @@ it("starts a turn without access on a thread with no keyed services, apps, memor
   expect(guest["mcp_servers.wai.enabled"]).toBeUndefined();
   await engine.run("Listed",{access:true,telegramActor:actor,groupContext:true});
   const listed=wire.request.mock.calls.filter(([method])=>method==="thread/start")[1]![1].config;
-  expect(Object.keys(listed).filter(key=>/\.enabled$|use_memories|multi_agent/.test(key))).toEqual(["mcp_servers.openstrudel_runtime.enabled"]);
-  expect(listed["mcp_servers.openstrudel_runtime.enabled"]).toBe(false);
+  expect(Object.keys(listed).filter(key=>/\.enabled$|use_memories|multi_agent/.test(key))).toEqual([]);
+  expect(listed["mcp_servers.openstrudel_runtime"].enabled).toBe(false);
   expect(listed["features.apps"]).toBe(true);
   expect(listed["permissions.openstrudel.filesystem"]).toMatchObject({[memories]:"read"});
  }finally{engine.close();rmSync(home,{recursive:true,force:true});}
