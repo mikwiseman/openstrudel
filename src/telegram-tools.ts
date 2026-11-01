@@ -80,7 +80,7 @@ export function telegramTools(store: Store, context: TelegramToolContext) {
       if (args.query != null && (typeof args.query !== "string" || args.query.length > 240)) throw new Error("Укажите короткое название чата.");
       const query = String(args.query ?? "").trim().toLocaleLowerCase();
       return {chats:chats(true).filter(chat => !query || chat.title.toLocaleLowerCase().includes(query) || chat.chatId === query)
-        .map(chat => ({chatId:chat.chatId,title:chat.title,type:Number(chat.chatId)<0?"group":"private", ...managementTurn(store,context) ? {profileId:chat.profileId,conversationId:chat.conversationId,enabled:chat.enabled} : {}}))};
+        .map(chat => ({chatId:chat.chatId,title:chat.title,type:Number(chat.chatId)<0?"group":"private", ...managementTurn(store,context) ? {profileId:chat.profileId,conversationId:chat.conversationId,enabled:chat.enabled,replies:chat.replies} : {}}))};
     }
     if (name !== "send_telegram_message") throw new Error("Unknown Telegram tool");
     if (typeof args.chatId !== "string" || typeof args.text !== "string" || !Array.isArray(args.paths) || args.paths.some(path => typeof path !== "string" || !path.trim())) throw new Error("Укажите чат, текст и пути к файлам.");

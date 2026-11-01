@@ -5,6 +5,7 @@ import { Scheduler } from "../src/scheduler.js";
 import { TelegramAdapter, type TelegramUpdate } from "../src/telegram.js";
 import { employeeTools } from "../src/personality.js";
 import { saveTelegramAuthorization, type TelegramAuthorization } from "../src/authorization.js";
+import { OpenStrudelRuntime } from "../src/runtime.js";
 
 const stores: Store[] = [];
 const restricted = (): TelegramAuthorization => ({ version:1,revision:0,connectors:{limited:{url:"https://example.com/mcp",headers:{}}},policies:{limited:{connectorId:"limited",tools:[]}},subjects:{},chats:{} });
@@ -214,4 +215,111 @@ it("does not let an owner operations pipeline acquire interactive management rig
   });
   await messages.handle({channel:"api",profile:profile.id,byOwner:true,externalId:"operations:test",text:"Run the saved work"});
   expect(store.getProfile(profile.id)!.instructions).toBe("Keep sources");
+});
+
+it("changes contextual participation through a verified manager and applies it to subsequent messages", async () => {
+  const { store, run, adapter, update, tools } = setup();
+  store.db.prepare("UPDATE telegram_chats SET replies='mentions' WHERE chat_id='-100'").run();
+  const before = store.getTelegramChat("-100")!;
+  run.mockImplementationOnce(async (_text, options) => {
+    expect(await options.tools.call("configure_telegram_chat", { chatId: "-100", replies: "instructions" })).toMatchObject({ saved: true, chat: { replies: "instructions" } });
+    return { threadId: "test", response: "Do not send this old response", events: [] };
+  });
+  await adapter.processUpdate(update(1));
+  expect(store.getTelegramChat("-100")).toMatchObject({ replies: "instructions", access: before.access, allowedSenders: before.allowedSenders });
+  expect(await tools().call("list_telegram_chats", { query: "Team" })).toMatchObject({ chats: [{ replies: "instructions" }] });
+  await adapter.processUpdate(update(2, 77, { text: "And move it to tomorrow" }));
+  expect(run).toHaveBeenCalledTimes(2);
+  await tools().call("configure_telegram_chat", { chatId: "-100", replies: "mentions" });
+  await adapter.processUpdate(update(3, 77, { text: "Ordinary conversation" }));
+  expect(run).toHaveBeenCalledTimes(2);
+  const sent = vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith("/sendMessage")).map(([,init]) => JSON.parse(String(init!.body)).text);
+  expect(sent).toEqual(["Бот отвечает по контексту."]);
+});
+
+it("rejects invalid participation changes, revoked managers, and protected audiences", async () => {
+  const { store, tools, adapter } = setup();
+  const t = tools(), before = store.getTelegramChat("-100");
+  for (const args of [{ replies: "always" }, { replies: null }, { replies: "instructions", enabled: true }, { replies: "instructions", access: "members" }, { replies: "instructions", allowedSenders: ["99"] }]) {
+    await expect(t.call("configure_telegram_chat", { chatId: "-100", ...args })).rejects.toThrow();
+  }
+  expect(store.getTelegramChat("-100")).toEqual(before);
+  await expect(tools({ telegramSenderId: "88" }).call("configure_telegram_chat", { chatId: "-100", replies: "instructions" })).rejects.toThrow();
+  store.setSetting("access.managers", "[]");
+  await expect(t.call("configure_telegram_chat", { chatId: "-100", replies: "instructions" })).rejects.toThrow();
+  store.setSetting("access.managers", '["77"]');
+  const policy = restricted(); policy.chats["-100"] = { enabled: true, policyId: "limited", members: {}, defaultCapabilities: [] }; saveTelegramAuthorization(store, policy);
+  store.db.prepare("UPDATE telegram_chats SET replies='instructions' WHERE chat_id='-100'").run();
+  await expect(t.call("configure_telegram_chat", { chatId: "-100", replies: "instructions" })).rejects.toThrow();
+  expect(adapter.status().chats.find(chat => chat.chatId === "-100")?.replies).toBe("mentions");
+});
+
+it("returns at most 30 Home schedule receipts, with authorized target filtering and no protected chat history", async () => {
+  const { store, scheduler, chat, tools } = setup();
+  const other = store.profileConversation(store.createProfile({ name: "Other" }).id);
+  store.linkTelegramChat({ chatId: "-200", title: "Protected", allowedSenders: ["42"] });
+  const protectedChat = store.connectTelegramGroup("-200");
+  const policy = restricted(); policy.chats["-200"] = { enabled: true, policyId: "limited", members: {}, defaultCapabilities: [] }; saveTelegramAuthorization(store, policy);
+  const insert = store.db.prepare("INSERT INTO schedule_runs(id,schedule_id,conversation_id,scheduled_for,status,created_at,error) VALUES(?,?,?,?,?,?,?)");
+  for (const conversationId of [chat.conversationId!, other.id, protectedChat.conversationId!]) {
+    const schedule = scheduler.save({ conversationId, name: "Daily", prompt: "Read", cron: "0 9 * * *", timezone: "UTC" });
+    for (let i = 0; i < 35; i++) {
+      const date = new Date(Date.UTC(2026, 0, 1, 9, i)).toISOString();
+      insert.run(`${conversationId}:${i}`, schedule.id, conversationId, date, "failed", date, "Connector unavailable");
+    }
+  }
+  const t = tools(), home: any = await t.call("list_schedules", { scope: "home" });
+  expect(home.runs).toHaveLength(30);
+  expect(new Set(home.runs.map((run: any) => run.conversationId))).toEqual(new Set([chat.conversationId, other.id]));
+  expect(home.runs[0]).toMatchObject({ status: "failed", error: "Connector unavailable" });
+  const target: any = await t.call("list_schedules", { scope: "home", conversationId: other.id });
+  expect(target.runs).toHaveLength(30);
+  expect(target.runs.every((run: any) => run.conversationId === other.id)).toBe(true);
+  expect(target.schedules).toHaveLength(1);
+  expect(target.runs[0].scheduledFor).toBe("2026-01-01T09:34:00.000Z");
+  for (const conversationId of [protectedChat.conversationId, "another-home-conversation"]) {
+    await expect(t.call("list_schedules", { scope: "home", conversationId })).rejects.toThrow();
+  }
+  await expect(tools({ telegramSenderId: "88" }).call("list_schedules", { scope: "home" })).rejects.toThrow();
+  await expect(tools({ telegramSenderId: "88" }).call("list_schedules", { conversationId: other.id })).rejects.toThrow();
+  expect((await tools({ telegramSenderId: "88" }).call("list_schedules", {}) as any).runs.every((run: any) => run.conversationId === chat.conversationId)).toBe(true);
+});
+
+it("uses the owner API to configure participation without changing access or protected policies", async () => {
+  vi.unstubAllGlobals();
+  const runtime = new OpenStrudelRuntime({ dbPath: ":memory:", startTelegram: false, apiToken: "owner", engine: { run: async () => ({ threadId: "test", response: "OK", events: [] }) } });
+  const { port } = await runtime.api.listen("127.0.0.1", 0);
+  const call = (body: unknown, headers: Record<string, string> = { authorization: "Bearer owner" }, chatId = "-100") => fetch(`http://127.0.0.1:${port}/v1/integrations/telegram/chats/${chatId}`, { method: "PATCH", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+  try {
+    runtime.store.linkTelegramChat({ chatId: "-100", title: "Team", allowedSenders: ["42"] }); runtime.store.connectTelegramGroup("-100");
+    const before = runtime.store.getTelegramChat("-100")!;
+    expect(await (await call({ replies: "mentions" })).json()).toMatchObject({ telegram: { chats: [{ replies: "mentions", access: before.access, allowedSenders: before.allowedSenders }] } });
+    for (const body of [{ replies: "always" }, { replies: null }, { replies: "instructions", enabled: true }, { replies: "instructions", access: "members" }]) expect((await call(body)).status).toBe(400);
+    expect(runtime.store.getTelegramChat("-100")!.replies).toBe("mentions");
+    const login = await fetch(`http://127.0.0.1:${port}/auth/session`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: runtime.api.web.invite(false).key }) });
+    const { csrf } = await login.json();
+    expect((await call({ replies: "instructions" }, { cookie: login.headers.get("set-cookie")!.split(";")[0]!, "x-openstrudel-csrf": csrf })).status).toBe(403);
+    const policy = restricted(); policy.chats["-100"] = { enabled: true, policyId: "limited", members: {}, defaultCapabilities: [] }; saveTelegramAuthorization(runtime.store, policy);
+    expect((await call({ replies: "instructions" })).status).toBe(400);
+    expect(runtime.store.getTelegramChat("-100")!.replies).toBe("mentions");
+  } finally { await runtime.stop(); }
+});
+
+it("never broadens a participant's schedule reads for empty or malformed conversation IDs", async () => {
+  const { store, scheduler, chat, tools } = setup();
+  const other = store.profileConversation(store.createProfile({ name: "Private" }).id);
+  for (const conversationId of [chat.conversationId!, other.id]) {
+    const schedule = scheduler.save({ conversationId, name: "Daily", prompt: `Work for ${conversationId}`, cron: "0 9 * * *", timezone: "UTC" });
+    store.db.prepare("INSERT INTO schedule_runs(id,schedule_id,conversation_id,scheduled_for,status,created_at,error) VALUES(?,?,?,'2026-01-01T09:00:00Z','failed','2026-01-01T09:00:00Z',?)")
+      .run(conversationId, schedule.id, conversationId, `Details for ${conversationId}`);
+  }
+  const participant = tools({ telegramSenderId: "88" });
+  for (const conversationId of ["", "   ", "\n\t", 42, false, [], {}, other.id]) {
+    await expect(participant.call("list_schedules", { conversationId })).rejects.toThrow();
+  }
+  for (const args of [{}, { conversationId: null }, { conversationId: chat.conversationId }]) {
+    const result: any = await participant.call("list_schedules", args);
+    expect(result.schedules).toEqual([expect.objectContaining({ conversationId: chat.conversationId })]);
+    expect(result.runs).toEqual([expect.objectContaining({ conversationId: chat.conversationId })]);
+  }
 });
