@@ -656,7 +656,12 @@ export class HttpApi {
       const bindingMatch=path.match(/^\/v1\/integrations\/telegram\/chats\/(-?\d+)$/);
       if(request.method==="PATCH" && bindingMatch) {
         const body=await this.body(request);
-        if (typeof body.enabled === "boolean") this.telegram.setGroupEnabled(bindingMatch[1]!, body.enabled);
+        if (Object.keys(body).some(key => !["profileId", "enabled", "replies"].includes(key)) || [body.profileId, body.enabled, body.replies].filter(value => value !== undefined).length !== 1) throw new Error("Измените сотрудника, состояние группы или правила участия — что-то одно.");
+        if (body.replies !== undefined) this.telegram.setGroupReplies(bindingMatch[1]!, body.replies);
+        else if (body.enabled !== undefined) {
+          if (typeof body.enabled !== "boolean") throw new Error("Укажите, включена ли группа.");
+          this.telegram.setGroupEnabled(bindingMatch[1]!, body.enabled);
+        }
         else this.telegram.bindChat(bindingMatch[1]!,body.profileId == null ? null : String(body.profileId));
         this.send(response,200,{telegram:this.telegram.status()}); return;
       }

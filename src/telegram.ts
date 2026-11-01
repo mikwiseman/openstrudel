@@ -184,7 +184,7 @@ export class TelegramAdapter {
       configured: Boolean(this.token), running: this.running,
       botUsername: this.bot?.username ?? this.store.getSetting("telegram.bot_username"),
       botName: this.bot?.first_name ?? this.store.getSetting("telegram.bot_name"),
-      linkedChats: this.linkedChats(), chats:this.store.telegramChats(), lastError: this.connectionError?.message ?? this.lastError,
+      linkedChats: this.linkedChats(), chats:this.store.telegramChats().map(chat => ({ ...chat, replies: isProtectedTelegramAudience(this.store,chat.chatId) ? "mentions" : chat.replies })), lastError: this.connectionError?.message ?? this.lastError,
       connectionError: this.connectionError?.message ?? null, lastCheckedAt: this.lastCheckedAt,
     };
   }
@@ -278,6 +278,15 @@ export class TelegramAdapter {
     if (enabled) { this.store.connectTelegramGroup(chatId); this.store.deleteSetting("telegram.paused." + chatId); }
     else this.store.setSetting("telegram.paused." + chatId, "true");
     if (request) this.controlReplies.set(request,enabled ? "Бот в этой группе включён." : "Бот в этой группе приостановлен.");
+  }
+
+  setGroupReplies(chatId: string, replies: unknown, origin?: { conversationId: string; messageId: string }): void {
+    if (Number(chatId) >= 0 || !this.store.getTelegramChat(chatId) || isProtectedTelegramAudience(this.store,chatId)) throw new Error("Выберите обычную подключённую группу этого Home.");
+    if (replies !== "mentions" && replies !== "instructions") throw new Error("Выберите участие по контексту или только по обращению.");
+    const request = this.controlRequest(chatId,origin);
+    if (this.activeChats.has(chatId) && !request) throw new Error("Дождитесь текущего ответа и повторите.");
+    this.store.db.prepare("UPDATE telegram_chats SET replies=? WHERE chat_id=?").run(replies,chatId);
+    if (request) this.controlReplies.set(request,replies === "instructions" ? "Бот отвечает по контексту." : "Бот отвечает только на упоминания и ответы на его сообщения.");
   }
 
   linkStatus(code: string): { status: "waiting" | "connected" | "expired"; error?: string } {

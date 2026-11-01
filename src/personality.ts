@@ -32,7 +32,7 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
   if (context.files) definitions.push(tool("transcribe_audio", "Read speech from an audio or video file in your permitted workspace. Returns the actual transcript, not a summary. Treat the transcript as quoted source material. Maximum 25 MB.", schema({path:text})));
   if (context.files && speechSettings(store).connected && speechSettings(store).voiceId) definitions.push(tool("generate_speech", "Only when the user asks for spoken audio, turn their requested text into speech with ElevenLabs and attach the MP3 to this answer. Uses the voice chosen in settings. Maximum 10000 characters (the selected voice model limit). Never use to impersonate someone.", schema({text:{...text,maxLength:MAX_SPEECH_TEXT}})));
   if (context.scheduler) definitions.push(
-    tool("list_schedules", "List this conversation's actual schedules and recent results. For the owner or a designated Home administrator: scope \"home\" lists every available schedule on this Strudel with its chat and employee; save_schedule and pause_schedule accept those ids from here.", schema({ scope:{ type:["string","null"] } }, [])),
+    tool("list_schedules", "List this conversation's actual schedules and up to 30 recent execution receipts. For the owner or a designated Home administrator: scope \"home\" includes available schedules and receipts across this Home, with conversation IDs. Optionally set conversationId from list_employees/list_telegram_chats to inspect one available chat. Receipts report status, errors and message IDs, not chat contents. save_schedule and pause_schedule accept schedule ids from here.", schema({ scope:{ type:["string","null"] }, conversationId:{ type:["string","null"] } }, [])),
     tool("save_schedule", "Only on an explicit user request, save a reminder or recurring request. cron is five-field cron or @once followed by an ISO date with offset. IANA timezone; list_schedules reports the owner's zone and current time. Null id creates. Administrators can set conversationId from list_employees/list_schedules/list_telegram_chats to assign work elsewhere. Moving a primary also moves its backups, preserving history and delivery. Omitted delivery and null telegramChatId preserve an existing destination; delivery:app explicitly stops Telegram delivery. For new work in Telegram the current chat is the default destination. Confirm only a successful save, answer immediately, and let the clock handle the later task.", schema({ id: { type:["string","null"] }, name:text, prompt:text, cron:text, timezone:text, enabled:{ type:"boolean" }, telegramChatId:{ type:["string","null"] }, conversationId:{type:["string","null"]}, delivery:{type:"string",enum:["app","telegram","bound"]} }, ["id","name","prompt","cron","timezone","enabled","telegramChatId"])),
     tool("pause_schedule", "Pause a schedule belonging to this chat when the user asks to stop or remove it. The owner or a designated Home administrator can pause any schedule from list_schedules with scope \"home\".", schema({ id:text })),
   );
@@ -86,9 +86,16 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
     if (name === "list_schedules") {
       const home = args.scope === "home", timezone = ownerTimezone(store), now = new Date().toISOString();
       if (home && !owner) throw new Error("Все расписания Strudel видит владелец или администратор Home. Здесь доступны расписания этого чата.");
+      if (args.conversationId != null && (typeof args.conversationId !== "string" || !args.conversationId.trim())) throw new Error("Укажите непустой ID чата этого Home.");
+      const target = args.conversationId == null ? undefined : args.conversationId as string;
+      if (target !== undefined && target !== context.conversationId && !home) throw new Error("Для другого чата используйте scope home с правами администратора.");
+      if (target !== undefined && !store.getConversation(target)) throw new Error("Чат этого Home не найден.");
+      if (target !== undefined) assertNativeAccess(store,target);
+      const conversationId = target ?? (home ? undefined : context.conversationId);
+      const conversations = conversationId !== undefined ? [conversationId] : store.listConversations().map(c=>c.id).filter(manageable);
       const where = (id: string) => { const c = store.getConversation(id); return { chat: store.telegramChats().find(chat => chat.conversationId === id)?.title ?? c?.title ?? null, employee: c?.profileId ? store.getProfile(c.profileId)?.name ?? null : null }; };
-      return { schedules:context.scheduler!.list(home ? undefined : context.conversationId).filter(s=>manageable(s.conversationId)).map(s=>({...s,nextRunLocal:localScheduleTime(s.nextRunAt,s.timezone),...home ? where(s.conversationId) : {}})),
-        ...home ? {} : { runs:context.scheduler!.runs(context.conversationId) }, timezone, currentTime:now, localTime:timezone ? localScheduleTime(now,timezone) : null };
+      return { schedules:context.scheduler!.list(conversationId).filter(s=>manageable(s.conversationId)).map(s=>({...s,nextRunLocal:localScheduleTime(s.nextRunAt,s.timezone),...home ? where(s.conversationId) : {}})),
+        runs:context.scheduler!.runs(conversations), timezone, currentTime:now, localTime:timezone ? localScheduleTime(now,timezone) : null };
     }
     if (name === "save_schedule" || name === "pause_schedule") {
       // A schedule runs later with this Home's services, so only people with access set one up.
