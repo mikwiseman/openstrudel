@@ -193,10 +193,11 @@ export class MessageService {
           transcripts.push({ file: file.name, text: transcript });
           this.store.addMessage({ conversationId: current.id, channel: input.channel, direction: "outbound", text: preview, kind: "notice" });
         }
-        const tools = employeeTools(this.store, engine, this.interactions, { profile: currentProfile, conversationId: current.id, messageId: inbound.id, channel: input.channel, scheduler: this.scheduler, scheduled: input.scheduled,scheduleTelegramChatId:input.scheduleTelegramChatId,files:this.files,scope:context,telegram:this.telegram,byOwner:input.byOwner,telegramSenderId:input.telegramSenderId,access });
-        const selection = resolveModelSelection(this.store, currentProfile?.id ?? "main", undefined, current.id);
         // The owner's pipelines (WAI News urgent batches) post "operations:" requests into their group: unattended owner work, sandboxed like a schedule.
         const scheduled = input.scheduled === true || input.channel === "api" && input.byOwner === true && Boolean(input.externalId?.startsWith("operations:"));
+        const tools = employeeTools(this.store, engine, this.interactions, { profile: currentProfile, conversationId: current.id, messageId: inbound.id, channel: input.channel, scheduler: this.scheduler, scheduled,scheduleTelegramChatId:input.scheduleTelegramChatId,files:this.files,scope:context,telegram:this.telegram,byOwner:input.byOwner,telegramSenderId:input.telegramSenderId,access,
+          modelEngine: (agent, conversationId) => { const scope = conversationId ? this.contextFor(conversationId) : this.store.getSetting("employee.context." + agent) ?? this.store.getProfile(agent)?.domain ?? "personal"; return this.engine.forAgent?.(agent,scope,conversationId) ?? this.engine.forContext?.(scope) ?? this.engine; } });
+        const selection = resolveModelSelection(this.store, currentProfile?.id ?? "main", undefined, current.id);
         const fast = !scheduled && fastChat(this.store, currentProfile?.id ?? "main", current.id, groupContext);
         const nativeSources = selection.provider === "chatgpt" || providerInfo(selection.provider ?? "")?.engine === "codex";
         const issues = !currentProfile && input.byOwner && !groupContext ? runtimeIssues(this.store) : [];

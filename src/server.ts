@@ -22,7 +22,7 @@ import { WebAccess, sameOrigin } from "./web-access.js";
 import type { Accounts } from "./accounts.js";
 import { hostingOrigin } from "./hosting-origin.js";
 import { approvalSetting, isApprovalMode, readApprovalMode } from "./approval-mode.js";
-import { accessOwners, accessPeople } from "./telegram-tools.js";
+import { accessOwners, accessPeople, managementPeople } from "./telegram-tools.js";
 import { authorizationSummary, onlyDisablesScopedAccess, preserveConnectorHeaders, telegramAuthorization, saveTelegramAuthorization } from "./authorization.js";
 import { ownerTimezone, saveOwnerTimezone } from "./timezone.js";
 import { notificationCaller, receiveKeyedNotification, receiveNotification } from "./notification-hook.js";
@@ -291,11 +291,15 @@ export class HttpApi {
       // Who gets this Home's services and data in groups, besides its paired owners.
       if (path === "/v1/settings/access" && ["GET", "POST"].includes(request.method ?? "")) {
         if (request.method === "POST") {
-          const { people } = await this.body(request);
-          if (!Array.isArray(people) || people.length > 200 || people.some(id => typeof id !== "string" || !/^[1-9]\d{0,19}$/.test(id))) throw new HomeError("Укажите Telegram ID людей с доступом.");
-          this.store.setSetting("access.people", JSON.stringify([...new Set(people)]));
+          const input = await this.body(request);
+          if (input.people === undefined && input.managers === undefined) throw new HomeError("Укажите список людей или администраторов.");
+          for (const key of ["people", "managers"] as const) {
+            const ids = input[key];
+            if (ids !== undefined && (!Array.isArray(ids) || ids.length > 200 || ids.some(id => typeof id !== "string" || !/^[1-9]\d{0,19}$/.test(id)))) throw new HomeError("Укажите Telegram ID людей с доступом.");
+          }
+          for (const key of ["people", "managers"] as const) if (input[key] !== undefined) this.store.setSetting("access." + key, JSON.stringify([...new Set(input[key] as string[])]));
         }
-        this.send(response, 200, { people: accessPeople(this.store), owners: accessOwners(this.store) }); return;
+        this.send(response, 200, { people: accessPeople(this.store), owners: accessOwners(this.store), managers: managementPeople(this.store) }); return;
       }
       const conversationModel = path.match(/^\/v1\/conversations\/([^/]+)\/model$/);
       if ((path === "/v1/settings/models" || conversationModel) && ["GET", "POST"].includes(request.method ?? "")) {

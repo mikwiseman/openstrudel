@@ -14,6 +14,33 @@ import { join } from "node:path";
 import { CodexEngineAdapter } from "../src/codex.js";
 afterEach(() => {wire.request.mockReset();vi.useRealTimers();});
 
+it("offers current management tools to an existing native thread and closes them after the turn", async () => {
+  let endpoint: { url: string; http_headers: Record<string,string> } | undefined;
+  const call = vi.fn(async () => ({ saved: true }));
+  wire.request.mockImplementation(async (method: string, params: any) => {
+    if (method === "configRequirements/read") return { requirements: null };
+    if (method === "model/list") return { data: [] };
+    if (method === "thread/resume") { endpoint = params.config["mcp_servers.openstrudel_runtime"]; return { thread: { id: "existing" } }; }
+    if (["thread/unsubscribe","thread/inject_items"].includes(method)) return {};
+    if (method === "turn/start") {
+      expect(endpoint?.url).toMatch(/^http:\/\/127\.0\.0\.1:/);
+      const post = (method: string, params = {}) => fetch(endpoint!.url,{method:"POST",headers:{...endpoint!.http_headers,"content-type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method,params})}).then(r=>r.json());
+      expect((await post("tools/list")).result.tools[0].name).toBe("read_model_settings");
+      expect((await post("tools/call",{name:"read_model_settings",arguments:{scope:"home",id:null}})).result.isError).toBeUndefined();
+      queueMicrotask(()=>wire.notify?.({method:"turn/completed",params:{threadId:params.threadId,turn:{status:"completed"}}}));
+      return {turn:{id:"turn"}};
+    }
+    throw new Error(method);
+  });
+  const engine = new CodexEngineAdapter();
+  try {
+    await engine.run("Change the model",{threadId:"existing",tools:{definitions:[{type:"function",name:"read_model_settings",description:"Read",inputSchema:{type:"object",properties:{}}}],call}});
+    expect(call).toHaveBeenCalledWith("read_model_settings",{scope:"home",id:null});
+    expect(wire.request.mock.calls.some(([m])=>m === "thread/start")).toBe(false);
+    await expect(fetch(endpoint!.url)).rejects.toThrow();
+  } finally {engine.close();}
+});
+
 it("releases a silent turn after native tool exhaustion without timing out ordinary long work",async()=>{
   vi.useFakeTimers();
   wire.request.mockImplementation(async(method:string)=>{
@@ -284,7 +311,8 @@ it("starts a turn without access on a thread with no keyed services, apps, memor
   expect(guest["mcp_servers.wai.enabled"]).toBeUndefined();
   await engine.run("Listed",{access:true,telegramActor:actor,groupContext:true});
   const listed=wire.request.mock.calls.filter(([method])=>method==="thread/start")[1]![1].config;
-  expect(Object.keys(listed).filter(key=>/\.enabled$|use_memories|multi_agent/.test(key))).toEqual([]);
+  expect(Object.keys(listed).filter(key=>/\.enabled$|use_memories|multi_agent/.test(key))).toEqual(["mcp_servers.openstrudel_runtime.enabled"]);
+  expect(listed["mcp_servers.openstrudel_runtime.enabled"]).toBe(false);
   expect(listed["features.apps"]).toBe(true);
   expect(listed["permissions.openstrudel.filesystem"]).toMatchObject({[memories]:"read"});
  }finally{engine.close();rmSync(home,{recursive:true,force:true});}

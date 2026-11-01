@@ -40,7 +40,7 @@ it("exposes the already connected bot in app, web and owner DM turns without an 
   run.mockImplementation(async(_input,options:any)=>{
     expect(options.tools.definitions.map((t:any)=>t.name)).toContain("send_telegram_message");
     const list=await options.tools.call("list_telegram_chats",{query:"core"});
-    expect(list).toEqual({chats:[{chatId:"-1001",title:"Core Team",type:"group"}]});
+    expect(list).toMatchObject({chats:[{chatId:"-1001",title:"Core Team",type:"group",conversationId:expect.any(String)}]});
     const result=await options.tools.call("send_telegram_message",{chatId:list.chats[0].chatId,text:"Approved delivery",paths:[]});
     expect(result).toMatchObject({sent:true,chatId:"-1001",telegramMessageIds:[expect.any(String)]});
     return {threadId:"native-thread",response:"Отправлено",events:[]};
