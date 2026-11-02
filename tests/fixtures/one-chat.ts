@@ -11,6 +11,7 @@ import { OpenStrudelRuntime } from "../../src/runtime.js";
 import type { CodexEngine } from "../../src/types.js";
 
 const output = resolve(process.argv[2]!);
+const homeName = process.argv[3];
 const directory = await mkdtemp(join(tmpdir(), "strudel-one-chat-ui-"));
 process.chdir(directory);
 delete process.env.TELEGRAM_BOT_TOKEN;
@@ -87,6 +88,7 @@ const engine: CodexEngine = {
   async connect() { return { url: `${controlURL}/connect` }; },
 };
 const runtime = new OpenStrudelRuntime({ rootDirectory: directory, dbPath: ":memory:", engine, startTelegram: false, mobilePort: 0 });
+if (homeName !== undefined) runtime.api.home.rename(homeName);
 Object.assign((runtime.api.mobile as any).options, { host: "127.0.0.1", hostname: "127.0.0.1" });
 runtime.account.read = async () => ({ connected: true, email: "preview@example.com", managed: true, planType: "plus" });
 
@@ -131,7 +133,7 @@ const control = createServer(async (req, res) => {
   const path = new URL(req.url ?? "/", "http://127.0.0.1");
   if (path.pathname === "/invite") {
     const invitation = await runtime.api.mobile.invite(true);
-    const url = new URL(invitation.url); url.searchParams.set("name", "Тестовый Mac");
+    const url = new URL(invitation.url); url.searchParams.set("name", homeName ?? "Тестовый Mac");
     res.end(JSON.stringify({ ...invitation, url: url.toString() })); return;
   }
   if (path.pathname === "/offline") offline = path.searchParams.get("value") === "1";
