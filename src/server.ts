@@ -671,7 +671,9 @@ export class HttpApi {
       const bindingMatch=path.match(/^\/v1\/integrations\/telegram\/chats\/(-?\d+)$/);
       if(request.method==="PATCH" && bindingMatch) {
         const body=await this.body(request);
-        if (typeof body.enabled === "boolean") this.telegram.setGroupEnabled(bindingMatch[1]!, body.enabled);
+        if ([body.profileId,body.enabled,body.replyAccess].filter(value=>value!==undefined).length>1 || body.allowedSenders!==undefined && body.replyAccess===undefined) throw new HomeError("Измените одно: сотрудника, состояние группы или кому отвечает бот.",400);
+        if (body.replyAccess !== undefined) this.telegram.setGroupReplyAccess(bindingMatch[1]!,body.replyAccess,body.allowedSenders);
+        else if (typeof body.enabled === "boolean") this.telegram.setGroupEnabled(bindingMatch[1]!, body.enabled);
         else this.telegram.bindChat(bindingMatch[1]!,body.profileId == null ? null : String(body.profileId));
         this.send(response,200,{telegram:this.telegram.status()}); return;
       }

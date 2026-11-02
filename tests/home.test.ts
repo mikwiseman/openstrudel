@@ -39,6 +39,25 @@ async function eventually(f: () => Promise<void> | void) {
 }
 
 describe("user-owned primary Home", () => {
+  it("lets the owner choose Telegram group senders on a connected Home and denies member changes", async () => {
+    const primary = await node("Primary"), worker = await node("Bot Home");
+    await connect(primary,worker);
+    worker.runtime.store.linkTelegramChat({chatId:"-100",title:"Client group",allowedSenders:["42"]});
+    worker.runtime.store.connectTelegramGroup("-100");
+    const original = worker.runtime.store.getTelegramChat("-100")!;
+    const path = "/v1/integrations/telegram/chats/-100";
+    const request = {replyAccess:"approved",allowedSenders:["42","77"]};
+    const member = await worker.runtime.api.homeLink.execute({id:randomUUID(),request:{method:"PATCH",path,owner:false,body:requestJSON(request)}});
+    expect(member.status).toBe(403);
+    expect(worker.runtime.store.getTelegramChat("-100")).toEqual(original);
+    const result = await primary.api(path + "?deviceId=" + worker.home.state.nodeId,"PATCH",request);
+    expect(result.status).toBe(200);
+    expect(worker.runtime.store.getTelegramChat("-100")).toMatchObject({allowedSenders:["42","77"],access:"approved",conversationId:original.conversationId});
+    expect(primary.runtime.store.getTelegramChat("-100")).toBeNull();
+    expect((await primary.api(path + "?deviceId=" + worker.home.state.nodeId,"PATCH",{replyAccess:"members"})).status).toBe(200);
+    expect(worker.runtime.store.getTelegramChat("-100")?.access).toBe("members");
+  });
+
   it("keeps diagnostics owner-only, persists the level on the selected device and serves no secrets", async () => {
     const primary = await node("Primary"), worker = await node("Worker");
     await connect(primary, worker);

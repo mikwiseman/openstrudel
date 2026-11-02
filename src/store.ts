@@ -282,7 +282,9 @@ export class Store {
     if (!chat || Number(chatId) >= 0) throw new Error("Группа Telegram не найдена");
     if (chat.conversationId || chat.profileId) return chat;
     const conversation = this.getOrCreateConversation({ channel: "telegram", externalId: scoped ? `${chatId}::restricted` : chatId, title: chat.title });
-    this.db.prepare("UPDATE telegram_chats SET conversation_id=?,access=?,replies=? WHERE chat_id=?").run(conversation.id, scoped ? "approved" : "members", scoped ? "mentions" : "instructions", chatId);
+    // Adding the bot connects the conversation, not every participant. Preserve
+    // the owner's existing reply policy; new rows start with approved senders.
+    this.db.prepare("UPDATE telegram_chats SET conversation_id=?,access=?,replies=? WHERE chat_id=?").run(conversation.id, scoped ? "approved" : chat.access, scoped ? "mentions" : chat.replies, chatId);
     return this.getTelegramChat(chatId)!;
   }
 
