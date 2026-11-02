@@ -215,11 +215,15 @@ export class CodexEngineAdapter implements CodexEngine {
     const custom = provider ? { [`model_providers.${codexProviderId(provider.id)}`]: { name:provider.name, base_url:provider.baseUrl, wire_api:"responses", experimental_bearer_token:this.options.provider!.key() },
       ...(window ? { model_context_window:window, model_auto_compact_token_limit:Math.floor(window*0.9) } : {}) } : {};
     const memories=this.codexHome && options.access === false ? resolve(this.codexHome,"memories") : undefined;
-    const filesystem=(settings as any).permissions?.openstrudel?.filesystem && Object.fromEntries(Object.entries((settings as any).permissions.openstrudel.filesystem).filter(([path])=>path !== memories));
+    // Native config layers deep-merge: omission cannot revoke a base memory grant.
+    const filesystem=(settings as any).permissions?.openstrudel?.filesystem && {
+      ...(settings as any).permissions.openstrudel.filesystem, ...(memories ? {[memories]:"none"} : {}) };
     const paths=options.byOwner && !options.groupContext ? options.readPaths ?? [] : [];
-    const sourceAccess=filesystem && !options.project ? {"permissions.openstrudel.filesystem":{...Object.fromEntries(paths.map(path=>[path,"read"])),...filesystem}} : {};
     // A nested permissions base and dotted overrides for that same base have
-    // ambiguous application order in app-server. Send the project profile once.
+    // ambiguous application order in app-server. Send each profile once.
+    const sourceAccess=filesystem && !options.project ? {
+      permissions:{ ...(settings as any).permissions, openstrudel:{ ...(settings as any).permissions?.openstrudel,
+        filesystem:{...Object.fromEntries(paths.map(path=>[path,"read"])),...filesystem} } } } : {};
     const projectAccess = options.project ? { default_permissions:"openstrudel",
       permissions:{ ...(settings as any).permissions, openstrudel:{ ...(settings as any).permissions?.openstrudel,
         filesystem:{ ":minimal":"read", ...Object.fromEntries(paths.map(path=>[path,"read"])), ...filesystem,

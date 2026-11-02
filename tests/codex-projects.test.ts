@@ -59,7 +59,9 @@ it("resumes the same native history with new identity on revision, then removes 
     await f.engine.run("Disconnected",{threadId:first.threadId,byOwner:true});
     const resumed=wire.request.mock.calls.filter(([m])=>m==="thread/resume").at(-1)![1];
     expect(resumed.cwd).toBe(f.workspace);
-    expect(resumed.config["permissions.openstrudel.filesystem"]).toEqual({":minimal":"read",[f.workspace]:"write"});
+    expect(resumed.config.permissions.openstrudel.filesystem).toEqual({":minimal":"read",[f.workspace]:"write"});
+    expect(resumed.config.permissions.openstrudel.network.enabled).toBe(false);
+    expect(Object.keys(resumed.config).some(key=>key.startsWith("permissions."))).toBe(false);
     expect(resumed.developerInstructions).not.toContain("Owner-approved source project");
   }finally{f.engine.close();}
 });
