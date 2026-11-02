@@ -17,7 +17,7 @@ import { providerInfo, ProviderIncident } from "./providers.js";
 import type { TelegramAdapter } from "./telegram.js";
 import { readFile } from "node:fs/promises";
 import { isSpeechFile, transcribeRecording } from "./speech.js";
-import { connectorOutcome, reportConnectorIssues, errorProblem, failedRun, quietReply, problemText, reportIssue, resolveIssue, runtimeIssues, toolProblem, toolRecovered, type ProblemCode } from "./operations.js";
+import { connectorOutcome, reportConnectorIssues, errorProblem, failedRun, quietReply, problemText, reportIssue, resolveIssue, resolveVoiceIssue, runtimeIssues, toolProblem, toolRecovered, type ProblemCode } from "./operations.js";
 import { ownerKnowledge } from "./knowledge.js";
 import { writeJsonLines } from "./history-export.js";
 import { hasAccess, ownerTurn } from "./telegram-tools.js";
@@ -196,6 +196,7 @@ export class MessageService {
           }
           const preview = `📝 ${file.name}\n${transcript}`;
           transcripts.push({ file: file.name, text: transcript });
+          resolveVoiceIssue(this.store,current.id);
           this.store.addMessage({ conversationId: current.id, channel: input.channel, direction: "outbound", text: preview, kind: "notice" });
         }
         // The owner's pipelines (WAI News urgent batches) post "operations:" requests into their group: unattended owner work, sandboxed like a schedule.
@@ -261,8 +262,8 @@ export class MessageService {
         const seen=!hidden && ownerTurn(this.store,{conversationId:current.id,messageId:inbound.id,channel:input.channel,scheduled,byOwner:input.byOwner,telegramSenderId:input.telegramSenderId});
         const connectorNotice=reportConnectorIssues(this.store,current.id,inbound.id,seen?new Map([...connectors].filter(([,failed])=>!failed)):connectors);
         if(connectorNotice)await this.telegram?.notifyOwner(connectorNotice);
-        if(text!=="/help" && !(input.scheduled && failedRun(result.response))) {
-          const notice=resolveIssue(this.store,current.id);
+        if(text!=="/help" && !(input.scheduled && failedRun(result.response)) && (!quietReply(result.response) || scheduled)) {
+          const notice=resolveIssue(this.store,current.id,inbound.id);
           if(notice)await this.telegram?.notifyOwner(notice);
         }
         return { ...receipt, messageId: outbound.id, text: outbound.text, attachments: outbound.attachments };
@@ -355,7 +356,7 @@ export class MessageService {
         const outbound = this.store.addMessage({ conversationId: conversation.id, channel: "telegram", direction: "outbound", replyToId: inbound.id, text: result.response });
         this.store.setMessageStatus(inbound.id, "completed");
         // A later answer closes an earlier incident silently, so the next failure is reported again.
-        resolveIssue(this.store, conversation.id);
+        resolveIssue(this.store, conversation.id, inbound.id);
         return { conversationId: conversation.id, messageId: outbound.id, text: outbound.text };
       } catch (error) {
         this.store.setMessageStatus(inbound.id, "failed", "Запрос с ограниченным доступом не завершён.");

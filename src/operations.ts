@@ -13,7 +13,7 @@ export const problemText = {
   voice: "Запись не распознана. Подробности сохранены в исходном чате.",
 } as const;
 export type ProblemCode = keyof typeof problemText;
-type RuntimeIssue = { conversationId:string; messageId:string; title:string; code:ProblemCode; time:string; tools?:string[]; detail?:string };
+type RuntimeIssue = { conversationId:string; messageId:string; title:string; code:ProblemCode; time:string; tools?:string[]; detail?:string; scope?:string; taskName?:string };
 const prefix="runtime.issue.";
 
 /** Native MCP receipts are emitted even for calls made inside code mode. */
@@ -91,20 +91,57 @@ export function failedRun(text:string):string|undefined {
   return match ? match[1]!.trim().slice(0,300) || "причина не указана" : undefined;
 }
 
-export function reportIssue(store:Store,conversationId:string,messageId:string,code:ProblemCode,detail?:string):Message|undefined {
-  const conversation=store.getConversation(conversationId);if(!conversation)return;
-  const previous=store.getSetting(prefix+conversationId);
-  const title=conversation.title ?? "Чат";
-  store.setSetting(prefix+conversationId,JSON.stringify({conversationId,messageId,title,code,detail,time:new Date().toISOString()}));
-  const root=store.primaryConversation(),last=previous ? JSON.parse(previous) as RuntimeIssue : null;
-  // A failure in another chat must not silence this request. Repeat only after recovery or a changed cause.
-  if(!last || last.code!==code || last.detail!==detail)return store.addMessage({conversationId:root.id,channel:"api",direction:"outbound",kind:"notice",text:`Требует внимания · ${title}\n${detail ? `Задача не выполнена: ${detail}` : problemText[code]}`});
+/** Different scheduled jobs can share a conversation. Their successes do not prove each other's recovery. */
+function issueTask(store:Store,conversationId:string,messageId?:string):{scope?:string;taskName?:string} {
+  if(!messageId)return {};
+  let message=store.db.prepare("SELECT external_id,reply_to_id FROM messages WHERE id=? AND conversation_id=?").get(messageId,conversationId);
+  if(message?.reply_to_id)message=store.db.prepare("SELECT external_id FROM messages WHERE id=? AND conversation_id=?").get(message.reply_to_id,conversationId);
+  const externalId=String(message?.external_id ?? "");
+  if(externalId.startsWith("operations:"))return {scope:"operations"};
+  if(!store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schedule_runs'").get())return {};
+  const runId=externalId.startsWith("schedule:")?externalId.slice("schedule:".length):messageId;
+  const schedule=store.db.prepare("SELECT s.id,s.name FROM schedule_runs r JOIN schedules s ON s.id=r.schedule_id WHERE r.id=? AND r.conversation_id=?").get(runId,conversationId);
+  return schedule?{scope:"schedule:"+schedule.id,taskName:String(schedule.name)}:{};
 }
 
-export function resolveIssue(store:Store,conversationId:string):Message|undefined {
-  const previous=store.getSetting(prefix+conversationId);
-  // A later successful model turn does not prove an earlier delivery arrived.
-  if(!previous || JSON.parse(previous).code==="delivery")return;
+function issueKey(conversationId:string,code:ProblemCode,scope?:string):string {
+  return prefix+conversationId+(scope?":"+scope:"")+(["voice","delivery"].includes(code)?":"+code:"");
+}
+
+/** Preserve existing incidents on upgrade, including the task receipt that originally opened one. */
+function migrateIssue(store:Store,conversationId:string):void {
+  const key=prefix+conversationId,value=store.getSetting(key);
+  if(!value)return;
+  const issue=JSON.parse(value) as RuntimeIssue;
+  const task=issueTask(store,conversationId,issue.messageId),next=issueKey(conversationId,issue.code,issue.scope ?? task.scope);
+  if(next===key)return;
+  if(!store.getSetting(next))store.setSetting(next,JSON.stringify({...issue,...task}));
+  store.deleteSetting(key);
+}
+
+export function reportIssue(store:Store,conversationId:string,messageId:string,code:ProblemCode,detail?:string):Message|undefined {
+  const conversation=store.getConversation(conversationId);if(!conversation)return;
+  migrateIssue(store,conversationId);
+  const task=issueTask(store,conversationId,messageId),key=issueKey(conversationId,code,task.scope);
+  const previous=store.getSetting(key);
+  const title=conversation.title ?? "Чат";
+  store.setSetting(key,JSON.stringify({conversationId,messageId,title,code,detail,...task,time:new Date().toISOString()}));
+  const root=store.primaryConversation(),last=previous ? JSON.parse(previous) as RuntimeIssue : null;
+  // A failure in another chat or job must not silence this request. Repeat after its recovery or a changed cause.
+  if(!last || last.code!==code || last.detail!==detail)return store.addMessage({conversationId:root.id,channel:"api",direction:"outbound",kind:"notice",text:`Требует внимания · ${title}\n${task.taskName?`Расписание: ${task.taskName}\n`:""}${detail ? `Задача не выполнена: ${detail}` : problemText[code]}`});
+}
+
+export function resolveIssue(store:Store,conversationId:string,messageId?:string):Message|undefined {
+  migrateIssue(store,conversationId);
+  const key=issueKey(conversationId,"execution",issueTask(store,conversationId,messageId).scope);
   // A recovery is not news; the incident closes silently.
-  store.deleteSetting(prefix+conversationId);
+  // A model turn proves neither successful transcription nor confirmed delivery.
+  store.deleteSetting(key);
+  return;
+}
+
+/** Called only after speech recognition actually returns a transcript. */
+export function resolveVoiceIssue(store:Store,conversationId:string):void {
+  migrateIssue(store,conversationId);
+  store.deleteSetting(issueKey(conversationId,"voice"));
 }

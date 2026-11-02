@@ -3,7 +3,7 @@ import { Store } from "../src/store.js";
 import { MessageService } from "../src/messages.js";
 import { TelegramAdapter } from "../src/telegram.js";
 import { Scheduler } from "../src/scheduler.js";
-import { runtimeIssues, toolProblem, toolRecovered } from "../src/operations.js";
+import { reportIssue, resolveIssue, resolveVoiceIssue, runtimeIssues, toolProblem, toolRecovered } from "../src/operations.js";
 
 const stores:Store[]=[];
 afterEach(()=>{vi.unstubAllGlobals();stores.splice(0).forEach(s=>s.close());});
@@ -257,4 +257,104 @@ it('does not hide a real chat failure behind an earlier quota notice from anothe
   expect(sent).toHaveLength(2);expect(sent[1].text).toContain('Wai Reflections');expect(sent[1].text).toContain('Anthropic');
   expect(store.listMessages(store.primaryConversation().id).filter(m=>m.kind==='notice')).toHaveLength(2);
  } finally {telegram.stop();await messages.close();}
+});
+
+it("keeps a failed daily edition open through unrelated quiet radar runs and owner replies",async()=>{
+ const store=new Store(":memory:");stores.push(store);
+ const conversation=store.profileConversation(store.createProfile({name:"News",instructions:"news"}).id);
+ let failDaily=true;
+ const messages=new MessageService(store,{async run(text){
+  if(text.includes("Scheduled request: Daily edition") && failDaily)throw Error("upstream failed");
+  return {threadId:"t",response:"NO_REPLY",events:[]};
+ }});
+ const scheduler=new Scheduler(store,messages);
+ const before=new Date("2026-11-02T03:00:00Z");
+ const daily=scheduler.save({conversationId:conversation.id,name:"Daily edition",prompt:"DAILY",cron:"0 7 * * *",timezone:"Europe/Moscow"},before);
+ scheduler.save({conversationId:conversation.id,name:"Radar",prompt:"RADAR",cron:"*/15 8-22 * * *",timezone:"Europe/Moscow"},before);
+ const notices=()=>store.listMessages(store.primaryConversation().id).filter(m=>m.kind==="notice");
+ try {
+  await scheduler.tick(new Date("2026-11-02T04:00:00Z"));await scheduler.idle();
+  expect(notices()).toHaveLength(1);expect(notices()[0]!.text).toContain("Daily edition");
+  await scheduler.tick(new Date("2026-11-02T05:00:00Z"));await scheduler.idle();
+  await messages.handle({channel:"api",conversationId:conversation.id,text:"unrelated question",byOwner:true});
+  expect(runtimeIssues(store)).toHaveLength(1);
+  await scheduler.tick(new Date("2026-11-03T04:00:00Z"));await scheduler.idle();
+  expect(notices()).toHaveLength(1);expect(runtimeIssues(store)).toHaveLength(1);
+  failDaily=false;
+  await scheduler.tick(new Date("2026-11-04T04:00:00Z"));await scheduler.idle();
+  expect(scheduler.runs(conversation.id).find(r=>r.scheduleId===daily.id)?.status).toBe("quiet");
+  expect(runtimeIssues(store)).toEqual([]);expect(notices()).toHaveLength(1);
+  failDaily=true;
+  await scheduler.tick(new Date("2026-11-05T04:00:00Z"));await scheduler.idle();
+  expect(notices()).toHaveLength(2);
+ } finally {await messages.close();}
+});
+
+it("does not treat a quiet conversational reply as recovery of a failed request",async()=>{
+ const store=new Store(":memory:");stores.push(store);const conversation=store.primaryConversation();
+ let response="fail";
+ const messages=new MessageService(store,{async run(){if(response==="fail")throw Error("task failed");return {threadId:"t",response,events:[]};}});
+ try {
+  await expect(messages.handle({channel:"api",text:"do work"})).rejects.toThrow();
+  response="NO_REPLY";await messages.handle({channel:"api",text:"unrelated context"});
+  expect(runtimeIssues(store)).toHaveLength(1);
+  response="done";await messages.handle({channel:"api",text:"try again"});
+  expect(runtimeIssues(store)).toEqual([]);
+  expect(store.listMessages(conversation.id).filter(m=>m.kind==="notice")).toHaveLength(1);
+ } finally {await messages.close();}
+});
+
+it("preserves voice and uncertain delivery incidents independently of ordinary task recovery",()=>{
+ const store=new Store(":memory:");stores.push(store);const conversation=store.primaryConversation();
+ reportIssue(store,conversation.id,"voice-update","voice");
+ reportIssue(store,conversation.id,"delivery-run","delivery");
+ reportIssue(store,conversation.id,"failed-turn","execution");
+ resolveIssue(store,conversation.id);
+ expect(runtimeIssues(store).map(i=>i.code).sort()).toEqual(["delivery","voice"]);
+ resolveVoiceIssue(store,conversation.id);
+ expect(runtimeIssues(store).map(i=>i.code)).toEqual(["delivery"]);
+ expect(reportIssue(store,conversation.id,"delivery-run-again","delivery")).toBeUndefined();
+ expect(reportIssue(store,conversation.id,"voice-update-again","voice")).toBeDefined();
+});
+
+it("closes the Telegram voice incident only after recognition succeeds, even if the following task fails",async()=>{
+ const store=new Store(":memory:");stores.push(store);
+ store.linkTelegramChat({chatId:"42",title:"Owner",allowedSenders:["42"]});
+ store.linkTelegramChat({chatId:"-100",title:"Reflections",allowedSenders:["42"]});store.connectTelegramGroup("-100");
+ let executionFails=false,recognitionFails=true;
+ const messages=new MessageService(store,{async run(){if(executionFails)throw Error("task failed");return {threadId:"t",response:"done",events:[]};}});
+ const telegram=new TelegramAdapter("123:test",store,messages);messages.telegram=telegram;
+ telegram.transcribe=async()=>{if(recognitionFails)throw Error("Речь не распознана");return "recognized words";};
+ vi.stubGlobal("fetch",vi.fn(async(url)=>{
+  if(String(url).includes("/file/"))return new Response(new Uint8Array([1,2,3]));
+  return Response.json({ok:true,result:String(url).endsWith("/getFile")?{file_path:"voices/note.ogg"}:{message_id:99}});
+ }));
+ const send=(id:number,media:object)=>telegram.processUpdate({update_id:id,message:{message_id:id,from:{id:42},chat:{id:-100,type:"group"},...media}});
+ try {
+  await send(1,{voice:{file_id:"one",file_size:3}});
+  expect(runtimeIssues(store).map(i=>i.code)).toEqual(["voice"]);
+  await send(2,{text:"unrelated text"});
+  expect(runtimeIssues(store).map(i=>i.code)).toEqual(["voice"]);
+  recognitionFails=false;executionFails=true;
+  await send(3,{voice:{file_id:"two",file_size:3}});
+  expect(runtimeIssues(store).map(i=>i.code)).toEqual(["execution"]);
+ } finally {telegram.stop();await messages.close();}
+});
+
+it("retains a legacy scheduled incident through an unrelated successful turn without alerting again",async()=>{
+ const store=new Store(":memory:");stores.push(store);
+ const conversation=store.primaryConversation(),messages=new MessageService(store,{async run(){return {threadId:"t",response:"done",events:[]};}});
+ const scheduler=new Scheduler(store,messages);
+ const schedule=scheduler.save({conversationId:conversation.id,name:"Daily",prompt:"Read sources",cron:"0 9 * * *",timezone:"Europe/Moscow"});
+ const original=store.addMessage({conversationId:conversation.id,channel:"api",direction:"inbound",text:"scheduled",externalId:"schedule:old-run"});
+ store.db.prepare("INSERT INTO schedule_runs(id,schedule_id,conversation_id,scheduled_for,status,created_at) VALUES(?,?,?,?,?,?)")
+  .run("old-run",schedule.id,conversation.id,"2026-11-01T06:00:00Z","failed","2026-11-01T06:00:00Z");
+ store.setSetting("runtime.issue."+conversation.id,JSON.stringify({conversationId:conversation.id,messageId:original.id,title:"News",code:"execution",time:"2026-11-01T06:05:00Z"}));
+ try {
+  await messages.handle({channel:"api",conversationId:conversation.id,text:"unrelated"});
+  expect(runtimeIssues(store)).toHaveLength(1);
+  expect(reportIssue(store,conversation.id,original.id,"execution")).toBeUndefined();
+  resolveIssue(store,conversation.id,original.id);
+  expect(runtimeIssues(store)).toEqual([]);
+ } finally {await messages.close();}
 });

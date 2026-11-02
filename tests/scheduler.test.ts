@@ -227,12 +227,12 @@ describe("durable cron", () => {
     expect(sent).toEqual([]);
     expect(store.listMessages(dates.id)).toEqual([]);
     expect(scheduler.runs(dates.id)[0]).toMatchObject({status:"failed",error:reason});
-    expect(store.listMessages(root.id).map(m=>m.text)).toEqual([`Требует внимания · С днем рождения\nЗадача не выполнена: ${reason}`]);
+    expect(store.listMessages(root.id).map(m=>m.text)).toEqual([`Требует внимания · С днем рождения\nРасписание: Важные даты\nЗадача не выполнена: ${reason}`]);
     // Another chat failing for its own reason is a different cause.
     reason = "нет инструмента для картинок";
     scheduler.save({conversationId:recipes.id,name:"Рецепт дня",prompt:"Рецепт",cron:"0 9 * * *",timezone:"Europe/Moscow"},new Date("2026-09-26T10:00:00Z"));
     await scheduler.tick(new Date("2026-09-27T06:00:02Z")); await scheduler.idle();
-    expect(store.listMessages(root.id).map(m=>m.text).at(-1)).toBe(`Требует внимания · Рецепты\nЗадача не выполнена: ${reason}`);
+    expect(store.listMessages(root.id).map(m=>m.text).at(-1)).toBe(`Требует внимания · Рецепты\nРасписание: Рецепт дня\nЗадача не выполнена: ${reason}`);
   });
   it("reports a repeated scheduled failure once until a successful check closes it", async () => {
     const store = new Store(":memory:"); stores.push(store);

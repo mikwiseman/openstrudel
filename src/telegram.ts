@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { telegramText, type TelegramText } from "./telegram-format.js";
 import { isSpeechFile, transcribeRecording } from "./speech.js";
-import { errorProblem, quietReply } from "./operations.js";
+import { errorProblem, quietReply, resolveVoiceIssue } from "./operations.js";
 import type { MessageService } from "./messages.js";
 import type { Store } from "./store.js";
 import { agentTransfer, assertAgentWritable } from "./agent-move.js";
@@ -742,6 +742,7 @@ export class TelegramAdapter {
       if(bytes.length>20_000_000) throw new Error("Отправьте файл до 20 МБ.");
       if (speech) try {
         const transcript = await this.transcribe(bytes, (message.document?.file_name ?? file.file_path).split(".").at(-1));
+        resolveVoiceIssue(this.store,conversation.id);
         this.store.setSetting("telegram.transcript." + update.update_id, transcript);
         return { text: [text, transcript].filter(Boolean).join("\n"), transcript };
       } catch (error) {
