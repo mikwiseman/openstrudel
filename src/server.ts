@@ -27,7 +27,10 @@ import { authorizationSummary, onlyDisablesScopedAccess, preserveConnectorHeader
 import { ownerTimezone, saveOwnerTimezone } from "./timezone.js";
 import { notificationCaller, receiveKeyedNotification, receiveNotification } from "./notification-hook.js";
 import { SERVICE_SIGN_IN_SECONDS } from "./service-oauth.js";
-import { sharedWithAllChats, shareWithAllChats } from "./extensions.js";
+import { sharedWithAllChats, shareWithAllChats, ownerOnlyServers } from "./extensions.js";
+import { privateSourceSchedule, unipileSettings } from "./private-sources.js";
+import { UnipileAdapter, unipileReadSchema } from "./unipile.js";
+import { readActivity } from "./activity.js";
 import type { ServiceSignIn } from "./types.js";
 import { MAX_SPEECH_BYTES, isSpeechFile, saveSpeechSettings, speechSettings, transcribeRecording } from "./speech.js";
 import { diagnosticReport, recordDiagnostic, saveDiagnosticLevel } from "./diagnostics.js";
@@ -240,6 +243,44 @@ export class HttpApi {
       const homeResponse = await this.homeApi.handle(request, canManageAccount, localExecution);
       if (homeResponse) { this.sendWire(response, homeResponse); return; }
       url = new URL(request.url ?? "/", "http://localhost"); path = url.pathname;
+      if (path === "/v1/activity" && request.method === "GET") {
+        this.send(response, 200, readActivity(this.store, canManageAccount)); return;
+      }
+      if (path === "/v1/settings/unipile" && ["GET", "POST"].includes(request.method ?? "")) {
+        this.send(response, 200, unipileSettings(this.store, canManageAccount, request.method === "POST" ? await this.body(request) : undefined)); return;
+      }
+      if (path === "/v1/private-sources/accounts" && request.method === "GET") {
+        this.send(response, 200, await new UnipileAdapter(this.messages.files.root, this.store, { owner: canManageAccount }).accounts()); return;
+      }
+      if (path === "/v1/private-sources/read" && request.method === "POST") {
+        if (!canManageAccount) throw new HomeError("Private messages are available only to the owner.", 403);
+        const parsed = unipileReadSchema.safeParse(await this.body(request));
+        if (!parsed.success) throw new HomeError("Check the account, source fingerprint and page arguments.");
+        this.send(response, 200, await new UnipileAdapter(this.messages.files.root, this.store, { owner: true }).read(parsed.data)); return;
+      }
+      const privateSchedule = path.match(/^\/v1\/conversations\/([^/]+)\/schedules\/([^/]+)\/private-sources$/);
+      if (privateSchedule && ["GET", "POST"].includes(request.method ?? "")) {
+        if (!canManageAccount) throw new HomeError("Only the owner can allow private sources for a schedule.", 403);
+        let grant;
+        if (request.method === "POST") {
+          const body = await this.body(request);
+          if (Object.keys(body).some(k => !["enabled", "fingerprint"].includes(k)) || typeof body.enabled !== "boolean" || typeof body.fingerprint !== "string") throw new HomeError("Provide enabled and the current schedule fingerprint.");
+          grant = { enabled: body.enabled, fingerprint: body.fingerprint };
+        }
+        this.send(response, 200, privateSourceSchedule(this.store, canManageAccount, decodeURIComponent(privateSchedule[1]!), decodeURIComponent(privateSchedule[2]!), grant)); return;
+      }
+      if (path === "/v1/settings/projects" && ["GET", "POST"].includes(request.method ?? "")) {
+        const result = request.method === "GET" ? this.messages.projects.read(canManageAccount)
+          : await this.messages.projects.save(await this.body(request), canManageAccount);
+        this.send(response, 200, result); return;
+      }
+      const employeeProject = path.match(/^\/v1\/profiles\/([^/]+)\/project$/);
+      if (employeeProject && request.method === "POST") {
+        if (!canManageAccount) throw new HomeError("Only the Home owner can connect a development project.", 403);
+        const body = await this.body(request);
+        if (Object.keys(body).some(key => !["revision", "projectId"].includes(key))) throw new HomeError("Provide revision and projectId (or null to disconnect).");
+        this.send(response, 200, this.messages.projects.bind({ ...body, employeeId: decodeURIComponent(employeeProject[1]!) }, canManageAccount)); return;
+      }
       if (path === "/v1/settings/telegram-authorization") {
         if (!canManageAccount) throw new HomeError("Ограниченные права настраивает владелец устройства.", 403);
         if (request.method === "GET") { this.send(response, 200, authorizationSummary(telegramAuthorization(this.store))); return; }
@@ -727,9 +768,9 @@ export class HttpApi {
           if (!this.accounts) throw new HomeError("Обновите OpenStrudel на этом устройстве.",501);
           if (request.method === "POST") {
             if (typeof body.enabled !== "boolean") throw new HomeError("Укажите, делиться ли сервисами.");
-            shareWithAllChats(this.accounts.root, body.enabled);
+            shareWithAllChats(this.accounts.root, body.enabled, body.ownerOnlyServers as string[] | undefined);
           } else if (request.method !== "GET") throw new HomeError("Действие не найдено.",404);
-          this.send(response,200,{enabled:sharedWithAllChats(this.accounts.root)}); return;
+          this.send(response,200,{enabled:sharedWithAllChats(this.accounts.root),ownerOnlyServers:ownerOnlyServers(this.accounts.root)}); return;
         }
         const conversationId = String(body.conversationId ?? url.searchParams.get("conversationId") ?? "");
         const conversation = this.store.getConversation(conversationId);

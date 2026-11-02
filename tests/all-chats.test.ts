@@ -154,11 +154,13 @@ it("lets the owner turn sharing on and off through the Home API", async () => {
     return { status: r.status, value: await r.json() };
   };
   try {
-    expect(await call("GET")).toEqual({ status: 200, value: { enabled: false } });
-    expect(await call("POST", { enabled: true })).toEqual({ status: 200, value: { enabled: true } });
+    expect(await call("GET")).toEqual({ status: 200, value: { enabled: false, ownerOnlyServers: [] } });
+    expect(await call("POST", { enabled: true, ownerOnlyServers: ["unipile"] })).toEqual({ status: 200, value: { enabled: true, ownerOnlyServers: ["unipile"] } });
     expect(sharedWithAllChats(root)).toBe(true);
     expect((await call("POST", { enabled: "yes" })).status).toBe(400);
-    expect(await call("POST", { enabled: false })).toEqual({ status: 200, value: { enabled: false } });
+    expect((await call("POST", { enabled: true, ownerOnlyServers: "unipile" })).status).toBe(400);
+    expect(await call("POST", { enabled: false })).toEqual({ status: 200, value: { enabled: false, ownerOnlyServers: ["unipile"] } });
+    expect(await call("POST", { enabled: true })).toEqual({ status: 200, value: { enabled: true, ownerOnlyServers: ["unipile"] } });
   } finally { await runtime.stop(); }
 });
 
