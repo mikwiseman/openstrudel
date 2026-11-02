@@ -48,6 +48,7 @@
 		1E9CB288451297DAB7481C66 /* DictationAssets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66CDD484876EBAD4367D26A0 /* DictationAssets.swift */; };
 		1EB1AE21EA4C3C7C5DF63CD6 /* LocalDataReset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B1CA4A01722F775952B9530 /* LocalDataReset.swift */; };
 		2061E90D9AC95D39DAAA06E8 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38873CBA5B37136CDD8FF91 /* AppTheme.swift */; };
+		22AF0D09AFFD99D6B6F8F8A5 /* ProjectSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FE664057377167D60926971 /* ProjectSettingsView.swift */; };
 		25CE0B6159318A64EDD2D1F2 /* PrimaryHomeSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58DAA420A0BE0C62176A43DB /* PrimaryHomeSettings.swift */; };
 		2697D3BF257043AA8DE181AC /* ConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72BB8D5B6A7142B466A1F45C /* ConversationView.swift */; };
 		27944C1572C26ED733994887 /* ConnectionDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A2735C21F1C525B1A0EB1DC /* ConnectionDiagnostics.swift */; };
@@ -70,6 +71,7 @@
 		34F7B89438C04109E4B1A946 /* WaiVDSClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7D69A9EDA344A443227E0B2 /* WaiVDSClient.swift */; };
 		355DA3CE6FDC4903C7A38DC3 /* ApprovalSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E0150A7686260E33ABC51F9 /* ApprovalSettingsView.swift */; };
 		35830784DC5290BC03679296 /* AccountRecoveryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 452D1C62E5C23CB46B6FD978 /* AccountRecoveryUITests.swift */; };
+		35DE8E5354952306D9BE5710 /* ProjectSettingsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A0C6A9555DA16E32ED757F /* ProjectSettingsModel.swift */; };
 		375B5555B29A727A703B1475 /* LocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6E1A368A51CA9F6B2854944 /* LocalizationTests.swift */; };
 		38670454174D5126BB5A84D1 /* ChatMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3D241925EF81E938247C15 /* ChatMedia.swift */; };
 		38A327481A17BCFCEAC3F116 /* LocalDataResetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F7D53298A142CDF1B276ABC /* LocalDataResetTests.swift */; };
@@ -103,6 +105,7 @@
 		5785006166AD53761DA29454 /* ChatMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3D241925EF81E938247C15 /* ChatMedia.swift */; };
 		588CD75B3C1F9C3EE35BC4F4 /* AgentAppearanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACD91A75580ED25308693AB1 /* AgentAppearanceTests.swift */; };
 		59DBFFCCB9930F45EC2895BB /* SpeechSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62C64488686837DBAC256242 /* SpeechSettingsView.swift */; };
+		5AACF0C0170D142634366CBE /* ProjectSettingsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A0C6A9555DA16E32ED757F /* ProjectSettingsModel.swift */; };
 		5B5A34FD1B9C22C5A8BD6238 /* TelegramSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36B92676161A3FD9E3889C48 /* TelegramSetupView.swift */; };
 		5B679607856CC1AB98F6A104 /* DigitalOceanCloudTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06FEF9F7FF45A0D9EF5FFC46 /* DigitalOceanCloudTests.swift */; };
 		5DBA4E1F73DF285838D11B4A /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 034974DBF235D1A2CAF70200 /* Sparkle */; };
@@ -164,6 +167,7 @@
 		9592C709D3F8BF1960A90679 /* EmployeePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5253999DC1F1DA7487D49784 /* EmployeePicker.swift */; };
 		96011E8827031FF477E78A0D /* DigitalOceanBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A041EB646E3F285D182418 /* DigitalOceanBootstrap.swift */; };
 		966082403049AA4A4D03B492 /* OpenStrudelApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 680E20C305BC52A853E797DD /* OpenStrudelApp.swift */; };
+		996B07335A7651EC9AA19133 /* ProjectSettingsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A0C6A9555DA16E32ED757F /* ProjectSettingsModel.swift */; };
 		99944D193416881E7D8D727B /* DigitalOceanWebLoginTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC5BA14427968F91FEFE9F2F /* DigitalOceanWebLoginTests.swift */; };
 		99EF347F5B7D0D16B6C8A928 /* ActivityModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF9FA517692F5220E88DAC6 /* ActivityModel.swift */; };
 		99F3C8183EE6FE6B2B2A9746 /* LocalHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96054101E4801A6BCC170C1 /* LocalHome.swift */; };
@@ -200,8 +204,10 @@
 		BA4C2329101E4E5D8C2EABD1 /* AppUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25538EEFA0F0470CDF4958CC /* AppUpdater.swift */; };
 		BAA05B51563EDE06A0E0A742 /* SpeechSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62C64488686837DBAC256242 /* SpeechSettingsView.swift */; };
 		BAA6793710D76BE9A03E94AB /* ParakeetTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 303DDF0A98D7DC63FE0AC082 /* ParakeetTranscriber.swift */; };
+		BC3249EED26D788AF1370420 /* ProjectSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FE664057377167D60926971 /* ProjectSettingsView.swift */; };
 		BD17762CF52EB077E6C09EC9 /* AppIconAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B9B3467FCD3522515AD8F38 /* AppIconAppearance.swift */; };
 		BD536195DB95EA60861EF9AD /* DeviceLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89E66060821227C1F39AD78 /* DeviceLibrary.swift */; };
+		BE4188A9A5607B461AEB548B /* ProjectSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57E345EE3A4560A354B29214 /* ProjectSettingsTests.swift */; };
 		BEE18A55BEC8FE37CAA7DBA9 /* ComputerUseSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D5BFE0BC5B186652ED8336B /* ComputerUseSettingsView.swift */; };
 		C102F54BE7E45348825A830D /* EmployeeMove.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8625D9EDF41016BA302F31B9 /* EmployeeMove.swift */; };
 		C1D22A6A95D61EF3973CECE1 /* Sparkle-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = 37B4BD216FB2EDE09E4E16E4 /* Sparkle-LICENSE.txt */; };
@@ -280,6 +286,7 @@
 		0D5BFE0BC5B186652ED8336B /* ComputerUseSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputerUseSettingsView.swift; sourceTree = "<group>"; };
 		0EEF17D3888F1085AFAB5C06 /* OneChatUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OneChatUITests.swift; sourceTree = "<group>"; };
 		0F4C8D0A80AE9D97821FA98C /* WaiVDSClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiVDSClientTests.swift; sourceTree = "<group>"; };
+		0FE664057377167D60926971 /* ProjectSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectSettingsView.swift; sourceTree = "<group>"; };
 		1132C0F7932A6440305D150A /* iPhoneSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iPhoneSmokeTests.swift; sourceTree = "<group>"; };
 		11DF3BC1500A7B883ABFF774 /* MessagePages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagePages.swift; sourceTree = "<group>"; };
 		122EBA3D26D5C005EA2A8FD7 /* ActivityViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityViews.swift; sourceTree = "<group>"; };
@@ -325,6 +332,7 @@
 		500B12732B65806FB228AD7D /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		5253999DC1F1DA7487D49784 /* EmployeePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmployeePicker.swift; sourceTree = "<group>"; };
 		560A60BE1D2AAD42DC5C600D /* ExtensionsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionsUITests.swift; sourceTree = "<group>"; };
+		57E345EE3A4560A354B29214 /* ProjectSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectSettingsTests.swift; sourceTree = "<group>"; };
 		58B7111F287B0C5661239DEB /* MessageContentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageContentTests.swift; sourceTree = "<group>"; };
 		58DAA420A0BE0C62176A43DB /* PrimaryHomeSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryHomeSettings.swift; sourceTree = "<group>"; };
 		59124750DE089CC23DCB20B9 /* HomeAccountRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeAccountRecoveryTests.swift; sourceTree = "<group>"; };
@@ -400,6 +408,7 @@
 		E29C1F0D3A0FE125E35B565D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		E38873CBA5B37136CDD8FF91 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
 		E484A0E1AE34935CE871715F /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
+		E4A0C6A9555DA16E32ED757F /* ProjectSettingsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectSettingsModel.swift; sourceTree = "<group>"; };
 		E4AA20BE764618BEE63AF68D /* TelegramLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelegramLinkTests.swift; sourceTree = "<group>"; };
 		E6E1A368A51CA9F6B2854944 /* LocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationTests.swift; sourceTree = "<group>"; };
 		EA3D8F3B979779C8A522577C /* AgentMetalSetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMetalSetup.swift; sourceTree = "<group>"; };
@@ -525,6 +534,8 @@
 				303DDF0A98D7DC63FE0AC082 /* ParakeetTranscriber.swift */,
 				58DAA420A0BE0C62176A43DB /* PrimaryHomeSettings.swift */,
 				E29C1F0D3A0FE125E35B565D /* PrivacyInfo.xcprivacy */,
+				E4A0C6A9555DA16E32ED757F /* ProjectSettingsModel.swift */,
+				0FE664057377167D60926971 /* ProjectSettingsView.swift */,
 				BB5A498CE63F565808D4C17D /* ReaderViews.swift */,
 				31C465091E283CD04778E7DC /* RootView.swift */,
 				72F0551049667E879C9F2AB4 /* ServerSetup.swift */,
@@ -607,6 +618,7 @@
 				3901670502D16D8A69D61086 /* OneChatTests.swift */,
 				B097C78321B711C33AFCF4A4 /* ParakeetModelTests.swift */,
 				D6E988F61680172334C63B12 /* PrimaryHomeTests.swift */,
+				57E345EE3A4560A354B29214 /* ProjectSettingsTests.swift */,
 				C48647F1E5DECF8C42A91685 /* ScheduleTests.swift */,
 				B16A581A5712D0014B612F21 /* ServerSetupTests.swift */,
 				B6C96E0E732FE8B6FA28C254 /* SSHConnectionReadinessTests.swift */,
@@ -914,6 +926,8 @@
 				083F6FAAD7B20A71DA6AC612 /* ParakeetModelTests.swift in Sources */,
 				DC4150DF6929D2526C4B3E39 /* ParakeetTranscriber.swift in Sources */,
 				FA990FEF4C0EA7D7B16F790C /* PrimaryHomeTests.swift in Sources */,
+				5AACF0C0170D142634366CBE /* ProjectSettingsModel.swift in Sources */,
+				BE4188A9A5607B461AEB548B /* ProjectSettingsTests.swift in Sources */,
 				F80AFA3802EBE1953E88724E /* SSHConnectionReadiness.swift in Sources */,
 				FE8C4A78CD3C816919083231 /* SSHConnectionReadinessTests.swift in Sources */,
 				6C0D4F5404C5FF814C7D5F9B /* ScheduleTests.swift in Sources */,
@@ -994,6 +1008,8 @@
 				1BD354F5BC188877D90C9F7B /* ParakeetModel.swift in Sources */,
 				BAA6793710D76BE9A03E94AB /* ParakeetTranscriber.swift in Sources */,
 				25CE0B6159318A64EDD2D1F2 /* PrimaryHomeSettings.swift in Sources */,
+				996B07335A7651EC9AA19133 /* ProjectSettingsModel.swift in Sources */,
+				22AF0D09AFFD99D6B6F8F8A5 /* ProjectSettingsView.swift in Sources */,
 				E2A034E6888624798FB1CC40 /* ReaderViews.swift in Sources */,
 				6EBA29F09BC6522B0D1E8BC6 /* RootView.swift in Sources */,
 				3A421DF73D8FD408D34046C2 /* SSHConnectionReadiness.swift in Sources */,
@@ -1074,6 +1090,8 @@
 				CBD1A671A4CE5FD36D786CEB /* ParakeetModel.swift in Sources */,
 				4A762C4FFE602104033D53D8 /* ParakeetTranscriber.swift in Sources */,
 				929A1EC7F6CC34C5382DBE52 /* PrimaryHomeSettings.swift in Sources */,
+				35DE8E5354952306D9BE5710 /* ProjectSettingsModel.swift in Sources */,
+				BC3249EED26D788AF1370420 /* ProjectSettingsView.swift in Sources */,
 				33F7B65078574096864062F4 /* ReaderViews.swift in Sources */,
 				DE6F46126484C917DCCA78C7 /* RootView.swift in Sources */,
 				B606D16C6E247AE3E20CE3D1 /* SSHConnectionReadiness.swift in Sources */,

@@ -295,6 +295,33 @@ final class OneChatUITests: XCTestCase {
         XCTAssertEqual((secondAfter["turns"] as? [[String: Any]])?.count, 0)
         XCTAssertEqual(secondAfter["messageRequests"] as? Int, 0)
         XCTAssertEqual((secondAfter["sentMessages"] as? [[String: Any]])?.count, 0)
+
+        // Owner setup uses the employee's actual device and existing project APIs. It never starts a turn.
+        app.tabBars.buttons["Чат"].tap()
+        app.buttons["openChats"].tap()
+        XCTAssertTrue(employee.waitForExistence(timeout: 10), app.debugDescription); employee.tap()
+        XCTAssertTrue(app.buttons["readerTitle"].waitForExistence(timeout: 10), app.debugDescription); app.buttons["readerTitle"].tap()
+        let projectEntry = app.buttons["employeeProject"]
+        for _ in 0..<5 { if projectEntry.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(projectEntry.waitForExistence(timeout: 10), app.debugDescription); projectEntry.tap()
+        let addProject = app.buttons["addProject"]
+        XCTAssertTrue(addProject.waitForExistence(timeout: 10), app.debugDescription); addProject.tap()
+        let projectName = app.textFields["projectName"], projectPath = app.textFields["projectPath"]
+        XCTAssertTrue(projectName.waitForExistence(timeout: 10), app.debugDescription)
+        projectName.tap(); projectName.typeText("UI Source")
+        projectPath.tap(); projectPath.typeText(try XCTUnwrap(state["projectPath"] as? String))
+        app.buttons["hideProjectKeyboard"].tap()
+        let register = app.buttons["registerEmployeeProject"]
+        XCTAssertTrue(register.isEnabled, app.debugDescription); register.tap()
+        XCTAssertTrue(app.staticTexts["projectSaved"].waitForExistence(timeout: 15), app.debugDescription)
+        let projectState = try await read("/")
+        let registry = try XCTUnwrap(projectState["projects"] as? [String: Any])
+        let registered = try XCTUnwrap((registry["projects"] as? [[String: Any]])?.first)
+        XCTAssertEqual(registered["path"] as? String, state["projectPath"] as? String)
+        XCTAssertEqual(registered["name"] as? String, "UI Source")
+        XCTAssertEqual((registry["bindings"] as? [String: String])?[editorID], registered["id"] as? String)
+        try await assertNoSend(since: after)
+        capture("employee-project-connected", app)
     }
 
     /// Progress keeps its native client destination across ordinary tab visits.

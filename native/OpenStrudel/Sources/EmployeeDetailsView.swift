@@ -86,7 +86,7 @@ extension View {
 }
 
 /// Pages a details sheet pushes. The sheet's stack owns them, so a push never resizes the sheet.
-enum DetailsPage: Hashable { case services, telegram }
+enum DetailsPage: Hashable { case services, telegram, project }
 
 /// The character, the name and the role at the top of a details sheet.
 struct DetailsHeader<Name: View>: View {
@@ -240,6 +240,12 @@ struct BotDetailsView: View {
                 }
                 Section(L("Модель и скорость")) { ModelSettingsView(agentID: profile.id) { runsOnChatGPT = $0.runsOnChatGPT } }
                 if client.health?.homeProtocol == 1 && (client.health?.providers != 1 || runsOnChatGPT == true) { AgentAccountPreference(profile: profile) }
+                if client.canManageOpenAI {
+                    Section(L("Advanced")) {
+                        NavigationLink(value: DetailsPage.project) { DetailsRow(title: L("Project"), symbol: "folder") }
+                            .disabled(isSaving).accessibilityIdentifier("employeeProject")
+                    }
+                }
                 if !client.schedules.isEmpty || client.scheduleRuns.contains(where: { $0.error != nil }) {
                     Section(L("Расписание")) { schedules }
                 }
@@ -281,6 +287,7 @@ struct BotDetailsView: View {
                     switch page {
                     case .services: ConnectionsView(embedded: true, conversationID: conversationID)
                     case .telegram: TelegramChatsView(profile: profile, embedded: true)
+                    case .project: ProjectSettingsView(employeeID: profile.id)
                     }
                 }
                 #if os(macOS)

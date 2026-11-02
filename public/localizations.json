@@ -11436,5 +11436,173 @@
     "es": "Falló la solicitud al servicio conectado. Los resultados disponibles están guardados en la conversación de origen.",
     "he": "הבקשה לשירות המחובר נכשלה. התוצאות הזמינות נשמרו בשיחת המקור.",
     "ru": "Не удалось выполнить запрос к подключённому сервису. Доступные результаты сохранены в исходном чате."
+  },
+  "Project": {
+    "en": "Project",
+    "fr": "Projet",
+    "es": "Proyecto",
+    "he": "פרויקט",
+    "ru": "Проект"
+  },
+  "Advanced": {
+    "en": "Advanced",
+    "fr": "Avancé",
+    "es": "Avanzado",
+    "he": "מתקדם",
+    "ru": "Дополнительно"
+  },
+  "None": {
+    "en": "None",
+    "fr": "Aucun",
+    "es": "Ninguno",
+    "he": "ללא",
+    "ru": "Нет"
+  },
+  "Update this Home to connect a development project.": {
+    "en": "Update this Home to connect a development project.",
+    "fr": "Mettez ce Home à jour pour connecter un projet de développement.",
+    "es": "Actualiza este Home para conectar un proyecto de desarrollo.",
+    "he": "יש לעדכן את ה־Home כדי לחבר פרויקט פיתוח.",
+    "ru": "Обновите этот Home, чтобы подключить проект разработки."
+  },
+  "Only the Home owner can connect a development project.": {
+    "en": "Only the Home owner can connect a development project.",
+    "fr": "Seul le propriétaire du Home peut connecter un projet de développement.",
+    "es": "Solo el propietario del Home puede conectar un proyecto de desarrollo.",
+    "he": "רק הבעלים של ה־Home יכולים לחבר פרויקט פיתוח.",
+    "ru": "Подключить проект разработки может только владелец Home."
+  },
+  "The employee or its device changed. Reopen Project before making changes.": {
+    "en": "The employee or its device changed. Reopen Project before making changes.",
+    "fr": "L’assistant ou son appareil a changé. Rouvrez Projet avant de modifier les réglages.",
+    "es": "El asistente o su dispositivo cambió. Vuelve a abrir Proyecto antes de hacer cambios.",
+    "he": "העוזר או המכשיר שלו השתנו. יש לפתוח מחדש את הפרויקט לפני ביצוע שינויים.",
+    "ru": "Сотрудник или его устройство изменились. Откройте «Проект» заново перед изменениями."
+  },
+  "The Home did not confirm this change. Reload Project before trying again.": {
+    "en": "The Home did not confirm this change. Reload Project before trying again.",
+    "fr": "Le Home n’a pas confirmé cette modification. Rechargez Projet avant de réessayer.",
+    "es": "El Home no confirmó el cambio. Recarga Proyecto antes de volver a intentarlo.",
+    "he": "ה־Home לא אישר את השינוי. יש לטעון מחדש את הפרויקט לפני ניסיון נוסף.",
+    "ru": "Home не подтвердил изменение. Обновите данные проекта перед повтором."
+  },
+  "Project on {0}": {
+    "en": "Project on {0}",
+    "fr": "Projet sur {0}",
+    "es": "Proyecto en {0}",
+    "he": "פרויקט ב־{0}",
+    "ru": "Проект на {0}"
+  },
+  "This employee can edit the checkout in your private chat. Shared groups and scheduled runs cannot use it.": {
+    "en": "This employee can edit the checkout in your private chat. Shared groups and scheduled runs cannot use it.",
+    "fr": "Cet assistant peut modifier le projet depuis votre chat privé. Les groupes et les tâches planifiées n’y ont pas accès.",
+    "es": "Este asistente puede editar el proyecto desde tu chat privado. Los grupos y las tareas programadas no tienen acceso.",
+    "he": "העוזר יוכל לערוך את הפרויקט דרך הצ׳אט הפרטי שלך. לקבוצות ולהרצות מתוזמנות אין גישה אליו.",
+    "ru": "Этот сотрудник сможет изменять проект по просьбе в вашем личном чате. Группы и задачи по расписанию не получают доступ."
+  },
+  "Project work requires Codex. Use the employee’s existing model settings.": {
+    "en": "Project work requires Codex. Use the employee’s existing model settings.",
+    "fr": "Le travail sur le projet nécessite Codex. Utilisez les réglages du modèle de l’assistant.",
+    "es": "El trabajo en proyectos requiere Codex. Usa los ajustes de modelo del asistente.",
+    "he": "עבודה על פרויקט דורשת Codex. יש לבחור אותו בהגדרות המודל של העוזר.",
+    "ru": "Для работы с проектом нужен Codex. Выберите его в настройках модели сотрудника."
+  },
+  "Loading projects": {
+    "en": "Loading projects",
+    "fr": "Chargement des projets",
+    "es": "Cargando proyectos",
+    "he": "טעינת פרויקטים",
+    "ru": "Загрузка проектов"
+  },
+  "{0} · disabled": {
+    "en": "{0} · disabled",
+    "fr": "{0} · désactivé",
+    "es": "{0} · desactivado",
+    "he": "{0} · מושבת",
+    "ru": "{0} · отключён"
+  },
+  "Disconnect project": {
+    "en": "Disconnect project",
+    "fr": "Déconnecter le projet",
+    "es": "Desconectar proyecto",
+    "he": "ניתוק הפרויקט",
+    "ru": "Отключить проект"
+  },
+  "Connect project": {
+    "en": "Connect project",
+    "fr": "Connecter le projet",
+    "es": "Conectar proyecto",
+    "he": "חיבור הפרויקט",
+    "ru": "Подключить проект"
+  },
+  "Project saved. It applies to the next private request.": {
+    "en": "Project saved. It applies to the next private request.",
+    "fr": "Projet enregistré. Le changement s’appliquera à la prochaine demande privée.",
+    "es": "Proyecto guardado. El cambio se aplicará a la próxima solicitud privada.",
+    "he": "הפרויקט נשמר. השינוי יחול על הבקשה הפרטית הבאה.",
+    "ru": "Проект сохранён. Изменение применится к следующему личному поручению."
+  },
+  "Add project": {
+    "en": "Add project",
+    "fr": "Ajouter un projet",
+    "es": "Añadir proyecto",
+    "he": "הוספת פרויקט",
+    "ru": "Добавить проект"
+  },
+  "Project name": {
+    "en": "Project name",
+    "fr": "Nom du projet",
+    "es": "Nombre del proyecto",
+    "he": "שם הפרויקט",
+    "ru": "Название проекта"
+  },
+  "Checkout path on this device": {
+    "en": "Checkout path on this device",
+    "fr": "Chemin du projet sur cet appareil",
+    "es": "Ruta del proyecto en este dispositivo",
+    "he": "נתיב הפרויקט במכשיר הזה",
+    "ru": "Путь к проекту на этом устройстве"
+  },
+  "Choose folder…": {
+    "en": "Choose folder…",
+    "fr": "Choisir un dossier…",
+    "es": "Elegir carpeta…",
+    "he": "בחירת תיקייה…",
+    "ru": "Выбрать папку…"
+  },
+  "Choose an existing Git checkout. Files stay on the employee’s device.": {
+    "en": "Choose an existing Git checkout. Files stay on the employee’s device.",
+    "fr": "Choisissez un projet Git existant. Les fichiers restent sur l’appareil de l’assistant.",
+    "es": "Elige un proyecto Git existente. Los archivos permanecerán en el dispositivo del asistente.",
+    "he": "יש לבחור פרויקט Git קיים. הקבצים יישארו במכשיר של העוזר.",
+    "ru": "Выберите существующую папку Git-проекта. Файлы останутся на устройстве сотрудника."
+  },
+  "Register and connect": {
+    "en": "Register and connect",
+    "fr": "Enregistrer et connecter",
+    "es": "Registrar y conectar",
+    "he": "רישום וחיבור",
+    "ru": "Зарегистрировать и подключить"
+  },
+  "{0} was registered, but its employee connection was not confirmed. Reload to check before continuing.": {
+    "en": "{0} was registered, but its employee connection was not confirmed. Reload to check before continuing.",
+    "fr": "{0} a été enregistré, mais sa connexion à l’assistant n’est pas confirmée. Rechargez pour vérifier avant de continuer.",
+    "es": "{0} se registró, pero no se confirmó su conexión al asistente. Recarga para comprobarlo antes de continuar.",
+    "he": "{0} נרשם, אך החיבור לעוזר לא אושר. יש לטעון מחדש ולבדוק לפני שממשיכים.",
+    "ru": "Проект {0} зарегистрирован, но подключение к сотруднику не подтверждено. Обновите данные перед продолжением."
+  },
+  "Reload projects": {
+    "en": "Reload projects",
+    "fr": "Recharger les projets",
+    "es": "Recargar proyectos",
+    "he": "טעינה מחדש של פרויקטים",
+    "ru": "Обновить проекты"
+  },
+  "The employee’s device is unavailable. Reconnect and reopen Project.": {
+    "en": "The employee’s device is unavailable. Reconnect and reopen Project.",
+    "fr": "L’appareil de l’assistant est indisponible. Reconnectez-vous et rouvrez Projet.",
+    "es": "El dispositivo del asistente no está disponible. Vuelve a conectarte y abre Proyecto.",
+    "he": "המכשיר של העוזר אינו זמין. יש להתחבר מחדש ולפתוח את הפרויקט.",
+    "ru": "Устройство сотрудника недоступно. Подключитесь снова и откройте «Проект»."
   }
 }

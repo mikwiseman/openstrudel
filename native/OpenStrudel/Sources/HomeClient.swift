@@ -1254,6 +1254,19 @@ final class HomeClient: ObservableObject, Identifiable {
         }
     }
 
+    /// Project access is owner-only; clear private paths on an access refusal, including a non-JSON proxy answer.
+    func projectSettings<T: Decodable>(_ path: String, method: String = "GET", payload: [String: Any]? = nil) async throws -> T {
+        var refusal: Int?
+        do {
+            let data = try await requestData(path, method: method, body: payload.map { try JSONSerialization.data(withJSONObject: $0) }, refused: { refusal = $0 })
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            if refusal == 403 { throw ProjectSettingsError.ownerOnly }
+            if refusal == 404 && method == "GET" { throw ProjectSettingsError.unsupported }
+            throw error
+        }
+    }
+
     /// The one chat is this Home's main assistant. A selection saved by an earlier version opens as a reader now,
     /// never as the composer's target; its draft keeps its own key.
     func pinToMain() {
