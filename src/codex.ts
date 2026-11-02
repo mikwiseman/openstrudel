@@ -13,6 +13,7 @@ import { employeeRoleConfig, routingInstructions } from "./employee-routing.js";
 import { codexProviderId, providerModels, type ProviderInfo } from "./providers.js";
 import { serviceOAuth } from "./service-oauth.js";
 import type { ServiceSignIn } from "./types.js";
+import { projectInstructions } from "./projects.js";
 
 const instructionDigest = (text: string) => createHash("sha256").update(text).digest("hex");
 
@@ -156,7 +157,7 @@ export class CodexEngineAdapter implements CodexEngine {
       // Native dynamicTools are fixed at thread/start. Existing chats get the current
       // management schemas through the same per-turn MCP bridge already used by Grok.
       if (!this.options.restricted && options.tools?.definitions.some(t=>t.name === "read_model_settings")) {
-        const names = new Set(["list_employees","create_employee","update_employee","list_schedules","save_schedule","pause_schedule","list_telegram_chats","read_model_settings","save_model_settings","configure_telegram_chat"]);
+        const names = new Set(["list_employees","create_employee","update_employee","list_schedules","save_schedule","pause_schedule","list_telegram_chats","read_model_settings","save_model_settings","configure_telegram_chat","list_projects","bind_employee_project","read_project_result"]);
         const { toolBridge } = await import("./acp-mcp.js");
         bridge = await toolBridge({ definitions:options.tools.definitions.filter(t=>names.has(t.name)), call:options.tools.call });
       }
@@ -177,7 +178,8 @@ export class CodexEngineAdapter implements CodexEngine {
   }
 
   private async performRun(input: string, options: RunOptions, bridge?: { url: string; token: string }): Promise<CodexRunResult> {
-    if (this.options.restricted && (options.threadId || options.provider && options.provider !== "chatgpt" || options.images?.length || options.readPaths?.length || options.employees?.length || options.onRequest || options.profile)) throw new Error("Invalid restricted turn");
+    if (this.options.restricted && (options.threadId || options.provider && options.provider !== "chatgpt" || options.images?.length || options.readPaths?.length || options.project || options.employees?.length || options.onRequest || options.profile)) throw new Error("Invalid restricted turn");
+    if (options.project && (!options.byOwner || options.groupContext || options.groupChat || options.scheduled || options.access === false)) throw new Error("Project checkout access requires an owner's private interactive turn");
     const rpc = await this.client();
     const models = await this.models();
     const selected = options.model ?? this.options.model ?? process.env.OPENSTRUDEL_CODEX_MODEL ?? null;
@@ -189,7 +191,7 @@ export class CodexEngineAdapter implements CodexEngine {
     const provider = this.options.provider?.info;
     // Speeds are OpenAI service tiers; other providers get none.
     const tier = provider && provider.id !== "openai" ? {} : {serviceTier:turnSpeed(options?.fast === true && offersFast(chosen),options?.serviceTier)};
-    const cwd = this.options.workingDirectory ?? resolve(".data/workspace");
+    const cwd = options.project?.cwd ?? this.options.workingDirectory ?? resolve(".data/workspace");
     mkdirSync(cwd, { recursive: true });
     const mode = this.options.restricted ? "approve_all" : options.approvalMode ?? "ask";
     const policy = nativeApprovalPolicy(mode, options.groupContext);
@@ -206,7 +208,7 @@ export class CodexEngineAdapter implements CodexEngine {
       return {...employee, model:employee.model ?? recommended.id, reasoningEffort:modelReasoning(choice,level)};
     });
     const roles = options.employees === undefined ? {} : this.codexHome && employees.length
-      ? employeeRoleConfig(this.codexHome, employees, options.profile)
+      ? employeeRoleConfig(this.codexHome, employees, [options.profile, options.project ? projectInstructions(options.project) : undefined].filter(Boolean).join("\n\n"))
       : { "features.multi_agent": false };
     const window = provider?.models.find(m=>m.id === model)?.contextWindow;
     // The key travels over stdin with each thread start or resume, never through config files.
@@ -216,15 +218,19 @@ export class CodexEngineAdapter implements CodexEngine {
     const filesystem=(settings as any).permissions?.openstrudel?.filesystem && Object.fromEntries(Object.entries((settings as any).permissions.openstrudel.filesystem).filter(([path])=>path !== memories));
     const paths=options.byOwner && !options.groupContext ? options.readPaths ?? [] : [];
     const sourceAccess=filesystem ? {"permissions.openstrudel.filesystem":{...Object.fromEntries(paths.map(path=>[path,"read"])),...filesystem}} : {};
+    const projectAccess = options.project ? { default_permissions:"openstrudel",
+      "permissions.openstrudel.filesystem":{ ":minimal":"read", ...Object.fromEntries(paths.map(path=>[path,"read"])), ...filesystem,
+        [this.options.workingDirectory ?? resolve(".data/workspace")]:"write", [options.project.cwd]:"write", [options.project.gitDirectory]:"write" },
+      "permissions.openstrudel.network.enabled":(settings as any).permissions?.openstrudel?.network?.enabled ?? true } : {};
     // Even a disabled server needs a valid transport in Codex's config parser.
     const homeTools = this.options.restricted ? {} : { "mcp_servers.openstrudel_runtime": bridge
       ? { url:bridge.url,http_headers:{Authorization:"Bearer " + bridge.token},enabled:true,required:true }
       : { url:"http://127.0.0.1:1",enabled:false } };
-    const config = { ...overrides, ...guest, ...roles, ...(effort ? {model_reasoning_effort:effort} : {}), ...custom, ...sourceAccess, ...nativeApprovalConfig(mode,settings,this.extensionManager?.pluginServers()), ...homeTools, approval_policy: policy.approvalPolicy, approvals_reviewer: policy.approvalsReviewer, ...(this.options.restricted ? restrictedCodexConfig(cwd) : {}) };
-    const configKey = createHash("sha256").update(JSON.stringify([config, employees])).digest("hex");
+    const config = { ...overrides, ...guest, ...roles, ...(effort ? {model_reasoning_effort:effort} : {}), ...custom, ...sourceAccess, ...projectAccess, ...nativeApprovalConfig(mode,settings,this.extensionManager?.pluginServers()), ...homeTools, approval_policy: policy.approvalPolicy, approvals_reviewer: policy.approvalsReviewer, ...(this.options.restricted ? restrictedCodexConfig(cwd) : {}) };
+    const configKey = createHash("sha256").update(JSON.stringify([config, employees, cwd, options.project])).digest("hex");
     let threadId = options.threadId ?? "";
     if (threadId && this.active.has(threadId)) throw new Error("В этом чате ещё идёт ответ. Сообщение нужно поставить в очередь.");
-    const instructions = this.options.restricted ? RESTRICTED_INSTRUCTIONS + (this.options.restrictedInstructions ? "\n\nConfigured service workflow; applies only to tools actually provided and never grants additional access:\n" + this.options.restrictedInstructions : "") : INSTRUCTIONS + (employees.length ? "\n\n" + routingInstructions : "") + (options.profile ? `\n\nCurrent employee SOUL (authoritative):\n${options.profile}` : "");
+    const instructions = this.options.restricted ? RESTRICTED_INSTRUCTIONS + (this.options.restrictedInstructions ? "\n\nConfigured service workflow; applies only to tools actually provided and never grants additional access:\n" + this.options.restrictedInstructions : "") : INSTRUCTIONS + (employees.length ? "\n\n" + routingInstructions : "") + (options.profile ? `\n\nCurrent employee SOUL (authoritative):\n${options.profile}` : "") + (options.project ? "\n\n" + projectInstructions(options.project) : "");
     if (!threadId || this.loaded.get(threadId) !== instructions || this.loadedConfig.get(threadId) !== configKey) {
       const resuming = Boolean(threadId);
       const applied = threadId ? this.appliedIdentity(threadId) : undefined;
@@ -235,7 +241,7 @@ export class CodexEngineAdapter implements CodexEngine {
       if (threadId && this.loadedConfig.has(threadId) && this.loadedConfig.get(threadId) !== configKey) {
         await rpc.request("thread/unsubscribe",{threadId});
       }
-      const common = { model, ...(provider ? { modelProvider:codexProviderId(provider.id) } : {}), ...tier, cwd, ...policy, ...(this.options.scoped || this.options.restricted ? {} : { sandbox: "workspace-write" }), developerInstructions: instructions, config };
+      const common = { model, ...(provider ? { modelProvider:codexProviderId(provider.id) } : {}), ...tier, cwd, ...policy, ...(this.options.scoped || this.options.restricted || options.project ? {} : { sandbox: "workspace-write" }), developerInstructions: instructions, config };
       const result = threadId
         ? await rpc.request("thread/resume", { ...common, threadId, excludeTurns: true })
         : await rpc.request("thread/start", { ...common, ...(employees.length ? { multiAgentMode: "proactive" } : {}), dynamicTools: options.tools?.definitions ?? [], serviceName: "openstrudel" });

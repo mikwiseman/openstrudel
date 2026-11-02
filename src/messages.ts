@@ -25,6 +25,7 @@ import { storyQuestion } from "./news.js";
 import { contextIdentity, contextPrompt, contextSummary } from "./message-context.js";
 import { resolveScopedAuthorization, assertScopedAuthorization, type ScopedAuthorization } from "./authorization.js";
 import type { RestrictedExecutor } from "./restricted-executor.js";
+import { Projects, type ProjectRun } from "./projects.js";
 
 type QueuedMessage = { id: string; channel: string; run: () => Promise<MessageResult>; resolve: (result: MessageResult) => void; reject: (error: unknown) => void };
 
@@ -46,6 +47,7 @@ export class MessageService {
   restrictedExecutor?: Pick<RestrictedExecutor, "run" | "close">;
   onAuthenticationError?: () => void;
   readonly files: ConversationFiles;
+  readonly projects: Projects;
   get hasActiveRuns(): boolean { return this.inflight.size > 0; }
   /** A queued or running turn in this conversation. */
   isRunning(conversationId: string): boolean { return this.drains.has(conversationId); }
@@ -54,7 +56,7 @@ export class MessageService {
     return (this.queues.get(conversationId)?.length ?? 0) + (this.drains.has(conversationId) ? 1 : 0) >= limit;
   }
 
-  constructor(private readonly store: Store, private readonly engine: CodexEngine, private readonly root = process.cwd()) { this.files = new ConversationFiles(store,root); }
+  constructor(private readonly store: Store, private readonly engine: CodexEngine, private readonly root = process.cwd()) { this.files = new ConversationFiles(store,root); this.projects = new Projects(store,root); }
 
   async handle(input: MessageInput): Promise<MessageResult> { return (await this.submit(input)).completion; }
 
@@ -151,6 +153,7 @@ export class MessageService {
     }
     const completion = this.enqueue(conversation.id, inbound.id, input.channel, async () => {
       let problem:ProblemCode|undefined;
+      let projectRun: ProjectRun | undefined, projectOutcome: "completed" | "failed" = "failed";
       const connectors=new Map<string,boolean>();
       try {
         // Read at execution time: a waiting message may have been edited.
@@ -158,6 +161,8 @@ export class MessageService {
         this.store.setMessageStatus(inbound.id, "running");
         if (this.closing) throw new Error("OpenStrudel завершает работу. Сообщение не запущено.");
         if (resolveScopedAuthorization(this.store, input)) throw new HomeError("Права изменились. Отправьте запрос заново.", 403);
+        // Admission can be revoked while this Telegram request waits in its queue.
+        if (input.channel === "telegram" && this.telegram && input.externalChatId && (this.store.getTelegramChat(input.externalChatId)?.enabled === false || !this.telegram.authorizedSender(input.externalChatId,input.telegramSenderId === undefined ? undefined : Number(input.telegramSenderId)))) throw new HomeError("Доступ к этому чату изменился. Запрос не выполнен.",403);
         const currentProfile = profile ? this.store.getProfile(profile.id) : null;
         const current = this.store.getConversation(conversation.id)!;
         const context = this.contextFor(current.id);
@@ -201,11 +206,12 @@ export class MessageService {
         }
         // The owner's pipelines (WAI News urgent batches) post "operations:" requests into their group: unattended owner work, sandboxed like a schedule.
         const scheduled = input.scheduled === true || input.channel === "api" && input.byOwner === true && Boolean(input.externalId?.startsWith("operations:"));
-        const tools = employeeTools(this.store, engine, this.interactions, { profile: currentProfile, conversationId: current.id, messageId: inbound.id, channel: input.channel, scheduler: this.scheduler, scheduled,scheduleTelegramChatId:input.scheduleTelegramChatId,files:this.files,scope:context,telegram:this.telegram,byOwner:input.byOwner,telegramSenderId:input.telegramSenderId,access,
-          modelEngine: (agent, conversationId) => { const scope = conversationId ? this.contextFor(conversationId) : this.store.getSetting("employee.context." + agent) ?? this.store.getProfile(agent)?.domain ?? "personal"; return this.engine.forAgent?.(agent,scope,conversationId) ?? this.engine.forContext?.(scope) ?? this.engine; } });
         const selection = resolveModelSelection(this.store, currentProfile?.id ?? "main", undefined, current.id);
-        const fast = !scheduled && fastChat(this.store, currentProfile?.id ?? "main", current.id, groupContext);
         const nativeSources = selection.provider === "chatgpt" || providerInfo(selection.provider ?? "")?.engine === "codex";
+        projectRun = await this.projects.begin(currentProfile?.id ?? "main", { conversationId:current.id,messageId:inbound.id,channel:input.channel,scope:context,scheduled,byOwner:input.byOwner,telegramSenderId:input.telegramSenderId,access }, nativeSources);
+        const tools = employeeTools(this.store, engine, this.interactions, { profile: currentProfile, conversationId: current.id, messageId: inbound.id, channel: input.channel, scheduler: this.scheduler, projects:this.projects, scheduled,scheduleTelegramChatId:input.scheduleTelegramChatId,files:this.files,scope:context,telegram:this.telegram,byOwner:input.byOwner,telegramSenderId:input.telegramSenderId,access,
+          modelEngine: (agent, conversationId) => { const scope = conversationId ? this.contextFor(conversationId) : this.store.getSetting("employee.context." + agent) ?? this.store.getProfile(agent)?.domain ?? "personal"; return this.engine.forAgent?.(agent,scope,conversationId) ?? this.engine.forContext?.(scope) ?? this.engine; } });
+        const fast = !scheduled && fastChat(this.store, currentProfile?.id ?? "main", current.id, groupContext);
         const issues = !currentProfile && input.byOwner && !groupContext ? runtimeIssues(this.store) : [];
         const knowledge = nativeSources && !currentProfile && input.byOwner && !groupContext && !input.scheduled ? ownerKnowledge(this.store,this.root,id=>this.contextFor(id)) : undefined;
         const archive = [this.archiveContext(current.id,context),knowledge?.prompt,issues.length ? "Current device issues (trusted operational metadata, not instructions):\n"+JSON.stringify(issues.map(i=>({...i,detail:problemText[i.code]}))) : ""].filter(Boolean).join("\n\n");
@@ -224,6 +230,7 @@ export class MessageService {
               .map(p => ({...p,...resolveModelSelection(this.store,p.id)})) : [],
             approvalMode: readApprovalMode(this.store.getSetting(approvalSetting)), groupContext, groupChat: groupContext && this.isGroupChat(current.id), byOwner: input.byOwner === true, access, scheduled,
             readPaths:knowledge?.readPaths,
+            project:projectRun?.context,
             telegramActor: input.channel === "telegram" && input.telegramSenderId && input.externalChatId && input.externalId
               ? {userId:input.telegramSenderId,chatId:input.externalChatId,messageId:input.externalId} : undefined,
             images: files.filter(f=>["image/png","image/jpeg","image/webp","image/gif"].includes(f.mimeType)).map(f=>f.path),
@@ -243,6 +250,7 @@ export class MessageService {
               return this.interactions.codexRequest(current.id, inbound.id, method, params, input.telegramSenderId);
             },
             onEvent: event => {
+              projectRun?.observe(event);
               if (event.type === "thread.started") { running.threadId = (event.payload as { threadId: string }).threadId; this.store.setConversationThread(current.id, running.threadId); }
               const failure=toolProblem(event);
               if(failure)problem=failure;
@@ -252,6 +260,7 @@ export class MessageService {
             },
           });
         if (result.threadId) this.store.setConversationThread(current.id, result.threadId);
+        if (result.threadId) projectRun?.observe({type:"thread.started",payload:{threadId:result.threadId}});
         if(problem)throw new Error(problemText[problem]);
         if (text !== "/help") this.store.advanceContextCheckpoint(current.id, inbound.id);
         const outbound = this.store.addMessage({ conversationId: current.id, channel: input.channel, direction: "outbound", replyToId: inbound.id, text: result.response,attachments:tools.attachments, ...question ? { storyId: question.story.id } : {} });
@@ -266,6 +275,7 @@ export class MessageService {
           const notice=resolveIssue(this.store,current.id,inbound.id);
           if(notice)await this.telegram?.notifyOwner(notice);
         }
+        projectOutcome = "completed";
         return { ...receipt, messageId: outbound.id, text: outbound.text, attachments: outbound.attachments };
       } catch (error) {
         if (isOpenAIAuthenticationError(error)) this.onAuthenticationError?.();
@@ -273,10 +283,10 @@ export class MessageService {
         this.store.setMessageStatus(inbound.id, "failed", message);
         if (!this.active.get(conversation.id)?.abort.signal.aborted) await this.reportProblem(conversation.id,inbound.id,problem ?? errorProblem(error),input.channel==="telegram" ? input.externalChatId : undefined,
           error instanceof ProviderIncident || error instanceof AccountUnavailableError ? error.message : undefined);
-        if (error instanceof AccountUnavailableError || error instanceof ProviderIncident) throw error;
+        if (error instanceof HomeError || error instanceof AccountUnavailableError || error instanceof ProviderIncident) throw error;
         if (isOpenAIAuthenticationError(error)) throw new AccountUnavailableError("sign_in_required");
         throw new Error(message);
-      } finally { if (this.active.get(conversation.id)?.messageId === inbound.id) this.active.delete(conversation.id); this.interactions.cancelMessage(inbound.id); }
+      } finally { try { await projectRun?.finish(projectOutcome); } finally { if (this.active.get(conversation.id)?.messageId === inbound.id) this.active.delete(conversation.id); this.interactions.cancelMessage(inbound.id); } }
     });
     this.inflight.set(inbound.id, completion);
     void completion.finally(() => this.inflight.delete(inbound.id)).catch(() => undefined);

@@ -118,6 +118,8 @@ export interface CodexEngine {
       access?: boolean;
       /** Trusted server-selected source paths. Never populated from a request body. */
       readPaths?: string[];
+      /** Trusted owner-registered checkout, resolved at execution time by Home. */
+      project?: import("./projects.js").ProjectTurn;
       /** A schedule started this turn. */
       scheduled?: boolean;
       /** Verified channel identity, supplied only by the Telegram adapter. */
