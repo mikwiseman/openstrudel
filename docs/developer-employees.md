@@ -1,6 +1,8 @@
 # Developer employees
 
-An owner can connect an existing source checkout to an employee, then ask that employee to change the project in its private Telegram chat or the app. The request runs through the existing message queue and native Codex app-server. Codex owns its thread, tools, edits, tests, approvals and delegation. OpenStrudel supplies the trusted checkout and records the result; it does not start a second execution loop or create a Codex desktop chat.
+An owner can connect an existing source checkout to an employee, then ask that employee to change the project in its private Telegram chat or the app. The request runs through the existing message queue and native Codex app-server. Codex owns its thread, tools, edits, tests and approvals. OpenStrudel supplies the trusted checkout and records the result; it does not start a second execution loop or create a Codex desktop chat.
+
+For this first version, open the developer employee's own private chat. The main assistant cannot route a development request into that employee's registered project. Project turns disable native helper delegation because helpers inherit the parent's sandbox while the checkout lease and command receipts currently belong to the top-level turn. Ordinary assistant delegation remains available outside project work.
 
 Project access is limited to interactive owner-private requests. A shared Telegram group, another participant, an operational administrator or a scheduled run does not receive the project's filesystem grant, including when the employee is bound to that group. Queued Telegram work rechecks its sender and paused-chat state before execution. Existing access to ordinary employee chat does not grant project access.
 
