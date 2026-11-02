@@ -118,6 +118,8 @@ export interface CodexEngine {
       access?: boolean;
       /** Trusted server-selected source paths. Never populated from a request body. */
       readPaths?: string[];
+      /** Trusted read-only source grant for a running private schedule, checked against its saved receipt. Never populated from a request body; does not confer owner authority. */
+      privateSourceAccess?: boolean;
       /** Trusted owner-registered checkout, resolved at execution time by Home. */
       project?: import("./projects.js").ProjectTurn;
       /** A schedule started this turn. */

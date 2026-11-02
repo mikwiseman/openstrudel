@@ -62,7 +62,7 @@ const inlineToml=(value:unknown):string=>value && typeof value==="object"
     : `{${Object.entries(value).map(([key,item])=>`${JSON.stringify(key)}=${inlineToml(item)}`).join(",")}}`
   : JSON.stringify(value);
 
-it.each([1,2,3])("enforces read-only owner sources and revokes source and guest-memory access with pinned Codex %i",async()=>{
+it.each([1,2,3])("enforces read-only owner and approved scheduled sources, revoking source and guest-memory access with pinned Codex %i",async()=>{
   // Keep CODEX_HOME out of the OS temp root (native helper aliases), and the
   // fixture outside this repository so its ancestor AGENTS.md is not imported.
   const root=realpathSync(mkdtempSync(join(homedir(),".openstrudel-source-protocol-"))),workspace=join(root,"audience"),source=join(root,"knowledge"),home=join(root,"codex"),memories=join(home,"memories");
@@ -94,10 +94,14 @@ it.each([1,2,3])("enforces read-only owner sources and revokes source and guest-
   try{
     const first=await engine.run("Read source",{byOwner:true,access:true,readPaths:[source]});
     sourceAllowed=false;
-    const revoked=await engine.run("Source revoked",{threadId:first.threadId,byOwner:true,access:true});
+    const revoked=await engine.run("Unapproved schedule",{threadId:first.threadId,byOwner:true,scheduled:true,access:true,readPaths:[source]});
     expect(revoked.threadId).toBe(first.threadId);
+    sourceAllowed=true;
+    const approved=await engine.run("Approved private brief",{threadId:first.threadId,byOwner:false,scheduled:true,privateSourceAccess:true,access:true,readPaths:[source]});
+    expect(approved.threadId).toBe(first.threadId);
+    sourceAllowed=false;
     memoryAllowed=false;
-    const guest=await engine.run("Guest",{threadId:first.threadId,access:false});
-    expect(guest.threadId).toBe(first.threadId);expect(checks).toBe(3);
+    const guest=await engine.run("Guest",{threadId:first.threadId,byOwner:true,scheduled:true,privateSourceAccess:true,access:false,readPaths:[source,memories]});
+    expect(guest.threadId).toBe(first.threadId);expect(checks).toBe(4);
   }finally{transport.check=undefined;engine.close();await engine.settled();rmSync(root,{recursive:true,force:true});}
 },45_000);

@@ -178,7 +178,7 @@ export class CodexEngineAdapter implements CodexEngine {
   }
 
   private async performRun(input: string, options: RunOptions, bridge?: { url: string; token: string }): Promise<CodexRunResult> {
-    if (this.options.restricted && (options.threadId || options.provider && options.provider !== "chatgpt" || options.images?.length || options.readPaths?.length || options.project || options.employees?.length || options.onRequest || options.profile)) throw new Error("Invalid restricted turn");
+    if (this.options.restricted && (options.threadId || options.provider && options.provider !== "chatgpt" || options.images?.length || options.readPaths?.length || options.privateSourceAccess || options.project || options.employees?.length || options.onRequest || options.profile)) throw new Error("Invalid restricted turn");
     if (options.project && (!options.byOwner || options.groupContext || options.groupChat || options.scheduled || options.access === false)) throw new Error("Project checkout access requires an owner's private interactive turn");
     const rpc = await this.client();
     const models = await this.models();
@@ -218,7 +218,9 @@ export class CodexEngineAdapter implements CodexEngine {
     // Native config layers deep-merge: omission cannot revoke a base memory grant.
     const filesystem=(settings as any).permissions?.openstrudel?.filesystem && {
       ...(settings as any).permissions.openstrudel.filesystem, ...(memories ? {[memories]:"none"} : {}) };
-    const paths=options.byOwner && !options.groupContext ? options.readPaths ?? [] : [];
+    const sourceAudience=options.access !== false && !options.groupContext && !options.groupChat
+      && (options.scheduled ? options.privateSourceAccess === true : options.byOwner === true);
+    const paths=sourceAudience ? options.readPaths ?? [] : [];
     // A nested permissions base and dotted overrides for that same base have
     // ambiguous application order in app-server. Send each profile once.
     const sourceAccess=filesystem && !options.project ? {

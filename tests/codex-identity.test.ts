@@ -353,7 +353,8 @@ it("adds owner sources as read-only and removes them on resume without changing 
  }finally{engine.close();rmSync(home,{recursive:true,force:true});}
 });
 
-it.each([{byOwner:false},{byOwner:true,groupContext:true}])("does not add owner source paths outside a private owner turn: %j",async options=>{
+it.each([{byOwner:false},{byOwner:true,groupContext:true},{byOwner:true,groupChat:true},{byOwner:true,scheduled:true},
+ {privateSourceAccess:true},{privateSourceAccess:true,scheduled:true,groupContext:true},{privateSourceAccess:true,scheduled:true,groupChat:true}])("does not add owner source paths outside an authorized private turn: %j",async options=>{
  const home=mkdtempSync(join(tmpdir(),"codex-source-audience-")),workspace=join(home,"workspace"),source=join(home,"knowledge");
  const permissions={openstrudel:{filesystem:{":minimal":"read",[workspace]:"write"},network:{enabled:false}}};
  wire.request.mockImplementation(async(method:string,params:any)=>{
