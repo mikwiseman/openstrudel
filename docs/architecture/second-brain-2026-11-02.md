@@ -65,6 +65,12 @@ Keep both source/event time and the time a correction was recorded. A historical
 
 Use source-system state for money, document execution and calendar changes. Payment is not contract acceptance; a prepared draft is not a signed or sent document; a free Zoom room is not evidence that attendees are free. Unknown calendar access is not availability. Recheck live state immediately before executing a consequential change.
 
+Before an action, check the current actor, intended workspace, upstream connection and actual tool capability. Being a company owner does not imply that an existing connection has every upstream scope. Reuse the service's access response and native tool catalogue; describe a missing capability accurately instead of inventing an unavailable integration or requesting the same authorization again.
+
+Keep the identity of a record separate from the identity of an operation. A retry reuses the operation key only for the same intent and payload. After a timeout or uncertain response, reconcile against the primary system before attempting another write. Use atomic compare-and-swap where the provider supports it; a separate version check followed by a write is not an atomic guarantee. Report the supported guarantee rather than adding a parallel transaction system around every integration.
+
+Derived views also need a known synchronization state. Keep stable upstream IDs, the last successful synchronization time and whether the import was complete. Refresh renamed category metadata independently of transaction revisions. If the requested result includes another interface, verify that interface's projection as well as the original write. An incomplete import must retain the last good view and its age, not turn temporarily unavailable records into deletions.
+
 ## Evaluation and acceptance
 
 Use realistic tasks across the personal assistant, work projects, School, finance, legal work and Grant. Keep original expected evidence private. Include name variants, ambiguous identities, contradictions, corrections, old versus current facts, inaccessible sources, voice input, delegation, scheduling, recovery and actual delivery. Do not reduce the whole estate to one project's pilot.
