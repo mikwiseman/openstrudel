@@ -37,6 +37,7 @@ RUN curl -fL --retry 3 --connect-timeout 30 --max-time 60 \
 
 FROM node:24.22.1-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl git curl ripgrep python3 poppler-utils bubblewrap socat ffmpeg libopenblas0-pthread \
+    python3-fitz python3-numpy python3-pil libreoffice-writer fonts-liberation2 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /opt/openstrudel /opt/openstrudel
 COPY --from=speech-build /build/whisper.cpp/build/bin/whisper-cli /usr/local/bin/whisper-cli
@@ -45,6 +46,7 @@ COPY --from=speech-build /build/models/LICENSE /usr/local/share/licenses/whisper
 COPY --from=speech-build /build/models/ggml-large-v3-turbo-q5_0.bin /opt/openstrudel/voice/ggml-large-v3-turbo-q5_0.bin
 COPY scripts/container-start.sh /usr/local/bin/openstrudel-start
 COPY scripts/check-sandbox.mjs /opt/openstrudel/scripts/check-sandbox.mjs
+COPY scripts/document-signing.py /opt/openstrudel/scripts/document-signing.py
 # Grok Build's Apache-2.0 license and notices. The image fails here if Grok Build cannot run on it.
 COPY licenses/Grok-LICENSE.txt licenses/Grok-THIRD_PARTY_NOTICES.md /opt/openstrudel/
 RUN HOME=/tmp/grok-check GROK_HOME=/tmp/grok-check GROK_DISABLE_AUTOUPDATER=1 /opt/openstrudel/bin/grok --no-auto-update --version && rm -rf /tmp/grok-check

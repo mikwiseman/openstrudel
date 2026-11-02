@@ -55,9 +55,10 @@ ditto "$WORK/source/dist" "$RUNTIME/dist"
 ditto "$WORK/source/public" "$RUNTIME/public"
 cp "$ROOT/scripts/install-prebuilt-mac.sh" "$RUNTIME/scripts/"
 cp "$ROOT/scripts/mac-launch-agent.mjs" "$RUNTIME/scripts/"
+cp "$ROOT/scripts/document-signing.py" "$RUNTIME/scripts/"
 chmod 755 "$RUNTIME/bin/node" "$RUNTIME/scripts/install-prebuilt-mac.sh"
 # The digest lets the app replace its launch configuration after an update.
-(cd "$RUNTIME" && find dist public bin/node scripts/install-prebuilt-mac.sh scripts/mac-launch-agent.mjs package-lock.json -type f -exec shasum -a 256 {} \; | LC_ALL=C sort | shasum -a 256 | cut -d ' ' -f 1) > "$RUNTIME/release.txt"
+(cd "$RUNTIME" && find dist public bin/node scripts/install-prebuilt-mac.sh scripts/mac-launch-agent.mjs scripts/document-signing.py package-lock.json -type f -exec shasum -a 256 {} \; | LC_ALL=C sort | shasum -a 256 | cut -d ' ' -f 1) > "$RUNTIME/release.txt"
 # Package only public runtime files. No user state, auth, configuration or exports.
 mkdir -p "$APP/Contents/Resources"
 if [[ -e "$APP/Contents/Resources/Runtime" ]]; then

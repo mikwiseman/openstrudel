@@ -7,7 +7,7 @@ import type { Attachment } from "./types.js";
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
 type StoredFile = Attachment & { path: string };
 export class ConversationFiles {
-  constructor(private readonly store: Store, private readonly root = process.cwd()) {
+  constructor(private readonly store: Store, readonly root = process.cwd()) {
     store.db.exec(`CREATE TABLE IF NOT EXISTS conversation_files(id TEXT PRIMARY KEY,conversation_id TEXT NOT NULL REFERENCES conversations(id),name TEXT NOT NULL,mime_type TEXT NOT NULL,size INTEGER NOT NULL,path TEXT NOT NULL)`);
   }
   workspace(context: string): string { return resolve(this.root,".data/workspace",context); }

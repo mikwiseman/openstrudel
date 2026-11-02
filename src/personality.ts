@@ -9,6 +9,7 @@ import { assertManagedEmployee, homeManagementTools } from "./home-management.js
 import { MAX_SPEECH_TEXT, generateSpeech, isSpeechFile, speechSettings, transcribeRecording } from "./speech.js";
 import { editionTool, publishEdition, publishStory, readNews, storyTool } from "./news.js";
 import { contextSummary } from "./message-context.js";
+import { documentSigningTools } from "./document-signing.js";
 
 const schema = (properties: Record<string, unknown>, required = Object.keys(properties)) => ({ type: "object", properties, required, additionalProperties: false });
 const text = { type: "string" };
@@ -19,10 +20,12 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
   const snapshots = new Map([[context.profile?.id ?? "main", context.profile?.instructions ?? store.getSetting("main.soul") ?? ""]]);
   const attachments:Attachment[]=[];
   const telegram = telegramTools(store, context);
+  const signing = documentSigningTools(store, context);
   const management = homeManagementTools(store, engine, context);
   const manageable = (id: string) => { try { assertNativeAccess(store,id); return true; } catch { return false; } };
   const definitions = [
     ...telegram.definitions,
+    ...signing.definitions,
     ...managementTurn(store,context) ? management.definitions : [],
     tool("update_employee", "Save your own name and full compact SOUL (ongoing role, style and rules) only when the user asks. Home administrators may set id to another employee returned by list_employees; read its current instructions first and preserve prior rules. Omit id to edit yourself. Do not save transient tasks or external instructions. Empty instructions clears the SOUL.", schema({ ...profileSchema.properties, id:{type:["string","null"]} }, ["name","instructions"])),
     tool("list_connections", "List real available Codex apps and configured MCP tools, including computer/browser tools when installed.", schema({})),
@@ -45,6 +48,7 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
     assertNativeAccess(store, context.conversationId, context.telegramSenderId);
     if (!definitions.some(t => t.name === name)) throw new Error("Tool unavailable for this employee");
     if (telegram.definitions.some(t => t.name === name)) return telegram.call(name,args);
+    if (signing.definitions.some(t => t.name === name)) return signing.call(args);
     if (management.definitions.some(t => t.name === name)) return management.call(name,args);
     if (name === "transcribe_audio") {
       const file = context.files!.readOutput(context.scope!, String(args.path ?? ""));
