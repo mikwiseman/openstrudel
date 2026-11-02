@@ -88,7 +88,7 @@ describe("Server setup over SSH", () => {
     expect(shell(root, "stage_setup", retry).status).not.toBe(0);
     expect(readFileSync(join(root, "state/release.sha256"), "utf8")).toBe(payload.releaseHash);
     expect(readFileSync(join(root, "state/release.file"), "utf8")).toBe(pinned.releaseFile);
-  });
+  }, 30_000); // Two external staging commands, each with its own 15-second process deadline.
   it("lets a failed retry replace only the installer bundled with a newer app for the same release", () => {
     const { root, payload } = fixture();
     expect(shell(root, "stage_setup", payload).status).toBe(0);
