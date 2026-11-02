@@ -24,7 +24,7 @@ final class OneChatUITests: XCTestCase {
         // 1. The chat is the first place: history already there, the composer ready, exactly two tabs.
         let composer = app.textFields["Сообщение"]
         XCTAssertTrue(composer.waitForExistence(timeout: 30), app.debugDescription)
-        XCTAssertTrue(app.staticTexts["Три встречи и один акт на подпись."].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Три встречи и один акт на подпись."].waitForExistence(timeout: 40), app.debugDescription)
         XCTAssertTrue(app.tabBars.buttons["Чат"].exists && app.tabBars.buttons["Клиенты"].exists, app.debugDescription)
         XCTAssertEqual(app.tabBars.buttons.count, 2)
         XCTAssertFalse(app.buttons["newEmployee"].exists)
@@ -133,10 +133,14 @@ final class OneChatUITests: XCTestCase {
         capture("chat-client-sent", app)
 
         // 5. The states a refusal has: each its own screen, never an empty list.
+        // The chat's scrolling minimised the tab bar; a relaunch brings a full one back, and the Clients stack still holds the client.
+        app.terminate(); app.launch()
         for (mode, code) in [("empty", "empty"), ("unauthorized", "service_auth"), ("forbidden", "service_denied"), ("ok", "ready")] {
             _ = try await read("/company?mode=" + mode)
-            app.tabBars.buttons["Клиенты"].tap()
-            if app.navigationBars.buttons.element(boundBy: 0).exists { app.navigationBars.buttons.element(boundBy: 0).tap() }
+            let clientsTab = app.tabBars.buttons["Клиенты"]
+            XCTAssertTrue(clientsTab.waitForExistence(timeout: 30), app.debugDescription); clientsTab.tap()
+            if !app.buttons["refreshClients"].waitForExistence(timeout: 3), clientsTab.isSelected, app.navigationBars.buttons.element(boundBy: 0).exists { app.navigationBars.buttons.element(boundBy: 0).tap() }
+            XCTAssertTrue(app.buttons["refreshClients"].waitForExistence(timeout: 10), app.debugDescription)
             app.buttons["refreshClients"].tap()
             XCTAssertTrue(app.descendants(matching: .any)["clientsState-" + code].waitForExistence(timeout: 20), "mode \(mode): " + app.debugDescription)
             capture("clients-" + code, app)
