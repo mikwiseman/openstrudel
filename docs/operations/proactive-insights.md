@@ -49,14 +49,15 @@ brief does not acquire a personal-send footer.
 
 ## Source access and configuration changes
 
-Use only sources actually available to the scheduled turn. The current native
-owner source catalogue is injected for interactive owner turns; scheduled turns
-do not receive that catalogue and its read paths. `read_chat_history` reads the
-current conversation. A prompt edit cannot establish access to every private
-employee history. Connected source tools and permitted employee results can still
-support useful work. Any broader owner-schedule retrieval requires a separate
-reviewed product change; never bypass the boundary with arbitrary workspace
-reads or elevated flags.
+Use only sources actually available to the scheduled turn. Interactive owner
+turns receive the existing source catalogue. A recurring brief in the owner's
+main private conversation can receive the same read-only catalogue after the
+owner approves its exact request and destination through the private-source
+settings API. The running schedule receipt must retain that approval fingerprint;
+changing the prompt, audience, cadence or approval invalidates access and stops
+delivery. This does not grant owner management authority or project writes.
+Unapproved schedules and groups receive no private catalogue. `read_chat_history`
+still reads the current conversation. A prompt edit alone never grants access.
 
 For a prompt-only improvement, inspect the actual schedule and recent results,
 save the exact full row in a timestamped private backup, and use a conditional
