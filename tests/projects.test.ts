@@ -104,6 +104,8 @@ describe("owner registered development projects", () => {
     const retry=await f.projects.begin("main",f.context,true); await retry!.finish("completed");
   });
 
+  // These multi-step cases run real Git processes; keep their deadline bounded
+  // at 10s without increasing the default for the rest of the suite.
   it("blocks disabled registrations and advances project revision before another native request", async () => {
     const f=fixture(), saved=await f.register(f.repo()); f.bind(saved.project.id);
     const disabled=await f.projects.save({revision:f.projects.read(true).revision,id:saved.project.id,name:"Source",path:saved.project.path,enabled:false},true);
@@ -112,7 +114,7 @@ describe("owner registered development projects", () => {
     const enabled=await f.projects.save({revision:f.projects.read(true).revision,id:saved.project.id,name:"Source",path:saved.project.path,enabled:true},true);
     const run=await f.projects.begin("main",f.context,true);
     expect(run?.context.revision).toBe(enabled.project.revision); await run!.finish("completed");
-  });
+  }, 10_000);
 
   it("serializes writers across employees sharing a checkout and releases the lease after failure", async () => {
     const f=fixture(), saved=await f.register(f.repo()); f.bind(saved.project.id);
@@ -124,7 +126,7 @@ describe("owner registered development projects", () => {
     const second=await f.projects.begin(employee.id,{...f.context,messageId:"second"},true); await second!.finish("completed");
     expect((await f.receipts("request"))[0]?.outcome).toBe("failed");
     expect((await f.receipts("second"))[0]?.outcome).toBe("completed");
-  });
+  }, 10_000);
 
   it("permits independent checkouts and refuses binding changes while an employee is queued", async () => {
     const f=fixture(), a=await f.register(f.repo()), b=await f.register(f.repo("other")); f.bind(a.project.id);
@@ -136,7 +138,7 @@ describe("owner registered development projects", () => {
     f.store.setMessageStatus(queued.id,"completed");
     f.projects.bind({revision:f.projects.read(true).revision,employeeId:"main",projectId:null},true);
     expect(await f.projects.begin("main",f.context,true)).toBeUndefined();
-  });
+  }, 10_000);
 
   it("records actual Git changes and native command failures without treating a successful response as passing tests", async () => {
     const f=fixture(), path=f.repo(), saved=await f.register(path); f.bind(saved.project.id);
