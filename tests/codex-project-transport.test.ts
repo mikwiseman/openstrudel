@@ -21,7 +21,11 @@ vi.mock("../src/rpc.js",async importOriginal=>{
           expect(result.thread.cwd).toBe(params.cwd);
           expect(result.sandbox).toMatchObject({type:"workspaceWrite",networkAccess:false});
           // Codex grants cwd implicitly; these are its actual additional write roots.
-          if(params.cwd.endsWith("/source")) expect(result.sandbox.writableRoots).toEqual(expect.arrayContaining([join(params.cwd,".git"),join(params.cwd,"../audience")]));
+          if(params.cwd.endsWith("/source")) {
+            expect(result.sandbox.writableRoots).toEqual(expect.arrayContaining([join(params.cwd,".git"),join(params.cwd,"../audience")]));
+            expect(params.config["features.multi_agent"]).toBe(false);
+            expect(params.developerInstructions).not.toContain("use Codex's native agent delegation");
+          }
           else expect(result.sandbox.writableRoots).toEqual([]);
           transport.check?.(params);
           return result;

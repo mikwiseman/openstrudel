@@ -201,14 +201,16 @@ export class CodexEngineAdapter implements CodexEngine {
     const guest = options.access === false ? { "features.apps": false, ...(settings as any).memories ? { "memories.use_memories": false } : {},
       ...Object.fromEntries(Object.keys((settings as any).mcp_servers ?? {}).filter(name => !this.options.telegramServers?.[name]).map(name => [`mcp_servers.${name}.enabled`, false])),
       ...Object.fromEntries(Object.entries(this.extensionManager?.pluginServers() ?? {}).flatMap(([plugin, servers]) => servers.map(server => [`plugins.${plugin}.mcp_servers.${server}.enabled`, false]))) } : {};
+    // Project leases and execution receipts belong to this top-level turn.
+    // A helper cannot acquire its own employee's separate project binding.
     // A helper's outdated level must not fail another conversation; the helper uses its model's default.
-    const employees = (options.employees ?? []).map(employee => {
+    const employees = (options.project ? [] : options.employees ?? []).map(employee => {
       const choice = employee.model ? models.find(m=>m.id === employee.model) : recommended;
       const level = choice?.reasoningEfforts?.some(e => e.id === employee.reasoningEffort) ? employee.reasoningEffort : null;
       return {...employee, model:employee.model ?? recommended.id, reasoningEffort:modelReasoning(choice,level)};
     });
-    const roles = options.employees === undefined ? {} : this.codexHome && employees.length
-      ? employeeRoleConfig(this.codexHome, employees, [options.profile, options.project ? projectInstructions(options.project) : undefined].filter(Boolean).join("\n\n"))
+    const roles = options.project ? { "features.multi_agent": false } : options.employees === undefined ? {} : this.codexHome && employees.length
+      ? employeeRoleConfig(this.codexHome, employees, options.profile)
       : { "features.multi_agent": false };
     const window = provider?.models.find(m=>m.id === model)?.contextWindow;
     // The key travels over stdin with each thread start or resume, never through config files.

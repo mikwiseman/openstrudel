@@ -10,14 +10,16 @@ import { mkdtempSync, mkdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CodexEngineAdapter } from "../src/codex.js";
+import { routingInstructions } from "../src/employee-routing.js";
+import type { EmployeeProfile } from "../src/types.js";
 const roots:string[]=[];
 afterEach(()=>{wire.request.mockReset();for(const root of roots.splice(0))rmSync(root,{recursive:true,force:true});});
 function fixture() {
   const root=realpathSync(mkdtempSync(join(tmpdir(),"codex-projects-"))); roots.push(root);
   const workspace=join(root,"audience"),source=join(root,"source"),metadata=join(source,".git"),readable=join(root,"knowledge");
   for(const path of [workspace,metadata,readable])mkdirSync(path,{recursive:true});
-  const config={default_permissions:"openstrudel",permissions:{openstrudel:{filesystem:{":minimal":"read",[workspace]:"write"},network:{enabled:false}}}};
-  const engine=new CodexEngineAdapter({workingDirectory:workspace,config,scoped:true});
+  const config={"features.multi_agent":true,default_permissions:"openstrudel",permissions:{openstrudel:{filesystem:{":minimal":"read",[workspace]:"write"},network:{enabled:false}}}};
+  const engine=new CodexEngineAdapter({codexHome:join(root,"codex"),workingDirectory:workspace,config,scoped:true});
   wire.request.mockImplementation(async(method:string,params:any)=>{
     if(method==="configRequirements/read")return{requirements:null};
     if(method==="model/list")return{data:[]};
@@ -41,9 +43,33 @@ it("sets native cwd and only the registered checkout, Git metadata and existing 
     expect(params.cwd).toBe(f.source); expect(params.sandbox).toBeUndefined();
     expect(params.config.permissions.openstrudel.filesystem).toEqual({":minimal":"read",[f.workspace]:"write",[f.source]:"write",[f.metadata]:"write",[f.readable]:"read"});
     expect(params.config.permissions.openstrudel.network.enabled).toBe(false);
+    expect(params.config["features.multi_agent"]).toBe(false);
     expect(Object.keys(params.config).some(key=>key.startsWith("permissions."))).toBe(false);
     expect(params.developerInstructions).toContain("Do not restart or replace the Home executing this active turn");
     expect(params.approvalPolicy).toBe("on-request");
+  }finally{f.engine.close();}
+});
+
+it("keeps project execution on its verified turn and restores ordinary helpers after disconnecting",async()=>{
+  const f=fixture();
+  const employee:EmployeeProfile={id:"reviewer",name:"Reviewer",purpose:"Review source",instructions:"Reviewer specialty",capabilities:[],model:null,tokenLimit:null,createdAt:"2026-11-03"};
+  try {
+    const first=await f.engine.run("Improve",{project:f.project,byOwner:true,employees:[employee]});
+    const start=wire.request.mock.calls.find(([m])=>m==="thread/start")![1];
+    expect(start.config["features.multi_agent"]).toBe(false);
+    expect(start.config).not.toHaveProperty("agents");
+    expect(start.developerInstructions).not.toContain(routingInstructions);
+    expect(start.developerInstructions).not.toContain(employee.instructions);
+    expect(start.developerInstructions).toContain("Complete this project request directly; native delegation is unavailable for this turn.");
+    expect(start.developerInstructions).toContain("Never claim that another employee opened its own project or completed delegated work.");
+    expect(wire.request.mock.calls.find(([m])=>m==="turn/start")![1]).not.toHaveProperty("multiAgentMode");
+    await f.engine.run("Ordinary assistance",{threadId:first.threadId,byOwner:true,employees:[employee]});
+    const resumed=wire.request.mock.calls.find(([m])=>m==="thread/resume")![1];
+    expect(resumed.config["features.multi_agent"]).toBe(true);
+    expect(resumed.config).toHaveProperty("agents");
+    expect(resumed.developerInstructions).toContain(routingInstructions);
+    expect(resumed.developerInstructions).not.toContain("native delegation is unavailable");
+    expect(wire.request.mock.calls.filter(([m])=>m==="turn/start").at(-1)![1].multiAgentMode).toBe("proactive");
   }finally{f.engine.close();}
 });
 
