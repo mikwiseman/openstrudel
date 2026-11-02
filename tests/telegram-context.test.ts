@@ -196,6 +196,7 @@ const queued = (store: Store) => Number(store.db.prepare("SELECT count(*) n FROM
 
 it("shows a queued group turn the newer messages that already arrived", async () => {
   const { store, run, adapter, update } = setup("instructions");
+  adapter.setGroupReplyAccess("-100", "approved", ["7", "9"]);
   const release = hold(run);
   const first = adapter.processUpdate(update(1, "@dzhuykova когда у нас Китай? 20?"));
   await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));

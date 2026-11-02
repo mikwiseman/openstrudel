@@ -804,21 +804,28 @@ export class TelegramAdapter {
     }
     const result: MessageResult = await this.messages.handle(submission);
     const currentBinding = this.store.getTelegramChat(chatId);
+    let readyToSend = false;
     try {
       const assertCurrent = () => {
         if (!this.authorizedSender(chatId,message.from?.id)) throw new Error("Право отвечать этому участнику отозвано.");
         this.messages.assertDelivery(submission,result.messageId);
       };
-      assertCurrent();
       // The chat changed hands during the turn. Record that nothing was sent.
       // A management request gets a narrow native receipt, never the old employee's answer after reassignment.
       const control = this.controlReplies.get(externalId);
+      if (!control && (!currentBinding || currentBinding.profileId !== binding?.profileId)) throw new Error("Подключение этого чата изменилось. Ответ не отправлен в Telegram.");
+      assertCurrent();
+      readyToSend = true;
       if (control) await this.sendMessage(chatId,control,`control:${externalId}`,message.message_id, { assertCurrent });
-      else if (!currentBinding || currentBinding.profileId !== binding?.profileId) this.store.db.prepare("INSERT OR IGNORE INTO telegram_outbox(key,chat_id,payload,status,error) VALUES(?,?,'{}','not_sent',?)")
-        .run(`${chatId}:reply:${result.messageId}:0`, chatId, "Подключение этого чата изменилось. Ответ не отправлен в Telegram.");
       else if (Number(chatId) >= 0 || !quietReply(result.text)) await this.sendAnswer(message.chat.id, result.text, result.attachments, `reply:${result.messageId}`, Number(chatId) < 0 ? message.message_id : undefined, assertCurrent);
     }
-    catch { this.lastError="Ответ сохранён в приложении; доставку в Telegram нужно проверить"; }
+    catch (error) {
+      // Admission failed before any delivery attempt. Do not turn later transport
+      // failures or partially delivered replies into a definite not-sent receipt.
+      if (!readyToSend) this.store.db.prepare("INSERT OR IGNORE INTO telegram_outbox(key,chat_id,payload,status,error) VALUES(?,?,'{}','not_sent',?)")
+        .run(`${chatId}:reply:${result.messageId}:0`, chatId, error instanceof Error ? error.message : "Права ответа изменились. Ответ не отправлен в Telegram.");
+      this.lastError="Ответ сохранён в приложении; доставку в Telegram нужно проверить";
+    }
     } catch (error) {
       if (contextOnly) {
         this.lastError = "Не удалось сохранить часть контекста группы. Отправьте нужное вложение в ответ на сообщение бота.";

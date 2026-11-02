@@ -58,6 +58,8 @@ it("keeps a group sender without access on a thread without the owner's services
     writeFileSync(join(root, ".data/extensions/all-chats.json"), '{"enabled":true}\n');
     runtime.store.linkTelegramChat({ chatId: "42", title: "Owner", allowedSenders: ["42"] });
     runtime.store.linkTelegramChat({ chatId: "-100", title: "Team", allowedSenders: ["42"] });
+    // This group admits guests to replies, without granting the owner's services.
+    runtime.telegram.setGroupReplyAccess("-100", "members", undefined);
     const turn = async (sender: string, text: string, id: number) => {
       const before = provider.requests.length, requests = seen.length;
       await runtime.messages.handle({ channel: "telegram", text, externalChatId: "-100", externalId: `-100:${id}`, telegramSenderId: sender, title: "Team" });
