@@ -8,6 +8,7 @@ import { ownerTurn, managementTurn, assertManagement, telegramTools, type Telegr
 import { assertManagedEmployee, homeManagementTools } from "./home-management.js";
 import { MAX_SPEECH_TEXT, generateSpeech, isSpeechFile, speechSettings, transcribeRecording } from "./speech.js";
 import { editionTool, publishEdition, publishStory, readNews, storyTool } from "./news.js";
+import { contextSummary } from "./message-context.js";
 
 const schema = (properties: Record<string, unknown>, required = Object.keys(properties)) => ({ type: "object", properties, required, additionalProperties: false });
 const text = { type: "string" };
@@ -61,7 +62,8 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
       if (typeof args.before === "string" && args.before) query.set("before",args.before);
       const page = store.messagePage(context.conversationId, query);
       return { messages:page.messages.map(m=>({id:m.id,date:m.createdAt,author:m.author,role:m.direction==="inbound"?"user":"assistant",text:m.text,
-        files:context.files && context.scope ? context.files.forMessage(context.conversationId,(m.attachments ?? []).map(f=>f.id)).map(f=>({name:f.name,mimeType:f.mimeType,path:f.path})) : m.attachments})), olderCursor:page.pagination.olderCursor };
+        files:context.files && context.scope ? context.files.forMessage(context.conversationId,(m.attachments ?? []).map(f=>f.id)).map(f=>({name:f.name,mimeType:f.mimeType,path:f.path})) : m.attachments,
+        ...m.context ? { context: contextSummary(m.context) } : {}})), olderCursor:page.pagination.olderCursor };
     }
     if (name === "read_news") return readNews(store, context.conversationId);
     if (context.scope?.startsWith("group-") && name === "connect_service") throw new Error("Сервисы для группы подключает владелец в приложении OpenStrudel: эта группа → «Сервисы и навыки». Если он делится сервисами главного чата со всеми чатами, их достаточно подключить там.");

@@ -1,3 +1,5 @@
+import type { MessageContext } from "./message-context.js";
+
 export type Channel = "api" | "telegram";
 
 export interface Conversation {
@@ -34,6 +36,8 @@ export interface Message {
   story?: NewsStory;
   /** The story this message belongs to: a version, or a question and answer about it. */
   storyId?: string;
+  /** What the owner attached from the app: a business client, or a quoted message or story. Shown with the request. */
+  context?: MessageContext;
 }
 
 export interface NewsStory {
@@ -63,6 +67,8 @@ export interface EmployeeProfile {
   preview?: string | null;
   domain?: "personal" | "work";
   purpose?: string;
+  /** The employee publishes News stories, so the app lists its reader among the feeds. */
+  news?: boolean;
 }
 
 export interface EngineEvent {
@@ -168,6 +174,8 @@ export interface MessageInput {
   attachments?: string[];
   /** Downloaded channel media; never accepted as arbitrary paths by the API. */
   uploads?: Array<{ id: string; name: string; mimeType?: string; contentBase64: string }>;
+  /** Trusted: the server resolved it against this Home's store or the client source before submitting. */
+  context?: MessageContext;
 }
 
 export interface MessageResult {

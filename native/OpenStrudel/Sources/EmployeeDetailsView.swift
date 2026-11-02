@@ -173,8 +173,12 @@ struct BotDetailsView: View {
             : client.devices.first(where: { $0.id == profile.deviceId })?.name ?? client.displayName
     }
 
-    init(profile: EmployeeProfile) {
+    /// Opened from a reader, the employee's own conversation scopes its services and schedules; the chat is elsewhere.
+    private let conversationID: String?
+
+    init(profile: EmployeeProfile, conversationID: String? = nil) {
         self.profile = profile
+        self.conversationID = conversationID
         _name = State(initialValue: profile.name)
         _instructions = State(initialValue: profile.instructions)
         _appearance = State(initialValue: profile.resolvedAppearance)
@@ -275,7 +279,7 @@ struct BotDetailsView: View {
             .navigationDestination(for: DetailsPage.self) { page in
                 Group {
                     switch page {
-                    case .services: ConnectionsView(embedded: true)
+                    case .services: ConnectionsView(embedded: true, conversationID: conversationID)
                     case .telegram: TelegramChatsView(profile: profile, embedded: true)
                     }
                 }
@@ -284,7 +288,7 @@ struct BotDetailsView: View {
                 .toolbar { saveItem }
                 #endif
             }
-            .task { await client.loadChatSettings() }
+            .task { await client.loadChatSettings(conversationID: conversationID, profileID: conversationID == nil ? nil : profile.id) }
         } bar: {
             // Cancel belongs to the sheet: it stays on every page and closes the whole sheet.
             ToolbarItem(placement: .cancellationAction) {
@@ -538,6 +542,8 @@ struct ConnectionsView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var textSize
     var embedded = false
+    /// The conversation whose services these are when it is not the open chat: a reader's employee.
+    var conversationID: String? = nil
     @State private var query = ""
     @State private var loading = true
     @State private var error: String?
@@ -616,7 +622,7 @@ struct ConnectionsView: View {
     }
 
     private func loadContexts() async {
-        do { contexts = try await client.extensionContexts(); scopeID = client.conversationID ?? "" }
+        do { contexts = try await client.extensionContexts(conversationID: conversationID); scopeID = conversationID ?? client.conversationID ?? "" }
         catch { self.error = L("Не удалось определить чат. Вернитесь к переписке и откройте сервисы снова."); loading = false }
     }
 

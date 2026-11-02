@@ -15,6 +15,8 @@ struct HomeMenu: View {
     @State private var accountContentHeight: CGFloat = 200
     @State private var canManage = false
     @State private var busy = false
+    /// Why the chat stayed on its Home when another was chosen here.
+    @State private var blocked: String?
     @State private var error: String?
 
     var body: some View {
@@ -38,9 +40,13 @@ struct HomeMenu: View {
             .frame(minHeight: 20)
             if library.visibleClients.count > 1 {
                 Picker(L("Устройство"), selection: Binding(get: { client.id }, set: { id in
-                    if let selected = library.visibleClients.first(where: { $0.id == id }) { library.select(selected) }
+                    if let selected = library.visibleClients.first(where: { $0.id == id }), !library.select(selected) { blocked = library.primaryChangeBlocker }
                 })) {
                     ForEach(library.visibleClients) { Text($0.displayName).tag($0.id) }
+                }
+                if let blocked {
+                    Text(blocked).font(AppTypography.meta).foregroundStyle(AppTheme.secondaryText)
+                        .accessibilityIdentifier("primaryHomeBlocked")
                 }
             }
             if !accounts.isEmpty {

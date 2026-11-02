@@ -17,7 +17,7 @@ final class ReleaseScenariosUITests: XCTestCase {
         let editorID = try XCTUnwrap(initial["editor"] as? String)
         let profiles = try XCTUnwrap(initial["profiles"] as? [[String: Any]])
         let editorName = try XCTUnwrap(profiles.first { $0["id"] as? String == editorID }?["name"] as? String)
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 15)); app.buttons["Чаты"].tap()
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 15)); app.buttons["openChats"].tap()
         let editor = app.buttons["employee-" + editorID]
         XCTAssertTrue(editor.waitForExistence(timeout: 10)); editor.press(forDuration: 1)
         let hide = app.buttons["Скрыть у меня"]
@@ -27,7 +27,7 @@ final class ReleaseScenariosUITests: XCTestCase {
         XCTAssertTrue(hidden.waitForExistence(timeout: 5))
         capture("hidden-employee", app)
         app.terminate(); app.launch()
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 15)); app.buttons["Чаты"].tap()
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 15)); app.buttons["openChats"].tap()
         XCTAssertFalse(editor.exists)
         XCTAssertTrue(hidden.waitForExistence(timeout: 5)); hidden.tap()
         let show = app.buttons["Показать «" + editorName + "»"]
@@ -80,13 +80,8 @@ final class ReleaseScenariosUITests: XCTestCase {
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 5) { consent.tap() }
         let queue = try await read(fixture + "/queue-fixture")
-        let initial = try await read(fixture + "/state")
-        let profiles = try XCTUnwrap(initial["profiles"] as? [[String: Any]])
-        let editorID = try XCTUnwrap(profiles.first { $0["name"] as? String == "Редактор" }?["id"] as? String)
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 15)); app.buttons["Чаты"].tap()
-        let editor = app.buttons["employee-" + editorID]
-        try reveal(editor, in: app)
-        XCTAssertTrue(editor.waitForExistence(timeout: 10)); editor.tap()
+        // The queue is the one chat's own: its rows edit and reorder right here.
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 15))
         let first = try XCTUnwrap(queue["first"] as? String), second = try XCTUnwrap(queue["second"] as? String)
         let firstRow = app.buttons["editQueuedMessage-" + first]
         let secondRow = app.buttons["editQueuedMessage-" + second]
@@ -146,7 +141,7 @@ final class ReleaseScenariosUITests: XCTestCase {
         XCTAssertTrue(confirm.waitForExistence(timeout: 15)); confirm.tap(); app.finishDevicePairing()
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 5) { consent.tap() }
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 15)); app.buttons["Чаты"].tap()
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 15)); app.buttons["openChats"].tap()
         let state = try await read(fixture + "/state")
         let editor = app.buttons["employee-" + (try XCTUnwrap(state["editor"] as? String))]
         XCTAssertTrue(editor.waitForExistence(timeout: 10)); editor.tap()
@@ -199,7 +194,7 @@ final class ReleaseScenariosUITests: XCTestCase {
         XCTAssertTrue(app.textFields["Имя сотрудника"].waitForExistence(timeout: 5))
         app.buttons["saveEmployeeChanges"].tap()
         // This Home serves one feed per employee: no separate conversations, groups only in search.
-        app.buttons["Чаты"].tap()
+        app.buttons["openChats"].tap()
         XCTAssertTrue(editor.waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["openConversations"].exists)
         let group = app.buttons["telegramConversation--100"]
@@ -225,7 +220,7 @@ final class ReleaseScenariosUITests: XCTestCase {
         capture("archive-keeps-selection", app)
         app.staticTexts["Архив · Старые заметки"].tap()
         // A group found by name opens the feed of the employee who works there.
-        app.buttons["Чаты"].tap()
+        app.buttons["openChats"].tap()
         let search = app.searchFields["Найти чат"]
         XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("Рабочая")
         XCTAssertTrue(group.waitForExistence(timeout: 10))
@@ -241,7 +236,7 @@ final class ReleaseScenariosUITests: XCTestCase {
         XCTAssertTrue(privateMessage.waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["Архив · Старые заметки"].exists)
         XCTAssertFalse(app.staticTexts["telegramReplyDestination"].exists)
-        app.buttons["Чаты"].tap()
+        app.buttons["openChats"].tap()
         XCTAssertTrue(editor.waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["openConversations"].exists)
         capture("feed-after-relaunch", app)
@@ -270,7 +265,7 @@ final class ReleaseScenariosUITests: XCTestCase {
         app.finishDevicePairing()
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 8) { capture("consent", app); consent.tap() }
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 20), app.debugDescription)
         capture("empty-conversation", app)
 
         app.buttons["Настройки"].tap()
@@ -306,7 +301,7 @@ final class ReleaseScenariosUITests: XCTestCase {
         // exercised by AccountRecoveryUITests, including the settings route.
         try done(app)
 
-        app.buttons["Чаты"].tap()
+        app.buttons["openChats"].tap()
         let editor = app.buttons["employee-" + (try XCTUnwrap(initial["editor"] as? String))]
         try reveal(editor, in: app)
         XCTAssertTrue(editor.waitForExistence(timeout: 10))

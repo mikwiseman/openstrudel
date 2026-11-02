@@ -29,6 +29,28 @@ private enum ComposerMetrics {
     static let lines = 8
 }
 
+/// What the next message carries, inside the glass above the text: one line, one way to take it off.
+struct ContextChip: View {
+    let context: ChatContext
+    let remove: () -> Void
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: context.symbol).imageScale(.small).foregroundStyle(AppTheme.secondaryText)
+            Text(context.label).font(AppTypography.interface.weight(.medium)).lineLimit(1)
+            Button(action: remove) {
+                Image(systemName: "xmark").font(.caption.weight(.semibold)).frame(minWidth: 28, minHeight: 28).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).foregroundStyle(AppTheme.secondaryText)
+            .accessibilityLabel(L("Убрать контекст")).accessibilityIdentifier("removeDraftContext")
+        }
+        .padding(.leading, 12).padding(.trailing, 4).padding(.vertical, 4)
+        .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(context.label)
+        .accessibilityIdentifier("draftContext")
+    }
+}
+
 struct Composer: View {
     @EnvironmentObject private var client: HomeClient
     @Environment(\.dynamicTypeSize) private var textSize
@@ -38,6 +60,8 @@ struct Composer: View {
     #endif
     @Binding var draft: String
     @Binding var files: [PickedFile]
+    /// The client, message or story the next message carries, removable until it is sent.
+    @Binding var context: ChatContext?
     @FocusState.Binding var focused: Bool
     let contextID: String
     let canSend: Bool
@@ -121,6 +145,10 @@ struct Composer: View {
     private var composerContents: some View {
         VStack(alignment: .leading, spacing: 0) {
             if client.health?.turnControlVersion == 1 && !client.visibleQueuedMessages.isEmpty { queueTray }
+            if let context {
+                ContextChip(context: context) { self.context = nil }
+                    .padding(.horizontal, ComposerMetrics.tileInset).padding(.top, ComposerMetrics.tileInset)
+            }
             if !files.isEmpty { attachmentTiles }
             if voice.phase != .idle {
                 VoiceRecordingRow(voice: voice, canSend: canSend)

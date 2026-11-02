@@ -232,8 +232,16 @@ final class HomeClient: ObservableObject, Identifiable {
     @Published private(set) var devices: [HomeDevice] = []
     private var refreshGeneration = 0
     var visiblePendingMessages: [PendingHomeMessage] {
-        pendingMessages.filter { pending in pending.profileID == selectedProfileID && (usesEmployeeTimeline || pending.conversationID == selectedChatID) && !messages.contains(where: { $0.externalId == pending.id.uuidString }) }
+        pendingMessages.filter { pending in
+            // The one chat keeps every unresolved send of this Home in sight, whatever its destination and whatever the
+            // Home can serve: a send queued for an employee or a Telegram chat before the one chat existed included.
+            (selectedProfileID == nil || pending.profileID == selectedProfileID
+                && (usesEmployeeTimeline || pending.conversationID == selectedChatID || pending.conversationID == conversationID))
+                && !messages.contains(where: { $0.externalId == pending.id.uuidString })
+        }
     }
+    /// Whether the Home a quote came from is still connected under the same identity, asked at the moment of sending.
+    var sourceReachable: ((ChatContext.Home) -> Bool)?
     var isSending: Bool {
         messages.contains { (!usesEmployeeTimeline || $0.conversationId == conversationID && $0.channel == "api") && ($0.status == "queued" || $0.status == "running") }
             || visiblePendingMessages.contains { $0.telegramReplyToID == nil && $0.error == nil && $0.deliveryState == nil }
@@ -947,10 +955,11 @@ final class HomeClient: ObservableObject, Identifiable {
         }
     }
 
-    func sendMessage(_ text: String, files: [PickedFile] = [], mode: ComposerSendMode = .steer) async {
+    func sendMessage(_ text: String, files: [PickedFile] = [], mode: ComposerSendMode = .steer, context: ChatContext? = nil) async {
         let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isSignedOut, !isSigningOut, !value.isEmpty || !files.isEmpty else { return }
-        pendingMessages.append(PendingHomeMessage(text: value, profileID: selectedProfileID, conversationID: selectedChatID, files: files, draftDomain: draftEmployeeDomain, deviceID: draftDeviceID.isEmpty ? nil : draftDeviceID, appearance: isEmployeeDraft ? draftAppearance : nil, mode: mode))
+        // The main chat names its own conversation, so a message that starts with a name never moves to that employee.
+        pendingMessages.append(PendingHomeMessage(text: value, profileID: selectedProfileID, conversationID: selectedChatID ?? (selectedProfileID == nil ? conversationID : nil), files: files, draftDomain: draftEmployeeDomain, deviceID: draftDeviceID.isEmpty ? nil : draftDeviceID, appearance: isEmployeeDraft ? draftAppearance : nil, mode: mode, context: context))
         do { try savePending() } catch { errorMessage = error.localizedDescription; pendingMessages[pendingMessages.count - 1].error = L("Не удалось сохранить отправку на устройстве. Освободите место и повторите."); return }
         guard !isDrainingSendQueue else { return }
         isDrainingSendQueue = true
@@ -980,6 +989,13 @@ final class HomeClient: ObservableObject, Identifiable {
         defer { isDrainingSendQueue = false }
         while let pending = pendingMessages.first(where: { $0.error == nil && $0.deliveryState == nil }) {
             var refusal: Int?
+            // A quote from another Home goes only while that Home is still connected as the same Home. Otherwise the
+            // words and the context stay here, with the context removable; nothing stands in for the source.
+            if let home = pending.context?.home, sourceReachable?(home) != true, let i = pendingMessages.firstIndex(where: { $0.id == pending.id }) {
+                pendingMessages[i].error = L("Источник цитаты «\(home.name)» сейчас недоступен. Дождитесь подключения или уберите контекст.")
+                try? savePending()
+                continue
+            }
             do {
                 var profileID = pending.profileID
                 if let draftID = profileID, draftID.hasPrefix("draft:") {
@@ -1001,6 +1017,7 @@ final class HomeClient: ObservableObject, Identifiable {
                 if let profileID { payload["profile"] = profileID }
                 if let conversationID = pending.conversationID { payload["conversationId"] = conversationID }
                 if let story = pending.storyReplyToID { payload["replyToId"] = story; payload["mode"] = ComposerSendMode.queue.rawValue }
+                if let context = pending.context, let encoded = try? JSONSerialization.jsonObject(with: JSONEncoder().encode(context)) { payload["context"] = encoded }
                 if !pending.files.isEmpty {
                     let path = pending.conversationID.map { "/v1/conversations/" + $0 } ?? profileID.map { "/v1/agents/" + $0 + "/conversation" } ?? "/v1/conversation"
                     let chat: ConversationEnvelope = try await request(path)
@@ -1029,9 +1046,8 @@ final class HomeClient: ObservableObject, Identifiable {
                 }
                 let body = try JSONSerialization.data(withJSONObject: payload)
                 let result: HomeMessageResponse = try await request("/v1/messages?async=true", method: "POST", body: body)
-                if let routed = result.profileId, pending.profileID == nil, selectedProfileID == nil {
-                    await selectProfile(routed)
-                } else { await refreshConversation() }
+                // The one chat stays where it is: an answer routed to an employee shows up in that employee's reader.
+                await refreshConversation()
                 if let operation = result.operationId, let index = pendingMessages.firstIndex(where: { $0.id == pending.id }) {
                     pendingMessages[index].operationID = operation
                     pendingMessages[index].deliveryState = result.deliveryState ?? "queued"
@@ -1108,9 +1124,21 @@ final class HomeClient: ObservableObject, Identifiable {
         await drainSendQueue()
     }
 
-    /// Only a reply the Home refused for good can be dropped: nothing of it reached Telegram.
+    /// Sends the words without the quote whose source is out of reach. The owner chose this; nothing is substituted.
+    func dropContext(_ pending: PendingHomeMessage) async {
+        guard let i = pendingMessages.firstIndex(where: { $0.id == pending.id }), pendingMessages[i].context != nil else { return }
+        pendingMessages[i].context = nil
+        pendingMessages[i].error = nil
+        try? savePending()
+        guard !isDrainingSendQueue else { return }
+        isDrainingSendQueue = true
+        await drainSendQueue()
+    }
+
+    /// A send the Home refused, cancelled or never confirmed can be dropped once its state is on screen. Dropping it never
+    /// sends anything; a later identical send would carry a new id, and the old one's receipt stays with the Home.
     func discardPending(_ pending: PendingHomeMessage) {
-        guard pendingMessages.contains(where: { $0.id == pending.id && $0.deliveryState == "not_sent" }) else { return }
+        guard pendingMessages.contains(where: { $0.id == pending.id && ($0.deliveryState == "not_sent" || $0.error != nil) }) else { return }
         pendingMessages.removeAll { $0.id == pending.id }
         try? savePending()
     }
@@ -1177,17 +1205,6 @@ final class HomeClient: ObservableObject, Identifiable {
         } catch { /* The next refresh tries again; the reader keeps what it showed. */ }
     }
 
-    /// A question from a story's reader. It waits behind the employee's running work and stays with the story.
-    func askNews(about version: HomeMessage, text: String) async {
-        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !isSignedOut, !isSigningOut, !value.isEmpty else { return }
-        pendingMessages.append(PendingHomeMessage(text: value, profileID: selectedProfileID, conversationID: version.conversationId, mode: .queue, storyReplyToID: version.id))
-        do { try savePending() } catch { errorMessage = error.localizedDescription; pendingMessages[pendingMessages.count - 1].error = L("Не удалось сохранить отправку на устройстве. Освободите место и повторите."); return }
-        guard !isDrainingSendQueue else { return }
-        isDrainingSendQueue = true
-        await drainSendQueue()
-    }
-
     private func checkPendingRequests() async {
         let generation = connectionGeneration
         var changed = false
@@ -1198,7 +1215,11 @@ final class HomeClient: ObservableObject, Identifiable {
                 if status.status == "canceled" {
                     pendingMessages[index].error = L("Отменено до отправки устройству. Текст сохранён здесь.")
                     changed = true
-                } else if let response = status.response, response.status >= 400, response.status != 410 {
+                } else if let response = status.response, response.status < 400 || response.status == 410 {
+                    // The device took it: the receipt is the proof, whichever feed the request belongs to.
+                    pendingMessages.remove(at: index)
+                    changed = true
+                } else if let response = status.response, response.status >= 400 {
                     let data = Data(base64Encoded: response.body) ?? Data()
                     let failure = try? decoder.decode(HomeFailure.self, from: data)
                     pendingMessages[index].error = (failure?.error ?? L("Устройство не подтвердило выполнение.")) + L(" Проверьте чат перед новой отправкой.")
@@ -1217,6 +1238,30 @@ final class HomeClient: ObservableObject, Identifiable {
         } catch { errorMessage = error.localizedDescription }
     }
 
+    /// A reader's page or feed, through this connection, leaving the chat's selection and history alone.
+    func read<T: Decodable>(_ path: String) async throws -> T { try await request(path) }
+
+    /// The one chat is this Home's main assistant. A selection saved by an earlier version opens as a reader now,
+    /// never as the composer's target; its draft keeps its own key.
+    func pinToMain() {
+        guard selectedProfileID != nil || selectedChatID != nil else { return }
+        resetHistory()
+        selectedProfileID = nil; selectedChatID = nil; conversationID = nil
+        messages = []; interactions = []; schedules = []
+        defaults.removeObject(forKey: "openstrudel.profileID")
+    }
+
+    /// The owner's business clients from the company service connected to this Home's main chat.
+    func fetchClients(refresh: Bool = false) async throws -> ClientsEnvelope { try await request("/v1/clients" + (refresh ? "?refresh=true" : "")) }
+
+    /// One client's files, read under the source it was listed from and for its id, never by name alone.
+    func fetchClientFiles(_ client: BusinessClient, source: ClientSource, offset: Int = 0) async throws -> ClientFilesEnvelope {
+        var components = URLComponents()
+        components.queryItems = [URLQueryItem(name: "connector", value: source.connector), URLQueryItem(name: "endpoint", value: source.endpoint),
+                                 URLQueryItem(name: "fingerprint", value: source.fingerprint), URLQueryItem(name: "offset", value: String(offset))]
+        return try await request("/v1/clients/" + (client.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? client.id) + "/files" + (components.string ?? ""))
+    }
+
     func loadConnections(refresh: Bool = false, for scope: String? = nil) async throws {
         let generation = connectionGeneration
         let chat = conversationID
@@ -1227,14 +1272,16 @@ final class HomeClient: ObservableObject, Identifiable {
         connectionNotice = result.notice
     }
 
-    func loadChatSettings() async {
+    /// The open chat's Telegram state and schedules, or a reader's employee's when its conversation and id are given.
+    func loadChatSettings(conversationID scope: String? = nil, profileID: String? = nil) async {
         do {
             let telegramRead = telegramGeneration
             let value: TelegramEnvelope = try await request("/v1/integrations" + employeeDeviceQuery)
             if telegramRead == telegramGeneration { telegram = value.telegram }
             // The employee card keeps a schedule made in any of its chats, with that chat's latest run.
             var found: [ChatSchedule] = [], latest: [ScheduleRun] = [], scopes = Set<String>()
-            for scope in ([conversationID] + employeeTelegramChats.map(\.conversationId)).compactMap({ $0 }) where scopes.insert(scope).inserted {
+            let chats = scope == nil ? employeeTelegramChats : (telegram?.chats ?? []).filter { $0.conversationId != nil && $0.profileId == profileID }
+            for scope in ([scope ?? conversationID] + chats.map(\.conversationId)).compactMap({ $0 }) where scopes.insert(scope).inserted {
                 let result: SchedulesEnvelope = try await request("/v1/conversations/" + scope + "/schedules")
                 found += result.schedules; latest += result.runs.prefix(1)
             }
@@ -1364,8 +1411,9 @@ final class HomeClient: ObservableObject, Identifiable {
         return true
     }
 
-    func extensionContexts() async throws -> [ExtensionContext] {
-        guard let conversationID else { throw HomeClientError.server(L("Сначала откройте чат сотрудника.")) }
+    /// The contexts a chat's services apply to: the open chat's by default, or a reader's employee chat.
+    func extensionContexts(conversationID scope: String? = nil) async throws -> [ExtensionContext] {
+        guard let conversationID = scope ?? conversationID else { throw HomeClientError.server(L("Сначала откройте чат сотрудника.")) }
         let value: ExtensionContextsEnvelope = try await request("/v1/extensions/contexts?conversationId=" + conversationID)
         return value.contexts
     }
@@ -1843,7 +1891,11 @@ final class HomeClient: ObservableObject, Identifiable {
                     throw HomeClientError.server(L("Адрес устройства изменился. Действие не отправлено: повторите его на новом подключении."))
                 }
                 // The Home's own answer, with the status that tells a refusal from a failure.
-                if let message = envelope.error { refused?(http.statusCode); throw HomeClientError.server(message) }
+                if let message = envelope.error {
+                    refused?(http.statusCode)
+                    if let code = envelope.code { throw HomeClientError.refused(code: code, message: message, detail: envelope.detail) }
+                    throw HomeClientError.server(message)
+                }
             }
             throw HomeClientError.server(L("OpenStrudel не смог выполнить действие (код \(http.statusCode)). Попробуйте ещё раз. Если ошибка повторится, обратитесь в поддержку."))
         }

@@ -16,12 +16,11 @@ struct OpenStrudelApp: App {
         .defaultSize(width: 1120, height: 760)
         .commands {
             CommandGroup(replacing: .newItem) {
-                NewEmployeeCommand(busy: client.isCreating)
                 EmployeeDetailsCommand()
             }
             CommandGroup(after: .textEditing) { FindChatCommand() }
-            // View › Show Sidebar / Hide Sidebar, the menu equivalent of the toolbar button.
-            SidebarCommands()
+            // View › Chat / Clients: the two places the app has.
+            CommandGroup(after: .sidebar) { PlaceCommands() }
             CommandGroup(after: .appInfo) {
                 Button(L("Аккаунты и остатки")) {
                     Task { @MainActor in
@@ -118,32 +117,31 @@ struct OpenStrudelApp: App {
 
 #if os(macOS)
 extension FocusedValues {
-    /// Starts a new employee. Only the workspace publishes it, so the welcome screens disable ⌘N.
-    @Entry var newEmployee: (() -> Void)?
     /// Opens the selected employee's details from the menu bar.
     @Entry var showEmployeeDetails: (() -> Void)?
-    /// Shows the sidebar and focuses its search field.
-    @Entry var findChat: (() -> Void)?
-}
-
-private struct NewEmployeeCommand: View {
-    @FocusedValue(\.newEmployee) private var newEmployee
-    let busy: Bool
-
-    var body: some View {
-        Button(L("Новый сотрудник")) { newEmployee?() }
-            .keyboardShortcut("n", modifiers: .command)
-            .disabled(newEmployee == nil || busy)
-    }
+    /// Opens the conversations and their search.
 }
 
 private struct FindChatCommand: View {
     @FocusedValue(\.findChat) private var findChat
 
     var body: some View {
-        Button(L("Найти чат")) { findChat?() }
+        Button(L("Переписки")) { findChat?() }
             .keyboardShortcut("f", modifiers: .command)
             .disabled(findChat == nil)
+    }
+}
+
+private struct PlaceCommands: View {
+    @FocusedValue(\.selectTab) private var selectTab
+
+    var body: some View {
+        Button(L("Чат")) { selectTab?(.chat) }
+            .keyboardShortcut("1", modifiers: .command)
+            .disabled(selectTab == nil)
+        Button(L("Клиенты")) { selectTab?(.clients) }
+            .keyboardShortcut("2", modifiers: .command)
+            .disabled(selectTab == nil)
     }
 }
 

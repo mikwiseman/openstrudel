@@ -193,6 +193,8 @@ targets:
       - path: Sources/HomeClient.swift
       - path: Sources/ConnectionDiagnostics.swift
       - path: Sources/DeviceLibrary.swift
+      - path: Sources/ConversationReader.swift
+      - path: Sources/ClientsModel.swift
       - path: Sources/HostingStore.swift
       - path: Sources/AgentTransfer.swift
       - path: Sources/EmployeeMove.swift

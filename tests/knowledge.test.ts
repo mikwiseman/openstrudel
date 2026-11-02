@@ -42,3 +42,20 @@ it("removes a deleted employee's chat copy from the owner's sources",async()=>{
     expect(existsSync(copy)).toBe(false);
   }finally{await service.close();store.close();rmSync(root,{recursive:true,force:true});}
 });
+
+it("keeps the client a question was asked about in the owner's source copy, without the source's credential",async()=>{
+  const root=mkdtempSync(join(tmpdir(),"knowledge-")),store=new Store(":memory:");
+  const calls:any[]=[];
+  const service=new MessageService(store,{async run(input,options){calls.push({input,options});return{threadId:"t",response:"ok",events:[]};}},root);
+  try{
+    const context={type:"client" as const,source:{connector:"company",endpoint:"https://example.invalid/mcp",fingerprint:"0123456789abcdef"},clientId:"c-acme",slug:"acme",name:"Acme",company:"Acme Robotics",stage:"active",brand:"TRINITY",archived:false};
+    const asked=await service.handle({channel:"api",text:"Что по договору?",byOwner:true,context});
+    await service.handle({channel:"api",text:"Find a source",byOwner:true});
+    const catalog=JSON.parse(readFileSync(join(root,".data/owner-knowledge/catalog.json"),"utf8"));
+    const source=catalog.sources.find((s:any)=>s.conversationId===asked.conversationId);
+    const rows=readFileSync(source.history,"utf8").trim().split("\n").map(line=>JSON.parse(line));
+    expect(rows.find(r=>r.text==="Что по договору?").context).toEqual({type:"client",connector:"company",clientId:"c-acme",slug:"acme",name:"Acme",company:"Acme Robotics"});
+    expect(rows.find(r=>r.text==="Find a source").context).toBeUndefined();
+    expect(readFileSync(source.history,"utf8")).not.toContain("fingerprint");
+  }finally{await service.close();store.close();rmSync(root,{recursive:true,force:true});}
+});

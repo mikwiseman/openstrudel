@@ -30,7 +30,7 @@ final class iPhoneSmokeTests: XCTestCase {
         XCTAssertTrue(confirm.waitForNonExistence(timeout: 30))
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 5) { consent.tap() }
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 30), app.debugDescription)
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 30), app.debugDescription)
         let input = app.textFields["Сообщение"]
         XCTAssertTrue(input.waitForExistence(timeout: 10), app.debugDescription)
         let suffix = UUID().uuidString.prefix(6)
@@ -48,7 +48,7 @@ final class iPhoneSmokeTests: XCTestCase {
         capture("release-server-three-real-replies", app)
         app.terminate()
         app.launch()
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 20), app.debugDescription)
         XCTAssertTrue(app.staticTexts[replies[2]].waitForExistence(timeout: 10), app.debugDescription)
         capture("release-server-relaunch", app)
     }
@@ -58,8 +58,8 @@ final class iPhoneSmokeTests: XCTestCase {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launch()
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 30), app.debugDescription)
-        app.buttons["Чаты"].tap()
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 30), app.debugDescription)
+        app.buttons["openChats"].tap()
         let editor = app.buttons["Редактор"]
         for _ in 0..<10 {
             if editor.exists && editor.isHittable { break }
@@ -79,8 +79,8 @@ final class iPhoneSmokeTests: XCTestCase {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launch()
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 30), app.debugDescription)
-        app.buttons["Чаты"].tap()
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 30), app.debugDescription)
+        app.buttons["openChats"].tap()
         let employee = app.buttons["Wai News"]
         XCTAssertTrue(employee.waitForExistence(timeout: 10), app.debugDescription)
         employee.tap()
@@ -104,8 +104,8 @@ final class iPhoneSmokeTests: XCTestCase {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launch()
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 30), app.debugDescription)
-        app.buttons["Чаты"].tap()
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 30), app.debugDescription)
+        app.buttons["openChats"].tap()
         let employee = app.buttons["Джим Керри"]
         for _ in 0..<12 {
             if employee.exists && employee.isHittable { break }
@@ -154,9 +154,9 @@ final class iPhoneSmokeTests: XCTestCase {
         }
         XCTAssertFalse(app.alerts["OpenStrudel"].exists, app.debugDescription)
         if app.buttons["acceptAIDataSharing"].waitForExistence(timeout: 5) { app.buttons["acceptAIDataSharing"].tap() }
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 30), app.debugDescription)
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 30), app.debugDescription)
         capture("02-connected", app)
-        app.buttons["Чаты"].tap()
+        app.buttons["openChats"].tap()
         XCTAssertTrue(app.buttons["Wai News"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(app.buttons["Ouuuuu Baby Baby"].exists)
         capture("03-employees", app)
@@ -167,7 +167,7 @@ final class iPhoneSmokeTests: XCTestCase {
         XCTAssertTrue(app.textViews["Описание сотрудника"].waitForExistence(timeout: 10))
         capture("05-bot-settings", app)
         app.buttons["Готово"].tap()
-        app.buttons["Чаты"].tap()
+        app.buttons["openChats"].tap()
         app.buttons["OpenStrudel"].tap()
         let input = app.textFields["Сообщение"]
         XCTAssertTrue(input.waitForExistence(timeout: 10))
@@ -179,7 +179,7 @@ final class iPhoneSmokeTests: XCTestCase {
         capture("06-real-codex-reply", app)
         app.terminate()
         app.launch()
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 20))
         XCTAssertTrue(app.staticTexts[reply].waitForExistence(timeout: 10))
         capture("07-relaunch", app)
     }

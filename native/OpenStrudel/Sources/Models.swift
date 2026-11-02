@@ -247,6 +247,8 @@ struct HomeMessage: Codable, Identifiable, Hashable {
     var story: NewsStory? = nil
     /// The story this message belongs to: a version, or a question and answer about it.
     var storyId: String? = nil
+    /// What the owner attached from the app: a client, or a quoted message or story.
+    var context: ChatContext? = nil
 
     var scheduleTitle: String? {
         guard direction == "inbound", externalId?.hasPrefix("schedule:") == true else { return nil }
@@ -343,6 +345,8 @@ struct PendingHomeMessage: Codable, Identifiable, Equatable {
     var telegramChatTitle: String? = nil
     /// A question from a News story's reader: the story version it asks about.
     var storyReplyToID: String? = nil
+    /// The client, message or story the owner attached to this request.
+    var context: ChatContext? = nil
 }
 
 enum ComposerSendMode: String, Codable, CaseIterable {
@@ -386,6 +390,8 @@ struct EmployeeProfile: Codable, Identifiable, Hashable {
     var purpose: String? = nil
     var deviceId: String? = nil
     var appearance: AgentAppearance? = nil
+    /// The employee publishes News stories, so its reader is listed among the feeds.
+    var news: Bool? = nil
 
     var isWork: Bool { domain == "work" }
     var roleText: String { purpose?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
@@ -607,7 +613,7 @@ struct HomeTransferOperation: Decodable, Identifiable {
     }
 }
 struct HomeMoved: Decodable { let url: String; let pin: String?; let homeId: String; let primaryId: String; let epoch: Int }
-struct HomeFailure: Decodable { let error: String?; let moved: HomeMoved? }
+struct HomeFailure: Decodable { let error: String?; let moved: HomeMoved?; var code: String? = nil; var detail: String? = nil }
 struct HomePeerIdentity: Decodable { let homeId: String; let nodeId: String; let protocolVersion: Int; let role: String; let epoch: Int
     enum CodingKeys: String, CodingKey { case homeId, nodeId, role, epoch; case protocolVersion = "protocol" }
 }
@@ -782,4 +788,151 @@ struct ChatQuestion: Decodable, Identifiable, Equatable {
     let id: String
     let question: String
     let options: [String]
+}
+
+// MARK: - One chat: readers, business clients and the context a message carries
+
+/// A conversation the owner reads without writing in it: an employee's feed, another Home's main assistant,
+/// or one Telegram chat or archive. The composer stays on the main chat whatever is read.
+struct ReaderRoute: Hashable, Identifiable {
+    enum Kind: Hashable { case main, employee(String), conversation(String) }
+    let connectionID: String
+    let kind: Kind
+    let title: String
+    var id: String {
+        switch kind {
+        case .main: connectionID + ":main"
+        case .employee(let profile): connectionID + ":employee:" + profile
+        case .conversation(let conversation): connectionID + ":conversation:" + conversation
+        }
+    }
+    /// The Home path that pages this reader's messages.
+    var path: String {
+        switch kind {
+        case .main: "/v1/conversation"
+        case .employee(let profile): "/v1/agents/" + profile + "/conversation"
+        case .conversation(let conversation): "/v1/conversations/" + conversation
+        }
+    }
+    /// An employee's feed joins its app chat and Telegram chats; one Telegram chat or archive is paged on its own.
+    var usesTimeline: Bool { if case .conversation = kind { false } else { true } }
+}
+
+/// Where a client was read from, as the Home reports it: the connector, its address and a fingerprint of the
+/// full address and credential. It goes back unchanged when the owner discusses the client, so the Home can
+/// refuse a client from a replaced or re-signed connector instead of resolving it elsewhere.
+struct ClientSource: Codable, Hashable {
+    let connector: String
+    let endpoint: String
+    let fingerprint: String
+}
+
+struct BusinessClient: Codable, Identifiable, Hashable {
+    let id: String
+    let slug: String
+    let name: String
+    var company: String? = nil
+    var aliases: [String] = []
+    var stage: String? = nil
+    var brand: String? = nil
+    var archived = false
+    var archiveReason: String? = nil
+    var fileCount = 0
+    var readableFileCount = 0
+
+    /// The company when it differs from the name, then the stage and the brand, as one quiet line.
+    var detail: String {
+        [company.flatMap { $0 == name ? nil : $0 }, stage, brand].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+}
+
+struct ClientsEnvelope: Decodable { let source: ClientSource; let clients: [BusinessClient] }
+
+struct ClientFile: Codable, Identifiable, Hashable {
+    let id: String
+    let name: String
+    var category: String? = nil
+    var sizeBytes: Int? = nil
+    let createdAt: String
+    /// read, ask or none, as the service grades what it can open.
+    let access: String
+    var note: String? = nil
+
+    var accessLabel: String {
+        switch access {
+        case "read": L("Чтение")
+        case "ask": L("Вопрос")
+        default: L("Нет доступа")
+        }
+    }
+    var sizeLabel: String? { sizeBytes.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) } }
+}
+
+struct ClientFilesEnvelope: Decodable {
+    struct Client: Decodable { let id: String; let slug: String; let name: String; let archived: Bool }
+    let source: ClientSource
+    let client: Client
+    let total: Int
+    let offset: Int
+    let hasMore: Bool
+    let nextOffset: Int?
+    let files: [ClientFile]
+}
+
+/// What the owner attached to a main-chat message from the app: a business client, or a message or News story read
+/// in a reader. The Home verifies a client against its source and resolves this Home's own quotes itself; another
+/// Home's quote travels only as bounded text with that Home's identity. Nothing here grants a tool.
+struct ChatContext: Codable, Hashable {
+    enum Kind: String, Codable { case client, message, story }
+    /// Where a quote came from: the app's connection, that Home's canonical id, the node holding the record when it is
+    /// not the chat's own, and the name the owner knows the device by.
+    struct Home: Codable, Hashable { let id: String; let homeId: String; var nodeId: String? = nil; let name: String }
+    var type: Kind
+    var source: ClientSource? = nil
+    var clientId: String? = nil
+    var slug: String? = nil
+    var name: String? = nil
+    var company: String? = nil
+    var stage: String? = nil
+    var brand: String? = nil
+    var archived: Bool? = nil
+    var home: Home? = nil
+    var conversationId: String? = nil
+    var messageId: String? = nil
+    var storyId: String? = nil
+    var title: String? = nil
+    var author: String? = nil
+    var date: String? = nil
+    var quote: String? = nil
+
+    static func client(_ client: BusinessClient, source: ClientSource) -> ChatContext {
+        ChatContext(type: .client, source: source, clientId: client.id, slug: client.slug, name: client.name, company: client.company, stage: client.stage, brand: client.brand, archived: client.archived)
+    }
+    /// A message read in a reader. On this Home the record is read again by the Home; elsewhere the text travels as a bounded quote.
+    static func message(_ message: HomeMessage, title: String, home: Home?) -> ChatContext {
+        ChatContext(type: .message, home: home, conversationId: message.conversationId, messageId: message.id, title: title, author: message.author, date: message.createdAt,
+                    quote: home == nil ? nil : String(message.text.prefix(1500)))
+    }
+    static func story(_ version: HomeMessage, home: Home?) -> ChatContext {
+        ChatContext(type: .story, home: home, conversationId: version.conversationId, messageId: version.id, storyId: version.story?.id, title: version.story?.title,
+                    quote: home == nil ? nil : String([version.story?.title, version.story?.summary, version.story?.body].compactMap { $0 }.joined(separator: "\n\n").prefix(1500)))
+    }
+
+    var symbol: String {
+        switch type {
+        case .client: "person.crop.square"
+        case .message: "text.quote"
+        case .story: "newspaper"
+        }
+    }
+    /// The one line that names the context: on the chip, and over the sent message.
+    var label: String {
+        let subject = (type == .client ? name : title)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let origin = home.map { " · " + $0.name } ?? ""
+        switch type {
+        case .client: return L("Клиент") + " · " + subject
+        case .message: return L("Из переписки") + (subject.isEmpty ? "" : " · " + subject) + origin
+        case .story: return L("Новость") + (subject.isEmpty ? "" : " · " + subject) + origin
+        }
+    }
 }

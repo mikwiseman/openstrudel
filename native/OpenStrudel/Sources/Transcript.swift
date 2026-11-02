@@ -30,28 +30,6 @@ struct EmptyChat: View {
         if client.isEmployeeDraft {
             // The composer's placeholder asks for the role; this line only shows what an answer looks like.
             BalancedLines { line(L("Например: «Редактор, который помогает писать короткие посты»."), limit: nil) }
-            if library.employeeDestinations.count > 1 {
-                // The composer is the action; choosing the device is a quiet text menu in the line's place.
-                Menu {
-                    EmployeeDestinationChoices { destination in
-                        library.chooseEmployeeDevice(destination.client, deviceID: destination.deviceID)
-                    }
-                } label: {
-                    Text(L("Create on \(client.executionDeviceName)"))
-                        .font(AppTypography.interface.weight(.medium))
-                        .foregroundStyle(AppTheme.accentText)
-                }
-                .menuStyle(.button)
-                .buttonStyle(.borderless)
-                .menuIndicator(.visible)
-                .tint(AppTheme.accentText)
-                .fixedSize()
-                .frame(minHeight: controlTarget)
-                .padding(.top, 8)
-                .accessibilityLabel(L("Где будет работать сотрудник"))
-                .accessibilityValue(client.executionDeviceName)
-                .accessibilityIdentifier("employeeCreationDevice")
-            }
         } else if client.homeUnreachable || client.connectionNeedsPairing {
             line(L("История появится после подключения к устройству."), limit: 2)
         } else if let profile = client.activeProfile {
@@ -89,8 +67,9 @@ struct ClusterHeader: View {
 /// on the canvas; other people in imported history or a Telegram group write on the surface.
 struct MessageBubble: View {
     @EnvironmentObject private var client: HomeClient
+    /// In a reader the neighbours are the reader's, and nothing here answers: the composer is the chat's.
+    @Environment(\.readerMessages) private var readerMessages
     @State private var previewURL: URL?
-    @State private var telegramReply: TelegramReplyTarget?
     let message: HomeMessage
     /// Other people write here too (a Telegram group or history from several people),
     /// so inbound messages sit on the surface under their author.
@@ -108,6 +87,8 @@ struct MessageBubble: View {
     private var fromSomeoneElse: Bool { isInbound && shared }
     /// The owner wrote it through the explicit Telegram reply, so it sits on the person's side.
     private var ownerReply: Bool { MessagePages.isOwnerReply(message) }
+    /// The conversation this bubble is part of: the chat's, or the reader's.
+    private var neighbours: [HomeMessage] { readerMessages ?? client.messages }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -115,11 +96,17 @@ struct MessageBubble: View {
                 // A request's line sits over its bubble text, where its author used to be.
                 sourceCaption(line, origin: origin).lineLimit(1).padding(.leading, fromSomeoneElse ? 16 : 0)
                     .frame(maxWidth: .infinity, alignment: ownerReply ? .trailing : .leading)
-            } else if message.direction == "inbound", client.messages.contains(where: { $0.origin?.channel == "telegram" }) {
+            } else if message.direction == "inbound", neighbours.contains(where: { $0.origin?.channel == "telegram" }) {
                 Text(L("В приложении")).modifier(MetaLine()).frame(maxWidth: .infinity, alignment: .trailing)
             }
+            if let context = message.context, isInbound {
+                // What the owner attached, over the words it was attached to.
+                Label(context.label, systemImage: context.symbol).modifier(MetaLine()).lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 16)
+                    .accessibilityIdentifier("messageContext-" + message.id)
+            }
             if let parentID = message.replyToId, message.channel == "telegram", previous?.id != parentID,
-               let parent = client.messages.first(where: { $0.id == parentID }) {
+               let parent = neighbours.first(where: { $0.id == parentID }) {
                 Text(L("В ответ на: \(String(parent.text.prefix(140)))"))
                     .modifier(MetaLine()).lineLimit(2).multilineTextAlignment(ownerReply ? .trailing : .leading)
                     .frame(maxWidth: .infinity, alignment: ownerReply ? .trailing : .leading)
@@ -154,21 +141,12 @@ struct MessageBubble: View {
             }
         }
         .quickLookPreview($previewURL)
-        .sheet(item: $telegramReply) { target in
-            TelegramReplySheet(message: target.request, prepared: target.prepared).environmentObject(client).modifier(InterfaceLanguage())
-        }
     }
 
-    /// The one action next to a reply Telegram did not take or did not confirm. Never a silent resend.
+    /// The one action next to a reply Telegram did not take or did not confirm: open it there. Nothing is resent from here.
     @ViewBuilder private var deliveryRecovery: some View {
-        switch MessagePages.deliveryAction(for: message, in: client.messages, canReply: client.canManageOpenAI) {
-        case .open(let url)?:
+        if case .open(let url)? = MessagePages.deliveryAction(for: message, in: neighbours, canReply: false) {
             Link(L("Открыть в Telegram"), destination: url).modifier(StatusAction())
-        case .resend(let request)?:
-            Button(L("Отправить ещё раз…")) { telegramReply = TelegramReplyTarget(request: request, prepared: message.text) }
-                .modifier(StatusAction()).accessibilityIdentifier("resendTelegramReply-" + message.id)
-        case nil:
-            EmptyView()
         }
     }
 
@@ -178,28 +156,10 @@ struct MessageBubble: View {
         } else { Text(line).modifier(MetaLine()) }
     }
 
-    /// A Telegram request the owner can answer here.
-    private var canReply: Bool { message.origin?.canReply == true && client.canManageOpenAI }
+    /// The chat has one composer, so a Telegram request is answered by writing in the chat, never from its bubble.
+    private var canReply: Bool { false }
 
-    /// A request's Reply, in its context menu and its accessibility actions. Selectable text would take the
-    /// right-click and the long press from this menu, so such a request is plain text and Copy lives here.
-    /// Without Reply there is no menu, and the text keeps its selection and the system Copy.
-    @ViewBuilder private var requestActions: some View {
-        if canReply {
-            Button(L("Ответить в Telegram"), systemImage: "arrowshape.turn.up.left") { telegramReply = TelegramReplyTarget(request: message) }
-                .accessibilityIdentifier("telegramReply-" + message.id)
-            if !message.text.isEmpty {
-                Button(L("Скопировать"), systemImage: "doc.on.doc") {
-                    #if os(macOS)
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(message.text, forType: .string)
-                    #else
-                    UIPasteboard.general.string = message.text
-                    #endif
-                }
-            }
-        }
-    }
+    @ViewBuilder private var requestActions: some View { EmptyView() }
 
     private var person: some View {
         VStack(alignment: .trailing, spacing: 4) {
@@ -275,93 +235,6 @@ struct MessageBubble: View {
 
     private func withTime(_ text: String) -> String {
         [text, message.time].compactMap { $0 }.joined(separator: " · ")
-    }
-}
-
-/// The Telegram request a reply answers, and the text prepared for it, if any.
-private struct TelegramReplyTarget: Identifiable {
-    let request: HomeMessage
-    var prepared = ""
-    var id: String { request.id }
-}
-
-/// An explicit destination, separate from the private app composer. Drafts are
-/// scoped to the original request; sending uses the client's durable queue.
-private struct TelegramReplySheet: View {
-    @EnvironmentObject private var client: HomeClient
-    @EnvironmentObject private var library: DeviceLibrary
-    @Environment(\.dismiss) private var dismiss
-    let message: HomeMessage
-    /// A reply Telegram did not take: its text, offered again until the owner sends or edits it.
-    var prepared = ""
-    @State private var text = ""
-    @State private var files: [PickedFile] = []
-    @State private var choosingFiles = false
-    @State private var importing = false
-    @State private var error: String?
-    private var title: String { message.origin?.title ?? "Telegram" }
-    private var key: String { HomeDrafts.key(home: client.baseURLString, profile: client.selectedProfileID, chat: "telegram-reply:" + message.id) }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    Label(title, systemImage: "paperplane")
-                    Text(message.text).lineLimit(4).foregroundStyle(AppTheme.secondaryText)
-                }
-                Section {
-                    TextField(L("Ваш ответ"), text: $text, axis: .vertical).lineLimit(4...10)
-                        .accessibilityIdentifier("telegramReplyText")
-                    ForEach(files) { file in
-                        HStack {
-                            Text(file.name).lineLimit(1)
-                            Spacer()
-                            Button { files.removeAll { $0.id == file.id } } label: { Image(systemName: "xmark.circle") }
-                                .accessibilityLabel(L("Remove \(file.name)"))
-                        }
-                    }
-                    Button(L("Прикрепить файл…"), systemImage: "paperclip") { choosingFiles = true }
-                        .disabled(importing)
-                } footer: { Text(L("Ответ будет опубликован в этой группе от имени бота.")) }
-                if let error { Text(error).foregroundStyle(AppTheme.warning) }
-            }
-            .formStyle(.grouped)
-            .navigationTitle(L("Ответить в Telegram"))
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(L("Отмена")) { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    // The sheet names the group; a long title would hide the action in the overflow menu.
-                    Button(L("Отправить")) { send() }
-                        .disabled(importing || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        .accessibilityIdentifier("sendTelegramReply")
-                }
-            }
-        }
-        #if os(macOS)
-        .frame(width: 560, height: 460)
-        #endif
-        .task { text = library.draft(for: key); if text.isEmpty { text = prepared }; files = library.fileDrafts[key] ?? [] }
-        .onChange(of: text) { _, value in library.saveDraft(value, for: key) }
-        .onChange(of: files) { _, value in library.fileDrafts[key] = value }
-        .fileImporter(isPresented: $choosingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
-            Task {
-                importing = true; defer { importing = false }
-                do {
-                    let urls = try result.get()
-                    files += try await AttachmentImport.files(at: urls)
-                    error = nil
-                } catch { if !AttachmentImport.isCancellation(error) { self.error = error.localizedDescription } }
-            }
-        }
-    }
-
-    private func send() {
-        do {
-            try client.sendTelegramReply(to: message, text: text, files: files)
-            text = ""; files = []
-            library.saveDraft("", for: key); library.fileDrafts[key] = nil
-            dismiss()
-        } catch { self.error = error.localizedDescription }
     }
 }
 
@@ -621,6 +494,12 @@ struct TranscriptRows: View {
                 VStack(alignment: .trailing, spacing: 4) {
                     if opens { ClusterHeader(date: .now, hasTime: true).padding(.bottom, 12) }
                     if let title = message.telegramChatTitle { Text("Telegram · " + title).modifier(MetaLine()) }
+                    // A send queued for an employee before the one chat keeps its destination in sight until it is delivered.
+                    if let profile = message.profileID, profile != client.selectedProfileID {
+                        Text(L("Для: \(profile.hasPrefix("draft:") ? L("Новый сотрудник") : client.profiles.first { $0.id == profile }?.name ?? L("Сотрудник"))")).modifier(MetaLine())
+                            .accessibilityIdentifier("pendingDestination-" + message.id.uuidString)
+                    }
+                    if let context = message.context { Label(context.label, systemImage: context.symbol).modifier(MetaLine()).lineLimit(1) }
                     PendingMessageBubble(text: message.text, files: message.files, bubbleWidth: bubbleWidth)
                     if let error = message.error {
                         let notSent = message.deliveryState == "not_sent"
@@ -633,9 +512,18 @@ struct TranscriptRows: View {
                             }
                             Button(L("Удалить")) { client.discardPending(message) }
                                 .modifier(StatusAction()).accessibilityIdentifier("discardTelegramReply-" + message.id.uuidString)
-                        } else if message.operationID == nil {
-                            Button(L("Проверить доставку и повторить")) { Task { await client.retry(message) } }
-                                .modifier(StatusAction())
+                        } else {
+                            if message.operationID == nil {
+                                Button(L("Проверить доставку и повторить")) { Task { await client.retry(message) } }
+                                    .modifier(StatusAction())
+                                if message.context != nil {
+                                    Button(L("Убрать контекст и отправить")) { Task { await client.dropContext(message) } }
+                                        .modifier(StatusAction()).accessibilityIdentifier("dropPendingContext-" + message.id.uuidString)
+                                }
+                            }
+                            // A cancelled or unconfirmed send is let go here; nothing is resent and the chat is free to move.
+                            Button(L("Удалить")) { client.discardPending(message) }
+                                .modifier(StatusAction()).accessibilityIdentifier("discardPending-" + message.id.uuidString)
                         }
                     } else if let delivery = message.deliveryState {
                         Text(delivery == "waiting_for_device" ? L("Сообщение сохранено. Ждём подключения устройства.") : L("Сообщение сохранено. Передаём сотруднику."))

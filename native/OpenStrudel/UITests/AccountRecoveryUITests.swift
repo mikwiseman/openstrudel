@@ -18,13 +18,13 @@ final class AccountRecoveryUITests: XCTestCase {
         openConnectedDevice(app)
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 3) { consent.tap() }
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 15))
         _ = try await read(fixture + "/mode?value=expired")
         let recover = app.buttons["recoverOpenAIAccount"]
         XCTAssertTrue(recover.waitForExistence(timeout: 20))
         XCTAssertTrue(recover.isHittable)
         XCTAssertTrue(app.textFields.firstMatch.isHittable)
-        XCTAssertTrue(app.buttons["Чаты"].isHittable)
+        XCTAssertTrue(app.buttons["openChats"].isHittable)
         capture("largest-type-recovery-controls", app)
         recover.tap()
         // Each actions button names its account, so VoiceOver can tell them apart.
@@ -86,7 +86,7 @@ final class AccountRecoveryUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Вход отменён или истёк")).firstMatch.exists)
         _ = try await read(fixture + "/seed")
         _ = try await read(fixture + "/mode?value=connected")
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 20))
         XCTAssertTrue(app.staticTexts["openAIRecoveryNotice"].waitForNonExistence(timeout: 20))
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Эта история остаётся")).firstMatch.waitForExistence(timeout: 15))
         let composer = app.textFields.firstMatch
@@ -108,14 +108,14 @@ final class AccountRecoveryUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Отправить"].isEnabled)
         XCTAssertEqual(composer.value as? String, "Черновик должен сохраниться")
         app.terminate(); app.launch()
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 15))
         XCTAssertEqual(app.textFields.firstMatch.value as? String, "Черновик должен сохраниться")
 
         let clientInvitation = try await read(fixture + "/invite")
         app.open(try XCTUnwrap(URL(string: XCTUnwrap(clientInvitation["url"] as? String))))
         XCTAssertTrue(pair.waitForExistence(timeout: 15)); pair.tap()
         openConnectedDevice(app)
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 15))
         _ = try await read(fixture + "/mode?value=expired")
         XCTAssertTrue(app.staticTexts["openAIRecoveryNotice"].waitForExistence(timeout: 20))
         XCTAssertFalse(recover.exists)
@@ -123,7 +123,7 @@ final class AccountRecoveryUITests: XCTestCase {
         capture("connected-device-waits-for-home-owner", app)
         _ = try await read(fixture + "/mode?value=connected")
         app.terminate(); app.launch()
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 15))
         XCTAssertFalse(signIn.exists)
         let finalState = try await read(fixture + "/state")
         XCTAssertEqual(finalState["loginStarts"] as? Int, 2)

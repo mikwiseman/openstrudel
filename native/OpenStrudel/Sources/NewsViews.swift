@@ -131,15 +131,19 @@ struct NewsSwitcher: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(mode == value ? .isSelected : [])
+        .accessibilityIdentifier("newsMode-" + String(describing: value))
     }
 }
 
 struct NewsDeskView: View {
-    @EnvironmentObject private var client: HomeClient
     @Binding var place: NewsPlace
+    /// The stories of this reader, with their questions and answers.
+    let messages: [HomeMessage]
+    /// Takes the open story to the chat as context.
+    let discuss: (HomeMessage) -> Void
 
     var body: some View {
-        let desk = NewsDesk(client.newsMessages), open = desk.item(place.story)
+        let desk = NewsDesk(messages), open = desk.item(place.story)
         // Both lists stay alive under the story, so going back lands exactly where the reader left.
         ZStack {
             NewsEditionView(desk: desk, anchor: $place.editionAnchor, showRadar: { place.mode = .radar }) { place.story = $0 }
@@ -150,7 +154,7 @@ struct NewsDeskView: View {
                 let list = place.mode == .radar ? desk.radarItems : desk.editionItems
                 let next = list.firstIndex { $0.id == open.id }.flatMap { list.indices.contains($0 + 1) ? list[$0 + 1] : nil }
                 NewsStoryReader(item: open, next: next, backTitle: place.mode == .radar ? L("К радару") : L("К выпуску"),
-                                back: { place.story = nil }, open: { place.story = $0 })
+                                back: { place.story = nil }, open: { place.story = $0 }, discuss: { discuss(open.latest) })
                     .id(open.id)
             }
         }
@@ -360,15 +364,14 @@ struct NewsRadarView: View {
 // MARK: - One story
 
 struct NewsStoryReader: View {
-    @EnvironmentObject private var client: HomeClient
     let item: NewsDesk.Item
     let next: NewsDesk.Item?
     let backTitle: String
     let back: () -> Void
     let open: (String) -> Void
+    /// Takes this story to the chat as context; the discussion happens there, with everything else.
+    let discuss: () -> Void
     @State private var showsSources = false
-    @State private var question = ""
-    @FocusState private var asking: Bool
 
     private var story: NewsStory { item.story }
 
@@ -392,7 +395,8 @@ struct NewsStoryReader: View {
                         Button { showsSources = true; withAnimation { proxy.scrollTo("sources", anchor: .top) } } label: {
                             ArrowLabel(title: L("Источники · \(story.sources.count)"), symbol: "arrow.down")
                         }
-                        Button { withAnimation { proxy.scrollTo("discussion", anchor: .top) }; asking = true } label: { ArrowLabel(title: L("Обсудить")) }
+                        Button(action: discuss) { ArrowLabel(title: L("Обсудить в чате")) }
+                            .accessibilityIdentifier("discussStory")
                     }
                     .buttonStyle(.plain).padding(.top, 24).padding(.bottom, 32)
                     Hairline()
@@ -406,7 +410,7 @@ struct NewsStoryReader: View {
 
                     sources.id("sources").padding(.top, 32)
                     if item.developments.count > 1 { history.padding(.top, 32) }
-                    discussion.id("discussion").padding(.top, 48)
+                    if !item.thread.isEmpty { discussion.padding(.top, 48) }
                     if let next {
                         Button { open(next.id) } label: {
                             HStack(alignment: .firstTextBaseline) {
@@ -427,10 +431,6 @@ struct NewsStoryReader: View {
             }
             .scrollIndicators(.hidden)
             .newsScrollEdge()
-            .scrollDismissesKeyboard(.interactively)
-            .onChange(of: item.thread.count) { old, new in
-                if new > old { withAnimation { proxy.scrollTo("discussion-end", anchor: .bottom) } }
-            }
         }
     }
 
@@ -530,14 +530,10 @@ struct NewsStoryReader: View {
         }
     }
 
-    private var waiting: [PendingHomeMessage] {
-        let ids = Set(item.versions.map(\.id))
-        return client.pendingMessages.filter { $0.storyReplyToID.map(ids.contains) == true }
-    }
-
+    /// Questions asked about this story before the chat became the one place to ask, read as they were answered.
     private var discussion: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text(L("Разберёмся?")).font(NewsType.headline(28, .title2)).accessibilityAddTraits(.isHeader)
+            Text(L("Обсуждали раньше")).font(NewsType.headline(28, .title2)).accessibilityAddTraits(.isHeader)
             ForEach(item.thread) { message in
                 if message.direction == "inbound" {
                     VStack(alignment: .leading, spacing: 6) {
@@ -554,38 +550,6 @@ struct NewsStoryReader: View {
                     MessageContent(source: message.text).equatable()
                 }
             }
-            ForEach(waiting) { pending in
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(pending.text).font(AppTypography.reading.weight(.medium))
-                    Text(pending.error ?? L("Отправляется…")).font(AppTypography.meta).foregroundStyle(pending.error == nil ? AppTheme.secondaryText : AppTheme.warning)
-                }
-                .padding(.horizontal, 16).padding(.vertical, 12)
-                .background(AppTheme.userBubble.opacity(0.7), in: .rect(cornerRadius: Radius.card, style: .continuous))
-            }
-            HStack(alignment: .bottom, spacing: 12) {
-                TextField(L("Спросить News об этой истории"), text: $question, axis: .vertical)
-                    .textFieldStyle(.plain).font(AppTypography.reading).lineLimit(1...6)
-                    .focused($asking)
-                    .onSubmit(send)
-                Button(action: send) {
-                    Image(systemName: "arrow.up").font(.body.weight(.semibold)).foregroundStyle(AppTheme.canvas)
-                        .frame(width: 30, height: 30).background(AppTheme.accentText, in: .circle)
-                }
-                .buttonStyle(.plain)
-                .disabled(question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .accessibilityLabel(L("Отправить"))
-            }
-            .padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 8)
-            .overlay(RoundedRectangle(cornerRadius: Radius.composer, style: .continuous).stroke(AppTheme.separator))
-            .id("discussion-end")
-            Text(L("Ответ останется с этой историей; общий чат с News — во вкладке «Чат».")).font(AppTypography.meta).foregroundStyle(AppTheme.secondaryText)
         }
-    }
-
-    private func send() {
-        let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        question = ""
-        Task { await client.askNews(about: item.latest, text: text) }
     }
 }

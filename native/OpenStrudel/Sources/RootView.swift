@@ -1,21 +1,24 @@
 import SwiftUI
 
-/// The native surface is intentionally small: chats on the left, one calm
-/// composer, and settings only for the two connections a person can act on.
+/// The two places the app has: the chat and the clients. Everything else is read from the chat or set up in Settings.
+enum PrimaryTab: String, CaseIterable { case chat, clients }
+
+/// The native surface is intentionally small: one chat with one composer, the business clients beside it,
+/// readers for every other conversation behind the chat, and settings for the connections a person can act on.
 struct OpenStrudelRootView: View {
     @EnvironmentObject private var library: DeviceLibrary
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var client: HomeClient
     #if os(macOS)
-    // Above the per-device identity, so switching devices keeps the sidebar as it is.
-    @State private var columnVisibility = NavigationSplitViewVisibility.all
-    @State private var sidebarQuery = ""
-    @FocusState private var searchFocused: Bool
     /// The toolbar or title bar above this view; the window minimum includes it.
     @State private var titleBarHeight: CGFloat = 0
     #else
     @State private var showSettings = false
     #endif
+    @State private var tab = PrimaryTab.chat
+    /// The readers opened over the chat, newest last. Back returns to the chat as it was.
+    @State private var readers: [ReaderRoute] = []
+    @State private var showHistory = false
     @AppStorage("openstrudel.aiConsent.v1") private var aiConsent = false
 
     private var pollingPhase: ScenePhase {
@@ -62,6 +65,15 @@ struct OpenStrudelRootView: View {
             SettingsView().environmentObject(client)
         }
         #endif
+        .sheet(isPresented: $showHistory) {
+            EmployeePicker { route in
+                showHistory = false
+                // A reader opens over the chat, whichever place the list was opened from.
+                tab = .chat
+                readers.append(route)
+            }
+            .environmentObject(client)
+        }
         .sheet(item: $client.pendingPairing) { pairing in
             AddDeviceConfirmation(pairing: pairing).environmentObject(library)
         }
@@ -83,16 +95,6 @@ struct OpenStrudelRootView: View {
         .containerBackground(AppTheme.canvas, for: .window)
         #endif
     }
-
-    #if os(macOS)
-    /// A draft on this device when it can take one, otherwise on the first device that can.
-    private var newEmployee: (() -> Void)? {
-        let available = library.employeeDestinations.filter(\.available)
-        if available.contains(where: { $0.client === client }) { return { library.beginEmployee() } }
-        guard let other = available.first else { return nil }
-        return { library.beginEmployee(on: other.client, deviceID: other.deviceID) }
-    }
-    #endif
 
     @ViewBuilder private var screens: some View {
         #if os(macOS)
@@ -119,32 +121,50 @@ struct OpenStrudelRootView: View {
         } else if client.openAIAccount?.connected == false && !client.hasOpenedConversation && client.profiles.isEmpty && client.devices.count < 2 {
             OpenAIWelcomeView()
         } else {
-            #if os(macOS)
-            NavigationSplitView(columnVisibility: $columnVisibility) {
-                Sidebar(query: $sidebarQuery)
-                    .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
-            } detail: {
-                // Each device keeps its own draft, files and reading position.
-                ConversationView().id(client.id)
-            }
-            .searchable(text: $sidebarQuery, placement: .sidebar, prompt: L("Найти чат"))
-            .searchFocused($searchFocused)
-            // Edit › Find a chat (⌘F) opens a collapsed sidebar and focuses its search field.
-            .focusedSceneValue(\.findChat) {
-                columnVisibility = .all
-                searchFocused = true
-            }
-            // File › New Employee (⌘N) works only where the plus button can create one.
-            .focusedSceneValue(\.newEmployee, newEmployee)
-            // A new employee (⌘N, the plus button or the menu) shows its draft row and takes the typing focus.
-            .onChange(of: client.isEmployeeDraft) { _, draft in
-                guard draft else { return }
-                sidebarQuery = ""
-                searchFocused = false
-            }
-            #else
-            NavigationStack { ConversationView(showSettings: $showSettings).background(HomeBackground()) }
-            #endif
+            places
         }
+    }
+
+    /// Chat and Clients: a tab bar on the phone, a sidebar on the Mac. The chat's readers push over the chat and come back to it.
+    private var places: some View {
+        TabView(selection: $tab) {
+            Tab(L("Чат"), systemImage: "bubble.left.and.text.bubble.right", value: PrimaryTab.chat) {
+                NavigationStack(path: $readers) {
+                    chat
+                        .navigationDestination(for: ReaderRoute.self) { route in
+                            ReaderScreen(route: route) { context in
+                                library.attach(context)
+                                readers.removeAll()
+                            }
+                        }
+                }
+            }
+            Tab(L("Клиенты"), systemImage: "person.2", value: PrimaryTab.clients) {
+                NavigationStack {
+                    ClientsTab { context in
+                        library.attach(context)
+                        // Back to the one composer, not to a reader left open over it.
+                        readers.removeAll()
+                        tab = .chat
+                    }
+                }
+            }
+        }
+        .tabViewStyle(.sidebarAdaptable)
+        #if os(iOS)
+        .tabBarMinimizeBehavior(.onScrollDown)
+        #endif
+        // Edit › Find a chat (⌘F) opens the conversations and their search.
+        .focusedSceneValue(\.findChat) { showHistory = true }
+        .focusedSceneValue(\.selectTab) { tab = $0 }
+    }
+
+    private var chat: some View {
+        // Each device keeps its own draft, files and reading position.
+        #if os(macOS)
+        ConversationView(openHistory: { showHistory = true }).id(client.id)
+        #else
+        ConversationView(showSettings: $showSettings, openHistory: { showHistory = true }).id(client.id)
+        #endif
     }
 }

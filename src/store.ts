@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Attachment, Channel, Conversation, EmployeeProfile, Message, NewsStory, TelegramChat, HistoryEntry } from "./types.js";
+import type { MessageContext } from "./message-context.js";
 import { id, jsonArray, jsonObject, nowIso } from "./util.js";
 import { defaultAppearance, parseAppearance, type AgentAppearance } from "./agent-appearance.js";
 import { protectScopedTelegramTransport } from "./authorization.js";
@@ -125,6 +126,7 @@ export class Store {
     this.db.exec("CREATE INDEX IF NOT EXISTS messages_page_idx ON messages(conversation_id, hidden, created_at)");
     if (!columns.has("story_id")) this.db.exec("ALTER TABLE messages ADD COLUMN story_id TEXT");
     if (!columns.has("story_json")) this.db.exec("ALTER TABLE messages ADD COLUMN story_json TEXT");
+    if (!columns.has("context_json")) this.db.exec("ALTER TABLE messages ADD COLUMN context_json TEXT");
     this.db.exec("CREATE INDEX IF NOT EXISTS messages_story_idx ON messages(conversation_id, story_id) WHERE story_id IS NOT NULL");
     const conversationColumns = new Set((this.db.prepare("PRAGMA table_info(conversations)").all() as Row[]).map(r => String(r.name)));
     if (!conversationColumns.has("profile_id")) this.db.exec("ALTER TABLE conversations ADD COLUMN profile_id TEXT REFERENCES employee_profiles(id)");
@@ -371,6 +373,7 @@ export class Store {
     attachments?: Attachment[];
     story?: NewsStory;
     storyId?: string;
+    context?: MessageContext;
   }): Message {
     if (input.externalId) {
       const duplicate = this.db.prepare("SELECT * FROM messages WHERE channel = ? AND external_id = ?").get(input.channel, input.externalId) as Row | undefined;
@@ -395,7 +398,8 @@ export class Store {
     if (input.attachments?.length) this.db.prepare("UPDATE messages SET attachments_json=? WHERE id=?").run(JSON.stringify(input.attachments),message.id);
     const storyId = input.story?.id ?? input.storyId;
     if (storyId) this.db.prepare("UPDATE messages SET story_id=?, story_json=? WHERE id=?").run(storyId, input.story ? JSON.stringify(input.story) : null, message.id);
-    return { ...message, kind: input.kind ?? "text", status: "completed", attachments: input.attachments ?? [], ...input.story ? { story: input.story } : {}, ...storyId ? { storyId } : {} };
+    if (input.context) this.db.prepare("UPDATE messages SET context_json=? WHERE id=?").run(JSON.stringify(input.context), message.id);
+    return { ...message, kind: input.kind ?? "text", status: "completed", attachments: input.attachments ?? [], ...input.story ? { story: input.story } : {}, ...storyId ? { storyId } : {}, ...input.context ? { context: input.context } : {} };
   }
 
   setMessageStatus(messageId: string, status: NonNullable<Message["status"]>, error?: string): void {
@@ -600,8 +604,12 @@ export class Store {
       SELECT substr(m.text,1,240) FROM messages m JOIN conversations c ON c.id=m.conversation_id
       WHERE c.profile_id=p.id AND m.direction='outbound' AND m.kind='text' AND m.hidden=0
       ORDER BY m.created_at DESC,m.rowid DESC LIMIT 1
-    ) AS preview FROM employee_profiles p ORDER BY p.name ASC`).all() as Row[];
-    return rows.map((row) => this.mapProfile(row));
+    ) AS preview, EXISTS (
+      SELECT 1 FROM messages m JOIN conversations c ON c.id=m.conversation_id
+      WHERE c.profile_id=p.id AND m.story_id IS NOT NULL AND m.hidden=0
+    ) AS news FROM employee_profiles p ORDER BY p.name ASC`).all() as Row[];
+    // An employee with stories is a reader the app lists under its feeds, before anyone opens it.
+    return rows.map((row) => ({ ...this.mapProfile(row), news: row.news === 1 }));
   }
 
   getProfile(profileIdOrName: string): EmployeeProfile | null {
@@ -669,6 +677,7 @@ export class Store {
       createdAt: String(row.created_at),
       ...row.story_json ? { story: JSON.parse(String(row.story_json)) as NewsStory } : {},
       ...row.story_id ? { storyId: String(row.story_id) } : {},
+      ...row.context_json ? { context: JSON.parse(String(row.context_json)) as MessageContext } : {},
     };
   }
 

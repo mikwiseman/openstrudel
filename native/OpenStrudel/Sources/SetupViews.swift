@@ -422,8 +422,8 @@ struct ServerAccountSetupView: View {
 
     private func finish(createAssistant: Bool) {
         onDone()
-        if createAssistant { library.beginEmployee(on: client) }
-        else { library.select(client) }
+        // A new employee is asked for in the chat; the device just connected becomes the chat's Home only when it is the first.
+        if !library.hasOtherDevices { library.select(client) }
         #if os(macOS)
         Task { @MainActor in
             await Task.yield()

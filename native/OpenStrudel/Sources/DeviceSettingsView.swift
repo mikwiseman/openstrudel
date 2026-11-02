@@ -88,10 +88,10 @@ struct SavedConnectionUnlockButton: View {
 /// Every pane is a grouped Form made of the same rows on both platforms.
 struct SettingsView: View {
     enum Section: String, CaseIterable {
-        case devices, accounts, backups, application
+        case devices, accounts, connections, backups, application
         /// The iOS section menu keeps these names.
         var title: String {
-            switch self { case .devices: L("Устройства"); case .accounts: L("Аккаунты"); case .backups: L("Копии"); case .application: L("Приложение") }
+            switch self { case .devices: L("Устройства"); case .accounts: L("Аккаунты"); case .connections: L("Подключения"); case .backups: L("Копии"); case .application: L("Приложение") }
         }
         /// Mac tab names; the window title follows the selected tab.
         var tabTitle: String { self == .application ? L("Основные") : title }
@@ -99,6 +99,7 @@ struct SettingsView: View {
             switch self {
             case .devices: "laptopcomputer.and.iphone"
             case .accounts: "person.crop.circle"
+            case .connections: "link"
             case .backups: "clock.arrow.circlepath"
             case .application: "gearshape"
             }
@@ -145,8 +146,14 @@ struct SettingsView: View {
         TabView(selection: $tab) {
             ForEach(Section.allCases, id: \.self) { section in
                 Tab(section.tabTitle, systemImage: section.symbol, value: section) {
-                    // Keep the device list compact; its sheets size themselves.
-                    SettingsPane(minHeight: section == .devices ? 440 : 360) { pane(section) }
+                    if section == .connections {
+                        // The services list is a screen of its own that pushes the catalog, so it needs a stack, not a form row.
+                        NavigationStack { ConnectionsView(embedded: true).environmentObject(client) }
+                            .frame(width: 600, height: 640)
+                    } else {
+                        // Keep the device list compact; its sheets size themselves.
+                        SettingsPane(minHeight: section == .devices ? 440 : 360) { pane(section) }
+                    }
                 }
             }
         }
@@ -179,6 +186,12 @@ struct SettingsView: View {
             DevicePickerSection(title: L("Устройство"), selection: $selectedID)
             DeviceAccountsView().environmentObject(selected).id(selected.id)
             TelegramSetupSection().environmentObject(selected).id("telegram-" + selected.id)
+        case .connections:
+            // The services the chat's Home uses in the main chat; each employee's own services stay in its details.
+            SwiftUI.Section {
+                NavigationLink(L("Сервисы и навыки")) { ConnectionsView(embedded: true).environmentObject(client) }
+                    .accessibilityIdentifier("openChatConnections")
+            } footer: { Text(L("Сервисы и навыки чата на устройстве «\(client.displayName)».")) }
         case .backups:
             DevicePickerSection(title: L("Устройство"), selection: $selectedID)
             SwiftUI.Section(L("Резервная копия сотрудников")) {
@@ -249,6 +262,8 @@ private struct DevicesPane: View {
     @State private var renaming: RenameTarget?
     @State private var diagnostics: HomeClient?
     @State private var speech: HomeClient?
+    /// Why the chat stayed on its Home when another was chosen.
+    @State private var primaryBlocked: String?
 
     private var actionLayout: AnyLayout {
         dynamicTypeSize.isAccessibilitySize
@@ -277,6 +292,22 @@ private struct DevicesPane: View {
             }
         }
         #endif
+        if library.visibleClients.count > 1 {
+            // The chat is one Home's assistant; the others are read in Переписки. Moving it waits for the chat to be free.
+            Section {
+                Picker(L("Чат ведёт"), selection: Binding(get: { library.primary.id }, set: { id in
+                    if let target = library.visibleClients.first(where: { $0.id == id }), !library.changePrimary(to: target) { primaryBlocked = library.primaryChangeBlocker }
+                })) {
+                    ForEach(library.visibleClients) { Text($0.displayName).tag($0.id) }
+                }
+                .accessibilityIdentifier("primaryHome")
+            } footer: {
+                Text(L("Чат — помощник этого устройства. Переписки остальных устройств читаются из чата."))
+            }
+            .alert(L("Чат занят"), isPresented: Binding(get: { primaryBlocked != nil }, set: { if !$0 { primaryBlocked = nil } })) {
+                Button(L("Понятно"), role: .cancel) {}
+            } message: { Text(primaryBlocked ?? "") }
+        }
         Section(L("Подключённые устройства")) {
             ForEach(library.visibleClients) { device in
                 DisclosureGroup(isExpanded: Binding(
@@ -638,7 +669,8 @@ struct AddDeviceConfirmation: View {
     private var continueButton: some View {
         Button {
             if connected {
-                if let candidate { library.select(candidate) }
+                // The first device becomes the chat; another one joins the readers unless the chat is free to move.
+                if let candidate { _ = library.select(candidate) }
                 dismiss()
                 #if os(macOS)
                 openWindow(id: "home")
