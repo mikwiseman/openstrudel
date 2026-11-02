@@ -26,7 +26,7 @@ function telegram(prompts: string[], recognizer: () => Response, response?: stri
   const adapter = new TelegramAdapter("123:test", store, messages); messages.telegram = adapter;
   store.linkTelegramChat({ chatId: "42", title: "Owner", allowedSenders: ["42"] });
   store.getOrCreateConversation({ channel: "telegram", externalId: "42", title: "Owner" });
-  store.linkTelegramChat({ chatId: "-100", title: "Team", allowedSenders: ["42"] }); store.connectTelegramGroup("-100");
+  store.linkTelegramChat({ chatId: "-100", title: "Team", allowedSenders: ["42", "7"] }); store.connectTelegramGroup("-100");
   const sent: Array<{ chat: string; text: string }> = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     if (url === "https://stt.example.test/v1/speech-to-text") return recognizer();
@@ -36,7 +36,7 @@ function telegram(prompts: string[], recognizer: () => Response, response?: stri
     return Response.json({ ok: true, result: { message_id: 99 } });
   }));
   // The owner writes in their own chat; a member, in the group.
-  const send = (chat: 42 | -100, media: object) => adapter.processUpdate({ update_id: 1, message: { message_id: 1, from: { id: chat > 0 ? 42 : 7 }, chat: { id: chat, type: chat > 0 ? "private" : "group" }, ...media } });
+  const send = (chat: 42 | -100, media: object) => adapter.processUpdate({ update_id: 1, message: { message_id: 1, from: { id: chat > 0 ? 42 : 7, is_bot: false }, chat: { id: chat, type: chat > 0 ? "private" : "group" }, ...media } });
   const request = (chat: 42 | -100) => store.findMessageByExternal("telegram", chat + ":1");
   return { store, messages, sent, send, request };
 }

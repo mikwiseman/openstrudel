@@ -1,10 +1,14 @@
 import SwiftUI
 
-/// The two places the app has: the chat and the clients. Everything else is read from the chat or set up in Settings.
-enum PrimaryTab: String, CaseIterable { case chat, clients }
+enum PrimaryTab: String, CaseIterable {
+    case chat, clients
+    #if os(iOS)
+    case insights, progress
+    #endif
+}
 
-/// The native surface is intentionally small: one chat with one composer, the business clients beside it,
-/// readers for every other conversation behind the chat, and settings for the connections a person can act on.
+/// One chat owns the composer. Mobile adds sourced insights and recorded progress;
+/// the Mac keeps its native Chat / Clients sidebar.
 struct OpenStrudelRootView: View {
     @EnvironmentObject private var library: DeviceLibrary
     @Environment(\.scenePhase) private var scenePhase
@@ -14,6 +18,11 @@ struct OpenStrudelRootView: View {
     @State private var titleBarHeight: CGFloat = 0
     #else
     @State private var showSettings = false
+    @State private var insightRoutes = NavigationPath()
+    @State private var progressRoutes = NavigationPath()
+    @StateObject private var activity = ActivityModel()
+    @StateObject private var limits = ActivityLimitsModel()
+    private var activityScope: String { client.id + ":" + (client.health?.homeId ?? "") + ":" + (client.health?.primaryId ?? "") }
     #endif
     @State private var tab = PrimaryTab.chat
     /// The readers opened over the chat, newest last. Back returns to the chat as it was.
@@ -35,6 +44,19 @@ struct OpenStrudelRootView: View {
     var body: some View {
         screens
         .onChange(of: client.id) { _, _ in readers.removeAll(); clientRoutes.removeAll() }
+        #if os(iOS)
+        .onChange(of: activityScope) { _, _ in
+            insightRoutes = NavigationPath(); progressRoutes = NavigationPath(); activity.clear(); limits.clear()
+        }
+        .onChange(of: activity.failure) { _, failure in
+            if failure == .ownerOnly || failure == .unsupported { insightRoutes = NavigationPath() }
+        }
+        // These reads belong to entering a place, not another background polling loop.
+        .task(id: tab.rawValue + ":" + activityScope) {
+            guard client.health != nil, tab == .insights || tab == .progress else { return }
+            await refreshActivity(includeLimits: tab == .progress)
+        }
+        #endif
         .task(id: "\(pollingPhase)-\(client.id)") {
             guard pollingPhase == .active else { return }
             #if os(macOS)
@@ -150,7 +172,8 @@ struct OpenStrudelRootView: View {
             #else
             TabView(selection: $tab) {
                 Tab(L("Чат"), systemImage: "bubble.left.and.text.bubble.right", value: PrimaryTab.chat) { chatStack }
-                Tab(L("Клиенты"), systemImage: "person.2", value: PrimaryTab.clients) { clientsStack }
+                Tab(L("Insights"), systemImage: "sparkle", value: PrimaryTab.insights) { insightsStack }
+                Tab(L("Progress"), systemImage: "checkmark.circle", value: PrimaryTab.progress) { progressStack }
             }
             .tabViewStyle(.sidebarAdaptable)
             .tabBarMinimizeBehavior(.onScrollDown)
@@ -178,18 +201,48 @@ struct OpenStrudelRootView: View {
         NavigationStack(path: $clientRoutes) {
             ClientsTab()
                 .navigationDestination(for: ClientRoute.self) { route in
-                    ClientDetail(client: route.client, source: route.source, discuss: discussClient)
+                    ClientDetail(client: route.client, source: route.source, discuss: discuss)
                 }
         }
         .id(client.id)
     }
 
-    private func discussClient(_ context: ChatContext) {
+    #if os(iOS)
+    private var insightsStack: some View {
+        NavigationStack(path: $insightRoutes) {
+            InsightsTab(model: activity, scope: activityScope, refresh: { await refreshActivity(includeLimits: false) }, openChat: { tab = .chat })
+                .navigationDestination(for: HomeActivity.Insight.self) { item in InsightDetail(item: item, discuss: discuss) }
+                .navigationDestination(for: ReaderRoute.self) { route in ReaderScreen(route: route, discuss: discuss) }
+        }
+        .id(client.id)
+    }
+
+    private var progressStack: some View {
+        NavigationStack(path: $progressRoutes) {
+            ProgressTab(model: activity, limits: limits, scope: activityScope, refresh: { await refreshActivity(includeLimits: true, force: true) }, openChat: { tab = .chat })
+                .navigationDestination(for: ProgressDestination.self) { _ in ClientsTab() }
+                .navigationDestination(for: ClientRoute.self) { route in ClientDetail(client: route.client, source: route.source, discuss: discuss) }
+        }
+        .id(client.id)
+    }
+
+    private func refreshActivity(includeLimits: Bool, force: Bool = false) async {
+        let source = client, scope = activityScope
+        await activity.load(scope: scope) { try await source.readActivity() }
+        guard includeLimits, !Task.isCancelled, scope == activityScope else { return }
+        await limits.load(scope: scope) { try await source.management("/v1/accounts?refresh=" + String(force)) }
+    }
+    #endif
+
+    private func discuss(_ context: ChatContext) {
         library.attach(context)
         // Discuss leaves this destination on either platform.
         clientRoutes.removeAll()
         // Back to the one composer, not to a reader left open over it.
         readers.removeAll()
+        #if os(iOS)
+        insightRoutes = NavigationPath(); progressRoutes = NavigationPath()
+        #endif
         tab = .chat
     }
 

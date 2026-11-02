@@ -7,6 +7,7 @@ import type { Attachment } from "./types.js";
 import { agentTransfer } from "./agent-move.js";
 import { scheduleTiming } from "./schedule-timing.js";
 import { errorProblem, failedRun, quietReply } from "./operations.js";
+import { privateSourceSchedule } from "./private-sources.js";
 
 export interface ScheduleInput {
   id?: string; conversationId: string; name: string; prompt: string; cron: string; timezone: string;
@@ -22,7 +23,7 @@ export class Scheduler {
   private readonly active = new Map<string, Promise<void>>();
   get hasActiveRuns() { return this.active.size > 0; }
   isRunning(conversationId: string) { return this.list(conversationId).some(s => this.active.has(s.id)); }
-  deliver?: (chatId: string, text: string, key: string, attachments?: Attachment[]) => Promise<void>;
+  deliver?: (chatId: string, text: string, key: string, attachments?: Attachment[], assertCurrent?: () => void) => Promise<void>;
   constructor(private readonly store: Store, private readonly messages: MessageService) {
     store.db.exec(`CREATE TABLE IF NOT EXISTS schedules (
       id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations(id),
@@ -36,6 +37,10 @@ export class Scheduler {
     // Existing schedules retain their previously agreed delivery. New ones are app-only.
     if (!columns.some(c => c.name === "delivery")) store.db.exec("ALTER TABLE schedules ADD COLUMN delivery TEXT NOT NULL DEFAULT 'bound'");
     if (!columns.some(c => c.name === "backup_of")) store.db.exec("ALTER TABLE schedules ADD COLUMN backup_of TEXT REFERENCES schedules(id)");
+    const runColumns = store.db.prepare("PRAGMA table_info(schedule_runs)").all() as Row[];
+    // Keep the approval on the existing durable run receipt: deleting a grant
+    // must not turn a pending private edition into an ordinary delivery on restart.
+    if (!runColumns.some(c => c.name === "private_source_fingerprint")) store.db.exec("ALTER TABLE schedule_runs ADD COLUMN private_source_fingerprint TEXT");
   }
   save(input: ScheduleInput, now = new Date(), moveFrom?: string): Schedule {
     if (!this.store.getConversation(input.conversationId)) throw new Error("Чат не найден");
@@ -134,7 +139,8 @@ export class Scheduler {
       this.store.db.exec("BEGIN IMMEDIATE");
       let claimed = false;
       try {
-        claimed = Number(this.store.db.prepare("INSERT OR IGNORE INTO schedule_runs(id,schedule_id,conversation_id,scheduled_for,status,created_at) VALUES(?,?,?,?,'running',?)").run(runId,schedule.id,schedule.conversationId,scheduledFor,now.toISOString()).changes) > 0;
+        const privateSources = this.store.getSetting("private_sources.schedule." + schedule.id);
+        claimed = Number(this.store.db.prepare("INSERT OR IGNORE INTO schedule_runs(id,schedule_id,conversation_id,scheduled_for,status,created_at,private_source_fingerprint) VALUES(?,?,?,?,'running',?,?)").run(runId,schedule.id,schedule.conversationId,scheduledFor,now.toISOString(),privateSources).changes) > 0;
         // Disarm a one-time request in the same transaction as its unique receipt.
         // A restart or uncertain delivery must never execute it again.
         this.store.db.prepare("UPDATE schedules SET next_run_at=?,enabled=? WHERE id=?").run(next,timing.once ? 0 : 1,schedule.id);
@@ -160,9 +166,13 @@ export class Scheduler {
           this.store.db.prepare("UPDATE schedule_runs SET status='skipped' WHERE id=?").run(runId); return;
         }
       }
+      const assertPrivateSources = this.privateSourceDeliveryGuard(runId, schedule.conversationId);
+      assertPrivateSources?.();
       const destination = this.destination(schedule.conversationId, schedule.telegramChatId, schedule.delivery);
       const deliveryInstructions = destination
-        ? `Return the completed edition here; the application handles delivery to Telegram chat ${destination}. Only if the saved request explicitly requires separate messages, use send_telegram_message for that destination and return NO_REPLY to avoid an extra automatic post. Check each delivery receipt; never repeat an unknown or partial delivery. Do not send to another chat.`
+        ? assertPrivateSources
+          ? "Return the completed private edition here. The application alone handles its approved delivery and rechecks private-source access before each part. Do not call send_telegram_message or send it through another service."
+          : `Return the completed edition here; the application handles delivery to Telegram chat ${destination}. Only if the saved request explicitly requires separate messages, use send_telegram_message for that destination and return NO_REPLY to avoid an extra automatic post. Check each delivery receipt; never repeat an unknown or partial delivery. Do not send to another chat.`
         : "Return the completed edition here; it stays in the app. Do not send it to Telegram.";
       const result = await this.messages.handle({ channel:"api",conversationId:schedule.conversationId,externalId:`schedule:${runId}`,scheduled:true,scheduleTelegramChatId:destination,
         text:`Scheduled request: ${schedule.name}\nScheduled for: ${scheduledFor} (${schedule.timezone}). Current time: ${new Date().toISOString()}.\n${schedule.prompt}\n${deliveryInstructions} Do not create another schedule. Follow the saved request's rules for a quiet run: NO_REPLY when there is nothing to publish. If the saved work could not be done, return only "FAILED: " and one plain line why; it goes to the owner, never to the chat. Never invent facts or sources.` });
@@ -183,6 +193,8 @@ export class Scheduler {
         this.store.db.prepare("UPDATE schedule_runs SET status='failed',error=? WHERE id=?").run(reason,runId);
         await this.messages.reportProblem(conversationId,messageId,"execution",undefined,reason); return;
       }
+      const assertPrivateSources = this.privateSourceDeliveryGuard(runId, conversationId);
+      assertPrivateSources?.();
       const destination = this.destination(conversationId, chatId, delivery);
       if (destination) {
         // Includes ready editions recovered after a policy was enabled.
@@ -191,7 +203,7 @@ export class Scheduler {
         const profileId=this.store.getConversation(conversationId)?.profileId;
         const name=profileId ? this.store.getProfile(profileId)?.name : null;
         deliveryAttempted = true;
-        await this.deliver(destination,name ? `**${name.replace(/[*_`]/g,"")}**\n\n${reply.text}` : reply.text,`schedule:${runId}`,JSON.parse(reply.attachments_json ?? "[]") as Attachment[]);
+        await this.deliver(destination,name ? `**${name.replace(/[*_`]/g,"")}**\n\n${reply.text}` : reply.text,`schedule:${runId}`,JSON.parse(reply.attachments_json ?? "[]") as Attachment[],assertPrivateSources);
       }
       this.store.db.prepare("UPDATE schedule_runs SET status='completed',error=NULL WHERE id=?").run(runId);
     } catch (error) {
@@ -200,6 +212,18 @@ export class Scheduler {
         await this.messages.reportProblem(conversationId,messageId,"delivery");
       } else await this.fail(runId,error);
     }
+  }
+  private privateSourceDeliveryGuard(runId: string, conversationId: string): (() => void) | undefined {
+    const run = this.store.db.prepare("SELECT schedule_id,private_source_fingerprint FROM schedule_runs WHERE id=? AND conversation_id=?").get(runId,conversationId);
+    if (run?.private_source_fingerprint == null) return;
+    const expected = run.private_source_fingerprint;
+    return () => {
+      const retained = this.store.db.prepare("SELECT schedule_id,status,private_source_fingerprint FROM schedule_runs WHERE id=? AND conversation_id=?").get(runId,conversationId);
+      if (typeof expected !== "string" || !/^[a-f0-9]{64}$/.test(expected) || retained?.private_source_fingerprint !== expected
+        || retained.schedule_id !== run.schedule_id || !["running","ready"].includes(String(retained.status))) throw new Error("Private-source approval changed. Further automatic delivery is stopped.");
+      const current = privateSourceSchedule(this.store,true,conversationId,String(run.schedule_id));
+      if (!current.enabled || current.fingerprint !== expected) throw new Error("Private-source approval changed. Further automatic delivery is stopped.");
+    };
   }
   private destination(conversationId: string, chatId?: string | null, delivery = "app"): string | null {
     if (delivery === "app") return null;

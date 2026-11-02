@@ -248,3 +248,17 @@ it("does not send a reply after the bot leaves the group mid-turn and shows it a
   expect(sent).toEqual([]);
   expect(feed().at(-1)).toMatchObject({ text: "Late answer", delivery: { state: "not_sent", error: "Подключение этого чата изменилось. Ответ не отправлен в Telegram." } });
 });
+
+it("keeps a durable not-sent receipt when the sender is revoked before delivery", async () => {
+  let finish!: () => void;
+  const { store, groups, adapter, update, feed, sent, prompts } = adapterFixture(() => new Promise(resolve => { finish = () => resolve("Private result"); }));
+  const turn = adapter.processUpdate(update(1, "Long task"));
+  await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+  store.db.prepare("UPDATE telegram_chats SET allowed_senders_json='[]' WHERE chat_id=?").run(groups[0]!.chatId);
+  finish(); await turn;
+  expect(sent).toEqual([]);
+  expect(feed().at(-1)).toMatchObject({ text: "Private result", delivery: { state: "not_sent", error: "Право отвечать этому участнику отозвано." } });
+  await adapter.processUpdate(update(1, "Long task"));
+  expect(prompts).toHaveLength(1);
+  expect(store.db.prepare("SELECT status FROM telegram_outbox").all()).toEqual([{ status: "not_sent" }]);
+});

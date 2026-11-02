@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServer } from "node:http";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -39,6 +39,95 @@ async function eventually(f: () => Promise<void> | void) {
 }
 
 describe("user-owned primary Home", () => {
+  it("serves activity only from the selected Home and denies a member before returning private results", async () => {
+    const primary = await node("Primary"), worker = await node("Active Home");
+    const store = worker.runtime.store, conversationId = store.primaryConversation().id;
+    store.setSetting("owner.timezone", "Europe/Moscow");
+    const input = store.addMessage({ conversationId, channel: "api", direction: "inbound", text: "Review the source" });
+    const output = store.addMessage({ conversationId, channel: "api", direction: "outbound", replyToId: input.id, text: "Review completed" });
+    store.db.prepare("UPDATE messages SET status='completed' WHERE id IN (?,?)").run(input.id, output.id);
+    await connect(primary, worker);
+    const path = "/v1/activity";
+    const member = await worker.runtime.api.homeLink.execute({ id: randomUUID(), request: { method: "GET", path, owner: false } });
+    expect(member.status).toBe(403);
+    const remote = await primary.api(path + "?deviceId=" + worker.home.state.nodeId);
+    expect(remote).toMatchObject({ status: 200, value: { period: { timeZone: "Europe/Moscow" }, progress: { completedRequests: 1, activeDays: 1 } } });
+    expect((await primary.api(path)).value.progress.completedRequests).toBe(0);
+    expect((await primary.api(path + "?deviceId=unknown-home")).status).not.toBe(200);
+  }, 20_000);
+
+  it("keeps private source accounts and schedule consent on their selected Home with edit invalidation", async () => {
+    const primary = await node("Primary"), worker = await node("Private Home");
+    const conversation = worker.runtime.store.primaryConversation();
+    const schedule = worker.runtime.scheduler.save({ conversationId: conversation.id, name: "Private brief", prompt: "Read and return here", cron: "0 7 * * *", timezone: "Europe/Moscow", delivery: "app" });
+    await connect(primary, worker);
+    const suffix = "?deviceId=" + worker.home.state.nodeId, settings = "/v1/settings/unipile";
+    const account = { accountId: "acc_test", provider: "linkedin", providerUserId: "test-owner" };
+    for (const path of [settings, "/v1/private-sources/accounts", "/v1/private-sources/read"]) {
+      const member = await worker.runtime.api.homeLink.execute({ id: randomUUID(), request: { method: path.endsWith("read") ? "POST" : "GET", path, owner: false } });
+      expect(member.status).toBe(403);
+    }
+    expect((await primary.api(settings + suffix, "POST", { accounts: [account], byOwner: true })).status).toBe(400);
+    expect((await primary.api(settings + suffix, "POST", { accounts: [account] })).value).toEqual({ configured: true, accounts: [account] });
+    expect((await primary.api(settings)).value).toEqual({ configured: false, accounts: [] });
+    const grant = `/v1/conversations/${conversation.id}/schedules/${schedule.id}/private-sources`;
+    const state = await primary.api(grant + suffix);
+    expect(state.status).toBe(200); expect(state.value.enabled).toBe(false);
+    const memberGrant = await worker.runtime.api.homeLink.execute({ id: randomUUID(), request: { method: "POST", path: grant, owner: false, body: requestJSON({ ...state.value, enabled: true }) } });
+    expect(memberGrant.status).toBe(403);
+    expect((await primary.api(grant + suffix, "POST", { ...state.value, enabled: true })).value.enabled).toBe(true);
+    worker.runtime.store.db.prepare("UPDATE schedules SET prompt=? WHERE id=?").run("A changed request", schedule.id);
+    expect((await primary.api(grant + suffix)).value.enabled).toBe(false);
+    expect((await primary.api(grant + suffix, "POST", { ...state.value, enabled: true })).status).toBe(409);
+  }, 30_000);
+
+  it("registers developer projects on the selected Home only and never trusts owner or employee fields in the body", async () => {
+    const primary = await node("Primary"), worker = await node("Development Home");
+    await connect(primary, worker);
+    const sourceRoot = realpathSync(mkdtempSync(join(tmpdir(), "openstrudel-project-api-"))); roots.push(sourceRoot);
+    const checkout = join(sourceRoot, "source"); mkdirSync(checkout);
+    const git = (...args: string[]) => execFileSync("git", ["-C", checkout, "-c", "core.hooksPath=/dev/null", ...args], { stdio: "ignore" });
+    git("init", "-b", "codex/fixture"); git("config", "user.name", "Fixture"); git("config", "user.email", "fixture@example.invalid");
+    writeFileSync(join(checkout, "README.md"), "Fixture\n"); git("add", "README.md"); git("commit", "-m", "Fixture");
+    const path = "/v1/settings/projects", remote = "?deviceId=" + worker.home.state.nodeId;
+    const body = { revision: 0, id: null, name: "Fixture", path: checkout, enabled: true };
+    for (const method of ["GET", "POST"]) {
+      const member = await worker.runtime.api.homeLink.execute({ id: randomUUID(), request: { method, path, owner: false, ...(method === "POST" ? { body: requestJSON({ ...body, byOwner: true }) } : {}) } });
+      expect(member.status).toBe(403);
+    }
+    const saved = await primary.api(path + remote, "POST", body);
+    expect(saved.status).toBe(200);
+    expect((await primary.api(path + remote)).value).toMatchObject({ revision: 1, projects: [{ name: "Fixture", path: checkout }] });
+    expect(primary.runtime.messages.projects.read(true).projects).toEqual([]);
+    const binding = "/v1/profiles/main/project";
+    expect((await primary.api(binding + remote, "POST", { revision: 1, projectId: saved.value.project.id, employeeId: "forged" })).status).toBe(400);
+    const linked = await primary.api(binding + remote, "POST", { revision: 1, projectId: saved.value.project.id });
+    expect(linked).toMatchObject({ status: 200, value: { saved: true, employeeId: "main", revision: 2 } });
+    expect((await primary.api(binding + remote, "POST", { revision: 1, projectId: null })).status).toBe(409);
+    const member = await worker.runtime.api.homeLink.execute({ id: randomUUID(), request: { method: "POST", path: binding, owner: false, body: requestJSON({ revision: 2, projectId: null }) } });
+    expect(member.status).toBe(403);
+    expect((await primary.api(binding + remote, "POST", { revision: 2, projectId: null })).value).toMatchObject({ revision: 3, projectId: null });
+  }, 20_000);
+
+  it("lets the owner choose Telegram group senders on a connected Home and denies member changes", async () => {
+    const primary = await node("Primary"), worker = await node("Bot Home");
+    await connect(primary,worker);
+    worker.runtime.store.linkTelegramChat({chatId:"-100",title:"Client group",allowedSenders:["42"]});
+    worker.runtime.store.connectTelegramGroup("-100");
+    const original = worker.runtime.store.getTelegramChat("-100")!;
+    const path = "/v1/integrations/telegram/chats/-100";
+    const request = {replyAccess:"approved",allowedSenders:["42","77"]};
+    const member = await worker.runtime.api.homeLink.execute({id:randomUUID(),request:{method:"PATCH",path,owner:false,body:requestJSON(request)}});
+    expect(member.status).toBe(403);
+    expect(worker.runtime.store.getTelegramChat("-100")).toEqual(original);
+    const result = await primary.api(path + "?deviceId=" + worker.home.state.nodeId,"PATCH",request);
+    expect(result.status).toBe(200);
+    expect(worker.runtime.store.getTelegramChat("-100")).toMatchObject({allowedSenders:["42","77"],access:"approved",conversationId:original.conversationId});
+    expect(primary.runtime.store.getTelegramChat("-100")).toBeNull();
+    expect((await primary.api(path + "?deviceId=" + worker.home.state.nodeId,"PATCH",{replyAccess:"members"})).status).toBe(200);
+    expect(worker.runtime.store.getTelegramChat("-100")?.access).toBe("members");
+  });
+
   it("keeps diagnostics owner-only, persists the level on the selected device and serves no secrets", async () => {
     const primary = await node("Primary"), worker = await node("Worker");
     await connect(primary, worker);

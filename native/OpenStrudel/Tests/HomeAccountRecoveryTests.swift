@@ -4,6 +4,43 @@ import Testing
 
 @Suite(.serialized)
 @MainActor struct HomeAccountRecoveryTests {
+    @Test func projectRefusalsClearAccessWithoutCallingAMissingEmployeeAnOldHome() async throws {
+        let state = AccountFixtureState()
+        var status = 404
+        state.customResponse = { request in
+            guard request.url?.path == "/v1/settings/projects" else { return nil }
+            return (status, Data(#"{"error":"Employee not found."}"#.utf8))
+        }
+        let (client, session) = makeClient(state)
+        defer { session.invalidateAndCancel() }
+        do { let _: DevelopmentProjects = try await client.projectSettings("/v1/settings/projects"); Issue.record("Old Home must refuse") }
+        catch { #expect((error as? ProjectSettingsError) == .unsupported) }
+        do { let _: ProjectRegistration = try await client.projectSettings("/v1/settings/projects", method: "POST", payload: [:]); Issue.record("Missing resource must refuse") }
+        catch { #expect(!(error is ProjectSettingsError)) }
+        status = 403
+        do { let _: ProjectRegistration = try await client.projectSettings("/v1/settings/projects", method: "POST", payload: [:]); Issue.record("Non-owner must refuse") }
+        catch { #expect((error as? ProjectSettingsError) == .ownerOnly) }
+    }
+
+    @Test func activitySeparatesOldHomesAndAccessRefusalEvenForNonJSONResponses() async throws {
+        let state = AccountFixtureState()
+        var status = 404
+        state.customResponse = { request in
+            guard request.url?.path == "/v1/activity" else { return nil }
+            return (status, Data("<html>Unavailable</html>".utf8))
+        }
+        let (client, session) = makeClient(state)
+        defer { session.invalidateAndCancel() }
+        for (code, refusal) in [(404, ActivityReadError.unsupported), (403, .ownerOnly)] {
+            status = code
+            do { _ = try await client.readActivity(); Issue.record("A refused activity read must throw") }
+            catch { #expect((error as? ActivityReadError) == refusal) }
+        }
+        status = 401
+        do { _ = try await client.readActivity(); Issue.record("An expired owner connection must throw") }
+        catch { if case HomeClientError.authenticationExpired = error {} else { Issue.record("Expected authentication expiry, got \(error)") } }
+    }
+
     @Test func voiceUploadKeepsTheConversationHostCapturedBeforeRecording() async throws {
         let state = AccountFixtureState()
         var uploadedQuery: String?

@@ -43,22 +43,46 @@ export function extensionConfig(home: string): Record<string, any> { return read
 
 /** The owner's choice to use the main chat's services in every chat on this Home. */
 const allChatsPath = (root: string) => resolve(root, ".data/extensions/all-chats.json");
-export function sharedWithAllChats(root: string): boolean {
-  try { return JSON.parse(readFileSync(allChatsPath(root), "utf8")).enabled === true; } catch { return false; }
+const privateServerNames = (value: unknown): string[] => {
+  if (!Array.isArray(value) || value.length > 100) throw new HomeError("Проверьте список личных сервисов.");
+  return [...new Set(value.map(slug))];
+};
+function sharingConfig(root: string): { enabled: boolean; ownerOnlyServers: string[]; [key: string]: unknown } {
+  const path = allChatsPath(root);
+  if (!existsSync(path)) return { enabled: false, ownerOnlyServers: [] };
+  try {
+    const saved = JSON.parse(readFileSync(path, "utf8"));
+    if (!saved || Array.isArray(saved) || typeof saved !== "object" || typeof saved.enabled !== "boolean") throw new Error();
+    return { ...saved, ownerOnlyServers: privateServerNames(saved.ownerOnlyServers ?? []) };
+  } catch { throw new HomeError("Настройки общего доступа к сервисам повреждены. Исправьте их перед изменением.", 409); }
 }
-export function shareWithAllChats(root: string, enabled: boolean) { atomicText(allChatsPath(root), JSON.stringify({ enabled }) + "\n"); }
+export function sharedWithAllChats(root: string): boolean {
+  try { return sharingConfig(root).enabled; } catch { return false; }
+}
+/** These owner connectors never flow into another audience, including future groups. */
+export function ownerOnlyServers(root: string): string[] { return sharingConfig(root).ownerOnlyServers; }
+export function shareWithAllChats(root: string, enabled: boolean, ownerOnly?: string[]) {
+  if (typeof enabled !== "boolean") throw new HomeError("Укажите, делиться ли сервисами.");
+  const saved = sharingConfig(root);
+  atomicText(allChatsPath(root), JSON.stringify({ ...saved, enabled, ownerOnlyServers: ownerOnly === undefined ? saved.ownerOnlyServers : privateServerNames(ownerOnly) }) + "\n");
+}
 const endpoint = (url: unknown) => { try { const u = new URL(String(url)); return u.origin + u.pathname.replace(/\/+$/, ""); } catch { return undefined; } };
 /** What another chat receives from the owner's main chat. The chat's own services,
  * and a group's verified-sender service for the same address, take precedence.
  * A service signed in through OAuth keeps its tokens in one Codex home, and
  * Computer Use belongs to one machine, so both stay where they were connected. */
 export function inheritedIntegrations(root: string, context: string, own: { servers: Record<string, any>; apps?: Record<string, any>; telegram?: Record<string, { url: string }> }): { servers: Record<string, any>; apps: string[] } {
-  if (context === "personal" || !sharedWithAllChats(root)) return { servers: {}, apps: [] };
+  if (context === "personal") return { servers: {}, apps: [] };
+  // A corrupt policy must never turn a private connector into an inherited one.
+  let sharing: ReturnType<typeof sharingConfig>;
+  try { sharing = sharingConfig(root); } catch { return { servers: {}, apps: [] }; }
+  if (!sharing.enabled) return { servers: {}, apps: [] };
+  const privateServers = new Set(sharing.ownerOnlyServers);
   const owner = readToml(resolve(root, ".data/extensions/personal/config.toml"));
   // One service per address: the chat's own or verified-sender service replaces the owner's key.
   const taken = new Set([...Object.values(own.servers), ...Object.values(own.telegram ?? {})].map((s: any) => endpoint(s?.url)).filter(Boolean));
   const servers = Object.entries({ ...owner.mcp_servers, ...readToml(resolve(root, ".data/connections/personal.toml")).mcp_servers }).filter(([name, s]: [string, any]) =>
-    !(name in own.servers) && !(name in (own.telegram ?? {})) && name !== "cua_repl" && s?.enabled !== false
+    !privateServers.has(name) && !(name in own.servers) && !(name in (own.telegram ?? {})) && name !== "cua_repl" && s?.enabled !== false
     && Boolean(s?.command || s?.http_headers || s?.env_http_headers || s?.bearer_token_env_var) && !(s?.url && taken.has(endpoint(s.url))));
   const apps = Object.entries(owner.apps ?? {}).filter(([id, value]: [string, any]) => id !== "_default" && /^[a-zA-Z0-9_-]+$/.test(id) && value?.enabled === true && own.apps?.[id]?.enabled !== false).map(([id]) => id);
   return { servers: Object.fromEntries(servers), apps };
@@ -261,14 +285,32 @@ export class CodexExtensions {
     const name = slug(input.name);
     if (this.options.reservedServers?.includes(name)) throw new HomeError("Это подключение управляется настройками устройства. Выберите другое название.");
     const value: Record<string, any> = { enabled:true, default_tools_approval_mode:"prompt" };
+    if (input.disabled_tools !== undefined) {
+      if (!Array.isArray(input.disabled_tools) || input.disabled_tools.length > 100 || input.disabled_tools.some((name: unknown) => typeof name !== "string" || !/^[A-Za-z0-9_.:/-]{1,128}$/.test(name))) throw new HomeError("Проверьте список отключённых инструментов.");
+      value.disabled_tools = [...new Set(input.disabled_tools)];
+    }
     if (input.url) {
       let url: URL; try { url = new URL(input.url); } catch { throw new HomeError("Введите полный адрес сервиса, начиная с https://."); }
       if (url.username || url.password) throw new HomeError("Уберите логин и пароль из адреса. Ключ сервиса можно указать в отдельном поле.");
       if (url.hash) throw new HomeError("Уберите из адреса знак # и всё после него.");
       if (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost","127.0.0.1","[::1]"].includes(url.hostname))) throw new HomeError("Вставьте адрес сервиса, начинающийся с https://.");
       value.url = url.toString();
-      if (input.token) { if (typeof input.token !== "string" || /[\r\n]/.test(input.token) || input.token.length > 16000) throw new HomeError("Проверьте ключ сервиса."); value.http_headers={Authorization:"Bearer "+input.token}; }
+      if (input.http_headers !== undefined) {
+        const headers = input.http_headers;
+        if (!headers || typeof headers !== "object" || Array.isArray(headers) || Object.keys(headers).length > 32) throw new HomeError("Проверьте заголовки сервиса.");
+        const seen = new Set<string>();
+        for (const [key, header] of Object.entries(headers)) {
+          const lower = key.toLowerCase();
+          if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/.test(key) || /^(?:host|content-length|connection|transfer-encoding|upgrade|proxy-authorization|proxy-authenticate|te|trailer)$|^(?:mcp-|x-hermes-)/i.test(key)
+            || seen.has(lower) || typeof header !== "string" || !header || header.length > 16000 || /[\x00-\x1f\x7f]/.test(header)) throw new HomeError("Проверьте заголовки сервиса.");
+          seen.add(lower);
+        }
+        if (input.token && seen.has("authorization")) throw new HomeError("Укажите ключ или заголовок Authorization, не оба сразу.");
+        value.http_headers = { ...headers };
+      }
+      if (input.token) { if (typeof input.token !== "string" || /[\r\n]/.test(input.token) || input.token.length > 16000) throw new HomeError("Проверьте ключ сервиса."); value.http_headers={...value.http_headers,Authorization:"Bearer "+input.token}; }
     } else {
+      if (input.http_headers !== undefined) throw new HomeError("HTTP-заголовки требуют адреса сервиса.");
       if (typeof input.command !== "string" || !input.command.trim() || input.command.length > 1024 || /[\r\n\0]/.test(input.command)) throw new HomeError("Укажите адрес MCP или исполняемую программу.");
       if (!Array.isArray(input.args ?? []) || (input.args ?? []).some((a:any)=>typeof a!=="string" || a.length>8000)) throw new HomeError("Аргументы программы должны быть списком строк.");
       value.command=input.command; value.args=input.args ?? [];

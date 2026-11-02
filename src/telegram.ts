@@ -261,13 +261,25 @@ export class TelegramAdapter {
   bindChat(chatId: string, profileId: string | null, origin?: { conversationId: string; messageId: string }): void {
     const request = this.controlRequest(chatId,origin);
     if (this.activeChats.has(chatId) && !request) throw new Error("В этом чате ещё идёт ответ. Дождитесь его и повторите.");
-    const previous = this.store.getTelegramChat(chatId);
     this.store.bindTelegramChat(chatId, profileId);
     // Only groups pause; a private chat always answers.
     if (profileId || Number(chatId) > 0) this.store.deleteSetting("telegram.paused." + chatId);
     else this.store.setSetting("telegram.paused." + chatId, "true");
-    if (Number(chatId) < 0 && profileId && !previous?.profileId && !previous?.conversationId && !protectScopedTelegramTransport(this.store, chatId)) this.store.db.prepare("UPDATE telegram_chats SET access='members',replies='instructions' WHERE chat_id=?").run(chatId);
     if (request) this.controlReplies.set(request,profileId ? `Назначен сотрудник: ${this.store.getProfile(profileId)!.name}.` : "Бот в этой группе приостановлен.");
+  }
+
+  /** Reply admission only. This grants no Home administration or private services. */
+  setGroupReplyAccess(chatId: string, access: unknown, allowedSenders: unknown, origin?: { conversationId: string; messageId: string }): void {
+    const chat = this.store.getTelegramChat(chatId);
+    if (!chat || Number(chatId) >= 0 || isProtectedTelegramAudience(this.store,chatId)) throw new Error("Выберите обычную подключённую группу этого Home.");
+    if (access !== "approved" && access !== "members") throw new Error("Выберите, кому отвечает бот: выбранным людям или всем участникам.");
+    if (access === "approved" && (!Array.isArray(allowedSenders) || allowedSenders.length > 100 || allowedSenders.some(id => typeof id !== "string" || !/^[1-9]\d{0,15}$/.test(id) || !Number.isSafeInteger(Number(id))))) throw new Error("Укажите Telegram ID выбранных людей. Имена и @username не заменяют ID.");
+    if (access === "members" && allowedSenders !== undefined) throw new Error("Для всех участников отдельный список не нужен.");
+    const request = this.controlRequest(chatId,origin);
+    if (this.activeChats.has(chatId) && !request) throw new Error("Дождитесь текущего ответа и повторите.");
+    this.store.db.prepare("UPDATE telegram_chats SET access=?,allowed_senders_json=? WHERE chat_id=?")
+      .run(access,JSON.stringify(access === "approved" ? [...new Set(allowedSenders as string[])] : chat.allowedSenders),chatId);
+    if (request) this.controlReplies.set(request,access === "members" ? "Бот отвечает всем участникам этой группы." : "Бот отвечает только выбранным людям в этой группе.");
   }
 
   setGroupEnabled(chatId: string, enabled: boolean, origin?: { conversationId: string; messageId: string }): void {
@@ -390,7 +402,7 @@ export class TelegramAdapter {
       if(row.status!=="pending") throw new Error("Доставка требует проверки в Telegram перед повтором");
       this.store.db.prepare("UPDATE telegram_outbox SET status='sending' WHERE key=?").run(key);
       try {
-        const sent=await this.call<{message_id:number}>("sendMessage",JSON.parse(payload));
+        const sent=await this.call<{message_id:number}>("sendMessage",JSON.parse(payload),undefined,undefined,options.assertCurrent);
         this.store.db.prepare("UPDATE telegram_outbox SET status='delivered',message_id=? WHERE key=?").run(String(sent.message_id),key);
       } catch (error) {
         this.store.db.prepare("UPDATE telegram_outbox SET status=?,error=? WHERE key=?").run(...(refused(error) ? ["not_sent", REFUSED] : ["unknown", "Ответ Telegram не подтверждён; автоматический повтор остановлен"]), key);
@@ -412,7 +424,7 @@ export class TelegramAdapter {
     for (let first = 0; first < photos.length; first += 10) {
       const batch = photos.slice(first, first + 10), captioned = Boolean(caption && !first);
       assertCurrent?.();
-      try { await this.sendPhotos(String(chatId), batch, deliveryKey, first, captioned ? { caption: caption!, replyTo: replyToMessageId } : {}); }
+      try { await this.sendPhotos(String(chatId), batch, deliveryKey, first, { ...(captioned ? { caption: caption!, replyTo: replyToMessageId } : {}), assertCurrent }); }
       catch (error) {
         // Telegram refused the photos, so nothing went out: the answer still arrives as text and files.
         if (!refused(error)) throw error;
@@ -500,7 +512,7 @@ export class TelegramAdapter {
   }
 
   /** Up to ten photos in one request: sendPhoto for one, sendMediaGroup for an album. Each photo keeps an album receipt. */
-  private async sendPhotos(chatId:string, files:Attachment[], deliveryKey:string, first:number, options:{silent?:boolean;caption?:TelegramText;replyTo?:number}):Promise<void> {
+  private async sendPhotos(chatId:string, files:Attachment[], deliveryKey:string, first:number, options:{silent?:boolean;caption?:TelegramText;replyTo?:number;assertCurrent?:()=>void}):Promise<void> {
     const single=files.length===1, form=new FormData();form.set("chat_id",chatId);
     if (options.silent) form.set("disable_notification","true");
     const reply=options.replyTo ? {message_id:options.replyTo,allow_sending_without_reply:true} : undefined;
@@ -514,6 +526,7 @@ export class TelegramAdapter {
       if (!stored || stored.conversationId!==file.conversationId) throw new Error("Файл ответа не найден");
       form.set(single ? "photo" : `photo${first+index}`,new Blob([await readFile(stored.path)],{type:file.mimeType}),file.name);
     }
+    options.assertCurrent?.();
     const rows=files.map((file,index)=>({key:`${chatId}:${deliveryKey}:album:${first+index}`,
       payload:JSON.stringify({chat_id:chatId,media,fileIds:files.map(f=>f.id),fileId:file.id,...(options.silent?{disable_notification:true}:{}),...(reply?{reply_parameters:reply}:{})})}));
     // Reserve every photo together; a lost response must not replay the album.
@@ -528,7 +541,7 @@ export class TelegramAdapter {
       this.store.db.exec("COMMIT");
     } catch(error) {this.store.db.exec("ROLLBACK");throw error;}
     try {
-      const result=await this.call<unknown>(single?"sendPhoto":"sendMediaGroup",form);
+      const result=await this.call<unknown>(single?"sendPhoto":"sendMediaGroup",form,undefined,undefined,options.assertCurrent);
       const sent=(single?[result]:result) as Array<{message_id:number;media_group_id?:string}>;
       if (!Array.isArray(sent) || sent.length!==files.length || !single && !sent[0]?.media_group_id
         || sent.some(item=>!Number.isSafeInteger(item?.message_id) || item.message_id<=0 || item.media_group_id!==sent[0]!.media_group_id)
@@ -565,9 +578,10 @@ export class TelegramAdapter {
         // those two sends, not a known Telegram limit. A larger GIF goes as our own MP4 when this Home has ffmpeg.
         const video=animation && stored.size > 8*1024*1024 ? await this.convertGif(stored.path) : null;
         form.set(animation?"animation":audio?"audio":"document",new Blob([video ?? await readFile(stored.path)],{type:video?"video/mp4":file.mimeType}),video?file.name.replace(/\.gif$/i,"")+".mp4":file.name);
+        options.assertCurrent?.();
         this.store.db.prepare("UPDATE telegram_outbox SET status='sending' WHERE key=?").run(key);
         attempted=true;
-        const sent = await this.call<{message_id:number}&Record<string,unknown>>(animation?"sendAnimation":audio?"sendAudio":"sendDocument",form);
+        const sent = await this.call<{message_id:number}&Record<string,unknown>>(animation?"sendAnimation":audio?"sendAudio":"sendDocument",form,undefined,undefined,options.assertCurrent);
         // The Bot API server writes an animation as both animation and document, and a file it kept plain as document only
         // (tdlib/telegram-bot-api, Client::JsonMessage::store), so animation is checked first.
         const kind=["animation","video","audio","voice","photo","sticker","document"].find(field=>sent[field]) ?? null;
@@ -725,6 +739,7 @@ export class TelegramAdapter {
     const externalId = chatId + ":" + String(message.message_id), author = [message.from?.first_name,message.from?.last_name].filter(Boolean).join(" ") || undefined;
     let received = false;
     const prepared=(this.preparations.get(chatId) ?? Promise.resolve({text:""})).catch(()=>({text:""})).then(async()=>{
+      if (!this.authorizedSender(chatId,message.from?.id)) return {text:""};
       const media=message.voice ?? message.audio ?? message.video_note ?? message.video ?? message.document ?? message.photo?.at(-1);
       if(!media) return {text};
       const speech = Boolean(message.voice || message.audio || message.video_note || message.video || message.document && isSpeechFile(message.document.file_name ?? "", message.document.mime_type));
@@ -755,7 +770,7 @@ export class TelegramAdapter {
       return {text,uploads:[{id,name:message.video ? message.video.file_name ?? "video.mp4" : message.document?.file_name ?? "photo.jpg",mimeType:message.video ? message.video.mime_type ?? "video/mp4" : message.document ? message.document.mime_type ?? "application/octet-stream" : "image/jpeg",contentBase64:Buffer.from(bytes).toString("base64")}]};
     }).then(async input => {
       const current = this.store.getTelegramChat(chatId);
-      if (input.transcript && !contextOnly && current && current.enabled !== false && current.profileId === binding?.profileId && current.conversationId === binding?.conversationId) {
+      if (input.transcript && !contextOnly && this.authorizedSender(chatId,message.from?.id) && current && current.enabled !== false && current.profileId === binding?.profileId && current.conversationId === binding?.conversationId) {
         // Keep the preview inside the existing preparation FIFO: later text
         // must not overtake its voice message while Telegram sends the preview.
         await this.sendMessage(chatId, "📝 " + input.transcript, "transcript:" + message.message_id)
@@ -766,6 +781,7 @@ export class TelegramAdapter {
     this.preparations.set(chatId,prepared);
     try {
     const input = await prepared;text=input.text;received=true;
+    if (!this.authorizedSender(chatId,message.from?.id)) { this.store.markTelegramUpdate(update.update_id); return; }
     // A protected message without words or speech carries nothing a restricted turn could use.
     if (protectedAudience && !text.trim() && !input.uploads?.length) { this.store.markTelegramUpdate(update.update_id); return; }
     const replyToAssistant = Boolean(replyConversation || replyAuthor && (replyAuthor.id === this.bot?.id || replyAuthor.is_bot && replyAuthor.username?.toLowerCase() === (this.bot?.username ?? this.store.getSetting("telegram.bot_username"))?.toLowerCase()));
@@ -788,17 +804,28 @@ export class TelegramAdapter {
     }
     const result: MessageResult = await this.messages.handle(submission);
     const currentBinding = this.store.getTelegramChat(chatId);
+    let readyToSend = false;
     try {
-      this.messages.assertDelivery(submission, result.messageId);
+      const assertCurrent = () => {
+        if (!this.authorizedSender(chatId,message.from?.id)) throw new Error("Право отвечать этому участнику отозвано.");
+        this.messages.assertDelivery(submission,result.messageId);
+      };
       // The chat changed hands during the turn. Record that nothing was sent.
       // A management request gets a narrow native receipt, never the old employee's answer after reassignment.
       const control = this.controlReplies.get(externalId);
-      if (control) await this.sendMessage(chatId,control,`control:${externalId}`,message.message_id, { assertCurrent: () => this.messages.assertDelivery(submission,result.messageId) });
-      else if (!currentBinding || currentBinding.profileId !== binding?.profileId) this.store.db.prepare("INSERT OR IGNORE INTO telegram_outbox(key,chat_id,payload,status,error) VALUES(?,?,'{}','not_sent',?)")
-        .run(`${chatId}:reply:${result.messageId}:0`, chatId, "Подключение этого чата изменилось. Ответ не отправлен в Telegram.");
-      else if (Number(chatId) >= 0 || !quietReply(result.text)) await this.sendAnswer(message.chat.id, result.text, result.attachments, `reply:${result.messageId}`, Number(chatId) < 0 ? message.message_id : undefined, () => this.messages.assertDelivery(submission, result.messageId));
+      if (!control && (!currentBinding || currentBinding.profileId !== binding?.profileId)) throw new Error("Подключение этого чата изменилось. Ответ не отправлен в Telegram.");
+      assertCurrent();
+      readyToSend = true;
+      if (control) await this.sendMessage(chatId,control,`control:${externalId}`,message.message_id, { assertCurrent });
+      else if (Number(chatId) >= 0 || !quietReply(result.text)) await this.sendAnswer(message.chat.id, result.text, result.attachments, `reply:${result.messageId}`, Number(chatId) < 0 ? message.message_id : undefined, assertCurrent);
     }
-    catch { this.lastError="Ответ сохранён в приложении; доставку в Telegram нужно проверить"; }
+    catch (error) {
+      // Admission failed before any delivery attempt. Do not turn later transport
+      // failures or partially delivered replies into a definite not-sent receipt.
+      if (!readyToSend) this.store.db.prepare("INSERT OR IGNORE INTO telegram_outbox(key,chat_id,payload,status,error) VALUES(?,?,'{}','not_sent',?)")
+        .run(`${chatId}:reply:${result.messageId}:0`, chatId, error instanceof Error ? error.message : "Права ответа изменились. Ответ не отправлен в Telegram.");
+      this.lastError="Ответ сохранён в приложении; доставку в Telegram нужно проверить";
+    }
     } catch (error) {
       if (contextOnly) {
         this.lastError = "Не удалось сохранить часть контекста группы. Отправьте нужное вложение в ответ на сообщение бота.";
@@ -926,8 +953,8 @@ export class TelegramAdapter {
   private async acceptLink(code: string, update: TelegramUpdate): Promise<void> {
     const message = update.message!;
     const chatId = String(message.chat.id);
-    const sender = message.from?.id ?? (Number(chatId) > 0 ? Number(chatId) : undefined);
-    if (!sender || message.sender_chat || message.from?.is_bot) return;
+    const sender = message.from?.id;
+    if (!sender || !Number.isSafeInteger(sender) || sender <= 0 || message.sender_chat || message.from?.is_bot || Number(chatId) > 0 && String(sender) !== chatId) return;
     // Owner pairing is never a way for a scoped participant to upgrade themselves.
     if (isRestrictedSubject(this.store, String(sender))) return;
     const row = this.store.db.prepare("SELECT payload FROM telegram_links WHERE hash=?").get(sha256(code));
@@ -959,7 +986,6 @@ export class TelegramAdapter {
       // Reconnecting an established private chat never changes its employee.
       if (link.profileId && (link.kind === "group" || !existing)) this.store.bindTelegramChat(chatId, link.profileId);
       if (link.kind === "group" && !link.profileId && !existing?.profileId) this.store.connectTelegramGroup(chatId);
-      if (link.kind === "group" && !existing?.profileId && !existing?.conversationId && !protectScopedTelegramTransport(this.store, chatId)) this.store.db.prepare("UPDATE telegram_chats SET access='members',replies='instructions' WHERE chat_id=?").run(chatId);
       this.store.db.prepare("UPDATE telegram_links SET payload=? WHERE hash=?").run(JSON.stringify({ ...link, chatId, error: undefined }), sha256(code));
       this.store.db.exec("COMMIT");
     } catch (error) { this.store.db.exec("ROLLBACK"); throw error; }
@@ -994,7 +1020,7 @@ export class TelegramAdapter {
     } else this.store.connectTelegramGroup(chatId);
     this.store.deleteSetting("telegram.removed." + chatId);
     // Membership alone starts no model run and sends no unsolicited group post.
-    // The next @mention or reply is the first actual request.
+    // Only an approved sender can start the first actual request.
   }
 
   private membershipEvent(chatId: string): {date:number;id:number} {
@@ -1007,9 +1033,11 @@ export class TelegramAdapter {
     const raw = this.store.getSetting("telegram.linked_chats"); if (!raw) return chats;
     try { const value: unknown = JSON.parse(raw); return [...new Set([...chats,...(Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [])])]; } catch { return chats; }
   }
-  private authorizedSender(chatId:string, sender?:number):boolean {
-    const actual=sender ?? (Number(chatId)>0 ? Number(chatId) : undefined);
+  authorizedSender(chatId:string, sender?:number):boolean {
+    if (sender === undefined || !Number.isSafeInteger(sender) || sender <= 0) return false;
+    const actual=sender;
     const chat = this.store.getTelegramChat(chatId);
+    if (!chat) return false;
     const config = telegramAuthorization(this.store);
     const subject = actual ? config.subjects[String(actual)] : undefined;
     if (subject?.enabled === false || config.chats[chatId]?.enabled === false) return false;
@@ -1031,9 +1059,10 @@ export class TelegramAdapter {
     return target ? this.store.getConversation(String(target.conversation_id)) : null;
   }
 
-  private async call<T = unknown>(method: string, body: Record<string, unknown> | FormData, token = this.token, timeoutMs = 35_000): Promise<T> {
+  private async call<T = unknown>(method: string, body: Record<string, unknown> | FormData, token = this.token, timeoutMs = 35_000, assertCurrent?: () => void): Promise<T> {
     if (!token) throw new Error("Telegram is not configured");
     for (let attempt=0;;attempt++) {
+      assertCurrent?.();
       const multipart = body instanceof FormData;
       const response = await fetch("https://api.telegram.org/bot" + token + "/" + method, { method: "POST", headers: multipart ? undefined : { "content-type": "application/json" }, body: multipart ? body : JSON.stringify(body), signal: this.controller ? AbortSignal.any([this.controller.signal,AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
       const payload = (await response.json()) as TelegramResponse<T>;

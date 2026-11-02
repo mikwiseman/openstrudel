@@ -1,9 +1,10 @@
 /** Disposable UI acceptance server for the one chat + Clients: a Home with a mock engine that records which service each
  * request used, an employee with history and a News edition, one Telegram group, and a company MCP endpoint behind the
- * main chat's connectors. No real accounts, messages, Telegram or schedules. */
+ * main chat's connectors. Includes one retained schedule receipt; no real accounts, Telegram or live schedules. */
 import { createServer } from "node:http";
+import { execFileSync } from "node:child_process";
 import { appendFile, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { stringify } from "smol-toml";
@@ -14,6 +15,13 @@ const output = resolve(process.argv[2]!);
 const homeName = process.argv[3];
 const directory = await mkdtemp(join(tmpdir(), "strudel-one-chat-ui-"));
 process.chdir(directory);
+// A disposable, committed checkout for owner project registration through the real UI/API.
+mkdirSync(join(directory, "project-checkout"));
+const projectPath = realpathSync(join(directory, "project-checkout"));
+writeFileSync(join(projectPath, "README.md"), "# Disposable UI project\n");
+execFileSync("git", ["init", "-q", projectPath]);
+execFileSync("git", ["-C", projectPath, "add", "README.md"]);
+execFileSync("git", ["-C", projectPath, "-c", "user.name=UI Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "commit", "-qm", "Fixture source"]);
 delete process.env.TELEGRAM_BOT_TOKEN;
 delete process.env.OPENSTRUDEL_SETUP_CODE;
 
@@ -96,7 +104,12 @@ const api = runtime.api as unknown as { handle: (...args: any[]) => Promise<void
 const originalHandle = api.handle.bind(runtime.api);
 let offline = false;
 let messageRequests = 0;
+const privateReads: Array<{ path: string; status: number }> = [];
 api.handle = async (req, res, ...rest) => {
+  const requestPath = new URL(req.url, "http://127.0.0.1").pathname;
+  if (rest[0] === true && req.method === "GET" && ["/v1/activity", "/v1/settings/projects"].includes(requestPath)) {
+    res.once("finish", () => privateReads.push({ path: requestPath, status: res.statusCode }));
+  }
   // Count the paired app's request, not the Home executor's second HTTP hop for the same send.
   if (rest[0] === true && req.method === "POST" && new URL(req.url, "http://127.0.0.1").pathname === "/v1/messages") messageRequests += 1;
   if (req.method !== "GET") await appendFile(output + ".requests.jsonl", JSON.stringify({ at: new Date().toISOString(), method: req.method, path: new URL(req.url, "http://127.0.0.1").pathname }) + "\n", { mode: 0o600 });
@@ -107,6 +120,15 @@ api.handle = async (req, res, ...rest) => {
 // An employee with history and a News edition; the main chat's own history; one Telegram group served by the employee.
 const editor = runtime.store.createProfile({ name: "Редактор", instructions: "Пиши понятно и сохраняй смысл.", purpose: "Редактор текстов" });
 const editorChat = runtime.store.profileConversation(editor.id);
+// A disabled fixture schedule with a complete retained request/result chain. The real activity projection reads it;
+// the UI never receives a fabricated activity payload, and no scheduler clock or model runs for this seed.
+const activitySchedule = runtime.scheduler.save({ conversationId: editorChat.id, name: "Утренний обзор", prompt: "Проверить материалы", cron: "0 8 * * *", timezone: "UTC", enabled: false });
+const activityRunId = "ui-activity-" + editor.id, activityAt = new Date().toISOString();
+const activityInput = runtime.store.addMessage({ conversationId: editorChat.id, channel: "api", direction: "inbound", externalId: "schedule:" + activityRunId, text: "Проверить материалы" });
+runtime.store.db.prepare("UPDATE messages SET hidden=1 WHERE id=?").run(activityInput.id);
+const activityReply = runtime.store.addMessage({ conversationId: editorChat.id, channel: "api", direction: "outbound", replyToId: activityInput.id, text: "Проверены два материала. Решение по публикации остаётся за вами." });
+runtime.store.db.prepare("INSERT INTO schedule_runs(id,schedule_id,conversation_id,scheduled_for,status,created_at,message_id) VALUES(?,?,?,?,'completed',?,?)")
+  .run(activityRunId, activitySchedule.id, editorChat.id, activityAt, activityAt, activityReply.id);
 runtime.store.importHistory(editorChat.id, [
   { sourceId: "e1", author: "Вы", date: "2026-10-28T06:40:00Z", direction: "inbound", text: "Покажи пример оформления" },
   { sourceId: "e2", author: "Редактор", date: "2026-10-28T06:41:00Z", direction: "outbound", text: "## Черновик готов\n\n**Главное** уже выделено.\n\n- Первый пункт\n- Второй пункт" },
@@ -139,11 +161,13 @@ const control = createServer(async (req, res) => {
   if (path.pathname === "/offline") offline = path.searchParams.get("value") === "1";
   if (path.pathname === "/company") companyMode = (path.searchParams.get("mode") as CompanyMode) ?? "ok";
   if (path.pathname === "/release") holdReply?.();
+  // Keep the disposable pairing valid while removing its owner role, so the app exercises real 403 responses.
+  if (path.pathname === "/owner" && path.searchParams.get("value") === "0") runtime.store.setSetting("mobile.owners", "[]");
   // Read the accepted context from storage, after the Home verified the client's identity and source.
   const sentMessages = runtime.store.listMessages(main.id, 100)
     .filter(message => message.direction === "inbound" && message.id !== seededQuestion.id)
     .map(message => ({ id: message.id, conversationId: message.conversationId, text: message.text, context: message.context ?? null }));
-  res.end(JSON.stringify({ editor: editor.id, main: main.id, group: group.conversationId, offline, companyMode, companyURL, companyCalls, turns, messageRequests, sentMessages, profiles: runtime.store.listProfiles().map(p => ({ id: p.id, name: p.name, news: p.news })) }));
+  res.end(JSON.stringify({ editor: editor.id, main: main.id, group: group.conversationId, activity: { id: "run:" + activityRunId, conversationId: editorChat.id, messageId: activityReply.id, title: activitySchedule.name }, projectPath, projects: runtime.messages.projects.read(true), privateReads, offline, companyMode, companyURL, companyCalls, turns, messageRequests, sentMessages, profiles: runtime.store.listProfiles().map(p => ({ id: p.id, name: p.name, news: p.news })) }));
 });
 await new Promise<void>(done => control.listen(0, "127.0.0.1", done));
 controlURL = `http://127.0.0.1:${(control.address() as { port: number }).port}`;

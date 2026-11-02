@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, realpathSync, statSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { CodexExtensions, previewExtension, readToml, beginExtensionRun, type ExtensionFile } from "../src/extensions.js";
+import { CodexExtensions, previewExtension, readToml, beginExtensionRun, inheritedIntegrations, ownerOnlyServers, shareWithAllChats, sharedWithAllChats, type ExtensionFile } from "../src/extensions.js";
 import { readExtensionBundle } from "../src/extension-bundle.js";
 import { CodexRpc } from "../src/rpc.js";
 import { ScopedCodexEngine } from "../src/scopes.js";
@@ -68,6 +68,68 @@ it("keeps MCP credentials private, persists explicit config, blocks built-ins an
   expect(readToml(join(home,"config.toml")).mcp_servers.sample).toBeDefined();
   await manager.removeMcp("sample");
   expect(readToml(join(home,"openstrudel-extensions.toml")).mcp_servers).toBeUndefined();
+});
+
+it("saves custom MCP headers and disabled tools privately, with rollback on a failed reload",async()=>{
+  const {home,cwd}=fixture(),changed=vi.fn(async()=>{});
+  const manager=new CodexExtensions({home,cwd,client:async()=>({request:async()=>({})}) as unknown as CodexRpc,changed,idle:()=>true});
+  const result=await manager.addMcp({name:"private-reader",url:"https://example.com/mcp",http_headers:{"X-API-KEY":"private-test-key"},disabled_tools:["execute_request","execute_request"]});
+  expect(result).toEqual({id:"mcp:private-reader",saved:true});
+  const saved=readToml(join(home,"openstrudel-extensions.toml")).mcp_servers["private-reader"];
+  expect(saved.http_headers).toEqual({"X-API-KEY":"private-test-key"});
+  expect(saved.disabled_tools).toEqual(["execute_request"]);
+  expect(statSync(join(home,"openstrudel-extensions.toml")).mode & 0o777).toBe(0o600);
+  changed.mockRejectedValueOnce(new Error("reload failed"));
+  await expect(manager.addMcp({name:"second",url:"https://example.com/second",http_headers:{"X-API-KEY":"other-private-key"}})).rejects.toThrow("reload failed");
+  expect(readToml(join(home,"config.toml")).mcp_servers.second).toBeUndefined();
+  expect(readToml(join(home,"openstrudel-extensions.toml")).mcp_servers["private-reader"]).toEqual(saved);
+});
+
+it("rejects ambiguous, protocol, identity and malformed custom headers before changing a connector",async()=>{
+  const {home,cwd}=fixture(),client=vi.fn();
+  const manager=new CodexExtensions({home,cwd,client,changed:async()=>{},idle:()=>true});
+  const before=readFileSync(join(home,"config.toml"),"utf8");
+  for(const http_headers of [null,[],"key",{"X-Key":"a\r\nInjected: yes"},{"X-Key":"a\0b"},{"X-Key":42},{"X-Key":""},{"Bad Header":"v"},{"X-Key":"v","x-key":"other"},{Host:"other.test"},{"mcp-session-id":"v"},{"x-hermes-user-id":"123"},{"Content-Length":"999"}]) {
+    await expect(manager.addMcp({name:"sample",url:"https://example.com/mcp",http_headers})).rejects.toThrow();
+  }
+  await expect(manager.addMcp({name:"sample",url:"https://example.com/mcp",token:"key",http_headers:{authorization:"Bearer other"}})).rejects.toThrow(/Authorization/);
+  await expect(manager.addMcp({name:"sample",command:"true",http_headers:{"X-Key":"v"}})).rejects.toThrow(/адреса/);
+  for(const disabled_tools of ["execute_request",["*"],["invalid tool"],[1],Array(101).fill("read")]) {
+    await expect(manager.addMcp({name:"sample",url:"https://example.com/mcp",disabled_tools})).rejects.toThrow();
+  }
+  expect(client).not.toHaveBeenCalled();
+  expect(readFileSync(join(home,"config.toml"),"utf8")).toBe(before);
+});
+
+it("never inherits owner-only connectors into employees or future groups and preserves exclusions when sharing toggles",()=>{
+  const {root}=fixture();
+  mkdirSync(join(root,".data/extensions/personal"),{recursive:true});
+  mkdirSync(join(root,".data/connections"),{recursive:true});
+  writeFileSync(join(root,".data/extensions/personal/config.toml"),'[mcp_servers.unipile]\nurl="https://developer.unipile.com/mcp"\n[mcp_servers.unipile.http_headers]\nX-API-KEY="private-test-key"\n[mcp_servers.company]\nurl="https://company.example/mcp"\n[mcp_servers.company.http_headers]\nAuthorization="Bearer company-key"\n[apps.calendar]\nenabled=true\n');
+  writeFileSync(join(root,".data/connections/personal.toml"),'[mcp_servers.legacy-private]\nurl="https://private.example/mcp"\n[mcp_servers.legacy-private.http_headers]\nAuthorization="Bearer private-key"\n');
+  shareWithAllChats(root,true,["unipile","legacy-private"]);
+  for(const context of ["work","agent-"+"a".repeat(32),"group-"+"b".repeat(64)]) {
+    const inherited=inheritedIntegrations(root,context,{servers:{}});
+    expect(Object.keys(inherited.servers)).toEqual(["company"]);
+    expect(inherited.apps).toEqual(["calendar"]);
+  }
+  shareWithAllChats(root,false);shareWithAllChats(root,true);
+  expect(ownerOnlyServers(root)).toEqual(["unipile","legacy-private"]);
+  expect(inheritedIntegrations(root,"work",{servers:{}}).servers.unipile).toBeUndefined();
+  expect(readToml(join(root,".data/extensions/personal/config.toml")).mcp_servers.unipile.http_headers["X-API-KEY"]).toBe("private-test-key");
+  expect(statSync(join(root,".data/extensions/all-chats.json")).mode & 0o777).toBe(0o600);
+});
+
+it("fails closed for corrupt owner-only sharing policy without replacing it during an ordinary toggle",()=>{
+  const {root}=fixture(),path=join(root,".data/extensions/all-chats.json");
+  shareWithAllChats(root,true,["private"]);
+  for(const text of ['{"enabled":true,"ownerOnlyServers":"private"}','{"enabled":true,"ownerOnlyServers":["../private"]}','{broken']) {
+    writeFileSync(path,text);
+    expect(sharedWithAllChats(root)).toBe(false);
+    expect(inheritedIntegrations(root,"work",{servers:{}})).toEqual({servers:{},apps:[]});
+    expect(()=>shareWithAllChats(root,true)).toThrow(/повреждены/);
+    expect(readFileSync(path,"utf8")).toBe(text);
+  }
 });
 
 it("removes a service after a native thread used its per-tool approval settings",async()=>{

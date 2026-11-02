@@ -80,9 +80,15 @@ export function telegramTools(store: Store, context: TelegramToolContext) {
       if (args.query != null && (typeof args.query !== "string" || args.query.length > 240)) throw new Error("Укажите короткое название чата.");
       const query = String(args.query ?? "").trim().toLocaleLowerCase();
       return {chats:chats(true).filter(chat => !query || chat.title.toLocaleLowerCase().includes(query) || chat.chatId === query)
-        .map(chat => ({chatId:chat.chatId,title:chat.title,type:Number(chat.chatId)<0?"group":"private", ...managementTurn(store,context) ? {profileId:chat.profileId,conversationId:chat.conversationId,enabled:chat.enabled} : {}}))};
+        .map(chat => ({chatId:chat.chatId,title:chat.title,type:Number(chat.chatId)<0?"group":"private", ...managementTurn(store,context) ? {profileId:chat.profileId,conversationId:chat.conversationId,enabled:chat.enabled,replyAccess:chat.access,allowedSenders:chat.allowedSenders} : {}}))};
     }
     if (name !== "send_telegram_message") throw new Error("Unknown Telegram tool");
+    if (context.scheduled && store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schedule_runs'").get()) {
+      const run = store.db.prepare(`SELECT r.private_source_fingerprint FROM schedule_runs r JOIN messages m
+        ON m.external_id='schedule:'||r.id AND m.conversation_id=r.conversation_id AND m.direction='inbound' AND m.channel='api'
+        WHERE m.id=? AND r.conversation_id=?`).get(context.messageId,context.conversationId);
+      if (run?.private_source_fingerprint != null) throw new Error("Private-source scheduled results use automatic delivery only. Return the completed answer here; do not send a separate Telegram message.");
+    }
     if (typeof args.chatId !== "string" || typeof args.text !== "string" || !Array.isArray(args.paths) || args.paths.some(path => typeof path !== "string" || !path.trim())) throw new Error("Укажите чат, текст и пути к файлам.");
     if ([args.silent,args.linkPreview,args.album].some(value=>value != null && typeof value !== "boolean")) throw new Error("Укажите, нужен ли звук уведомления, предпросмотр ссылки и фотоальбом.");
     const target = chats().find(chat => chat.chatId === args.chatId);

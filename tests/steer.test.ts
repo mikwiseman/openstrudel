@@ -166,8 +166,10 @@ it("keeps Telegram input immutable and in place while app messages are reordered
 it("does not start queued work during shutdown and accepts new work after an emptied queue", async () => {
   const { engine, releases, service } = fixture();
   const first = await service.submit({ channel: "api", text: "First" });
+  await vi.waitFor(() => expect(releases).toHaveLength(1));
   releases[0]!(); await first.completion;
   const next = await service.submit({ channel: "api", text: "Next" });
+  await vi.waitFor(() => expect(releases).toHaveLength(2));
   const later = await service.submit({ channel: "api", text: "Never run" });
   const rejected = expect(later.completion).rejects.toThrow("завершает работу");
   const closed = service.close();

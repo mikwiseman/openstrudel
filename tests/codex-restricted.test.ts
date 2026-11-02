@@ -50,7 +50,7 @@ it("starts an isolated runtime with a fixed read-only profile and no broad Home 
   } finally { engine.close(); }
 });
 
-it.each([{ threadId: "old-thread" }, { employees: [{ id: "wide" }] }, { images: ["/private/data"] }, { readPaths: ["/private"] }, { provider: "openai" }, { profile: "Owner SOUL" }, { onRequest: async () => ({ decision: "accept" }) }])("rejects a restricted turn that would import wider state: %j", async options => {
+it.each([{ threadId: "old-thread" }, { employees: [{ id: "wide" }] }, { images: ["/private/data"] }, { readPaths: ["/private"] }, { privateSourceAccess: true }, { provider: "openai" }, { profile: "Owner SOUL" }, { onRequest: async () => ({ decision: "accept" }) }])("rejects a restricted turn that would import wider state: %j", async options => {
   const { engine } = fixture();
   try { await expect(engine.run("test", options as any)).rejects.toThrow("Invalid restricted turn"); expect(wire.constructors).toHaveLength(0); }
   finally { engine.close(); }

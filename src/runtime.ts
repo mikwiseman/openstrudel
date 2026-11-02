@@ -59,7 +59,8 @@ export class OpenStrudelRuntime {
     this.scheduler = new Scheduler(this.store,this.messages);
     this.messages.scheduler=this.scheduler;
     // The scheduler checks its destination before generating; a policy saved meanwhile still stops every chunk and file.
-    this.scheduler.deliver=(chat,text,key,attachments)=>this.telegram.sendAnswer(chat,text,attachments,key,undefined,()=>{
+    this.scheduler.deliver=(chat,text,key,attachments,assertCurrent)=>this.telegram.sendAnswer(chat,text,attachments,key,undefined,()=>{
+      assertCurrent?.();
       if (isProtectedTelegramAudience(this.store, chat)) throw new Error("Фоновая доставка в чат с ограниченным доступом недоступна.");
     });
     this.api = new HttpApi(this.store, this.messages, this.telegram, options.apiToken ?? (options.engine ? null : process.env.OPENSTRUDEL_API_TOKEN), this.account, this.engine, { mobileDirectory: resolve(options.rootDirectory ?? process.cwd(), ".data/mobile"), mobilePort: options.mobilePort }, this.accounts);

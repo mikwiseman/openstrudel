@@ -47,6 +47,7 @@ it("atomically closes old owner/member grants while preserving existing bindings
   const store = fixture();
   store.linkTelegramChat({ chatId: "22", title: "Mentor", allowedSenders: ["22"] });
   store.linkTelegramChat({ chatId: "-100", title: "Family", allowedSenders: ["11", "22"] });
+  store.db.prepare("UPDATE telegram_chats SET access='members' WHERE chat_id=?").run("-100");
   store.connectTelegramGroup("-100");
   const employee = store.createProfile({ name: "Wolf" });
   const original = store.bindTelegramChat("-100", employee.id);
@@ -129,6 +130,7 @@ it.each([true, false])("migration closes a prediscovered destination even when t
   // whose source row is gone. The destination was independently discovered.
   store.setSetting(authorizationSetting, JSON.stringify({ ...config(), revision: 1 }));
   store.linkTelegramChat({ chatId: "-200", title: "Discovered target", allowedSenders: ["11"] });
+  store.db.prepare("UPDATE telegram_chats SET access='members' WHERE chat_id=?").run("-200");
   const target = store.connectTelegramGroup("-200");
   expect(legacyAllowed(store, "-200", 33)).toBe(true);
   expect(migrateScopedChat(store, "-100", "-200")).toBe(true);
@@ -142,6 +144,7 @@ it.each([true, false])("migration closes a prediscovered destination even when t
 it("rolls back policy and both registry entries together if migration fails after registry writes", () => {
   const store = fixture(); saveTelegramAuthorization(store, config());
   store.linkTelegramChat({ chatId: "-200", title: "Ordinary discovered target", allowedSenders: ["11"] }); store.connectTelegramGroup("-200");
+  store.db.prepare("UPDATE telegram_chats SET access='members' WHERE chat_id=?").run("-200");
   const previousPolicy = telegramAuthorization(store), previousChats = store.telegramChats();
   store.db.exec("CREATE TEMP TRIGGER fail_migration BEFORE UPDATE ON conversations BEGIN SELECT RAISE(ABORT, 'synthetic migration failure'); END");
   expect(() => migrateScopedChat(store, "-100", "-200")).toThrow("synthetic migration failure");
@@ -239,6 +242,7 @@ it("rejects missing, anonymous and bot senders, disabled subjects and disabled o
 it("preserves ordinary owner pairing and member-group behavior outside configured audiences", async () => {
   const store = fixture();
   store.linkTelegramChat({ chatId: "-200", title: "Ordinary team", allowedSenders: ["11"] }); store.connectTelegramGroup("-200");
+  store.db.prepare("UPDATE telegram_chats SET access='members' WHERE chat_id=?").run("-200");
   saveTelegramAuthorization(store, config());
   const { adapter, messages, ordinary, scoped } = adapterFor(store);
   try {

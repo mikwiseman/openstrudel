@@ -44,7 +44,7 @@ it("creates independent, one-use links scoped to a group and employee", async ()
   await adapter.processUpdate(message(1, `/start@strudel_bot ${a.code}`));
   await adapter.processUpdate(message(2, `/start@strudel_bot ${b.code}`, -200));
   const first = store.getTelegramChat("-100")!, second = store.getTelegramChat("-200")!;
-  expect(first).toMatchObject({ profileId: profile.id, access: "members", replies: "instructions" });
+  expect(first).toMatchObject({ profileId: profile.id, access: "approved", replies: "instructions" });
   expect(second.profileId).toBe(other.id); expect(second.conversationId).not.toBe(first.conversationId);
   expect(first.conversationId).not.toBe(store.profileConversation(profile.id).id);
   expect(adapter.linkStatus(a.code)).toEqual({ status: "connected" });
@@ -84,6 +84,7 @@ it("keeps owner pairing private and preserves established private recipients", a
 it("allows colleagues to address the employee but not change the binding", async () => {
   const { store, adapter, profile, run, messages } = setup(); const a = adapter.createLink(profile.id, "group");
   await adapter.processUpdate(message(1, `/start@strudel_bot ${a.code}`));
+  adapter.setGroupReplyAccess("-100","approved",["42","77"]);
   store.db.prepare("UPDATE telegram_chats SET replies='mentions' WHERE chat_id='-100'").run();
   vi.mocked(fetch).mockClear();
   await adapter.processUpdate(message(2, "Good morning", -100, 77));
@@ -102,6 +103,7 @@ it("marks only the paired owner's private chat as the owner's turn", async () =>
   const { store, adapter, profile, run } = setup(); const a = adapter.createLink(profile.id, "group");
   store.createProfile({ name: "Researcher" });
   await adapter.processUpdate(message(1, `/start@strudel_bot ${a.code}`));
+  adapter.setGroupReplyAccess("-100","approved",["42","77"]);
   await adapter.processUpdate(message(2, "Hello", 42));
   await adapter.processUpdate(message(3, "@strudel_bot hello", -100, 42));
   await adapter.processUpdate(message(4, "@strudel_bot hello", -100, 77));

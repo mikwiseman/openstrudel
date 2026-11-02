@@ -22,7 +22,7 @@ function membership(update: number, sender = 42, status = "member") {
 it("adding the bot by its owner enables the assistant with isolated group history", async () => {
   const { store, adapter, handle } = setup();
   await adapter.processUpdate(membership(1));
-  expect(store.getTelegramChat("-100")).toMatchObject({ title: "Офис", allowedSenders: ["42"], profileId: null, conversationId: expect.any(String), access: "members", replies: "instructions" });
+  expect(store.getTelegramChat("-100")).toMatchObject({ title: "Офис", allowedSenders: ["42"], profileId: null, conversationId: expect.any(String), access: "approved", replies: "instructions" });
   const conversation = store.getTelegramChat("-100")!.conversationId!;
   expect(store.getConversation(conversation)).toMatchObject({ channel: "telegram", externalId: "-100", profileId: null });
   expect(handle).not.toHaveBeenCalled();
@@ -58,10 +58,11 @@ it("revokes a removed group but keeps its conversation history", async () => {
   expect(store.getTelegramChat("-100")).toMatchObject({ conversationId: chat.conversationId, profileId: p.id, access: chat.access, replies: chat.replies });
 });
 
-it("lets the native agent read the group without choosing an employee or exposing a private chat", async () => {
+it("lets an explicitly shared group use the native agent without choosing an employee or exposing a private chat", async () => {
   const { store, adapter, handle } = setup();
   store.setSetting("telegram.bot_username", "strudel_bot");
   await adapter.processUpdate(membership(1));
+  adapter.setGroupReplyAccess("-100","members",undefined);
   await adapter.processUpdate({ update_id: 2, message: { message_id: 2, chat: { id: -100, type: "group" }, from: { id: 77 }, text: "Morning" } });
   expect(handle).toHaveBeenCalledTimes(1);
   await adapter.processUpdate({ update_id: 3, message: { message_id: 3, chat: { id: -100, type: "group" }, from: { id: 77 }, text: "@strudel_bot help" } });

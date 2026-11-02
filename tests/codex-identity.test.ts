@@ -281,13 +281,15 @@ it("refreshes native MCP credentials for each group delivery without rewriting p
 });
 
 it("starts a turn without access on a thread with no keyed services, apps, memories or helpers",async()=>{
- const home=mkdtempSync(join(tmpdir(),"codex-guest-")),memories=join(home,"memories"),workspace=join(home,"workspace");
+ const home=mkdtempSync(join(tmpdir(),"codex-guest-")),memories=join(home,"memories"),workspace=join(home,"workspace"),helpers=join(home,"helpers");
  writeFileSync(join(home,"config.toml"),[
   '[mcp_servers.company]\nurl = "https://work.example/mcp"\n[mcp_servers.company.http_headers]\nAuthorization = "Bearer owner"',
   '[mcp_servers.notion]\nurl = "https://notion.example/mcp"',
   '[mcp_servers.cua_repl]\ncommand = "/Applications/Codex.app/cua"',
   '[memories]\nuse_memories = true\ngenerate_memories = true',
-  `[permissions.openstrudel.filesystem]\n":minimal" = "read"\n${JSON.stringify(workspace)} = "write"\n${JSON.stringify(memories)} = "read"`,
+  `[permissions.openstrudel.filesystem]\n":minimal" = "read"\n${JSON.stringify(workspace)} = "write"\n${JSON.stringify(memories)} = "read"\n${JSON.stringify(helpers)} = "read"`,
+  '[permissions.openstrudel.network]\nenabled = false',
+  '[permissions.other.filesystem]\n":minimal" = "read"',
  ].join("\n")+"\n");
  let thread=0;
  wire.request.mockImplementation(async(method:string,params:any)=>{
@@ -305,7 +307,8 @@ it("starts a turn without access on a thread with no keyed services, apps, memor
   const guest=wire.request.mock.calls.find(([method])=>method==="thread/start")![1].config;
   expect(guest).toMatchObject({"features.apps":false,"features.multi_agent":false,"memories.use_memories":false,
    "mcp_servers.company.enabled":false,"mcp_servers.notion.enabled":false,"mcp_servers.cua_repl.enabled":false,"plugins.p@openstrudel-local.mcp_servers.s.enabled":false});
-  expect(guest["permissions.openstrudel.filesystem"]).toEqual({":minimal":"read",[workspace]:"write"});
+  expect(guest.permissions).toEqual({openstrudel:{filesystem:{":minimal":"read",[workspace]:"write",[memories]:"none",[helpers]:"read"},network:{enabled:false}},other:{filesystem:{":minimal":"read"}}});
+  expect(Object.keys(guest).some(key=>key.startsWith("permissions."))).toBe(false);
   // The service that checks the sender itself stays, with the verified sender.
   expect(guest["mcp_servers.wai"]).toMatchObject({enabled:true,http_headers:{"x-hermes-user-id":"77","x-hermes-chat-id":"-100"}});
   expect(guest["mcp_servers.wai.enabled"]).toBeUndefined();
@@ -314,7 +317,57 @@ it("starts a turn without access on a thread with no keyed services, apps, memor
   expect(Object.keys(listed).filter(key=>/\.enabled$|use_memories|multi_agent/.test(key))).toEqual([]);
   expect(listed["mcp_servers.openstrudel_runtime"].enabled).toBe(false);
   expect(listed["features.apps"]).toBe(true);
-  expect(listed["permissions.openstrudel.filesystem"]).toMatchObject({[memories]:"read"});
+  expect(listed.permissions.openstrudel.filesystem).toMatchObject({[memories]:"read"});
+  expect(listed.permissions.openstrudel.network.enabled).toBe(false);
+  expect(listed.permissions.other).toEqual({filesystem:{":minimal":"read"}});
+  expect(Object.keys(listed).some(key=>key.startsWith("permissions."))).toBe(false);
+ }finally{engine.close();rmSync(home,{recursive:true,force:true});}
+});
+
+it("adds owner sources as read-only and removes them on resume without changing the base permission profiles",async()=>{
+ const home=mkdtempSync(join(tmpdir(),"codex-sources-")),workspace=join(home,"workspace"),source=join(home,"knowledge");
+ const permissions={openstrudel:{filesystem:{":minimal":"read",[workspace]:"write"},network:{enabled:false},description:"Audience"},other:{filesystem:{":minimal":"read"},network:{enabled:true}}};
+ const base=structuredClone(permissions);
+ wire.request.mockImplementation(async(method:string,params:any)=>{
+  if(method==="thread/start"||method==="thread/resume")return {thread:{id:"source-thread"}};
+  if(method==="thread/unsubscribe")return {};
+  if(method==="turn/start"){queueMicrotask(()=>wire.notify?.({method:"turn/completed",params:{threadId:params.threadId,turn:{status:"completed"}}}));return {turn:{id:"turn"}};}
+  if(method==="configRequirements/read")return {requirements:null};
+  if(method==="model/list")return {data:[]};
+  throw Error(method);
+ });
+ const engine=new CodexEngineAdapter({codexHome:home,workingDirectory:workspace,config:{default_permissions:"openstrudel",permissions}});
+ try{
+  const first=await engine.run("Read source",{byOwner:true,readPaths:[source,workspace]});
+  const start=wire.request.mock.calls.find(([method])=>method==="thread/start")![1];
+  expect(start.config.permissions).toEqual({...base,openstrudel:{...base.openstrudel,filesystem:{...base.openstrudel.filesystem,[source]:"read"}}});
+  expect(Object.keys(start.config).some(key=>key.startsWith("permissions."))).toBe(false);
+  await engine.run("Source revoked",{threadId:first.threadId,byOwner:true});
+  const resumed=wire.request.mock.calls.find(([method])=>method==="thread/resume")![1];
+  expect(resumed.threadId).toBe(first.threadId);
+  expect(resumed.config.permissions).toEqual(base);
+  expect(Object.keys(resumed.config).some(key=>key.startsWith("permissions."))).toBe(false);
+  expect(permissions).toEqual(base);
+  expect(wire.request.mock.calls.filter(([method])=>method==="thread/start")).toHaveLength(1);
+  expect(wire.request.mock.calls.some(([method])=>method==="thread/inject_items")).toBe(false);
+ }finally{engine.close();rmSync(home,{recursive:true,force:true});}
+});
+
+it.each([{byOwner:false},{byOwner:true,groupContext:true},{byOwner:true,groupChat:true},{byOwner:true,scheduled:true},
+ {privateSourceAccess:true},{privateSourceAccess:true,scheduled:true,groupContext:true},{privateSourceAccess:true,scheduled:true,groupChat:true}])("does not add owner source paths outside an authorized private turn: %j",async options=>{
+ const home=mkdtempSync(join(tmpdir(),"codex-source-audience-")),workspace=join(home,"workspace"),source=join(home,"knowledge");
+ const permissions={openstrudel:{filesystem:{":minimal":"read",[workspace]:"write"},network:{enabled:false}}};
+ wire.request.mockImplementation(async(method:string,params:any)=>{
+  if(method==="thread/start")return {thread:{id:"audience-thread"}};
+  if(method==="turn/start"){queueMicrotask(()=>wire.notify?.({method:"turn/completed",params:{threadId:params.threadId,turn:{status:"completed"}}}));return {turn:{id:"turn"}};}
+  if(method==="configRequirements/read")return {requirements:null};
+  if(method==="model/list")return {data:[]};
+  throw Error(method);
+ });
+ const engine=new CodexEngineAdapter({codexHome:home,workingDirectory:workspace,config:{default_permissions:"openstrudel",permissions}});
+ try{
+  await engine.run("Read source",{...options,readPaths:[source]});
+  expect(wire.request.mock.calls.find(([method])=>method==="thread/start")![1].config.permissions).toEqual(permissions);
  }finally{engine.close();rmSync(home,{recursive:true,force:true});}
 });
 
