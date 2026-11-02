@@ -39,8 +39,9 @@ it("sets native cwd and only the registered checkout, Git metadata and existing 
     await f.engine.run("Improve",{project:f.project,byOwner:true,access:true,readPaths:[f.readable]});
     const params=wire.request.mock.calls.find(([m])=>m==="thread/start")![1];
     expect(params.cwd).toBe(f.source); expect(params.sandbox).toBeUndefined();
-    expect(params.config["permissions.openstrudel.filesystem"]).toEqual({":minimal":"read",[f.workspace]:"write",[f.source]:"write",[f.metadata]:"write",[f.readable]:"read"});
-    expect(params.config["permissions.openstrudel.network.enabled"]).toBe(false);
+    expect(params.config.permissions.openstrudel.filesystem).toEqual({":minimal":"read",[f.workspace]:"write",[f.source]:"write",[f.metadata]:"write",[f.readable]:"read"});
+    expect(params.config.permissions.openstrudel.network.enabled).toBe(false);
+    expect(Object.keys(params.config).some(key=>key.startsWith("permissions."))).toBe(false);
     expect(params.developerInstructions).toContain("Do not restart or replace the Home executing this active turn");
     expect(params.approvalPolicy).toBe("on-request");
   }finally{f.engine.close();}

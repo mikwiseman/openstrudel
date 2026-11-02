@@ -217,11 +217,14 @@ export class CodexEngineAdapter implements CodexEngine {
     const memories=this.codexHome && options.access === false ? resolve(this.codexHome,"memories") : undefined;
     const filesystem=(settings as any).permissions?.openstrudel?.filesystem && Object.fromEntries(Object.entries((settings as any).permissions.openstrudel.filesystem).filter(([path])=>path !== memories));
     const paths=options.byOwner && !options.groupContext ? options.readPaths ?? [] : [];
-    const sourceAccess=filesystem ? {"permissions.openstrudel.filesystem":{...Object.fromEntries(paths.map(path=>[path,"read"])),...filesystem}} : {};
+    const sourceAccess=filesystem && !options.project ? {"permissions.openstrudel.filesystem":{...Object.fromEntries(paths.map(path=>[path,"read"])),...filesystem}} : {};
+    // A nested permissions base and dotted overrides for that same base have
+    // ambiguous application order in app-server. Send the project profile once.
     const projectAccess = options.project ? { default_permissions:"openstrudel",
-      "permissions.openstrudel.filesystem":{ ":minimal":"read", ...Object.fromEntries(paths.map(path=>[path,"read"])), ...filesystem,
-        [this.options.workingDirectory ?? resolve(".data/workspace")]:"write", [options.project.cwd]:"write", [options.project.gitDirectory]:"write" },
-      "permissions.openstrudel.network.enabled":(settings as any).permissions?.openstrudel?.network?.enabled ?? true } : {};
+      permissions:{ ...(settings as any).permissions, openstrudel:{ ...(settings as any).permissions?.openstrudel,
+        filesystem:{ ":minimal":"read", ...Object.fromEntries(paths.map(path=>[path,"read"])), ...filesystem,
+          [this.options.workingDirectory ?? resolve(".data/workspace")]:"write", [options.project.cwd]:"write", [options.project.gitDirectory]:"write" },
+        network:{ ...(settings as any).permissions?.openstrudel?.network, enabled:(settings as any).permissions?.openstrudel?.network?.enabled ?? true } } } } : {};
     // Even a disabled server needs a valid transport in Codex's config parser.
     const homeTools = this.options.restricted ? {} : { "mcp_servers.openstrudel_runtime": bridge
       ? { url:bridge.url,http_headers:{Authorization:"Bearer " + bridge.token},enabled:true,required:true }

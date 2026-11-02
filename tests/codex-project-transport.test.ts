@@ -33,7 +33,8 @@ vi.mock("../src/rpc.js",async importOriginal=>{
 });
 import { CodexEngineAdapter } from "../src/codex.js";
 
-it("accepts project permissions and cwd with the actual pinned Codex app-server, including revision and revocation",async()=>{
+// Fresh processes exercise app-server configuration independently; ancestor/dotted key overlap was nondeterministic.
+it.each([1, 2, 3])("accepts project permissions, revision and revocation in fresh pinned Codex process %i",async()=>{
   const root=realpathSync(mkdtempSync(join(tmpdir(),"project-protocol-"))),workspace=join(root,"audience"),source=join(root,"source"),metadata=join(source,".git");
   mkdirSync(workspace);mkdirSync(metadata,{recursive:true});
   const engine=new CodexEngineAdapter({codexHome:join(root,"codex"),workingDirectory:workspace,scoped:true,
