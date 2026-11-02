@@ -13,7 +13,7 @@ import { ownerSender, type TelegramToolContext } from "./telegram-tools.js";
 
 const execute = promisify(execFile);
 const catalogKey = "projects.catalog.v1", bindingPrefix = "projects.employee.", receiptPrefix = "projects.receipt.";
-const within = (path: string, root: string) => path === root || path.startsWith(root + sep);
+const within = (path: string, root: string) => path === root || path.startsWith(root.endsWith(sep) ? root : root + sep);
 const digest = (text: string) => createHash("sha256").update(text).digest("hex");
 /** One writer per checkout in this Home process, including separate employee queues. */
 const writers = new Map<string, symbol>();
@@ -70,6 +70,28 @@ async function gitState(path: string): Promise<GitState> {
   if (!/^[a-f0-9]{40,64}$/.test(head)) throw new Error("The project needs an existing Git commit.");
   return { head, branch: await git(path, ["branch", "--show-current"]) || null,
     dirty: Boolean(await git(path, ["status", "--porcelain", "--untracked-files=normal"])) };
+}
+
+/** Read the created PR's identity, not links quoted in its body or tool prose. */
+function createdPullRequests(result: any): string[] {
+  if (!result || typeof result !== "object" || result.isError || result.error) return [];
+  const documents: any[] = result.structuredContent ? [result.structuredContent] : Array.isArray(result.content) ? [] : [result];
+  if (Array.isArray(result.content)) for (const block of result.content) {
+    if (block?.type === "text" && typeof block.text === "string") {
+      try { documents.push(JSON.parse(block.text)); } catch { /* Tool prose is not a created-PR identity. */ }
+    }
+  }
+  const urls = new Set<string>();
+  for (const document of documents) {
+    if (!document || typeof document !== "object" || document.error || document.isError || document.success === false) continue;
+    const pr = document.pull_request ?? document.pullRequest ?? document;
+    if (pr?.error || pr?.isError || pr?.success === false) continue;
+    const value = pr?.html_url ?? pr?.url;
+    if (typeof value !== "string") continue;
+    const match = value.match(/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9]\d*(?=\/?(?:[?#]|$))/);
+    if (match) urls.add(match[0]);
+  }
+  return [...urls];
 }
 
 export class Projects {
@@ -179,8 +201,7 @@ export class Projects {
             save();
           }
           if (item.type === "mcpToolCall" && item.status === "completed" && !item.error && !item.result?.isError && /(?:^|__)create_pull_request$/.test(String(item.tool)) && receipt.pullRequests.length < 20) {
-            const urls = JSON.stringify(item.result ?? {}).match(/https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9]\d*/g) ?? [];
-            for (const url of new Set(urls)) if (receipt.pullRequests.length < 20 && !receipt.pullRequests.some(p => p.url === url)) receipt.pullRequests.push({ itemId: item.id, tool: item.tool, url });
+            for (const url of createdPullRequests(item.result)) if (receipt.pullRequests.length < 20 && !receipt.pullRequests.some(p => p.url === url)) receipt.pullRequests.push({ itemId: item.id, tool: item.tool, url });
             save();
           }
         },

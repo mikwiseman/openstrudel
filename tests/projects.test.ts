@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, parse } from "node:path";
 import { Projects, type ProjectReceipt } from "../src/projects.js";
 import { Store } from "../src/store.js";
 import { MessageService } from "../src/messages.js";
@@ -53,6 +53,7 @@ describe("owner registered development projects", () => {
     for(const unsafe of [join(f.dir,"alias"),join(path,"nested"),join(f.dir,"missing"),f.repo("home/.data/source"),f.repo("Installed.app/source")]) {
       await expect(f.register(unsafe)).rejects.toThrow();
     }
+    await expect(f.register(parse(path).root)).rejects.toThrow("not Home data");
     expect(f.projects.read(true).projects).toHaveLength(0);
   });
 
@@ -165,6 +166,24 @@ describe("owner registered development projects", () => {
     renameSync(path,path+"-gone"); await run!.finish("failed");
     const receipt=(await f.receipts(inbound.id))[0]!;
     expect(receipt.commands).toHaveLength(100); expect(receipt.after).toBeUndefined(); expect(receipt.verificationError).toContain("unavailable");
+  });
+
+  it("records only structured created-PR identities, not quoted links or failed payloads", async () => {
+    const f=fixture(), saved=await f.register(f.repo()); f.bind(saved.project.id);
+    const run=await f.projects.begin("main",f.context,true);
+    const url=(id:number)=>`https://github.com/example/repo/pull/${id}`;
+    const results=[
+      {html_url:url(1),body:`Related work: ${url(90)}`,base:{url:url(91)}},
+      {structuredContent:{pull_request:{html_url:url(2),body:url(92)}}},
+      {content:[{type:"text",text:JSON.stringify({html_url:url(3),body:url(93)})}]},
+      {content:[{type:"text",text:`A previous PR is ${url(94)}`}]},
+      {content:[{type:"text",text:JSON.stringify({error:"Creation failed",url:url(95)})}]},
+      {url:url(96)+"/files"},
+      {structuredContent:{pull_request:{success:false,url:url(97)}}},
+    ];
+    results.forEach((result,index)=>run!.observe({type:"item/completed",payload:{item:{id:`pr-${index}`,type:"mcpToolCall",tool:"create_pull_request",status:"completed",result}}}));
+    await run!.finish("completed");
+    expect((await f.receipts())[0]?.pullRequests.map(p=>p.url)).toEqual([url(1),url(2),url(3)]);
   });
 });
 
