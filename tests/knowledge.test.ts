@@ -1,9 +1,58 @@
 import { expect,it } from "vitest";
-import { existsSync,mkdtempSync,readFileSync,rmSync } from "node:fs";
+import { existsSync,mkdirSync,mkdtempSync,readFileSync,rmSync,writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import { Store } from "../src/store.js";
 import { MessageService } from "../src/messages.js";
+import { ownerKnowledge } from "../src/knowledge.js";
+
+it("exports full owner and imported histories larger than the available JavaScript heap", async () => {
+  const root=mkdtempSync(join(tmpdir(),"knowledge-memory-"));
+  try {
+    const result=await promisify(execFile)(process.execPath,["--max-old-space-size=64","--import","tsx",fileURLToPath(new URL("./fixtures/knowledge-memory.ts",import.meta.url)),root],{timeout:60_000,maxBuffer:1024*1024});
+    const proof=JSON.parse(result.stdout);
+    expect(proof.messages).toBe(8_000);
+    expect(proof.bytes).toBeGreaterThan(64*1024*1024);
+    expect(proof.archiveBytes).toBeGreaterThan(64*1024*1024);
+    expect(proof.promptHasRange).toBe(true);
+  } finally { rmSync(root,{recursive:true,force:true}); }
+},65_000);
+
+it("does not expose retained native memories belonging only to deleted employees", () => {
+  const root=mkdtempSync(join(tmpdir(),"knowledge-contexts-")),store=new Store(":memory:");
+  try {
+    const active=store.createProfile({name:"Active",instructions:"files"});
+    const removed=store.createProfile({name:"Removed",instructions:"files"});
+    const activeChat=store.profileConversation(active.id),removedChat=store.profileConversation(removed.id);
+    const activeContext="agent-"+active.id.replaceAll("-",""),removedContext="agent-"+removed.id.replaceAll("-","");
+    const paths=[join(root,".data/contexts",activeContext,"memories"),join(root,".data/accounts/account-a/contexts",removedContext,"memories")];
+    for(const path of paths){mkdirSync(path,{recursive:true});writeFileSync(join(path,"memory.md"),"Native memory, preserve on disk.");}
+    store.setSetting("employee.deleted."+removed.id,"2026-11-02T00:00:00Z");
+    const result=ownerKnowledge(store,root,id=>id===activeChat.id?activeContext:id===removedChat.id?removedContext:"personal");
+    expect(result.readPaths).toContain(paths[0]);expect(result.readPaths).not.toContain(paths[1]);
+    expect(existsSync(join(paths[1]!,"memory.md"))).toBe(true);
+  } finally { store.close();rmSync(root,{recursive:true,force:true}); }
+});
+
+it("removes an obsolete imported source copy when its final visible message is hidden", async () => {
+  const root=mkdtempSync(join(tmpdir(),"knowledge-hidden-")),store=new Store(":memory:");
+  const employee=store.createProfile({name:"Imported",instructions:"files"}),chat=store.profileConversation(employee.id);
+  store.importHistory(chat.id,[{sourceId:"imported",date:"2026-10-01T00:00:00Z",direction:"inbound",author:"Source author",text:"HIDDEN_SOURCE_SENTINEL"}]);
+  const calls:string[]=[];
+  const service=new MessageService(store,{async run(input){calls.push(input);return{threadId:"t",response:"ok",events:[]};}},root);
+  try {
+    await service.handle({channel:"api",profile:employee.id,text:"Use history",byOwner:true});
+    const path=join(root,".data/workspace",service.contextFor(chat.id),"history",chat.id,"telegram.jsonl");
+    expect(readFileSync(path,"utf8")).toContain("HIDDEN_SOURCE_SENTINEL");
+    store.db.prepare("UPDATE messages SET hidden=1 WHERE conversation_id=? AND imported=1").run(chat.id);
+    await service.handle({channel:"api",profile:employee.id,text:"Check again",byOwner:true});
+    expect(existsSync(path)).toBe(false);
+    expect(calls.at(-1)).not.toContain("Imported conversation archive:");
+  } finally { await service.close();store.close();rmSync(root,{recursive:true,force:true}); }
+});
 
 it("gives only the owner's root a source catalogue, keeping source text out of the prompt",async()=>{
   const root=mkdtempSync(join(tmpdir(),"knowledge-")),store=new Store(":memory:");

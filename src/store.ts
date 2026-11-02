@@ -338,8 +338,8 @@ export class Store {
     } catch (error) { this.db.exec("ROLLBACK"); throw error; }
   }
 
-  importedMessages(conversationId: string): Message[] {
-    return (this.db.prepare("SELECT * FROM messages WHERE conversation_id=? AND imported=1 ORDER BY created_at,rowid").all(conversationId) as Row[]).map(r => this.mapMessage(r));
+  *importedMessages(conversationId: string): IterableIterator<Message> {
+    for (const row of this.db.prepare("SELECT * FROM messages WHERE conversation_id=? AND imported=1 AND hidden=0 ORDER BY created_at,rowid").iterate(conversationId)) yield this.mapMessage(row);
   }
 
   listConversations(): Conversation[] {

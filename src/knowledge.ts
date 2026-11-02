@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import type { Store } from "./store.js";
 import { contextPattern } from "./scopes.js";
 import { contextSummary } from "./message-context.js";
+import { writeJsonLines } from "./history-export.js";
 
 /** Owner-only source map. Codex does retrieval; no second memory engine or copied document store. */
 export function ownerKnowledge(store:Store,root:string,contextFor:(id:string)=>string) {
@@ -15,22 +16,22 @@ export function ownerKnowledge(store:Store,root:string,contextFor:(id:string)=>s
     const workspace=resolve(root,".data/workspace",context);
     if(existsSync(workspace))readPaths.add(workspace);
     const history=resolve(directory,c.id+".jsonl");
-    const rows=store.db.prepare("SELECT id,created_at,direction,author,text,attachments_json,status,context_json FROM messages WHERE conversation_id=? AND hidden=0 AND kind<>'notice' ORDER BY created_at,rowid").all(c.id);
+    const rows=store.db.prepare("SELECT id,created_at,direction,author,text,attachments_json,status,context_json FROM messages WHERE conversation_id=? AND hidden=0 AND kind<>'notice' ORDER BY created_at,rowid").iterate(c.id);
     // A vague question keeps the client, message or story it was asked about, briefly, as the recent history does.
-    writeFileSync(history+".tmp",rows.map(r=>JSON.stringify({id:r.id,date:r.created_at,role:r.direction==="inbound"?"user":"assistant",author:r.author,text:r.text,status:r.status,files:JSON.parse(String(r.attachments_json)),
-      ...r.context_json?{context:contextSummary(JSON.parse(String(r.context_json)))}:{}})).join("\n")+"\n",{mode:0o600});
-    renameSync(history+".tmp",history);
-    return{conversationId:c.id,title:c.title,employee:c.profileId?store.getProfile(c.profileId)?.name:null,context,workspace,history,messages:rows.length};
+    const messages=writeJsonLines(history,(function*(){for(const r of rows)yield{id:r.id,date:r.created_at,role:r.direction==="inbound"?"user":"assistant",author:r.author,text:r.text,status:r.status,files:JSON.parse(String(r.attachments_json)),
+      ...r.context_json?{context:contextSummary(JSON.parse(String(r.context_json)))}:{}};})());
+    return{conversationId:c.id,title:c.title,employee:c.profileId?store.getProfile(c.profileId)?.name:null,context,workspace,history,messages};
   });
   // A deleted or moved employee's chat must not stay readable through an old copy.
   const current=new Set(sources.map(source=>source.conversationId+".jsonl"));
   for(const name of readdirSync(directory))if(name.endsWith(".jsonl") && !current.has(name))rmSync(resolve(directory,name),{force:true});
   const memories:string[]=[];
+  const activeContexts=new Set(sources.map(source=>source.context));
   const contextRoots=[resolve(root,".data/contexts")];
   const accounts=resolve(root,".data/accounts");
   if(existsSync(accounts))for(const entry of readdirSync(accounts,{withFileTypes:true}))if(entry.isDirectory())contextRoots.push(resolve(accounts,entry.name,"contexts"));
   for(const base of contextRoots)if(existsSync(base))for(const entry of readdirSync(base,{withFileTypes:true})){
-    if(!entry.isDirectory() || !contextPattern.test(entry.name))continue;
+    if(!entry.isDirectory() || !activeContexts.has(entry.name))continue;
     const path=resolve(base,entry.name,"memories");
     if(existsSync(path)){readPaths.add(path);memories.push(path);}
   }
