@@ -50,7 +50,7 @@ An unrelated active build exhausted the Mini's free disk during this work. Clean
 
 Free space recovered to about 18.5 GiB, with normal memory pressure, before the controlled native release build began. Resource measurements and cleanup receipts are private under `.data/resource-monitor`; no recurring resource automation was created.
 
-Build 66 is being prepared for macOS and the Home archive. The native application source is unchanged from build 65; iOS retains its explicit build-65 override. TestFlight does not need an identical new archive for these server/runtime changes. Public installer and feed publication remain gated on signed-package verification, notarization and updater acceptance.
+Build 66 has passed 350 native tests, five signed-package checks, 61 Home/cloud/server checks, notarization and a real isolated 49-to-66 Sparkle installation/relaunch. The native application source is unchanged from build 65; iOS retains its explicit build-65 override. App Store Connect confirms that iOS 65 is valid and available to internal TestFlight testers; external beta submission is still a separate step, and App Store build 61 remains waiting for review. Public Mac/Home publication and local production installation follow the verified candidate.
 
 The School production browser check reached the normal login boundary. Brave had no authenticated School session and the 1Password GUI was locked; an existing saved account reference did not establish a usable founder session. The temporary test tab was closed. This is an outstanding authenticated visual check, not a failure of the passed HTTP, database or MCP checks. No login was fabricated and no user question was required to continue independent release work.
 
