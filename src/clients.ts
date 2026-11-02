@@ -8,6 +8,9 @@ import type { Store } from "./store.js";
 /** Business clients for the owner's app, read from the company service the owner connected to the main chat.
  * A fixed adapter: two read tools, strict replies, the connector's own credential, and nothing written anywhere. */
 
+/** The connector name that settles a tie between connectors offering the client tools. */
+const COMPANY = "company";
+
 export type ClientsCode = "owner_only" | "no_connector" | "ambiguous" | "service_auth" | "service_denied" | "service_unavailable" | "client_unknown" | "client_source_changed";
 const refusals: Record<ClientsCode, [string, number]> = {
   owner_only: ["Клиентов видит владелец устройства.", 403],
@@ -186,11 +189,14 @@ export class ClientsAdapter {
       if (failure) throw failure;
       const current = offering.find(o => o.connector.name === known.connector);
       if (!current) throw clientsRefusal("no_connector", known.connector);
-      if (offering.length > 1) throw clientsRefusal("ambiguous", offering.map(o => o.connector.name).join(", "));
+      if (offering.length > 1 && current.connector.name !== COMPANY) throw clientsRefusal("ambiguous", offering.map(o => o.connector.name).join(", "));
       if (!sameSource(current.source, known)) this.store.setSetting("clients.source", JSON.stringify(current.source));
       return current;
     }
-    if (offering.length === 1) { this.store.setSetting("clients.source", JSON.stringify(offering[0]!.source)); return offering[0]!; }
+    // The owner's personal MCP can mirror the company tools; the connector the owner named «company» is the business
+    // source then. Any other tie stays ambiguous for the owner to trim.
+    const chosen = offering.length === 1 ? offering[0] : offering.find(o => o.connector.name === COMPANY);
+    if (chosen) { this.store.setSetting("clients.source", JSON.stringify(chosen.source)); return chosen; }
     if (offering.length > 1) throw clientsRefusal("ambiguous", offering.map(o => o.connector.name).join(", "));
     // Discovery that could not finish is not a missing source: a connector that refused or did not answer keeps its own state,
     // named in the detail, without calling it the company connector.

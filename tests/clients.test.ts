@@ -126,6 +126,11 @@ describe("business clients through the owner's company connector", () => {
     const ambiguous = await failure(new ClientsAdapter(two.root, two.store).list());
     expect(ambiguous).toMatchObject({ code: "ambiguous", status: 409, detail: "company-a, company-b" });
     expect(ambiguous.message).not.toMatch(/удал|delete|remove/i);
+    // The owner's personal MCP mirrors the company tools: the connector named «company» is the business source.
+    const c = await company(), mirror = await company();
+    const mirrored = home({ personal: { url: mirror.url, token: "p" }, company: { url: c.url, token: "c" } });
+    expect((await new ClientsAdapter(mirrored.root, mirrored.store).list()).source.connector).toBe("company");
+    expect(JSON.parse(mirrored.store.getSetting("clients.source")!)).toMatchObject({ connector: "company" });
   });
 
   it("accepts event-stream replies and refuses a reply that echoes the credential or breaks the contract", async () => {
