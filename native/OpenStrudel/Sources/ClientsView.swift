@@ -1,5 +1,11 @@
 import SwiftUI
 
+/// Keep a client's source with its destination even when the list refreshes or its tab is not visible.
+struct ClientRoute: Hashable {
+    let client: BusinessClient
+    let source: ClientSource
+}
+
 /// The owner's business clients, read from the company service connected to the chat's Home: a list, one client,
 /// its files, and one action that takes the client to the chat as context. Nothing is written here.
 struct ClientsTab: View {
@@ -13,7 +19,6 @@ struct ClientsTab: View {
     @StateObject private var model = ClientsModel()
     @State private var query = ""
     @State private var showArchive = false
-    let discuss: (ChatContext) -> Void
     private var term: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
@@ -73,12 +78,11 @@ struct ClientsTab: View {
         .listStyle(.plain)
         #endif
         .searchable(text: $query, prompt: L("Найти клиента"))
-        .navigationDestination(for: BusinessClient.self) { client in ClientDetail(client: client, source: source, discuss: discuss) }
         .accessibilityIdentifier("clientsState-ready")
     }
 
     private func row(_ client: BusinessClient, source: ClientSource) -> some View {
-        NavigationLink(value: client) {
+        NavigationLink(value: ClientRoute(client: client, source: source)) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(client.name).font(AppTypography.interface.weight(.medium)).lineLimit(1)
                 if !client.detail.isEmpty {
@@ -86,6 +90,8 @@ struct ClientsTab: View {
                 }
             }
             .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .accessibilityIdentifier("client-" + client.id)
     }
@@ -143,7 +149,7 @@ struct ClientsTab: View {
 }
 
 /// One client: who it is, its files as the service grades them, and the way to the chat.
-private struct ClientDetail: View {
+struct ClientDetail: View {
     @EnvironmentObject private var home: HomeClient
     @Environment(\.dynamicTypeSize) private var textSize
     @StateObject private var files: ClientFilesModel

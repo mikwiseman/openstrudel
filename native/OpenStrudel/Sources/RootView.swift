@@ -18,6 +18,8 @@ struct OpenStrudelRootView: View {
     @State private var tab = PrimaryTab.chat
     /// The readers opened over the chat, newest last. Back returns to the chat as it was.
     @State private var readers: [ReaderRoute] = []
+    /// iOS tabs keep their paths; Mac sidebar sections return to their roots.
+    @State private var clientRoutes: [ClientRoute] = []
     @State private var showHistory = false
     @AppStorage("openstrudel.aiConsent.v1") private var aiConsent = false
 
@@ -32,6 +34,7 @@ struct OpenStrudelRootView: View {
 
     var body: some View {
         screens
+        .onChange(of: client.id) { _, _ in readers.removeAll(); clientRoutes.removeAll() }
         .task(id: "\(pollingPhase)-\(client.id)") {
             guard pollingPhase == .active else { return }
             #if os(macOS)
@@ -125,46 +128,77 @@ struct OpenStrudelRootView: View {
         }
     }
 
-    /// Chat and Clients: a tab bar on the phone, a sidebar on the Mac. The chat's readers push over the chat and come back to it.
+    /// Native sidebar sections on the Mac, tabs on iOS; each place owns its detail stack.
     private var places: some View {
-        TabView(selection: $tab) {
-            Tab(L("Чат"), systemImage: "bubble.left.and.text.bubble.right", value: PrimaryTab.chat) {
-                NavigationStack(path: $readers) {
-                    chat
-                        .navigationDestination(for: ReaderRoute.self) { route in
-                            ReaderScreen(route: route) { context in
-                                library.attach(context)
-                                readers.removeAll()
-                            }
-                        }
+        Group {
+            #if os(macOS)
+            NavigationSplitView {
+                List(selection: Binding<PrimaryTab?>(get: { tab }, set: { if let selection = $0 { tab = selection } })) {
+                    Label(L("Чат"), systemImage: "bubble.left.and.text.bubble.right")
+                        .tag(PrimaryTab.chat).accessibilityIdentifier("primaryTab-chat")
+                    Label(L("Клиенты"), systemImage: "person.2")
+                        .tag(PrimaryTab.clients).accessibilityIdentifier("primaryTab-clients")
+                }
+                .listStyle(.sidebar)
+                .navigationSplitViewColumnWidth(min: 180, ideal: 220)
+            } detail: {
+                switch tab {
+                case .chat: chatStack
+                case .clients: clientsStack
                 }
             }
-            Tab(L("Клиенты"), systemImage: "person.2", value: PrimaryTab.clients) {
-                NavigationStack {
-                    ClientsTab { context in
-                        library.attach(context)
-                        // Back to the one composer, not to a reader left open over it.
-                        readers.removeAll()
-                        tab = .chat
-                    }
-                }
+            #else
+            TabView(selection: $tab) {
+                Tab(L("Чат"), systemImage: "bubble.left.and.text.bubble.right", value: PrimaryTab.chat) { chatStack }
+                Tab(L("Клиенты"), systemImage: "person.2", value: PrimaryTab.clients) { clientsStack }
             }
+            .tabViewStyle(.sidebarAdaptable)
+            .tabBarMinimizeBehavior(.onScrollDown)
+            #endif
         }
-        .tabViewStyle(.sidebarAdaptable)
-        #if os(iOS)
-        .tabBarMinimizeBehavior(.onScrollDown)
-        #endif
         // Edit › Find a chat (⌘F) opens the conversations and their search.
         .focusedSceneValue(\.findChat) { showHistory = true }
         .focusedSceneValue(\.selectTab) { tab = $0 }
     }
 
+    private var chatStack: some View {
+        NavigationStack(path: $readers) {
+            chat
+                .navigationDestination(for: ReaderRoute.self) { route in
+                    ReaderScreen(route: route) { context in
+                        library.attach(context)
+                        readers.removeAll()
+                    }
+                }
+        }
+        .id(client.id)
+    }
+
+    private var clientsStack: some View {
+        NavigationStack(path: $clientRoutes) {
+            ClientsTab()
+                .navigationDestination(for: ClientRoute.self) { route in
+                    ClientDetail(client: route.client, source: route.source, discuss: discussClient)
+                }
+        }
+        .id(client.id)
+    }
+
+    private func discussClient(_ context: ChatContext) {
+        library.attach(context)
+        // Discuss leaves this destination on either platform.
+        clientRoutes.removeAll()
+        // Back to the one composer, not to a reader left open over it.
+        readers.removeAll()
+        tab = .chat
+    }
+
     private var chat: some View {
         // Each device keeps its own draft, files and reading position.
         #if os(macOS)
-        ConversationView(openHistory: { showHistory = true }).id(client.id)
+        ConversationView(openHistory: { showHistory = true })
         #else
-        ConversationView(showSettings: $showSettings, openHistory: { showHistory = true }).id(client.id)
+        ConversationView(showSettings: $showSettings, openHistory: { showHistory = true })
         #endif
     }
 }

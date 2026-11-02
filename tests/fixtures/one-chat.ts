@@ -93,7 +93,10 @@ runtime.account.read = async () => ({ connected: true, email: "preview@example.c
 const api = runtime.api as unknown as { handle: (...args: any[]) => Promise<void> };
 const originalHandle = api.handle.bind(runtime.api);
 let offline = false;
+let messageRequests = 0;
 api.handle = async (req, res, ...rest) => {
+  // Count the paired app's request, not the Home executor's second HTTP hop for the same send.
+  if (rest[0] === true && req.method === "POST" && new URL(req.url, "http://127.0.0.1").pathname === "/v1/messages") messageRequests += 1;
   if (req.method !== "GET") await appendFile(output + ".requests.jsonl", JSON.stringify({ at: new Date().toISOString(), method: req.method, path: new URL(req.url, "http://127.0.0.1").pathname }) + "\n", { mode: 0o600 });
   if (offline) { res.writeHead(503).end('{"error":"Тестовое отключение"}'); return; }
   await originalHandle(req, res, ...rest);
@@ -107,7 +110,7 @@ runtime.store.importHistory(editorChat.id, [
   { sourceId: "e2", author: "Редактор", date: "2026-10-28T06:41:00Z", direction: "outbound", text: "## Черновик готов\n\n**Главное** уже выделено.\n\n- Первый пункт\n- Второй пункт" },
 ]);
 const main = runtime.store.primaryConversation();
-runtime.store.addMessage({ conversationId: main.id, channel: "api", direction: "inbound", text: "Что у нас на этой неделе?" });
+const seededQuestion = runtime.store.addMessage({ conversationId: main.id, channel: "api", direction: "inbound", text: "Что у нас на этой неделе?" });
 runtime.store.addMessage({ conversationId: main.id, channel: "api", direction: "outbound", text: "Три встречи и один акт на подпись." });
 const story = (id: string, rank: number, title: string, summary: string) => runtime.store.addMessage({ conversationId: editorChat.id, channel: "api", direction: "outbound", text: `**${title}**\n\n${summary}`,
   story: { id, edition: new Date().toISOString().slice(0, 10), rank, section: "Модели", status: "Вышло", title, summary, body: summary + "\n\nПодробности в источнике.", view: "Для нас это повод проверить пайплайн.", check: null, verification: "Прочитан блог компании.", eventAt: null, change: null,
@@ -134,7 +137,11 @@ const control = createServer(async (req, res) => {
   if (path.pathname === "/offline") offline = path.searchParams.get("value") === "1";
   if (path.pathname === "/company") companyMode = (path.searchParams.get("mode") as CompanyMode) ?? "ok";
   if (path.pathname === "/release") holdReply?.();
-  res.end(JSON.stringify({ editor: editor.id, main: main.id, group: group.conversationId, offline, companyMode, companyCalls, turns, profiles: runtime.store.listProfiles().map(p => ({ id: p.id, name: p.name, news: p.news })) }));
+  // Read the accepted context from storage, after the Home verified the client's identity and source.
+  const sentMessages = runtime.store.listMessages(main.id, 100)
+    .filter(message => message.direction === "inbound" && message.id !== seededQuestion.id)
+    .map(message => ({ id: message.id, conversationId: message.conversationId, text: message.text, context: message.context ?? null }));
+  res.end(JSON.stringify({ editor: editor.id, main: main.id, group: group.conversationId, offline, companyMode, companyURL, companyCalls, turns, messageRequests, sentMessages, profiles: runtime.store.listProfiles().map(p => ({ id: p.id, name: p.name, news: p.news })) }));
 });
 await new Promise<void>(done => control.listen(0, "127.0.0.1", done));
 controlURL = `http://127.0.0.1:${(control.address() as { port: number }).port}`;
