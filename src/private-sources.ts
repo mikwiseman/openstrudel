@@ -74,10 +74,10 @@ export function privateSourceAudience(store: Store, context: TelegramToolContext
     if (context.channel !== "api") return false;
     const inbound = store.db.prepare("SELECT external_id,status FROM messages WHERE id=? AND conversation_id=? AND direction='inbound'").get(context.messageId, context.conversationId);
     if (!inbound || inbound.status !== "running" || !String(inbound.external_id).startsWith("schedule:")) return false;
-    const run = store.db.prepare("SELECT schedule_id FROM schedule_runs WHERE id=? AND conversation_id=? AND status='running'").get(String(inbound.external_id).slice(9), context.conversationId);
+    const run = store.db.prepare("SELECT schedule_id,private_source_fingerprint FROM schedule_runs WHERE id=? AND conversation_id=? AND status='running'").get(String(inbound.external_id).slice(9), context.conversationId);
     if (!run) return false;
     const current = scheduleState(store, String(run.schedule_id), context.conversationId);
-    return current.enabled && (context.scheduleTelegramChatId ?? null) === current.destination
+    return current.enabled && run.private_source_fingerprint === current.fingerprint && (context.scheduleTelegramChatId ?? null) === current.destination
       && store.getSetting(grantKey(String(run.schedule_id))) === current.fingerprint;
   } catch { return false; }
 }

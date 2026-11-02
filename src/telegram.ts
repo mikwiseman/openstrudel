@@ -402,7 +402,7 @@ export class TelegramAdapter {
       if(row.status!=="pending") throw new Error("Доставка требует проверки в Telegram перед повтором");
       this.store.db.prepare("UPDATE telegram_outbox SET status='sending' WHERE key=?").run(key);
       try {
-        const sent=await this.call<{message_id:number}>("sendMessage",JSON.parse(payload));
+        const sent=await this.call<{message_id:number}>("sendMessage",JSON.parse(payload),undefined,undefined,options.assertCurrent);
         this.store.db.prepare("UPDATE telegram_outbox SET status='delivered',message_id=? WHERE key=?").run(String(sent.message_id),key);
       } catch (error) {
         this.store.db.prepare("UPDATE telegram_outbox SET status=?,error=? WHERE key=?").run(...(refused(error) ? ["not_sent", REFUSED] : ["unknown", "Ответ Telegram не подтверждён; автоматический повтор остановлен"]), key);
@@ -424,7 +424,7 @@ export class TelegramAdapter {
     for (let first = 0; first < photos.length; first += 10) {
       const batch = photos.slice(first, first + 10), captioned = Boolean(caption && !first);
       assertCurrent?.();
-      try { await this.sendPhotos(String(chatId), batch, deliveryKey, first, captioned ? { caption: caption!, replyTo: replyToMessageId } : {}); }
+      try { await this.sendPhotos(String(chatId), batch, deliveryKey, first, { ...(captioned ? { caption: caption!, replyTo: replyToMessageId } : {}), assertCurrent }); }
       catch (error) {
         // Telegram refused the photos, so nothing went out: the answer still arrives as text and files.
         if (!refused(error)) throw error;
@@ -512,7 +512,7 @@ export class TelegramAdapter {
   }
 
   /** Up to ten photos in one request: sendPhoto for one, sendMediaGroup for an album. Each photo keeps an album receipt. */
-  private async sendPhotos(chatId:string, files:Attachment[], deliveryKey:string, first:number, options:{silent?:boolean;caption?:TelegramText;replyTo?:number}):Promise<void> {
+  private async sendPhotos(chatId:string, files:Attachment[], deliveryKey:string, first:number, options:{silent?:boolean;caption?:TelegramText;replyTo?:number;assertCurrent?:()=>void}):Promise<void> {
     const single=files.length===1, form=new FormData();form.set("chat_id",chatId);
     if (options.silent) form.set("disable_notification","true");
     const reply=options.replyTo ? {message_id:options.replyTo,allow_sending_without_reply:true} : undefined;
@@ -526,6 +526,7 @@ export class TelegramAdapter {
       if (!stored || stored.conversationId!==file.conversationId) throw new Error("Файл ответа не найден");
       form.set(single ? "photo" : `photo${first+index}`,new Blob([await readFile(stored.path)],{type:file.mimeType}),file.name);
     }
+    options.assertCurrent?.();
     const rows=files.map((file,index)=>({key:`${chatId}:${deliveryKey}:album:${first+index}`,
       payload:JSON.stringify({chat_id:chatId,media,fileIds:files.map(f=>f.id),fileId:file.id,...(options.silent?{disable_notification:true}:{}),...(reply?{reply_parameters:reply}:{})})}));
     // Reserve every photo together; a lost response must not replay the album.
@@ -540,7 +541,7 @@ export class TelegramAdapter {
       this.store.db.exec("COMMIT");
     } catch(error) {this.store.db.exec("ROLLBACK");throw error;}
     try {
-      const result=await this.call<unknown>(single?"sendPhoto":"sendMediaGroup",form);
+      const result=await this.call<unknown>(single?"sendPhoto":"sendMediaGroup",form,undefined,undefined,options.assertCurrent);
       const sent=(single?[result]:result) as Array<{message_id:number;media_group_id?:string}>;
       if (!Array.isArray(sent) || sent.length!==files.length || !single && !sent[0]?.media_group_id
         || sent.some(item=>!Number.isSafeInteger(item?.message_id) || item.message_id<=0 || item.media_group_id!==sent[0]!.media_group_id)
@@ -577,9 +578,10 @@ export class TelegramAdapter {
         // those two sends, not a known Telegram limit. A larger GIF goes as our own MP4 when this Home has ffmpeg.
         const video=animation && stored.size > 8*1024*1024 ? await this.convertGif(stored.path) : null;
         form.set(animation?"animation":audio?"audio":"document",new Blob([video ?? await readFile(stored.path)],{type:video?"video/mp4":file.mimeType}),video?file.name.replace(/\.gif$/i,"")+".mp4":file.name);
+        options.assertCurrent?.();
         this.store.db.prepare("UPDATE telegram_outbox SET status='sending' WHERE key=?").run(key);
         attempted=true;
-        const sent = await this.call<{message_id:number}&Record<string,unknown>>(animation?"sendAnimation":audio?"sendAudio":"sendDocument",form);
+        const sent = await this.call<{message_id:number}&Record<string,unknown>>(animation?"sendAnimation":audio?"sendAudio":"sendDocument",form,undefined,undefined,options.assertCurrent);
         // The Bot API server writes an animation as both animation and document, and a file it kept plain as document only
         // (tdlib/telegram-bot-api, Client::JsonMessage::store), so animation is checked first.
         const kind=["animation","video","audio","voice","photo","sticker","document"].find(field=>sent[field]) ?? null;
@@ -1050,9 +1052,10 @@ export class TelegramAdapter {
     return target ? this.store.getConversation(String(target.conversation_id)) : null;
   }
 
-  private async call<T = unknown>(method: string, body: Record<string, unknown> | FormData, token = this.token, timeoutMs = 35_000): Promise<T> {
+  private async call<T = unknown>(method: string, body: Record<string, unknown> | FormData, token = this.token, timeoutMs = 35_000, assertCurrent?: () => void): Promise<T> {
     if (!token) throw new Error("Telegram is not configured");
     for (let attempt=0;;attempt++) {
+      assertCurrent?.();
       const multipart = body instanceof FormData;
       const response = await fetch("https://api.telegram.org/bot" + token + "/" + method, { method: "POST", headers: multipart ? undefined : { "content-type": "application/json" }, body: multipart ? body : JSON.stringify(body), signal: this.controller ? AbortSignal.any([this.controller.signal,AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
       const payload = (await response.json()) as TelegramResponse<T>;

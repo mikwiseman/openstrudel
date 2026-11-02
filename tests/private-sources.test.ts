@@ -11,6 +11,7 @@ import { UnipileAdapter } from "../src/unipile.js";
 import type { TelegramToolContext } from "../src/telegram-tools.js";
 
 const stores: Store[] = [];
+let sequence = 0;
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); for (const s of stores.splice(0)) s.close(); });
 function fixture() {
   const store = new Store(":memory:"); stores.push(store);
@@ -19,11 +20,11 @@ function fixture() {
   const messages = new MessageService(store, new MockCodexEngine()), scheduler = new Scheduler(store, messages);
   unipileSettings(store, true, { accounts: [{ accountId: "acc_owner", provider: "linkedin", providerUserId: "owner-id" }] });
   const schedule = () => scheduler.save({ conversationId: conversation.id, name: "Private focus", prompt: "Read only, return here", cron: "0 7 * * *", timezone: "Europe/Moscow", delivery: "app" });
-  const running = (id: string) => {
-    const inbound = store.addMessage({ conversationId: conversation.id, channel: "api", direction: "inbound", text: "Scheduled request", externalId: "schedule:actual-run" });
+  const running = (id: string, runId = "actual-run") => {
+    const inbound = store.addMessage({ conversationId: conversation.id, channel: "api", direction: "inbound", text: "Scheduled request", externalId: "schedule:" + runId });
     store.db.prepare("UPDATE messages SET status='running' WHERE id=?").run(inbound.id);
-    store.db.prepare("INSERT INTO schedule_runs(id,schedule_id,conversation_id,scheduled_for,status,created_at) VALUES(?,?,?,?,?,?)")
-      .run("actual-run", id, conversation.id, new Date().toISOString(), "running", new Date().toISOString());
+    store.db.prepare("INSERT INTO schedule_runs(id,schedule_id,conversation_id,scheduled_for,status,created_at,private_source_fingerprint) VALUES(?,?,?,?,?,?,?)")
+      .run(runId, id, conversation.id, new Date(Date.now() + sequence++).toISOString(), "running", new Date().toISOString(), store.getSetting("private_sources.schedule." + id));
     return { ...context, messageId: inbound.id, scheduled: true, byOwner: false, scheduleTelegramChatId: null };
   };
   return { store, conversation, context, messages, scheduler, schedule, running };
@@ -57,13 +58,16 @@ describe("private message source audience", () => {
   });
 
   it("requires a current owner-approved fingerprint and real running scheduler record, never a message flag", () => {
-    const f = fixture(), schedule = f.schedule(), context = f.running(schedule.id);
-    expect(privateSourceAudience(f.store, context)).toBe(false);
+    const f = fixture(), schedule = f.schedule(), early = f.running(schedule.id,"unapproved-run");
+    expect(privateSourceAudience(f.store, early)).toBe(false);
     expect(() => privateSourceSchedule(f.store, false, f.conversation.id, schedule.id)).toThrow("owner");
     const before = privateSourceSchedule(f.store, true, f.conversation.id, schedule.id);
     expect(before.enabled).toBe(false);
     expect(() => privateSourceSchedule(f.store, true, f.conversation.id, schedule.id, { enabled: true, fingerprint: "old" })).toThrow("changed");
     privateSourceSchedule(f.store, true, f.conversation.id, schedule.id, { enabled: true, fingerprint: before.fingerprint });
+    // A grant made while a run is already in flight applies to future runs only.
+    expect(privateSourceAudience(f.store, early)).toBe(false);
+    const context = f.running(schedule.id);
     expect(privateSourceAudience(f.store, context)).toBe(true);
     expect(privateSourceAudience(f.store, { ...context, messageId: "fabricated" })).toBe(false);
     expect(privateSourceAudience(f.store, { ...context, scheduleTelegramChatId: "-100" })).toBe(false);
@@ -72,9 +76,10 @@ describe("private message source audience", () => {
   });
 
   it.each(["prompt", "name", "timezone", "cron", "conversation_id", "delivery", "telegram_chat_id", "enabled"])("invalidates a scheduled grant after %s changes", field => {
-    const f = fixture(), schedule = f.schedule(), context = f.running(schedule.id);
+    const f = fixture(), schedule = f.schedule();
     const state = privateSourceSchedule(f.store, true, f.conversation.id, schedule.id);
     privateSourceSchedule(f.store, true, f.conversation.id, schedule.id, { enabled: true, fingerprint: state.fingerprint });
+    const context = f.running(schedule.id); expect(privateSourceAudience(f.store, context)).toBe(true);
     const value = field === "enabled" ? 0 : field === "conversation_id" ? f.store.getOrCreateConversation({ channel: "api", externalId: "other" }).id : "changed";
     f.store.db.prepare(`UPDATE schedules SET ${field}=? WHERE id=?`).run(value, schedule.id);
     expect(privateSourceAudience(f.store, context)).toBe(false);
@@ -119,9 +124,10 @@ describe("private message source audience", () => {
   });
 
   it("binds a recurring grant to the current private audience as well as its schedule", () => {
-    const f = fixture(), schedule = f.schedule(), context = f.running(schedule.id);
+    const f = fixture(), schedule = f.schedule();
     const before = privateSourceSchedule(f.store, true, f.conversation.id, schedule.id);
     privateSourceSchedule(f.store, true, f.conversation.id, schedule.id, { enabled: true, fingerprint: before.fingerprint });
+    const context = f.running(schedule.id); expect(privateSourceAudience(f.store, context)).toBe(true);
     f.store.linkTelegramChat({ chatId: "42", title: "Owner", allowedSenders: ["42"] });
     f.store.db.prepare("UPDATE telegram_chats SET conversation_id=? WHERE chat_id='42'").run(f.conversation.id);
     expect(f.messages.contextFor(f.conversation.id)).toBe("personal");
