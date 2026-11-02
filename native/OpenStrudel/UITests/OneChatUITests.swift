@@ -28,6 +28,12 @@ final class OneChatUITests: XCTestCase {
         XCTAssertTrue(app.tabBars.buttons["Чат"].exists && app.tabBars.buttons["Клиенты"].exists, app.debugDescription)
         XCTAssertEqual(app.tabBars.buttons.count, 2)
         XCTAssertFalse(app.buttons["newEmployee"].exists)
+        let send = app.buttons["sendMessage"]
+        XCTAssertTrue(send.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(send.isEnabled, "The fresh fixture must start with an empty composer")
+        XCTAssertFalse(app.buttons["removeDraftContext"].exists)
+        // An empty TextField can expose its custom prompt as its accessibility value.
+        let emptyComposerValue = try XCTUnwrap(composer.value as? String)
         capture("chat", app)
 
         // 2. Two requests, two services, one conversation.
@@ -227,7 +233,9 @@ final class OneChatUITests: XCTestCase {
         // 6. An actual Home change clears the old client's destination, including while Clients is visible.
         // The draft has been sent and its context cleared; switching while a draft exists is correctly refused.
         XCTAssertTrue(composer.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(["", "Сообщение"].contains(composer.value as? String ?? "unexpected draft"))
+        XCTAssertEqual(composer.value as? String, emptyComposerValue, "Send must restore the initial empty composer")
+        XCTAssertTrue(send.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(send.isEnabled, "No draft may remain before changing Homes")
         XCTAssertFalse(app.buttons["removeDraftContext"].exists)
         let second = try await read("/company?mode=empty", from: secondFixture)
         XCTAssertNotEqual(second["main"] as? String, after["main"] as? String)
