@@ -492,7 +492,7 @@ private final class DigitalOceanTestURLProtocol: URLProtocol, @unchecked Sendabl
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
-        operation = Task {
+        operation = Task { @Sendable [self] in
             do {
                 let handler = try #require(Self.currentHandler())
                 let (status, data) = try await handler(request)
