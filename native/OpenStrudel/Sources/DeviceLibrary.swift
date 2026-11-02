@@ -39,30 +39,6 @@ final class DeviceLibrary: ObservableObject {
         }
     }
 
-    struct EmployeeDestination: Identifiable {
-        let client: HomeClient
-        let deviceID: String?
-        let name: String
-        let available: Bool
-        var id: String { client.id + ":" + (deviceID ?? "self") }
-    }
-
-    // Creating an employee is available to every paired client. Account and
-    // device administration remain separate, owner-only operations.
-    var employeeDestinations: [EmployeeDestination] {
-        visibleClients.flatMap { source in
-            let available = source.isConfigured && !source.connectionNeedsPairing && !source.homeUnreachable && !source.isCreating
-            if source.devices.count > 1 {
-                return source.devices.map { device in
-                    EmployeeDestination(client: source, deviceID: device.id,
-                                        name: device.id == source.health?.nodeId ? source.displayName : device.name,
-                                        available: available && device.online)
-                }
-            }
-            return [EmployeeDestination(client: source, deviceID: nil, name: source.displayName, available: available)]
-        }
-    }
-
     init(defaults: UserDefaults = .standard, clients supplied: [HomeClient]? = nil, clientFactory: ((String) -> HomeClient)? = nil) {
         self.defaults = defaults
         let factory = clientFactory ?? { $0 == "current" ? HomeClient(defaults: defaults) : Self.makeClient(id: $0) }
@@ -77,10 +53,67 @@ final class DeviceLibrary: ObservableObject {
             clients = (ids.isEmpty ? ["current"] : ids).map(factory)
         }
         selectedID = defaults.string(forKey: "openstrudel.selectedDevice") ?? clients[0].id
+        draftContexts = Self.readDraftContexts(defaults)
         observeClients()
+        // The one chat is the chosen Home's main assistant. An employee or chat selected in an earlier version opens as a
+        // reader now; the draft it was writing stays under its own key and is offered back in the chat.
+        active.pinToMain()
         #if os(macOS)
         if LocalDataReset.current.pending { isErasing = true }
         #endif
+    }
+
+    // MARK: The one chat
+
+    /// The Home whose main assistant is the chat. Everything else is read, never written to, from here.
+    var primary: HomeClient { active }
+
+    /// Why the chat cannot move to another Home right now, or nil. Unsent words, files or an attached context, an answer
+    /// in flight, a question waiting for the owner, and sends the Home has not confirmed all keep the chat where it is.
+    var primaryChangeBlocker: String? {
+        let chat = active
+        let key = HomeDrafts.key(home: chat.baseURLString, profile: nil, chat: nil)
+        if !draft(for: key).isEmpty || !(fileDrafts[key] ?? []).isEmpty || draftContexts[key] != nil { return L("Сначала отправьте или уберите черновик.") }
+        if !chat.interactions.isEmpty { return L("Сначала ответьте на вопрос в чате.") }
+        if chat.isWorking { return L("Дождитесь ответа в чате.") }
+        // Every send the Home has not confirmed, including one restored after a relaunch with its "check delivery" note.
+        if !chat.pendingMessages.isEmpty { return L("Дождитесь доставки отправленных сообщений или уберите неотправленные.") }
+        return nil
+    }
+
+    /// Moves the chat to another paired Home when nothing is in flight; the previous Home's chat stays readable.
+    @discardableResult func changePrimary(to client: HomeClient) -> Bool { select(client) }
+
+    /// The client, message or story attached to a draft, kept with the draft text so it survives navigation and relaunch.
+    @Published private(set) var draftContexts: [String: ChatContext] = [:]
+    func draftContext(for key: String) -> ChatContext? { draftContexts[key] }
+    func saveDraftContext(_ context: ChatContext?, for key: String) {
+        guard draftContexts[key] != context else { return }
+        draftContexts[key] = context
+        defaults.set(try? JSONEncoder().encode(draftContexts), forKey: "openstrudel.draftContexts")
+    }
+    private static func readDraftContexts(_ defaults: UserDefaults) -> [String: ChatContext] {
+        guard let data = defaults.data(forKey: "openstrudel.draftContexts") else { return [:] }
+        return (try? JSONDecoder().decode([String: ChatContext].self, from: data)) ?? [:]
+    }
+    /// What "Обсудить" attaches: the main chat's next message carries it.
+    func attach(_ context: ChatContext) {
+        saveDraftContext(context, for: HomeDrafts.key(home: active.baseURLString, profile: nil, chat: nil))
+    }
+
+    /// Drafts saved on this Home for conversations other than the main chat: an employee's chat, a Telegram chat, an
+    /// archive, or a new employee that was being described. Each keeps its key until its text is used or cleared.
+    func savedDrafts(on client: HomeClient) -> [(key: String, profile: String?, chat: String?)] {
+        let prefix = client.baseURLString.trimmingCharacters(in: CharacterSet(charactersIn: "/ ")) + "\n"
+        let main = HomeDrafts.key(home: client.baseURLString, profile: nil, chat: nil)
+        let saved = (defaults.dictionary(forKey: "openstrudel.drafts") as? [String: String] ?? [:]).filter { !$0.value.isEmpty }
+        let keys = Set(saved.keys).union(fileDrafts.filter { !$0.value.isEmpty }.keys).union(draftContexts.keys)
+        return keys.filter { $0.hasPrefix(prefix) && $0 != main }.sorted().map { key in
+            let parts = key.dropFirst(prefix.count).split(separator: ":", maxSplits: 1).map(String.init)
+            let profile = parts.first.flatMap { $0 == "main" ? nil : $0 }
+            let chat = parts.count > 1 && parts[1] != "personal" ? parts[1] : nil
+            return (key, profile, chat)
+        }
     }
 
     private static func makeClient(id: String) -> HomeClient {
@@ -93,6 +126,13 @@ final class DeviceLibrary: ObservableObject {
             client.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         }
         observations.append(employeeMoves.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() })
+        // A quote from another Home is sent only while that connection still answers as the same Home.
+        for client in clients {
+            client.sourceReachable = { [weak self] home in
+                guard let source = self?.clients.first(where: { $0.id == home.id }), !source.isSignedOut else { return false }
+                return source.health?.homeId == home.homeId && !source.homeUnreachable && !source.connectionNeedsPairing
+            }
+        }
     }
 
     func moveTransport(clientID: String, action: String, body: Data) async throws -> Data {
@@ -104,47 +144,32 @@ final class DeviceLibrary: ObservableObject {
 
     func refreshMovedEmployee(open: Bool = true) async {
         guard let move = employeeMoves.operation, move.phase.finished else { return }
+        // The moved employee is read where it landed; the chat stays where it is.
         await refresh()
-        if open, move.phase == .completed, let target = clients.first(where: { $0.id == move.targetID }) {
-            await select(target, profile: move.profileID)
-        }
     }
 
     func employeeMoveDestinations(from source: HomeClient) -> [HomeClient] {
         visibleClients.filter { $0 !== source && $0.health?.homeId != source.health?.homeId }
     }
 
-    func select(_ client: HomeClient) {
-        guard !isErasing, clients.contains(where: { $0 === client }) else { return }
+    /// Makes this Home the chat's, from any entry point: pairing, the menu bar, Settings. One guard for all of them: the
+    /// chat stays where its draft, answer, question or unconfirmed sends are. Whatever the Home had selected before opens
+    /// as a reader; its composer is the main assistant's.
+    @discardableResult func select(_ client: HomeClient) -> Bool {
+        guard !isErasing, clients.contains(where: { $0 === client }), !client.isSignedOut else { return false }
+        if client === active { client.pinToMain(); return true }
+        guard primaryChangeBlocker == nil else { return false }
         selectedID = client.id
         defaults.set(selectedID, forKey: "openstrudel.selectedDevice")
+        client.pinToMain()
+        return true
     }
 
-    func select(_ client: HomeClient, profile: String?) async {
-        select(client)
-        await client.selectProfile(profile)
-    }
-
-    func select(_ client: HomeClient, group: TelegramChat) async {
-        select(client)
-        await client.selectChat(group.conversationId)
-        await client.refreshOpenAIAccount()
-    }
 
     func setCollapsed(_ collapsed: Bool, client: HomeClient) {
         if collapsed { collapsedDeviceIDs.insert(client.id) }
         else { collapsedDeviceIDs.remove(client.id) }
         defaults.set(collapsedDeviceIDs.sorted(), forKey: "openstrudel.collapsedDevices")
-    }
-
-    func beginEmployee(on client: HomeClient? = nil, deviceID: String? = nil) {
-        guard !isErasing else { return }
-        let target = client ?? active
-        guard clients.contains(where: { $0 === target }), !target.isSignedOut, !target.connectionNeedsPairing else { return }
-        select(target)
-        setCollapsed(false, client: target)
-        target.beginEmployee()
-        if let deviceID { target.draftDeviceID = deviceID }
     }
 
     func preparePairing(_ url: URL) {
@@ -157,25 +182,6 @@ final class DeviceLibrary: ObservableObject {
 
     func connection(for pairing: MacPairing) -> HomeClient {
         clients.first { $0.savedBaseURL == pairing.baseURL } ?? newConnection()
-    }
-
-    func chooseEmployeeDevice(_ target: HomeClient, deviceID: String? = nil) {
-        guard !isErasing, clients.contains(where: { $0 === target }), !target.isSignedOut, !target.connectionNeedsPairing else { return }
-        let old = active
-        guard old.isEmployeeDraft else { beginEmployee(on: target, deviceID: deviceID); return }
-        if old === target { if let deviceID { target.draftDeviceID = deviceID }; return }
-        let oldKey = HomeDrafts.key(home: old.baseURLString, profile: old.selectedProfileID, chat: nil)
-        let appearance = old.draftAppearance
-        beginEmployee(on: target, deviceID: deviceID)
-        target.draftAppearance = appearance
-        let newKey = HomeDrafts.key(home: target.baseURLString, profile: target.selectedProfileID, chat: nil)
-        var drafts = defaults.dictionary(forKey: "openstrudel.drafts") as? [String: String] ?? [:]
-        drafts[newKey] = drafts[oldKey]
-        drafts.removeValue(forKey: oldKey)
-        defaults.set(drafts, forKey: "openstrudel.drafts")
-        fileDrafts[newKey] = fileDrafts[oldKey]
-        fileDrafts.removeValue(forKey: oldKey)
-        old.releaseEmployeeDraft()
     }
 
     func draft(for key: String) -> String {
@@ -195,7 +201,10 @@ final class DeviceLibrary: ObservableObject {
         // A refreshed invitation replaces only that device's connection.
         // Existing local/remote devices and their drafts remain untouched.
         if let index = clients.firstIndex(where: { $0.normalizedBaseURL == client.normalizedBaseURL && $0.id != client.id }) {
+            let replaced = clients[index]
             clients[index] = client
+            // The chat's own connection renewed: the chat stays on it, pinned, instead of falling to another Home.
+            if replaced.id == selectedID { selectedID = client.id; defaults.set(selectedID, forKey: "openstrudel.selectedDevice"); client.pinToMain() }
         } else if !clients.contains(where: { $0 === client }) { clients.append(client) }
         defaults.set(clients.map(\.id), forKey: "openstrudel.deviceConnections")
         observeClients()
@@ -209,6 +218,8 @@ final class DeviceLibrary: ObservableObject {
         if let move = employeeMoves.operation, !move.phase.finished, [move.sourceID, move.targetID].contains(client.id) {
             client.errorMessage = L("Завершите или отмените перенос сотрудника перед отключением устройства."); return
         }
+        // Removing the chat's own Home moves the chat: the same guard as any other move, so nothing in flight is lost.
+        if client === active, let blocked = primaryChangeBlocker { client.errorMessage = blocked; return }
         // Persist the user's choice before waiting for a remote logout. iOS
         // can suspend us during that request, and a fresh invitation must not
         // reuse the client whose old credential is being revoked.
@@ -219,7 +230,9 @@ final class DeviceLibrary: ObservableObject {
             clients = [empty]
         }
         if selectedID == client.id || !clients.contains(where: { $0.id == selectedID }) {
+            // The chat's Home is gone with its connection; the next one is the chat now, pinned to its assistant.
             selectedID = clients[0].id
+            clients[0].pinToMain()
         }
         defaults.set(clients.map(\.id), forKey: "openstrudel.deviceConnections")
         defaults.set(selectedID, forKey: "openstrudel.selectedDevice")

@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// The details sheet's subject, fixed when it opens: a move can remove the employee from this
-/// device's list while its progress sheet is still open on top.
+/// The details sheet's subject, fixed when it opens.
 private struct EmployeeDetailsPresentation: Identifiable {
     let profile: EmployeeProfile?
     var id: String { profile?.id ?? "main" }
 }
 
+/// The one chat: the main assistant of the chosen Home, with the only composer in the app. Its draft, files and attached
+/// context stay with this Home's canonical draft key whatever is read or set up meanwhile.
 struct ConversationView: View {
     @EnvironmentObject private var library: DeviceLibrary
     @EnvironmentObject private var client: HomeClient
@@ -15,15 +16,16 @@ struct ConversationView: View {
     @Environment(\.openSettings) private var openSettings
     #else
     @Binding var showSettings: Bool
-    @State private var showEmployees = false
     #endif
+    /// Opens the conversations this chat can read.
+    let openHistory: () -> Void
     @State private var draft = ""
     @State private var pickedFiles: [PickedFile] = []
+    @State private var context: ChatContext?
     @State private var details: EmployeeDetailsPresentation?
     @State private var followsLatest = true
     @State private var userIsScrolling = false
     @State private var hasNewMessages = false
-    @State private var newsPlace = NewsPlace()
     @FocusState private var focused: Bool
     private var draftKey: String { HomeDrafts.key(home: client.baseURLString, profile: client.selectedProfileID, chat: client.selectedChatID) }
 
@@ -31,21 +33,12 @@ struct ConversationView: View {
         ScrollViewReader { proxy in
             #if os(macOS)
             // The transcript runs under the toolbar and the composer; the system draws the scroll edges.
-            if showsNewsDesk {
-                NewsDeskView(place: $newsPlace)
-                    .safeAreaBar(edge: .top, spacing: 0) { topBar }
-            } else {
-                transcript(proxy)
-                    .safeAreaBar(edge: .top, spacing: 0) { topBar }
-                    .safeAreaBar(edge: .bottom, spacing: 0) { bottomBar(proxy) }
-            }
+            transcript(proxy)
+                .safeAreaBar(edge: .top, spacing: 0) { topBar }
+                .safeAreaBar(edge: .bottom, spacing: 0) { bottomBar(proxy) }
             #else
             VStack(spacing: 0) {
                 EmployeeMoveStatusButton()
-                if showsSourcePicker {
-                    ConversationSources()
-                        .padding(.horizontal, Layout.edge).padding(.vertical, 8)
-                }
                 if showsConnectionBanner {
                     connectionBanner.padding(.horizontal, Layout.edge).padding(.vertical, 8)
                 }
@@ -53,24 +46,14 @@ struct ConversationView: View {
                     OpenAIRecoveryNotice()
                         .padding(.horizontal, Layout.edge).padding(.vertical, 8)
                 }
-                if showsNews {
-                    NewsSwitcher(mode: $newsPlace.mode).padding(.horizontal, Layout.edge)
-                        .overlay(alignment: .bottom) { Hairline() }
-                }
-                if showsNewsDesk {
-                    NewsDeskView(place: $newsPlace)
-                } else {
-                    // Animate scrolling, not pending-row replacement: an implicit
-                    // layout animation can loop while the iPad keyboard is visible.
-                    transcript(proxy)
-                        .safeAreaBar(edge: .bottom, spacing: 0) { bottomBar(proxy) }
-                }
+                // Animate scrolling, not pending-row replacement: an implicit
+                // layout animation can loop while the iPad keyboard is visible.
+                transcript(proxy)
+                    .safeAreaBar(edge: .bottom, spacing: 0) { bottomBar(proxy) }
             }
             #endif
         }
-        .task { draft = library.draft(for: draftKey); pickedFiles = library.fileDrafts[draftKey] ?? [] }
-        // Another employee opens on its own first screen.
-        .onChange(of: client.selectedProfileID) { _, _ in newsPlace = NewsPlace() }
+        .task { draft = library.draft(for: draftKey); pickedFiles = library.fileDrafts[draftKey] ?? []; context = library.draftContext(for: draftKey) }
         .onChange(of: client.openAIAccount?.connected) { _, connected in
             if connected == false { focused = false }
         }
@@ -82,17 +65,23 @@ struct ConversationView: View {
             guard library.active === client else { return }
             library.saveDraft(value, for: draftKey)
         }
+        .onChange(of: context) { _, value in
+            guard library.active === client else { return }
+            library.saveDraftContext(value, for: draftKey)
+        }
+        // "Обсудить" in a reader or a client attaches to this draft; it shows at once.
+        .onChange(of: library.draftContext(for: draftKey)) { _, value in
+            if value != context { context = value }
+        }
         .onChange(of: draftKey) { old, new in
             guard library.active === client else { return }
             library.saveDraft(draft, for: old)
             draft = library.draft(for: new)
             library.fileDrafts[old] = pickedFiles
             pickedFiles = library.fileDrafts[new] ?? []
-            #if os(macOS)
-            focused = client.isEmployeeDraft
-            #else
+            library.saveDraftContext(context, for: old)
+            context = library.draftContext(for: new)
             focused = false
-            #endif
         }
         #if os(macOS)
         .navigationTitle(client.activeAgentName)
@@ -100,20 +89,13 @@ struct ConversationView: View {
             ToolbarItem(placement: .navigation) {
                 ConversationTitle { openDetails() }
             }
-            if showsSourcePicker {
-                ToolbarItem(placement: .primaryAction) { ConversationSourceMenu() }
-            }
+            ToolbarItem(placement: .primaryAction) { historyButton }
         }
-        .focusedSceneValue(\.showEmployeeDetails, client.isEmployeeDraft ? nil : { openDetails() })
+        .focusedSceneValue(\.showEmployeeDetails, { openDetails() })
         #else
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button { focused = false; showEmployees = true } label: { Image(systemName: "line.3.horizontal") }
-                    .foregroundStyle(.primary)
-                    .accessibilityLabel(L("Чаты"))
-                    .accessibilityIdentifier("openChats")
-            }
+            ToolbarItem(placement: .topBarLeading) { historyButton }
             ToolbarItem(placement: .principal) {
                 ConversationTitle { focused = false; openDetails() }
             }
@@ -121,9 +103,6 @@ struct ConversationView: View {
                 Button { focused = false; showSettings = true } label: { Image(systemName: "gearshape") }
                     .foregroundStyle(.primary).accessibilityLabel(L("Настройки"))
             }
-        }
-        .sheet(isPresented: $showEmployees) {
-            EmployeePicker(isPresented: $showEmployees).environmentObject(client)
         }
         #endif
         .sheet(item: $details) { presentation in
@@ -133,6 +112,15 @@ struct ConversationView: View {
                 MainAssistantDetailsView().environmentObject(client)
             }
         }
+    }
+
+    /// Every other conversation of every Home, read from here.
+    private var historyButton: some View {
+        Button { focused = false; openHistory() } label: { Image(systemName: "clock.arrow.circlepath") }
+            .foregroundStyle(.primary)
+            .accessibilityLabel(L("Переписки"))
+            .accessibilityIdentifier("openChats")
+            .help(L("Переписки и ленты (⌘F)"))
     }
 
     private func openDetails() {
@@ -213,42 +201,34 @@ struct ConversationView: View {
         }
     }
 
-    /// A draft, a loaded conversation, or one that cannot load right now.
+    /// A loaded conversation, or one that cannot load right now.
     private var showsEmptyChat: Bool {
-        client.isEmployeeDraft || client.conversationID != nil || client.health == nil || client.homeUnreachable || client.syncError != nil
+        client.conversationID != nil || client.health == nil || client.homeUnreachable || client.syncError != nil
     }
-
-    /// Separate Telegram transcripts exist only on a Home known to lack the employee feed,
-    /// so an app opened before its Home answers never flashes the old screen.
-    private var showsSourcePicker: Bool {
-        client.health != nil && !client.usesEmployeeTimeline && !client.isEmployeeDraft && !client.employeeTelegramChats.isEmpty
-    }
-
-    /// An employee with News stories reads them as an edition and a radar; the chat stays one tab away.
-    private var showsNews: Bool { client.newsStamp != nil && !client.isEmployeeDraft }
-    private var showsNewsDesk: Bool { showsNews && newsPlace.mode != .chat }
 
     private var showsConnectionBanner: Bool { client.connectionNeedsPairing || client.homeUnreachable || client.health == nil }
     private var showsRecoveryNotice: Bool { client.openAIAccount?.connected == false && !client.homeUnreachable && client.health != nil }
 
-    /// The new-messages button, the Telegram hint and the composer, on the transcript column's edges.
+    /// The new-messages button, the drafts of other conversations and the composer, on the transcript column's edges.
     private func bottomBar(_ proxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if hasNewMessages && !followsLatest {
                 newMessagesButton(proxy).frame(maxWidth: .infinity)
             }
-            telegramHint
-            if client.usesEmployeeTimeline, !previousDrafts.isEmpty {
+            if !previousDrafts.isEmpty {
                 Menu(L("Черновики прежних переписок")) {
                     ForEach(previousDrafts, id: \.key) { saved in
                         Button(L("Вставить в сообщение: \(saved.title)")) {
                             let oldFiles = library.fileDrafts[saved.key] ?? []
                             draft = [draft, library.draft(for: saved.key)].filter { !$0.isEmpty }.joined(separator: "\n\n")
                             pickedFiles += oldFiles
-                            library.saveDraft("", for: saved.key); library.fileDrafts[saved.key] = nil
+                            if context == nil, let attached = library.draftContext(for: saved.key) { context = attached }
+                            library.saveDraft("", for: saved.key); library.fileDrafts[saved.key] = nil; library.saveDraftContext(nil, for: saved.key)
                         }
                     }
-                }.font(AppTypography.meta)
+                }
+                .font(AppTypography.meta)
+                .accessibilityIdentifier("previousDrafts")
             }
             composer
         }
@@ -263,30 +243,28 @@ struct ConversationView: View {
         }
     }
 
+    /// Words, files and contexts saved for this Home's other conversations, including an employee an earlier version
+    /// was writing to: nothing typed is lost when the chat becomes the one place to write.
     private var previousDrafts: [(key: String, title: String)] {
-        let chats = client.employeeTelegramChats.compactMap { chat in chat.conversationId.map { ($0, chat.title) } }
-            + client.importedConversations.filter { $0.profileId == client.selectedProfileID }.map { ($0.id, $0.title) }
-        return chats.compactMap { id, title in
-            let key = HomeDrafts.key(home: client.baseURLString, profile: client.selectedProfileID, chat: id)
-            return !library.draft(for: key).isEmpty || !(library.fileDrafts[key] ?? []).isEmpty ? (key, title) : nil
+        library.savedDrafts(on: client).map { saved in
+            let who = saved.profile.map { id in id.hasPrefix("draft:") ? L("Новый сотрудник") : client.profiles.first { $0.id == id }?.name ?? L("Сотрудник") }
+            let chat = saved.chat.map { id in
+                (client.telegram?.chats ?? []).first { $0.conversationId == id }?.title ?? client.importedConversations.first { $0.id == id }?.title ?? (id.hasPrefix("telegram-reply:") ? "Telegram" : L("Переписка"))
+            }
+            let title = [who, chat].compactMap { $0 }.joined(separator: " · ")
+            return (saved.key, title.isEmpty ? L("Черновик") : title)
         }
     }
 
     #if os(macOS)
-    /// Connection state, the OpenAI notice and the archive name sit above the transcript in the column.
+    /// Connection state and the OpenAI notice sit above the transcript in the column.
     @ViewBuilder private var topBar: some View {
-        let archive = client.importedConversations.first { $0.id == client.selectedChatID }
-        if showsConnectionBanner || showsRecoveryNotice || archive != nil || showsNews {
+        if showsConnectionBanner || showsRecoveryNotice {
             VStack(alignment: .leading, spacing: 8) {
-                if showsNews { NewsSwitcher(mode: $newsPlace.mode) }
                 if showsConnectionBanner { connectionBanner }
                 if showsRecoveryNotice { OpenAIRecoveryNotice() }
-                if let archive {
-                    Label(L("Archive · \(archive.title)"), systemImage: "archivebox")
-                        .font(AppTypography.meta).foregroundStyle(AppTheme.secondaryText).lineLimit(1)
-                }
             }
-            .frame(maxWidth: showsNews ? NewsLayout.column : Layout.column, alignment: .leading)
+            .frame(maxWidth: Layout.column, alignment: .leading)
             .padding(.horizontal, Layout.edge)
             .padding(.top, 16)
             .frame(maxWidth: .infinity)
@@ -319,16 +297,6 @@ struct ConversationView: View {
         .foregroundStyle(AppTheme.secondaryText)
     }
 
-    @ViewBuilder private var telegramHint: some View {
-        if client.health != nil, client.activeTelegramChat != nil {
-            // No fixed size here: the window measures its minimum with a zero width,
-            // and a fixed-height wrapped line would then grow taller than the window.
-            Text(L("Здесь можно обсудить переписку с помощником. Ответ останется в OpenStrudel."))
-                .font(AppTypography.meta).foregroundStyle(AppTheme.secondaryText)
-                .accessibilityIdentifier("telegramReplyDestination")
-        }
-    }
-
     private func newMessagesButton(_ proxy: ScrollViewProxy) -> some View {
         Button(L("Новые сообщения"), systemImage: "arrow.down") {
             followsLatest = true
@@ -342,15 +310,16 @@ struct ConversationView: View {
     }
 
     private var composer: some View {
-        Composer(draft: $draft, files: $pickedFiles, focused: $focused, contextID: draftKey, canSend: client.isConfigured && !client.connectionNeedsPairing && client.openAIAccount?.connected != false) { mode in
+        Composer(draft: $draft, files: $pickedFiles, context: $context, focused: $focused, contextID: draftKey, canSend: client.isConfigured && !client.connectionNeedsPairing && client.openAIAccount?.connected != false) { mode in
             guard client.openAIAccount?.connected != false else { return }
             let value = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !value.isEmpty || !pickedFiles.isEmpty else { return }
-            let files = pickedFiles
+            let files = pickedFiles, attached = context
             pickedFiles = []
             draft = ""
+            context = nil
             focused = true
-            Task { await client.sendMessage(value, files: files, mode: mode) }
+            Task { await client.sendMessage(value, files: files, mode: mode, context: attached) }
         }
     }
 
@@ -476,35 +445,20 @@ struct ConversationTitle: View {
     let openEmployee: () -> Void
     var body: some View {
         #if os(macOS)
-        if client.isEmployeeDraft {
-            // The same inset a toolbar button gives its label, so both capsules match.
-            identity.padding(.horizontal, 6)
-        } else {
-            Button(action: openEmployee) { identity }
-                .accessibilityLabel(L("Настройки сотрудника"))
-                .accessibilityValue(client.activeAgentName)
-                .accessibilityIdentifier("openEmployeeDetails")
-                .help(L("Открыть сотрудника «\(client.activeAgentName)»"))
-        }
+        Button(action: openEmployee) { identity }
+            .accessibilityLabel(L("Настройки сотрудника"))
+            .accessibilityValue(client.activeAgentName)
+            .accessibilityIdentifier("openEmployeeDetails")
+            .help(L("Открыть сотрудника «\(client.activeAgentName)»"))
         #else
-        VStack(spacing: 2) {
-            if !client.isEmployeeDraft {
-                Button(action: openEmployee) {
-                    identity.frame(minHeight: controlTarget).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(L("Настройки сотрудника"))
-                .accessibilityValue(client.activeAgentName)
-                .accessibilityIdentifier("openEmployeeDetails")
-            } else {
-                identity.frame(minHeight: controlTarget)
-            }
-            if let archive = client.importedConversations.first(where: { $0.id == client.selectedChatID }) {
-                Label(L("Archive · \(archive.title)"), systemImage: "archivebox")
-                    .labelStyle(.titleAndIcon)
-                    .font(AppTypography.meta).foregroundStyle(AppTheme.secondaryText).lineLimit(1)
-            }
-        }.frame(minHeight: controlTarget).contentShape(Rectangle())
+        Button(action: openEmployee) {
+            identity.frame(minHeight: controlTarget).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("Настройки сотрудника"))
+        .accessibilityValue(client.activeAgentName)
+        .accessibilityIdentifier("openEmployeeDetails")
+        .frame(minHeight: controlTarget).contentShape(Rectangle())
         #endif
     }
 
@@ -517,92 +471,6 @@ struct ConversationTitle: View {
         .frame(maxWidth: 240)
     }
 }
-
-#if os(macOS)
-/// The app conversation and each Telegram chat of this employee. Choosing one only changes
-/// which existing transcript is shown; it never rebinds the employee.
-struct ConversationSourceMenu: View {
-    @EnvironmentObject private var client: HomeClient
-
-    var body: some View {
-        let chat = client.employeeTelegramChats.first { $0.conversationId == client.selectedChatID }
-        Menu {
-            source(title: L("В приложении"), conversation: nil)
-            Divider()
-            // A Section header here would drop the items' accessibility identifiers.
-            ForEach(client.employeeTelegramChats) { chat in
-                source(title: chat.title, conversation: chat.conversationId,
-                       detail: chat.enabled == false ? L("Telegram · бот на паузе") : "Telegram")
-            }
-        } label: {
-            Label(chat?.title ?? L("В приложении"), systemImage: chat == nil ? "bubble.left" : "paperplane")
-                .labelStyle(.titleAndIcon)
-        }
-        .frame(maxWidth: 240)
-        .accessibilityIdentifier("conversationSources")
-    }
-
-    private func source(title: String, conversation: String?, detail: String? = nil) -> some View {
-        Toggle(isOn: Binding {
-            client.selectedChatID == conversation
-        } set: { _ in
-            guard client.selectedChatID != conversation else { return }
-            Task { await client.selectChat(conversation) }
-        }) {
-            Text(title)
-            if let detail { Text(detail) }
-        }
-        .accessibilityIdentifier(conversation.map { "conversationSource-" + $0 } ?? "conversationSource-app")
-    }
-}
-#else
-/// These are views of existing conversations, not new employee bindings.
-/// Keep each audience's transcript, tools and draft in its original scope.
-struct ConversationSources: View {
-    @EnvironmentObject private var client: HomeClient
-    var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    source(title: L("В приложении"), symbol: "bubble.left", conversation: nil)
-                    ForEach(client.employeeTelegramChats) { chat in
-                        source(title: chat.title, symbol: "paperplane", conversation: chat.conversationId,
-                               detail: chat.enabled == false ? L("Telegram · бот на паузе") : "Telegram")
-                    }
-                }.padding(.horizontal, 2)
-            }
-            .onChange(of: client.selectedChatID, initial: true) {
-                proxy.scrollTo(client.selectedChatID ?? "app", anchor: .center)
-            }
-            .onChange(of: client.employeeTelegramChats.map(\.conversationId)) {
-                proxy.scrollTo(client.selectedChatID ?? "app", anchor: .center)
-            }
-        }
-        .scrollIndicators(.hidden)
-        .fixedSize(horizontal: false, vertical: true)
-        .accessibilityIdentifier("conversationSources")
-    }
-
-    private func source(title: String, symbol: String, conversation: String?, detail: String? = nil) -> some View {
-        let selected = client.selectedChatID == conversation
-        return Button { Task { await client.selectChat(conversation) } } label: {
-            Label(title, systemImage: symbol)
-                .font(.subheadline.weight(selected ? .semibold : .regular))
-                .padding(.horizontal, 12)
-                .frame(minHeight: controlTarget)
-                .contentShape(Capsule())
-                .background(selected ? Color.primary.opacity(0.10) : Color.clear, in: Capsule())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(selected ? Color.primary : AppTheme.secondaryText)
-        .accessibilityLabel(detail.map { title + ", " + $0 } ?? title)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityIdentifier(conversation.map { "conversationSource-" + $0 } ?? "conversationSource-app")
-        .help(detail.map { title + " · " + $0 } ?? title)
-        .id(conversation ?? "app")
-    }
-}
-#endif
 
 /// The conversation's edges: 32 from the detail edges and under the Mac toolbar, the 16 margin on iOS;
 /// the composer 24 above the Mac window edge and 20 above the iOS safe area.

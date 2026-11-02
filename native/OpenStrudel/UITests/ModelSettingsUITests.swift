@@ -22,7 +22,7 @@ import XCTest
         let confirm = app.buttons["confirmMacPairing"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 15)); confirm.tap(); app.finishDevicePairing()
         if app.buttons["acceptAIDataSharing"].waitForExistence(timeout: 4) { app.buttons["acceptAIDataSharing"].tap() }
-        let chats = app.buttons["Чаты"]
+        let chats = app.buttons["openChats"]
         XCTAssertTrue(chats.waitForExistence(timeout: 15)); chats.tap()
         let before = try await read(fixture + "/state")
         let employee = try XCTUnwrap(before["profile"] as? [String:Any])
@@ -83,7 +83,7 @@ import XCTest
         XCTAssertTrue(confirm.waitForExistence(timeout: 15)); confirm.tap(); app.finishDevicePairing()
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 4) { consent.tap() }
-        let chats = app.buttons["Чаты"]
+        let chats = app.buttons["openChats"]
         XCTAssertTrue(chats.waitForExistence(timeout: 15)); chats.tap()
         app.buttons["teamSettings"].tap()
         app.buttons["settingsSection"].tap(); app.buttons["Приложение"].tap()
@@ -207,7 +207,7 @@ import XCTest
         let confirm = app.buttons["confirmMacPairing"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 15)); confirm.tap(); app.finishDevicePairing()
         if app.buttons["acceptAIDataSharing"].waitForExistence(timeout: 4) { app.buttons["acceptAIDataSharing"].tap() }
-        let chats = app.buttons["Чаты"]
+        let chats = app.buttons["openChats"]
         XCTAssertTrue(chats.waitForExistence(timeout: 15)); chats.tap()
         return (app, fixture)
     }

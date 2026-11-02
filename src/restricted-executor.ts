@@ -311,7 +311,7 @@ class RestrictedMcpProxy {
   }
 }
 
-async function boundedResponse(response: Response, id: number): Promise<unknown> {
+export async function boundedResponse(response: Response, id: number): Promise<unknown> {
   if (!response.body || Number(response.headers.get("content-length") ?? 0) > maxResponseBytes) throw unavailable();
   const reader = response.body.getReader(), decoder = new TextDecoder();
   let bytes = 0, text = "";

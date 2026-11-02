@@ -24,7 +24,7 @@ final class DesignAccessibilityUITests: XCTestCase {
         app.finishDevicePairing()
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 5) { reveal(consent, app); audit("consent", app, &issues); consent.tap() }
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 15))
         audit("conversation", app, &issues)
         app.buttons["Настройки"].tap()
         XCTAssertTrue(app.buttons["addDevice"].waitForExistence(timeout: 10))
@@ -39,7 +39,7 @@ final class DesignAccessibilityUITests: XCTestCase {
         audit("invitation", app, &issues)
         app.buttons["closeMobileInvitation"].tap()
         app.buttons["Готово"].tap()
-        app.buttons["Чаты"].tap()
+        app.buttons["openChats"].tap()
         let editor = app.buttons["Редактор"]
         reveal(editor, app)
         audit("employee-list", app, &issues)

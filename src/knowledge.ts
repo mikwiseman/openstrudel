@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync }
 import { resolve } from "node:path";
 import type { Store } from "./store.js";
 import { contextPattern } from "./scopes.js";
+import { contextSummary } from "./message-context.js";
 
 /** Owner-only source map. Codex does retrieval; no second memory engine or copied document store. */
 export function ownerKnowledge(store:Store,root:string,contextFor:(id:string)=>string) {
@@ -14,8 +15,10 @@ export function ownerKnowledge(store:Store,root:string,contextFor:(id:string)=>s
     const workspace=resolve(root,".data/workspace",context);
     if(existsSync(workspace))readPaths.add(workspace);
     const history=resolve(directory,c.id+".jsonl");
-    const rows=store.db.prepare("SELECT id,created_at,direction,author,text,attachments_json,status FROM messages WHERE conversation_id=? AND hidden=0 AND kind<>'notice' ORDER BY created_at,rowid").all(c.id);
-    writeFileSync(history+".tmp",rows.map(r=>JSON.stringify({id:r.id,date:r.created_at,role:r.direction==="inbound"?"user":"assistant",author:r.author,text:r.text,status:r.status,files:JSON.parse(String(r.attachments_json))})).join("\n")+"\n",{mode:0o600});
+    const rows=store.db.prepare("SELECT id,created_at,direction,author,text,attachments_json,status,context_json FROM messages WHERE conversation_id=? AND hidden=0 AND kind<>'notice' ORDER BY created_at,rowid").all(c.id);
+    // A vague question keeps the client, message or story it was asked about, briefly, as the recent history does.
+    writeFileSync(history+".tmp",rows.map(r=>JSON.stringify({id:r.id,date:r.created_at,role:r.direction==="inbound"?"user":"assistant",author:r.author,text:r.text,status:r.status,files:JSON.parse(String(r.attachments_json)),
+      ...r.context_json?{context:contextSummary(JSON.parse(String(r.context_json)))}:{}})).join("\n")+"\n",{mode:0o600});
     renameSync(history+".tmp",history);
     return{conversationId:c.id,title:c.title,employee:c.profileId?store.getProfile(c.profileId)?.name:null,context,workspace,history,messages:rows.length};
   });

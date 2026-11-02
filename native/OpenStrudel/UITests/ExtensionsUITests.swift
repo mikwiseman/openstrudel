@@ -19,7 +19,7 @@ final class ExtensionsUITests: XCTestCase {
         XCTAssertTrue(app.buttons["confirmMacPairing"].waitForExistence(timeout: 15))
         app.buttons["confirmMacPairing"].tap(); app.finishDevicePairing()
         if app.buttons["acceptAIDataSharing"].waitForExistence(timeout: 5) { app.buttons["acceptAIDataSharing"].tap() }
-        if app.buttons["Чаты"].waitForExistence(timeout: 10) { app.buttons["Чаты"].tap() }
+        if app.buttons["openChats"].waitForExistence(timeout: 10) { app.buttons["openChats"].tap() }
         XCTAssertTrue(app.buttons["Редактор теста"].waitForExistence(timeout: 15))
         app.buttons["Редактор теста"].tap()
         try openServices(app)

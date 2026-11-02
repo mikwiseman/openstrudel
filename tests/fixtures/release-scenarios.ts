@@ -115,7 +115,7 @@ const control = createServer(async (req, res) => {
   if (path.pathname === "/connect") serviceConnected = true;
   if (path.pathname === "/telegram-private") privateTelegramLinked = path.searchParams.get("value") !== "0";
   if (path.pathname === "/queue-fixture" && !queueFixture) {
-    const submit = (text: string) => runtime.messages.submit({ channel: "api", profile: editor.id, text, mode: "queue" });
+    const submit = (text: string) => runtime.messages.submit({ channel: "api", conversationId: runtime.store.primaryConversation().id, text, mode: "queue" });
     const active = await submit("Удерживаем ответ для проверки очереди");
     const first = await submit("Первый черновик");
     const second = await submit("Второй черновик");

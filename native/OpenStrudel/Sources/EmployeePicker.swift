@@ -1,21 +1,24 @@
 import SwiftUI
 
+/// The conversations the chat can read: News feeds, employees by device, other devices' assistants, and the Telegram
+/// chats and archives found by search. Choosing one opens it over the chat as a reader; nothing here is a place to write.
 struct EmployeePicker: View {
     @EnvironmentObject private var library: DeviceLibrary
     @EnvironmentObject private var client: HomeClient
     @Environment(\.dismiss) private var dismiss
-    @Binding var isPresented: Bool
+    let open: (ReaderRoute) -> Void
 
     @State private var query = ""
     @State private var showingSettings = false
     @State private var showingHistory = false
     @State private var movingEmployee: EmployeeMoveRequest?
     @State private var renaming: RenameTarget?
-    @State private var addingDevice = false
-    @State private var invitation: MacPairing?
-    @State private var confirmingInvitation: MacPairing?
     private var searchTerm: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var showsMain: Bool { searchTerm.isEmpty || "OpenStrudel".localizedCaseInsensitiveContains(searchTerm) }
+    /// Employees with a News edition, on every device.
+    private var feeds: [(source: HomeClient, profile: EmployeeProfile)] {
+        library.visibleClients.flatMap { source in library.visibleProfiles(on: source).filter { $0.news == true }.map { (source, $0) } }
+    }
 
     var body: some View {
         NavigationStack {
@@ -25,24 +28,36 @@ struct EmployeePicker: View {
                         Label(L("Переписки"), systemImage: "clock.arrow.circlepath")
                     }.accessibilityIdentifier("openConversations")
                 }
+                if searchTerm.isEmpty && !feeds.isEmpty {
+                    Section(L("Ленты")) {
+                        ForEach(feeds, id: \.profile.id) { feed in
+                            EmployeePickerRow(name: feed.profile.name, subtitle: library.hasOtherDevices ? L("Утренний выпуск · \(feed.source.displayName)") : L("Утренний выпуск"),
+                                              selected: false, appearance: nil, offline: feed.source.isOffline(feed.profile), symbol: "newspaper") {
+                                open(ReaderRoute(connectionID: feed.source.id, kind: .employee(feed.profile.id), title: feed.profile.name)); dismiss()
+                            }
+                            .accessibilityIdentifier("feed-" + feed.profile.id)
+                        }
+                    }
+                }
                 if !showsMain && !library.visibleClients.contains(where: { source in library.visibleProfiles(on: source).contains { $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) } || source.telegramGroups.contains { $0.title.localizedCaseInsensitiveContains(searchTerm) } }) {
                     SearchEmptyState(query: query) { query = "" }
                 }
                 ForEach(library.visibleClients) { source in
                     let people = library.visibleProfiles(on: source).filter { searchTerm.isEmpty || $0.name.localizedCaseInsensitiveContains(searchTerm) || $0.roleText.localizedCaseInsensitiveContains(searchTerm) }
-                    if showsMain || !people.isEmpty {
+                    // The chat's own assistant is the Chat tab; every other device's assistant is read here.
+                    let showsAssistant = showsMain && source !== library.primary
+                    if showsAssistant || !people.isEmpty {
                     Section {
                         if !searchTerm.isEmpty || !library.collapsedDeviceIDs.contains(source.id) {
-                        if showsMain {
-                            EmployeePickerRow(name: "OpenStrudel", subtitle: source.displayName, selected: source === client && source.selectedProfileID == nil,
-                                              appearance: nil, offline: source.isOffline(nil)) {
-                                Task { await library.select(source, profile: nil); dismiss() }
+                        if showsAssistant {
+                            EmployeePickerRow(name: "OpenStrudel", subtitle: source.displayName, selected: false, appearance: nil, offline: source.isOffline(nil)) {
+                                open(ReaderRoute(connectionID: source.id, kind: .main, title: "OpenStrudel")); dismiss()
                             }
                         }
                         ForEach(people) { profile in
-                            EmployeePickerRow(name: profile.name, subtitle: profile.previewText.isEmpty ? profile.roleText : profile.previewText, selected: source === client && source.selectedProfileID == profile.id,
+                            EmployeePickerRow(name: profile.name, subtitle: profile.previewText.isEmpty ? profile.roleText : profile.previewText, selected: false,
                                               appearance: profile.resolvedAppearance, offline: source.isOffline(profile)) {
-                                Task { await library.select(source, profile: profile.id); dismiss() }
+                                open(ReaderRoute(connectionID: source.id, kind: .employee(profile.id), title: profile.name)); dismiss()
                             }
                             .accessibilityIdentifier("employee-" + profile.id)
                             .contextMenu {
@@ -89,15 +104,15 @@ struct EmployeePicker: View {
                             }
                     }
                     }
-                    // A group found by name opens the feed of the employee who works there.
+                    // A group found by name opens as a reader of that group.
                     let groups = source.telegramGroups.filter { !searchTerm.isEmpty && $0.title.localizedCaseInsensitiveContains(searchTerm) }
                     if !groups.isEmpty {
                         Section(library.hasOtherDevices ? L("Группы в Telegram · \(source.displayName)") : L("Группы в Telegram")) {
                             ForEach(groups) { group in
                                 EmployeePickerRow(name: group.title, subtitle: group.enabled == false ? L("Бот на паузе") : source.profiles.first { $0.id == group.profileId }?.name ?? "OpenStrudel",
-                                                  selected: source === client && source.selectedChatID == group.conversationId,
-                                                  appearance: nil, symbol: "person.2") {
-                                    Task { await library.select(source, group: group); dismiss() }
+                                                  selected: false, appearance: nil, symbol: "person.2") {
+                                    if let id = group.conversationId { open(ReaderRoute(connectionID: source.id, kind: .conversation(id), title: group.title)) }
+                                    dismiss()
                                 }.accessibilityIdentifier("telegramConversation-" + group.chatId)
                             }
                         }
@@ -105,64 +120,39 @@ struct EmployeePicker: View {
                 }
                 HiddenEmployeesButton()
             }
-            .navigationTitle(L("Чаты"))
-            .navigationDestination(isPresented: $showingHistory) { ConversationBrowser(isPresented: $isPresented, embedded: true) }
+            .navigationTitle(L("Переписки"))
+            .navigationDestination(isPresented: $showingHistory) { ConversationBrowser(open: { route in open(route); dismiss() }) }
             .sheet(item: $movingEmployee) { EmployeeMoveView(request: $0) }
             .sheet(item: $renaming) { NameEditor(target: $0) }
             #if os(iOS)
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: L("Найти чат"))
             #else
             .searchable(text: $query, prompt: L("Найти чат"))
+            .frame(minWidth: 480, idealWidth: 560, minHeight: 480, idealHeight: 640)
             #endif
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    HStack(spacing: 16) {
-                        Button { showingSettings = true } label: { Image(systemName: "gearshape") }
-                            .accessibilityLabel(L("Настройки")).accessibilityIdentifier("teamSettings")
-                        Menu {
-                            NewEmployeeControl(beforeCreate: { dismiss() }) {
-                                Label(L("Новый сотрудник"), systemImage: "plus")
-                            }
-                            Button(L("Добавить Mac или сервер"), systemImage: "laptopcomputer.and.iphone") { addingDevice = true }
-                                .accessibilityIdentifier("connectDevice")
-                        } label: {
-                            Image(systemName: "plus").frame(minWidth: controlTarget, minHeight: controlTarget)
-                        }
-                        .accessibilityLabel(L("Добавить"))
-                        .accessibilityIdentifier("addMenu")
-                    }
+                    Button { showingSettings = true } label: { Image(systemName: "gearshape") }
+                        .accessibilityLabel(L("Настройки")).accessibilityIdentifier("teamSettings")
                 }
                 ToolbarItem(placement: .cancellationAction) { Button(L("Готово")) { dismiss() } }
             }
         }
         .sheet(isPresented: $showingSettings) { SettingsView().environmentObject(client) }
-        .sheet(isPresented: $addingDevice, onDismiss: {
-            if let invitation { confirmingInvitation = invitation; self.invitation = nil }
-        }) {
-            #if os(iOS)
-            ConnectionInvitationView { invitation = $0 }
-            #else
-            ConnectDeviceView { invitation = $0 }
-            #endif
-        }
-        .sheet(item: $confirmingInvitation) { AddDeviceConfirmation(pairing: $0).environmentObject(library) }
         .modifier(InterfaceLanguage())
     }
 
-    /// The device's name and, as the Mac sidebar shows with a symbol, why it cannot be reached.
+    /// The device's name and, as the chat shows with a symbol, why it cannot be reached.
     private func headerLabel(_ source: HomeClient) -> String {
         if source.connectionNeedsUnlock { return source.displayName + ", " + L("Unlock connection") }
         return source.homeUnreachable ? source.displayName + ", " + L("Нет связи") : source.displayName
     }
 }
 
-/// Employees are the primary entry points. Channel history is a separate,
-/// searchable destination; browsing it never changes bot routing or delivery.
+/// Channel history: the bot's Telegram chats and imported archives, each a reader. Browsing never changes routing or delivery.
 struct ConversationBrowser: View {
     @EnvironmentObject private var library: DeviceLibrary
-    @EnvironmentObject private var client: HomeClient
-    @Binding var isPresented: Bool
-    var embedded = false
+    let open: (ReaderRoute) -> Void
     @State private var query = ""
     private var term: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var hasHistory: Bool {
@@ -172,16 +162,6 @@ struct ConversationBrowser: View {
     }
 
     var body: some View {
-        Group {
-            if embedded { content }
-            else { NavigationStack { content } }
-        }
-        #if os(macOS)
-        .frame(minWidth: 480, idealWidth: 560, minHeight: 420, idealHeight: 560)
-        #endif
-    }
-
-    private var content: some View {
         List {
             if !hasHistory {
                 ContentUnavailableView(L("Пока нет переписок"), systemImage: "bubble.left.and.bubble.right",
@@ -195,17 +175,14 @@ struct ConversationBrowser: View {
                             ForEach(chats) { chat in
                                 EmployeePickerRow(name: chat.title,
                                     subtitle: (chat.isGroup ? L("Группа в Telegram") : L("Личный разговор в Telegram")) + (chat.enabled == false ? L(" · на паузе") : ""),
-                                    selected: source === client && source.selectedChatID == chat.conversationId,
-                                    appearance: nil, symbol: chat.isGroup ? "person.2" : "bubble.left") {
-                                        open(source, conversation: chat.conversationId)
+                                    selected: false, appearance: nil, symbol: chat.isGroup ? "person.2" : "bubble.left") {
+                                        if let id = chat.conversationId { open(ReaderRoute(connectionID: source.id, kind: .conversation(id), title: chat.title)) }
                                     }.accessibilityIdentifier("telegramConversation-" + chat.chatId)
                             }
                             ForEach(archives) { chat in
-                                EmployeePickerRow(name: chat.title, subtitle: L("Из прежнего приложения"),
-                                    selected: source === client && source.selectedChatID == chat.id,
-                                    appearance: nil, symbol: "archivebox") {
-                                        open(source, conversation: chat.id)
-                                    }
+                                EmployeePickerRow(name: chat.title, subtitle: L("Из прежнего приложения"), selected: false, appearance: nil, symbol: "archivebox") {
+                                    open(ReaderRoute(connectionID: source.id, kind: .conversation(chat.id), title: chat.title))
+                                }
                             }
                         } header: { if library.hasOtherDevices { Text(source.displayName) } }
                     }
@@ -218,23 +195,10 @@ struct ConversationBrowser: View {
         }
         .navigationTitle(L("Переписки"))
         .searchable(text: $query, prompt: L("Найти переписку"))
-        .toolbar {
-            if !embedded {
-                ToolbarItem(placement: .confirmationAction) { Button(L("Готово")) { isPresented = false } }
-            }
-        }
-    }
-
-    private func open(_ source: HomeClient, conversation: String?) {
-        Task {
-            library.select(source)
-            await source.selectChat(conversation)
-            isPresented = false
-        }
     }
 }
 
-/// A row like the Mac sidebar: the character at 36, 12 to the name, the name over one line of preview.
+/// A row like the chat's title: the character at 36, 12 to the name, the name over one line of preview.
 /// An employee whose device is out of reach rests in grey and says so in words.
 struct EmployeePickerRow: View {
     @Environment(\.dynamicTypeSize) private var textSize

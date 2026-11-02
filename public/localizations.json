@@ -10694,5 +10694,390 @@
     "es": "Esta noticia no está en este chat. Actualiza la edición.",
     "he": "הכתבה לא נמצאת בצ׳אט הזה. רעננו את המהדורה.",
     "ru": "Новость не найдена в этом чате. Обновите выпуск."
+  },
+  "«{0}» не на связи": {
+    "en": "“{0}” is offline",
+    "ru": "«{0}» не на связи",
+    "fr": "« {0} » est hors ligne",
+    "es": "«{0}» está sin conexión",
+    "he": "‏«{0}» לא מחובר"
+  },
+  "«{0}» не на связи. Показано, что уже прочитано.": {
+    "en": "“{0}” is offline. Showing what was already read.",
+    "ru": "«{0}» не на связи. Показано, что уже прочитано.",
+    "fr": "« {0} » est hors ligne. Affichage de ce qui a déjà été lu.",
+    "es": "«{0}» está sin conexión. Se muestra lo ya leído.",
+    "he": "‏«{0}» לא מחובר. מוצג מה שכבר נקרא."
+  },
+  "«{0}» не на связи. Цитату можно передать, когда устройство подключится.": {
+    "en": "“{0}” is offline. The quote can be passed on once the device connects.",
+    "ru": "«{0}» не на связи. Цитату можно передать, когда устройство подключится.",
+    "fr": "« {0} » est hors ligne. La citation pourra être transmise quand l’appareil sera connecté.",
+    "es": "«{0}» está sin conexión. La cita se podrá pasar cuando el dispositivo se conecte.",
+    "he": "‏«{0}» לא מחובר. אפשר להעביר את הציטוט כשהמכשיר יתחבר."
+  },
+  "База клиентов не подключена": {
+    "en": "Client database not connected",
+    "ru": "База клиентов не подключена",
+    "fr": "Base de clients non connectée",
+    "es": "Base de clientes no conectada",
+    "he": "מאגר הלקוחות לא מחובר"
+  },
+  "В архиве": {
+    "en": "Archived",
+    "ru": "В архиве",
+    "fr": "Archivé",
+    "es": "Archivado",
+    "he": "בארכיון"
+  },
+  "Вопрос": {
+    "en": "Ask",
+    "ru": "Вопрос",
+    "fr": "Question",
+    "es": "Pregunta",
+    "he": "שאלה"
+  },
+  "Дождитесь доставки отправленных сообщений или уберите неотправленные.": {
+    "en": "Wait for sent messages to be delivered, or remove the unsent ones.",
+    "ru": "Дождитесь доставки отправленных сообщений или уберите неотправленные.",
+    "fr": "Attendez la livraison des messages envoyés ou retirez ceux non envoyés.",
+    "es": "Espera a que se entreguen los mensajes enviados o quita los no enviados.",
+    "he": "המתינו למסירת ההודעות שנשלחו או הסירו את אלה שלא נשלחו."
+  },
+  "Дождитесь ответа в чате.": {
+    "en": "Wait for the reply in the chat.",
+    "ru": "Дождитесь ответа в чате.",
+    "fr": "Attendez la réponse dans la conversation.",
+    "es": "Espera la respuesta en el chat.",
+    "he": "המתינו לתשובה בצ׳אט."
+  },
+  "Доступ к клиентам закрыт для этого подключения": {
+    "en": "Client access is denied for this connection",
+    "ru": "Доступ к клиентам закрыт для этого подключения",
+    "fr": "L’accès aux clients est refusé pour cette connexion",
+    "es": "El acceso a clientes está denegado para esta conexión",
+    "he": "הגישה ללקוחות נדחתה לחיבור הזה"
+  },
+  "Здесь появится переписка этого чата. Писать можно во вкладке «Чат».": {
+    "en": "This chat’s messages will appear here. Writing happens in the Chat tab.",
+    "ru": "Здесь появится переписка этого чата. Писать можно во вкладке «Чат».",
+    "fr": "Les messages de cette conversation apparaîtront ici. On écrit dans l’onglet Conversation.",
+    "es": "Los mensajes de este chat aparecerán aquí. Se escribe en la pestaña Chat.",
+    "he": "ההודעות של הצ׳אט הזה יופיעו כאן. כותבים בלשונית צ׳אט."
+  },
+  "Из переписки": {
+    "en": "From a conversation",
+    "ru": "Из переписки",
+    "fr": "D’une conversation",
+    "es": "De una conversación",
+    "he": "מתוך שיחה"
+  },
+  "Источник цитаты «{0}» сейчас недоступен. Дождитесь подключения или уберите контекст.": {
+    "en": "The source of the quote, “{0}”, is unavailable now. Wait for it to connect or remove the context.",
+    "ru": "Источник цитаты «{0}» сейчас недоступен. Дождитесь подключения или уберите контекст.",
+    "fr": "La source de la citation « {0} » est indisponible. Attendez la connexion ou retirez le contexte.",
+    "es": "La fuente de la cita «{0}» no está disponible. Espera la conexión o quita el contexto.",
+    "he": "מקור הציטוט «{0}» אינו זמין כעת. המתינו לחיבור או הסירו את ההקשר."
+  },
+  "Как только в базе компании появятся клиенты, они будут здесь.": {
+    "en": "As soon as the company database has clients, they appear here.",
+    "ru": "Как только в базе компании появятся клиенты, они будут здесь.",
+    "fr": "Dès que la base de l’entreprise aura des clients, ils apparaîtront ici.",
+    "es": "En cuanto la base de la empresa tenga clientes, aparecerán aquí.",
+    "he": "ברגע שיהיו לקוחות במאגר החברה, הם יופיעו כאן."
+  },
+  "Клиент": {
+    "en": "Client",
+    "ru": "Клиент",
+    "fr": "Client",
+    "es": "Cliente",
+    "he": "לקוח"
+  },
+  "Клиентов видит владелец устройства": {
+    "en": "Clients are visible to the device’s owner",
+    "ru": "Клиентов видит владелец устройства",
+    "fr": "Les clients sont visibles par le propriétaire de l’appareil",
+    "es": "Los clientes los ve el propietario del dispositivo",
+    "he": "לקוחות גלויים לבעל המכשיר"
+  },
+  "Клиентов пока нет": {
+    "en": "No clients yet",
+    "ru": "Клиентов пока нет",
+    "fr": "Pas encore de clients",
+    "es": "Aún no hay clientes",
+    "he": "אין לקוחות עדיין"
+  },
+  "Клиентов предлагают несколько подключений": {
+    "en": "Several connections offer clients",
+    "ru": "Клиентов предлагают несколько подключений",
+    "fr": "Plusieurs connexions proposent des clients",
+    "es": "Varias conexiones ofrecen clientes",
+    "he": "כמה חיבורים מציעים לקוחות"
+  },
+  "Клиенты": {
+    "en": "Clients",
+    "ru": "Клиенты",
+    "fr": "Clients",
+    "es": "Clientes",
+    "he": "לקוחות"
+  },
+  "Клиенты появятся, когда устройство подключится.": {
+    "en": "Clients appear once the device connects.",
+    "ru": "Клиенты появятся, когда устройство подключится.",
+    "fr": "Les clients apparaîtront quand l’appareil sera connecté.",
+    "es": "Los clientes aparecerán cuando el dispositivo se conecte.",
+    "he": "הלקוחות יופיעו כשהמכשיר יתחבר."
+  },
+  "Ленты": {
+    "en": "Feeds",
+    "ru": "Ленты",
+    "fr": "Fils",
+    "es": "Ediciones",
+    "he": "עדכונים"
+  },
+  "На этом устройстве подключён не владелец, поэтому клиенты недоступны.": {
+    "en": "This device is connected as someone other than the owner, so clients are unavailable.",
+    "ru": "На этом устройстве подключён не владелец, поэтому клиенты недоступны.",
+    "fr": "Cet appareil est connecté par quelqu’un d’autre que le propriétaire ; les clients sont indisponibles.",
+    "es": "Este dispositivo está conectado por alguien que no es el propietario, así que los clientes no están disponibles.",
+    "he": "המכשיר הזה מחובר שלא כבעלים, ולכן הלקוחות אינם זמינים."
+  },
+  "Найти клиента": {
+    "en": "Find a client",
+    "ru": "Найти клиента",
+    "fr": "Trouver un client",
+    "es": "Buscar un cliente",
+    "he": "חיפוש לקוח"
+  },
+  "Нет доступа": {
+    "en": "No access",
+    "ru": "Нет доступа",
+    "fr": "Pas d’accès",
+    "es": "Sin acceso",
+    "he": "אין גישה"
+  },
+  "Новость": {
+    "en": "Story",
+    "ru": "Новость",
+    "fr": "Actualité",
+    "es": "Noticia",
+    "he": "ידיעה"
+  },
+  "Обсудить в чате": {
+    "en": "Discuss in chat",
+    "ru": "Обсудить в чате",
+    "fr": "En discuter dans la conversation",
+    "es": "Comentar en el chat",
+    "he": "לדון בצ׳אט"
+  },
+  "Обсуждали раньше": {
+    "en": "Discussed earlier",
+    "ru": "Обсуждали раньше",
+    "fr": "Discuté plus tôt",
+    "es": "Comentado antes",
+    "he": "נדון קודם"
+  },
+  "Открыть подключения": {
+    "en": "Open connections",
+    "ru": "Открыть подключения",
+    "fr": "Ouvrir les connexions",
+    "es": "Abrir conexiones",
+    "he": "פתיחת חיבורים"
+  },
+  "Переписка": {
+    "en": "Conversation",
+    "ru": "Переписка",
+    "fr": "Conversation",
+    "es": "Conversación",
+    "he": "שיחה"
+  },
+  "Переписки и ленты (⌘F)": {
+    "en": "Conversations and feeds (⌘F)",
+    "ru": "Переписки и ленты (⌘F)",
+    "fr": "Conversations et fils (⌘F)",
+    "es": "Conversaciones y ediciones (⌘F)",
+    "he": "שיחות ועדכונים (⌘F)"
+  },
+  "Подключение к базе клиентов нужно обновить": {
+    "en": "The client database connection needs renewing",
+    "ru": "Подключение к базе клиентов нужно обновить",
+    "fr": "La connexion à la base de clients doit être renouvelée",
+    "es": "Hay que renovar la conexión con la base de clientes",
+    "he": "יש לחדש את החיבור למאגר הלקוחות"
+  },
+  "Подключение не найдено": {
+    "en": "Connection not found",
+    "ru": "Подключение не найдено",
+    "fr": "Connexion introuvable",
+    "es": "Conexión no encontrada",
+    "he": "החיבור לא נמצא"
+  },
+  "Подключения": {
+    "en": "Connections",
+    "ru": "Подключения",
+    "fr": "Connexions",
+    "es": "Conexiones",
+    "he": "חיבורים"
+  },
+  "Подключите сервис компании к чату, и клиенты появятся здесь.": {
+    "en": "Connect the company service to the chat and the clients appear here.",
+    "ru": "Подключите сервис компании к чату, и клиенты появятся здесь.",
+    "fr": "Connectez le service de l’entreprise à la conversation et les clients apparaîtront ici.",
+    "es": "Conecta el servicio de la empresa al chat y los clientes aparecerán aquí.",
+    "he": "חברו את שירות החברה לצ׳אט והלקוחות יופיעו כאן."
+  },
+  "Пока пусто": {
+    "en": "Nothing here yet",
+    "ru": "Пока пусто",
+    "fr": "Rien pour l’instant",
+    "es": "Aún no hay nada",
+    "he": "עדיין ריק"
+  },
+  "Показать ещё": {
+    "en": "Show more",
+    "ru": "Показать ещё",
+    "fr": "Afficher plus",
+    "es": "Mostrar más",
+    "he": "הצגת עוד"
+  },
+  "Проверьте подключения чата, чтобы понять, какое из них ведёт клиентов.": {
+    "en": "Check the chat’s connections to see which one holds the clients.",
+    "ru": "Проверьте подключения чата, чтобы понять, какое из них ведёт клиентов.",
+    "fr": "Vérifiez les connexions de la conversation pour voir laquelle gère les clients.",
+    "es": "Revisa las conexiones del chat para ver cuál lleva los clientes.",
+    "he": "בדקו את חיבורי הצ׳אט כדי לראות איזה מהם מנהל את הלקוחות."
+  },
+  "Сервис больше не принимает сохранённый вход. Войдите в него заново в подключениях.": {
+    "en": "The service no longer accepts the saved sign-in. Sign in to it again under connections.",
+    "ru": "Сервис больше не принимает сохранённый вход. Войдите в него заново в подключениях.",
+    "fr": "Le service n’accepte plus l’identification enregistrée. Reconnectez-vous dans les connexions.",
+    "es": "El servicio ya no acepta el inicio de sesión guardado. Vuelve a iniciar sesión en conexiones.",
+    "he": "השירות אינו מקבל עוד את הכניסה השמורה. היכנסו אליו שוב בחיבורים."
+  },
+  "Сервис клиентов не ответил": {
+    "en": "The client service did not answer",
+    "ru": "Сервис клиентов не ответил",
+    "fr": "Le service clients n’a pas répondu",
+    "es": "El servicio de clientes no respondió",
+    "he": "שירות הלקוחות לא השיב"
+  },
+  "Сервис отказал этому входу. Другое подключение или устройство его не заменит.": {
+    "en": "The service refused this sign-in. Another connection or device does not stand in for it.",
+    "ru": "Сервис отказал этому входу. Другое подключение или устройство его не заменит.",
+    "fr": "Le service a refusé cette identification. Une autre connexion ou un autre appareil ne la remplace pas.",
+    "es": "El servicio rechazó este inicio de sesión. Otra conexión u otro dispositivo no lo sustituye.",
+    "he": "השירות דחה את הכניסה הזו. חיבור או מכשיר אחר אינם מחליפים אותה."
+  },
+  "Сервисы и навыки чата на устройстве «{0}».": {
+    "en": "Services and skills of the chat on “{0}”.",
+    "ru": "Сервисы и навыки чата на устройстве «{0}».",
+    "fr": "Services et compétences de la conversation sur « {0} ».",
+    "es": "Servicios y habilidades del chat en «{0}».",
+    "he": "שירותים ומיומנויות של הצ׳אט במכשיר «{0}»."
+  },
+  "Сначала ответьте на вопрос в чате.": {
+    "en": "Answer the question in the chat first.",
+    "ru": "Сначала ответьте на вопрос в чате.",
+    "fr": "Répondez d’abord à la question dans la conversation.",
+    "es": "Responde primero la pregunta en el chat.",
+    "he": "קודם ענו על השאלה בצ׳אט."
+  },
+  "Сначала отправьте или уберите черновик.": {
+    "en": "Send or remove the draft first.",
+    "ru": "Сначала отправьте или уберите черновик.",
+    "fr": "Envoyez ou retirez d’abord le brouillon.",
+    "es": "Envía o quita el borrador primero.",
+    "he": "קודם שלחו או הסירו את הטיוטה."
+  },
+  "У клиента пока нет файлов.": {
+    "en": "The client has no files yet.",
+    "ru": "У клиента пока нет файлов.",
+    "fr": "Le client n’a pas encore de fichiers.",
+    "es": "El cliente aún no tiene archivos.",
+    "he": "ללקוח אין עדיין קבצים."
+  },
+  "Убрать контекст": {
+    "en": "Remove context",
+    "ru": "Убрать контекст",
+    "fr": "Retirer le contexte",
+    "es": "Quitar el contexto",
+    "he": "הסרת ההקשר"
+  },
+  "Убрать контекст и отправить": {
+    "en": "Remove the context and send",
+    "ru": "Убрать контекст и отправить",
+    "fr": "Retirer le contexte et envoyer",
+    "es": "Quitar el contexto y enviar",
+    "he": "הסרת ההקשר ושליחה"
+  },
+  "Утренний выпуск · {0}": {
+    "en": "Morning edition · {0}",
+    "ru": "Утренний выпуск · {0}",
+    "fr": "Édition du matin · {0}",
+    "es": "Edición matutina · {0}",
+    "he": "מהדורת בוקר · {0}"
+  },
+  "Файлы": {
+    "en": "Files",
+    "ru": "Файлы",
+    "fr": "Fichiers",
+    "es": "Archivos",
+    "he": "קבצים"
+  },
+  "Файлы появятся, когда устройство подключится.": {
+    "en": "Files appear once the device connects.",
+    "ru": "Файлы появятся, когда устройство подключится.",
+    "fr": "Les fichiers apparaîtront quand l’appareil sera connecté.",
+    "es": "Los archivos aparecerán cuando el dispositivo se conecte.",
+    "he": "הקבצים יופיעו כשהמכשיר יתחבר."
+  },
+  "Чат ведёт": {
+    "en": "Chat runs on",
+    "ru": "Чат ведёт",
+    "fr": "Conversation sur",
+    "es": "El chat lo lleva",
+    "he": "הצ׳אט פועל על"
+  },
+  "Чат занят": {
+    "en": "The chat is busy",
+    "ru": "Чат занят",
+    "fr": "La conversation est occupée",
+    "es": "El chat está ocupado",
+    "he": "הצ׳אט עסוק"
+  },
+  "Чат — помощник этого устройства. Переписки остальных устройств читаются из чата.": {
+    "en": "The chat is this device’s assistant. Other devices’ conversations are read from the chat.",
+    "ru": "Чат — помощник этого устройства. Переписки остальных устройств читаются из чата.",
+    "fr": "La conversation est l’assistant de cet appareil. Les conversations des autres appareils se lisent depuis la conversation.",
+    "es": "El chat es el asistente de este dispositivo. Las conversaciones de los demás dispositivos se leen desde el chat.",
+    "he": "הצ׳אט הוא העוזר של המכשיר הזה. שיחות של מכשירים אחרים נקראות מתוך הצ׳אט."
+  },
+  "Черновик": {
+    "en": "Draft",
+    "ru": "Черновик",
+    "fr": "Brouillon",
+    "es": "Borrador",
+    "he": "טיוטה"
+  },
+  "Чтение": {
+    "en": "Read",
+    "ru": "Чтение",
+    "fr": "Lecture",
+    "es": "Lectura",
+    "he": "קריאה"
+  },
+  "Это устройство больше не подключено. Переписка осталась на нём.": {
+    "en": "This device is no longer connected. The conversation stayed on it.",
+    "ru": "Это устройство больше не подключено. Переписка осталась на нём.",
+    "fr": "Cet appareil n’est plus connecté. La conversation y est restée.",
+    "es": "Este dispositivo ya no está conectado. La conversación se quedó en él.",
+    "he": "המכשיר הזה כבר לא מחובר. השיחה נשארה בו."
+  },
+  "Для: {0}": {
+    "en": "For: {0}",
+    "ru": "Для: {0}",
+    "fr": "Pour : {0}",
+    "es": "Para: {0}",
+    "he": "עבור: {0}"
   }
 }

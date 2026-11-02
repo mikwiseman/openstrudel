@@ -147,6 +147,8 @@ export class HomeApi {
     const conversationId = body?.conversationId ?? url.searchParams.get("conversationId");
     if (conversationId) nodeId ??= this.home.nodeFor("conversation", String(conversationId));
     if (path === "/v1/conversation") nodeId ??= this.home.state.mainNodeId;
+    // Business clients are read through the main chat's runtime and its connectors, wherever that runtime is.
+    if (path === "/v1/clients" || path.startsWith("/v1/clients/")) nodeId ??= this.home.state.mainNodeId;
     if (path === "/v1/account" || path.startsWith("/v1/account/")) nodeId ??= url.searchParams.get("agentId") && url.searchParams.get("agentId") !== "main" ? this.home.nodeFor("profile", url.searchParams.get("agentId")!) : this.home.state.mainNodeId;
     if (path === "/v1/settings/models" && url.searchParams.has("agentId")) {
       if (mainAgent && url.searchParams.get("agentId") === "main") url.searchParams.set("agentId",mainAgent);

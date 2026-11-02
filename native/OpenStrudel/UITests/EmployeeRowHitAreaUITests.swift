@@ -34,7 +34,7 @@ import XCTest
             let name = index.isMultiple(of: 2) ? "Редактор" : "Исследователь"
             let profile = try XCTUnwrap(profiles.first { $0["name"] as? String == name })
             let identifier = "employee-" + (try XCTUnwrap(profile["id"] as? String))
-            let chats = app.buttons["Чаты"]
+            let chats = app.buttons["openChats"]
             XCTAssertTrue(chats.waitForExistence(timeout: 10)); chats.tap()
             let employee = app.buttons[identifier]
             let cell = app.cells.containing(.button, identifier: identifier).firstMatch

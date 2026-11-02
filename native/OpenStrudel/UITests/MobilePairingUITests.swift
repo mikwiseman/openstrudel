@@ -27,8 +27,7 @@ final class MobilePairingUITests: XCTestCase {
         let request = app.staticTexts["Собери решения встречи и следующий шаг."]
         XCTAssertTrue(request.waitForExistence(timeout: 10), app.debugDescription)
         // A request under the floating header counts as hittable, but a press there lands on the header.
-        let header = app.buttons["openChats"]
-        for _ in 0..<8 where !request.isHittable || request.frame.minY < header.frame.maxY { app.swipeDown() }
+        for _ in 0..<8 where !request.isHittable { app.swipeDown() }
         // One source line per request, no inline Reply, and the delivered reply below stays silent.
         XCTAssertTrue(app.staticTexts["Решили подготовить общий документ. Следующий шаг — согласовать ответственных."].exists, app.debugDescription)
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "telegramReply-")).firstMatch.exists, app.debugDescription)
@@ -41,23 +40,12 @@ final class MobilePairingUITests: XCTestCase {
         XCTAssertTrue(telegramLink("Открыть в Telegram", app).exists, app.debugDescription)
         XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Посторонняя беседа")).firstMatch.exists)
         capture("phone-unified-telegram-feed", app)
-        // Reply lives in the request's context menu. Menu items may not carry identifiers, so it is found by its title.
-        request.press(forDuration: 1)
-        let reply = app.buttons.matching(NSPredicate(format: "label IN %@", ["Ответить в Telegram", "Reply in Telegram"])).firstMatch
-        XCTAssertTrue(reply.waitForExistence(timeout: 5), app.debugDescription)
-        capture("phone-telegram-request-menu", app)
-        reply.tap()
-        let input = app.textFields["telegramReplyText"]
-        XCTAssertTrue(input.waitForExistence(timeout: 5), app.debugDescription)
-        input.tap(); input.typeText("Reply from the iPhone fixture")
-        // The sheet names the destination, so the action stays a short, visible Send.
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "WAI Core Team")).firstMatch.exists, app.debugDescription)
-        let send = app.buttons["sendTelegramReply"]
-        XCTAssertTrue(send.isHittable, app.debugDescription)
-        XCTAssertEqual(send.label, "Отправить")
-        capture("phone-explicit-telegram-destination", app)
-        send.tap()
-        XCTAssertTrue(send.waitForNonExistence(timeout: 10))
+        // The reader has no reply of its own: the group stays read-only here, and the app request goes from the one chat.
+        XCTAssertFalse(app.textFields["telegramReplyText"].exists, app.debugDescription)
+        XCTAssertFalse(app.buttons["sendTelegramReply"].exists, app.debugDescription)
+        XCTAssertFalse(app.textFields["messageComposer"].exists, app.debugDescription)
+        capture("phone-telegram-reader", app)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
         let composer = app.textFields["messageComposer"]
         XCTAssertTrue(composer.waitForExistence(timeout: 10)); composer.tap(); composer.typeText("Private app request from iPhone")
         app.buttons["sendMessage"].tap()
@@ -118,7 +106,7 @@ final class MobilePairingUITests: XCTestCase {
         app.finishDevicePairing()
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 3) { consent.tap() }
-        let chats = app.buttons.matching(NSPredicate(format: "label IN %@", ["Чаты", "Chats"])).firstMatch
+        let chats = app.buttons["openChats"]
         XCTAssertTrue(chats.waitForExistence(timeout: 20), app.debugDescription)
         chats.tap()
         let header = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "deviceHeader-", deviceName)).firstMatch
@@ -350,18 +338,18 @@ final class MobilePairingUITests: XCTestCase {
         // The saved connection must recover without a second redemption.
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 20) {
-            XCTAssertFalse(app.buttons["Чаты"].exists)
+            XCTAssertFalse(app.buttons["openChats"].exists)
             capture("05-ai-data-consent", app)
             consent.tap()
         }
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 35), app.debugDescription)
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 35), app.debugDescription)
         XCTAssertTrue(app.staticTexts["Подключение проверено."].waitForExistence(timeout: 10))
         let state = try await read(fixture + "/state")
         XCTAssertEqual(state["connections"] as? Int, (initial["connections"] as? Int ?? 0) + 1)
         XCTAssertGreaterThan(state["unavailableResponses"] as? Int ?? 0, initial["unavailableResponses"] as? Int ?? 0)
         capture("05-recovered", app)
         app.terminate(); app.launch()
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 20), app.debugDescription)
         XCTAssertTrue(app.staticTexts["Подключение проверено."].waitForExistence(timeout: 10))
         capture("06-relaunch", app)
 
@@ -386,7 +374,7 @@ final class MobilePairingUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Подключение проверено."].waitForExistence(timeout: 10))
         // Failed replacement must preserve the previous Keychain credential.
         app.terminate(); app.launch()
-        XCTAssertTrue(app.buttons["Чаты"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 20))
         _ = try await read(fixture + "/revoke")
         XCTAssertTrue(app.staticTexts["Подключитесь снова."].waitForExistence(timeout: 15), app.debugDescription)
         XCTAssertFalse(app.alerts["OpenStrudel"].exists)

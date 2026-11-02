@@ -19,7 +19,7 @@ final class AgentCharactersUITests: XCTestCase {
         app.finishDevicePairing()
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 3) { consent.tap() }
-        let chats = app.buttons["Чаты"]
+        let chats = app.buttons["openChats"]
         XCTAssertTrue(chats.waitForExistence(timeout: 15)); chats.tap()
         let editor = app.buttons["Редактор"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5)); editor.tap()

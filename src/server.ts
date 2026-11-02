@@ -33,6 +33,8 @@ import { MAX_SPEECH_BYTES, isSpeechFile, saveSpeechSettings, speechSettings, tra
 import { diagnosticReport, recordDiagnostic, saveDiagnosticLevel } from "./diagnostics.js";
 import { runtimeIssues } from "./operations.js";
 import { newsFeed, newsStamp } from "./news.js";
+import { ClientsAdapter, ClientsError, clientSourceSchema, clientsRefusal, type ClientRef } from "./clients.js";
+import { resolveMessageContext } from "./message-context.js";
 
 const MAX_BODY_BYTES = 1_048_576;
 
@@ -86,6 +88,19 @@ export class HttpApi {
       }
     });
     this.homeApi = new HomeApi(this.home, this.homeLink, () => this.mobile.endpoint(), () => this.telegram.status());
+    this.clients = this.accounts ? new ClientsAdapter(this.accounts.root, store) : undefined;
+  }
+  /** Business clients, read through the company service the owner connected to the main chat. */
+  private readonly clients?: ClientsAdapter;
+
+  /** What the app attached to a message. A client needs the owner and the company connector; a quote of this Home is read here. */
+  private async messageContext(body: Record<string, any>, canManageAccount: boolean) {
+    if (body.context === undefined || body.context === null) return undefined;
+    if (typeof body.context === "object" && body.context.type === "client") {
+      if (!canManageAccount) throw clientsRefusal("owner_only");
+      if (!this.clients) throw new HomeError("Обновите OpenStrudel на этом устройстве, чтобы обсуждать клиентов.", 501);
+    }
+    return resolveMessageContext(body.context, { store: this.store, homeId: this.home.state.id, nodeId: this.home.state.nodeId, verifyClient: (ref: ClientRef) => this.clients!.verify(ref) });
   }
 
   localCredential(): string | null { return this.token ?? null; }
@@ -803,9 +818,23 @@ export class HttpApi {
         await this.messages.interactions.answer(answerMatch[1]!, String(body.conversationId ?? ""), body.answers as Record<string, string>);
         this.send(response, 200, { ok: true }); return;
       }
+      const clientFiles = path.match(/^\/v1\/clients\/([^/]+)\/files$/);
+      if (request.method === "GET" && (path === "/v1/clients" || clientFiles)) {
+        // The owner's own business records: a paired colleague's device sees a clear refusal, never a borrowed credential.
+        if (!canManageAccount) throw clientsRefusal("owner_only");
+        if (!this.clients) throw new HomeError("Обновите OpenStrudel на этом устройстве, чтобы открыть клиентов.", 501);
+        if (clientFiles) {
+          // Files are read for the client the owner selected, under the source it was listed from.
+          const source = clientSourceSchema.safeParse({ connector: url.searchParams.get("connector"), endpoint: url.searchParams.get("endpoint"), fingerprint: url.searchParams.get("fingerprint") });
+          if (!source.success) throw new HomeError("Проверьте клиента.", 400);
+          this.send(response, 200, await this.clients.files({ source: source.data, clientId: decodeURIComponent(clientFiles[1]!) }, Math.max(0, Math.trunc(Number(url.searchParams.get("offset")) || 0))));
+        } else this.send(response, 200, await this.clients.list(url.searchParams.get("refresh") === "true"));
+        return;
+      }
       if (request.method === "POST" && path === "/v1/messages") {
         const body = await this.body(request);
         if (body.mode !== undefined && body.mode !== "steer" && body.mode !== "queue") throw new HomeError("Выберите: уточнить сейчас или отправить после ответа.");
+        const context = await this.messageContext(body, canManageAccount);
         const submission = await this.messages.submit({
           mode: body.mode,
           channel: body.channel === "telegram" ? "telegram" : "api",
@@ -818,6 +847,7 @@ export class HttpApi {
           attachments: body.attachments as string[] | undefined,
           replyToId: body.replyToId == null ? undefined : String(body.replyToId),
           byOwner: canManageAccount,
+          context,
         });
         this.send(response, url.searchParams.get("async") === "true" ? 202 : 200, url.searchParams.get("async") === "true" ? submission.receipt : await submission.completion);
         return;
@@ -843,7 +873,9 @@ export class HttpApi {
       }
       this.send(response, 404, { error: "not_found" });
     } catch (error) {
-      this.send(response, error instanceof HomeError ? error.status : 400, { error: error instanceof Error ? error.message : String(error) });
+      // A clients refusal names its state, so the app shows reconnect, denied, offline, missing and ambiguous apart.
+      this.send(response, error instanceof HomeError ? error.status : 400, { error: error instanceof Error ? error.message : String(error),
+        ...(error instanceof ClientsError ? { code: error.code, ...(error.detail ? { detail: error.detail } : {}) } : {}) });
     } finally {
       if (counted) this.activeWrites--;
     }

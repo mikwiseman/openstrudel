@@ -8,9 +8,12 @@ enum HomeClientError: LocalizedError {
     case invalidResponse
     case server(String)
     case empty(String)
+    /// The Home refused and named the state (a clients refusal), so the app shows that state rather than the words.
+    case refused(code: String, message: String, detail: String?)
 
     var errorDescription: String? {
         switch self {
+        case .refused(_, let message, _): return UserFacingError.text(message)
         case .authenticationExpired: return L("Подключение отозвано. Создайте новое приглашение в OpenStrudel на компьютере.")
         case .invalidURL: return L("Не удалось открыть подключение. Используйте новое приглашение.")
         case .invalidResponse: return L("Не удалось получить ответ. Попробуйте ещё раз.")
