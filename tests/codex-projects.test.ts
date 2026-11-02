@@ -46,6 +46,7 @@ it("sets native cwd and only the registered checkout, Git metadata and existing 
     expect(params.config["features.multi_agent"]).toBe(false);
     expect(Object.keys(params.config).some(key=>key.startsWith("permissions."))).toBe(false);
     expect(params.developerInstructions).toContain("Do not restart or replace the Home executing this active turn");
+    expect(params.developerInstructions).toContain("install missing development dependencies in this source checkout from that lockfile and rerun the relevant checks, without changing production dependencies or global environment settings");
     expect(params.approvalPolicy).toBe("on-request");
   }finally{f.engine.close();}
 });
