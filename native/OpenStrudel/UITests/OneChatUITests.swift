@@ -322,6 +322,52 @@ final class OneChatUITests: XCTestCase {
         XCTAssertEqual((registry["bindings"] as? [String: String])?[editorID], registered["id"] as? String)
         try await assertNoSend(since: after)
         capture("employee-project-connected", app)
+
+        // Accessibility text uses the same native hierarchy and source data, without another test harness.
+        app.terminate()
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch()
+        XCTAssertTrue(composer.waitForExistence(timeout: 30), app.debugDescription)
+        app.tabBars.buttons["Инсайты"].tap()
+        XCTAssertTrue(insight.waitForExistence(timeout: 20), app.debugDescription); insight.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["insightDetail"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.textFields["Сообщение"].exists)
+        capture("large-text-insight", app)
+        app.tabBars.buttons["Прогресс"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["progressCharacter"].waitForExistence(timeout: 15), app.debugDescription)
+        capture("large-text-progress", app)
+        openClients(app)
+        XCTAssertTrue(acme.waitForExistence(timeout: 15), app.debugDescription); acme.tap()
+        XCTAssertTrue(file.waitForExistence(timeout: 15), app.debugDescription)
+        capture("large-text-client", app)
+        app.tabBars.buttons["Чат"].tap()
+        app.buttons["openChats"].tap()
+        XCTAssertTrue(employee.waitForExistence(timeout: 10), app.debugDescription); employee.tap()
+        XCTAssertTrue(app.buttons["readerTitle"].waitForExistence(timeout: 10)); app.buttons["readerTitle"].tap()
+        for _ in 0..<5 { if projectEntry.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(projectEntry.exists, app.debugDescription); projectEntry.tap()
+        let projectChoice = app.descendants(matching: .any)["employeeProjectChoice"]
+        for _ in 0..<3 { if projectChoice.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(projectChoice.waitForExistence(timeout: 10), app.debugDescription)
+        capture("large-text-project", app)
+
+        // A real paired colleague connection may read the chat, but must lose cached owner activity and project paths.
+        _ = try await read("/owner?value=0")
+        XCTAssertTrue(app.descendants(matching: .any)["projectSettingsError"].waitForExistence(timeout: 25), app.debugDescription)
+        XCTAssertFalse(app.staticTexts[try XCTUnwrap(state["projectPath"] as? String)].exists)
+        XCTAssertFalse(app.buttons["registerEmployeeProject"].exists)
+        capture("project-owner-access-removed", app)
+        app.buttons["saveEmployeeChanges"].tap()
+        app.tabBars.buttons["Инсайты"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["activityState-ownerOnly"].waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertFalse(insight.exists)
+        XCTAssertFalse(app.buttons["discussInsight"].exists)
+        capture("insights-owner-access-removed", app)
+        let denied = try await read("/")
+        let reads = try XCTUnwrap(denied["privateReads"] as? [[String: Any]])
+        XCTAssertTrue(reads.contains { $0["path"] as? String == "/v1/activity" && $0["status"] as? Int == 403 })
+        XCTAssertEqual((denied["projects"] as? [String: Any])?["revision"] as? Int, registry["revision"] as? Int)
+        try await assertNoSend(since: after)
     }
 
     /// Progress keeps its native client destination across ordinary tab visits.

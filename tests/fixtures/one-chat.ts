@@ -104,7 +104,12 @@ const api = runtime.api as unknown as { handle: (...args: any[]) => Promise<void
 const originalHandle = api.handle.bind(runtime.api);
 let offline = false;
 let messageRequests = 0;
+const privateReads: Array<{ path: string; status: number }> = [];
 api.handle = async (req, res, ...rest) => {
+  const requestPath = new URL(req.url, "http://127.0.0.1").pathname;
+  if (rest[0] === true && req.method === "GET" && ["/v1/activity", "/v1/settings/projects"].includes(requestPath)) {
+    res.once("finish", () => privateReads.push({ path: requestPath, status: res.statusCode }));
+  }
   // Count the paired app's request, not the Home executor's second HTTP hop for the same send.
   if (rest[0] === true && req.method === "POST" && new URL(req.url, "http://127.0.0.1").pathname === "/v1/messages") messageRequests += 1;
   if (req.method !== "GET") await appendFile(output + ".requests.jsonl", JSON.stringify({ at: new Date().toISOString(), method: req.method, path: new URL(req.url, "http://127.0.0.1").pathname }) + "\n", { mode: 0o600 });
@@ -156,11 +161,13 @@ const control = createServer(async (req, res) => {
   if (path.pathname === "/offline") offline = path.searchParams.get("value") === "1";
   if (path.pathname === "/company") companyMode = (path.searchParams.get("mode") as CompanyMode) ?? "ok";
   if (path.pathname === "/release") holdReply?.();
+  // Keep the disposable pairing valid while removing its owner role, so the app exercises real 403 responses.
+  if (path.pathname === "/owner" && path.searchParams.get("value") === "0") runtime.store.setSetting("mobile.owners", "[]");
   // Read the accepted context from storage, after the Home verified the client's identity and source.
   const sentMessages = runtime.store.listMessages(main.id, 100)
     .filter(message => message.direction === "inbound" && message.id !== seededQuestion.id)
     .map(message => ({ id: message.id, conversationId: message.conversationId, text: message.text, context: message.context ?? null }));
-  res.end(JSON.stringify({ editor: editor.id, main: main.id, group: group.conversationId, activity: { id: "run:" + activityRunId, conversationId: editorChat.id, messageId: activityReply.id, title: activitySchedule.name }, projectPath, projects: runtime.messages.projects.read(true), offline, companyMode, companyURL, companyCalls, turns, messageRequests, sentMessages, profiles: runtime.store.listProfiles().map(p => ({ id: p.id, name: p.name, news: p.news })) }));
+  res.end(JSON.stringify({ editor: editor.id, main: main.id, group: group.conversationId, activity: { id: "run:" + activityRunId, conversationId: editorChat.id, messageId: activityReply.id, title: activitySchedule.name }, projectPath, projects: runtime.messages.projects.read(true), privateReads, offline, companyMode, companyURL, companyCalls, turns, messageRequests, sentMessages, profiles: runtime.store.listProfiles().map(p => ({ id: p.id, name: p.name, news: p.news })) }));
 });
 await new Promise<void>(done => control.listen(0, "127.0.0.1", done));
 controlURL = `http://127.0.0.1:${(control.address() as { port: number }).port}`;
