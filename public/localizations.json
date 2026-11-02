@@ -11079,5 +11079,362 @@
     "fr": "Pour : {0}",
     "es": "Para: {0}",
     "he": "עבור: {0}"
+  },
+  "Insights": {
+    "en": "Insights",
+    "fr": "Éclairages",
+    "es": "Hallazgos",
+    "he": "תובנות",
+    "ru": "Инсайты"
+  },
+  "Progress": {
+    "en": "Progress",
+    "fr": "Progrès",
+    "es": "Progreso",
+    "he": "התקדמות",
+    "ru": "Прогресс"
+  },
+  "Nothing to read yet": {
+    "en": "Nothing to read yet",
+    "fr": "Rien à lire pour le moment",
+    "es": "Aún no hay nada que leer",
+    "he": "אין עדיין מה לקרוא",
+    "ru": "Пока нечего читать"
+  },
+  "Scheduled results and things that need your attention will appear here.": {
+    "en": "Scheduled results and things that need your attention will appear here.",
+    "fr": "Les résultats des tâches planifiées et les éléments qui demandent votre attention apparaîtront ici.",
+    "es": "Aquí aparecerán los resultados de tareas programadas y los asuntos que requieren tu atención.",
+    "he": "כאן יופיעו תוצאות של משימות מתוזמנות ודברים שדורשים תשומת לב.",
+    "ru": "Здесь появятся результаты задач по расписанию и то, что требует вашего внимания."
+  },
+  "Needs attention": {
+    "en": "Needs attention",
+    "fr": "À examiner",
+    "es": "Requiere atención",
+    "he": "דורש תשומת לב",
+    "ru": "Требует внимания"
+  },
+  "Recent results": {
+    "en": "Recent results",
+    "fr": "Résultats récents",
+    "es": "Resultados recientes",
+    "he": "תוצאות אחרונות",
+    "ru": "Последние результаты"
+  },
+  "News and briefings": {
+    "en": "News and briefings",
+    "fr": "Actualités et synthèses",
+    "es": "Noticias y resúmenes",
+    "he": "חדשות וסקירות",
+    "ru": "Новости и обзоры"
+  },
+  "Scheduled result": {
+    "en": "Scheduled result",
+    "fr": "Résultat d’une tâche planifiée",
+    "es": "Resultado programado",
+    "he": "תוצאת משימה מתוזמנת",
+    "ru": "Результат задачи по расписанию"
+  },
+  "Open source conversation": {
+    "en": "Open source conversation",
+    "fr": "Ouvrir la conversation source",
+    "es": "Abrir conversación de origen",
+    "he": "פתיחת שיחת המקור",
+    "ru": "Открыть исходный чат"
+  },
+  "Answered requests": {
+    "en": "Answered requests",
+    "fr": "Demandes traitées",
+    "es": "Solicitudes respondidas",
+    "he": "בקשות שנענו",
+    "ru": "Запросы с ответом"
+  },
+  "Automation results": {
+    "en": "Automation results",
+    "fr": "Résultats automatisés",
+    "es": "Resultados de automatización",
+    "he": "תוצאות אוטומציה",
+    "ru": "Результаты автоматизации"
+  },
+  "Active days": {
+    "en": "Active days",
+    "fr": "Jours actifs",
+    "es": "Días activos",
+    "he": "ימים פעילים",
+    "ru": "Активные дни"
+  },
+  "Last 7 days": {
+    "en": "Last 7 days",
+    "fr": "7 derniers jours",
+    "es": "Últimos 7 días",
+    "he": "7 הימים האחרונים",
+    "ru": "За последние 7 дней"
+  },
+  "Milestones": {
+    "en": "Milestones",
+    "fr": "Étapes franchies",
+    "es": "Hitos",
+    "he": "אבני דרך",
+    "ru": "Первые шаги"
+  },
+  "Reached": {
+    "en": "Reached",
+    "fr": "Atteint",
+    "es": "Alcanzado",
+    "he": "הושג",
+    "ru": "Достигнуто"
+  },
+  "Not yet": {
+    "en": "Not yet",
+    "fr": "Pas encore",
+    "es": "Todavía no",
+    "he": "עדיין לא",
+    "ru": "Пока нет"
+  },
+  "Active schedules": {
+    "en": "Active schedules",
+    "fr": "Planifications actives",
+    "es": "Programaciones activas",
+    "he": "תזמונים פעילים",
+    "ru": "Активные расписания"
+  },
+  "Recent checks": {
+    "en": "Recent checks",
+    "fr": "Vérifications récentes",
+    "es": "Comprobaciones recientes",
+    "he": "בדיקות אחרונות",
+    "ru": "Последние проверки"
+  },
+  "Quiet runs · no new result": {
+    "en": "Quiet runs · no new result",
+    "fr": "Exécutions sans nouveau résultat",
+    "es": "Ejecuciones sin resultados nuevos",
+    "he": "הרצות ללא תוצאה חדשה",
+    "ru": "Проверки без нового результата"
+  },
+  "Failed runs": {
+    "en": "Failed runs",
+    "fr": "Exécutions en échec",
+    "es": "Ejecuciones fallidas",
+    "he": "הרצות שנכשלו",
+    "ru": "Запуски с ошибкой"
+  },
+  "Automation": {
+    "en": "Automation",
+    "fr": "Automatisation",
+    "es": "Automatización",
+    "he": "אוטומציה",
+    "ru": "Автоматизация"
+  },
+  "Limits and usage": {
+    "en": "Limits and usage",
+    "fr": "Limites et utilisation",
+    "es": "Límites y uso",
+    "he": "מגבלות ושימוש",
+    "ru": "Лимиты и использование"
+  },
+  "Limits are unavailable. Refresh to check again.": {
+    "en": "Limits are unavailable. Refresh to check again.",
+    "fr": "Les limites sont indisponibles. Actualisez pour réessayer.",
+    "es": "Los límites no están disponibles. Actualiza para volver a comprobarlos.",
+    "he": "המגבלות אינן זמינות. יש לרענן כדי לבדוק שוב.",
+    "ru": "Лимиты недоступны. Обновите, чтобы проверить снова."
+  },
+  "No subscription limits were reported by this Home.": {
+    "en": "No subscription limits were reported by this Home.",
+    "fr": "Ce Home n’a pas fourni de limites d’abonnement.",
+    "es": "Este Home no ha informado límites de suscripción.",
+    "he": "ה־Home הזה לא דיווח על מגבלות מנוי.",
+    "ru": "Этот Home не сообщил о лимитах подписки."
+  },
+  "First answered request": {
+    "en": "First answered request",
+    "fr": "Première demande traitée",
+    "es": "Primera solicitud respondida",
+    "he": "הבקשה הראשונה שנענתה",
+    "ru": "Первый запрос с ответом"
+  },
+  "First automation result": {
+    "en": "First automation result",
+    "fr": "Premier résultat automatisé",
+    "es": "Primer resultado de automatización",
+    "he": "תוצאת האוטומציה הראשונה",
+    "ru": "Первый результат автоматизации"
+  },
+  "Three active days": {
+    "en": "Three active days",
+    "fr": "Trois jours actifs",
+    "es": "Tres días activos",
+    "he": "שלושה ימים פעילים",
+    "ru": "Три активных дня"
+  },
+  "A little work, taken care of": {
+    "en": "A little work, taken care of",
+    "fr": "Une tâche de moins",
+    "es": "Una tarea menos",
+    "he": "עוד משימה טופלה",
+    "ru": "Одной заботой меньше"
+  },
+  "A useful start": {
+    "en": "A useful start",
+    "fr": "Un bon début",
+    "es": "Un buen comienzo",
+    "he": "התחלה טובה",
+    "ru": "Хорошее начало"
+  },
+  "Start with one useful task": {
+    "en": "Start with one useful task",
+    "fr": "Commencez par une tâche utile",
+    "es": "Empieza con una tarea útil",
+    "he": "מתחילים במשימה מועילה אחת",
+    "ru": "Начните с одной полезной задачи"
+  },
+  "Your first automation produced a result.": {
+    "en": "Your first automation produced a result.",
+    "fr": "Votre première automatisation a produit un résultat.",
+    "es": "Tu primera automatización ha producido un resultado.",
+    "he": "האוטומציה הראשונה שלך הפיקה תוצאה.",
+    "ru": "Ваша первая автоматизация дала результат."
+  },
+  "Your first assistant request is complete.": {
+    "en": "Your first assistant request is complete.",
+    "fr": "Votre assistant a traité votre première demande.",
+    "es": "Tu asistente ha respondido a tu primera solicitud.",
+    "he": "העוזר ענה לבקשה הראשונה שלך.",
+    "ru": "Помощник ответил на ваш первый запрос."
+  },
+  "Ask in Chat. Your assistants will take it from there.": {
+    "en": "Ask in Chat. Your assistants will take it from there.",
+    "fr": "Demandez dans le Chat. Vos assistants prendront le relais.",
+    "es": "Pídelo en el Chat. Tus asistentes se encargarán.",
+    "he": "אפשר לבקש בצ׳אט. העוזרים ימשיכו משם.",
+    "ru": "Напишите в чат. Помощники займутся задачей."
+  },
+  "Loading activity": {
+    "en": "Loading activity",
+    "fr": "Chargement de l’activité",
+    "es": "Cargando actividad",
+    "he": "טעינת פעילות",
+    "ru": "Загрузка активности"
+  },
+  "Open chat": {
+    "en": "Open chat",
+    "fr": "Ouvrir le chat",
+    "es": "Abrir chat",
+    "he": "פתיחת הצ׳אט",
+    "ru": "Открыть чат"
+  },
+  "This Home needs an update": {
+    "en": "This Home needs an update",
+    "fr": "Ce Home doit être mis à jour",
+    "es": "Este Home necesita una actualización",
+    "he": "נדרש עדכון ל־Home הזה",
+    "ru": "Этому Home нужно обновление"
+  },
+  "Activity is private to the owner": {
+    "en": "Activity is private to the owner",
+    "fr": "L’activité est réservée au propriétaire",
+    "es": "La actividad es privada para el propietario",
+    "he": "הפעילות זמינה לבעלים בלבד",
+    "ru": "Активность доступна только владельцу"
+  },
+  "Activity could not be refreshed": {
+    "en": "Activity could not be refreshed",
+    "fr": "Impossible d’actualiser l’activité",
+    "es": "No se pudo actualizar la actividad",
+    "he": "לא ניתן היה לרענן את הפעילות",
+    "ru": "Не удалось обновить активность"
+  },
+  "Your chat still works. Update this Home to see Insights and Progress.": {
+    "en": "Your chat still works. Update this Home to see Insights and Progress.",
+    "fr": "Le chat fonctionne toujours. Mettez ce Home à jour pour voir Éclairages et Progrès.",
+    "es": "El chat sigue funcionando. Actualiza este Home para ver Hallazgos y Progreso.",
+    "he": "הצ׳אט ממשיך לעבוד. יש לעדכן את ה־Home כדי לראות תובנות והתקדמות.",
+    "ru": "Чат продолжает работать. Обновите этот Home, чтобы видеть «Инсайты» и «Прогресс»."
+  },
+  "Use an owner connection to read this Home’s activity.": {
+    "en": "Use an owner connection to read this Home’s activity.",
+    "fr": "Connectez-vous en tant que propriétaire pour lire l’activité de ce Home.",
+    "es": "Conéctate como propietario para ver la actividad de este Home.",
+    "he": "כדי לראות את פעילות ה־Home יש להתחבר כבעלים.",
+    "ru": "Войдите как владелец, чтобы видеть активность этого Home."
+  },
+  "Reconnect to this Home, then refresh.": {
+    "en": "Reconnect to this Home, then refresh.",
+    "fr": "Reconnectez-vous à ce Home, puis actualisez.",
+    "es": "Vuelve a conectarte a este Home y actualiza.",
+    "he": "יש להתחבר מחדש ל־Home ואז לרענן.",
+    "ru": "Подключитесь к этому Home и обновите."
+  },
+  "Showing the last checked activity from this Home.": {
+    "en": "Showing the last checked activity from this Home.",
+    "fr": "L’activité affichée date de la dernière vérification de ce Home.",
+    "es": "Se muestra la actividad de la última comprobación de este Home.",
+    "he": "מוצגת הפעילות מהבדיקה האחרונה של ה־Home הזה.",
+    "ru": "Показана активность этого Home на момент последней проверки."
+  },
+  "Last checked {0}": {
+    "en": "Last checked {0}",
+    "fr": "Dernière vérification : {0}",
+    "es": "Última comprobación: {0}",
+    "he": "בדיקה אחרונה: {0}",
+    "ru": "Последняя проверка: {0}"
+  },
+  "Replies and scheduled results from this Home.": {
+    "en": "Replies and scheduled results from this Home.",
+    "ru": "Ответы на запросы и результаты задач по расписанию из этого Home.",
+    "fr": "Réponses et résultats planifiés de ce Home.",
+    "es": "Respuestas y resultados programados de este Home.",
+    "he": "תשובות ותוצאות מתוזמנות מה־Home הזה."
+  },
+  "Не хватило системных ресурсов для запуска инструмента. Результат задачи не подтверждён.": {
+    "en": "There were not enough system resources to start the tool. The task result is unconfirmed.",
+    "fr": "Les ressources système étaient insuffisantes pour lancer l’outil. Le résultat de la tâche n’est pas confirmé.",
+    "es": "No había suficientes recursos del sistema para iniciar la herramienta. El resultado de la tarea no está confirmado.",
+    "he": "לא היו מספיק משאבי מערכת להפעלת הכלי. תוצאת המשימה לא אושרה.",
+    "ru": "Не хватило системных ресурсов для запуска инструмента. Результат задачи не подтверждён."
+  },
+  "Не удалось запустить необходимый инструмент или плагин. Результат задачи не подтверждён.": {
+    "en": "A required tool or plugin could not start. The task result is unconfirmed.",
+    "fr": "Un outil ou module requis n’a pas pu démarrer. Le résultat de la tâche n’est pas confirmé.",
+    "es": "No se pudo iniciar una herramienta o complemento necesario. El resultado de la tarea no está confirmado.",
+    "he": "לא ניתן היה להפעיל כלי או תוסף נדרש. תוצאת המשימה לא אושרה.",
+    "ru": "Не удалось запустить необходимый инструмент или плагин. Результат задачи не подтверждён."
+  },
+  "Соединение с исполнителем прервалось. Перед повтором нужно проверить результат действий.": {
+    "en": "The connection to the executor was interrupted. Check the results before trying again.",
+    "fr": "La connexion à l’exécuteur a été interrompue. Vérifiez les résultats avant de réessayer.",
+    "es": "Se interrumpió la conexión con el ejecutor. Comprueba los resultados antes de volver a intentarlo.",
+    "he": "החיבור למבצע נותק. יש לבדוק את התוצאות לפני ניסיון נוסף.",
+    "ru": "Соединение с исполнителем прервалось. Перед повтором нужно проверить результат действий."
+  },
+  "Аккаунт требует внимания: вход или доступный лимит. Проверьте настройки аккаунтов.": {
+    "en": "The account needs attention: sign-in or an available allowance. Check account settings.",
+    "fr": "Le compte nécessite une vérification de connexion ou de quota. Consultez les réglages du compte.",
+    "es": "La cuenta requiere atención por el inicio de sesión o la cuota disponible. Revisa los ajustes de cuentas.",
+    "he": "החשבון דורש בדיקה של ההתחברות או המכסה הזמינה. יש לבדוק את הגדרות החשבון.",
+    "ru": "Аккаунт требует внимания: вход или доступный лимит. Проверьте настройки аккаунтов."
+  },
+  "Ответ сохранён, но доставка не подтверждена. Проверьте Telegram перед повтором.": {
+    "en": "The reply is saved, but delivery is unconfirmed. Check Telegram before trying again.",
+    "fr": "La réponse est enregistrée, mais sa livraison n’est pas confirmée. Vérifiez Telegram avant de réessayer.",
+    "es": "La respuesta está guardada, pero la entrega no está confirmada. Revisa Telegram antes de volver a intentarlo.",
+    "he": "התשובה נשמרה, אך המסירה לא אושרה. יש לבדוק בטלגרם לפני ניסיון נוסף.",
+    "ru": "Ответ сохранён, но доставка не подтверждена. Проверьте Telegram перед повтором."
+  },
+  "Задача завершилась с ошибкой. Подробности сохранены в исходном чате.": {
+    "en": "The task failed. Details are saved in the source conversation.",
+    "fr": "La tâche a échoué. Les détails sont enregistrés dans la conversation source.",
+    "es": "La tarea falló. Los detalles están guardados en la conversación de origen.",
+    "he": "המשימה נכשלה. הפרטים נשמרו בשיחת המקור.",
+    "ru": "Задача завершилась с ошибкой. Подробности сохранены в исходном чате."
+  },
+  "Не удалось выполнить запрос к подключённому сервису. Доступные результаты сохранены в исходном чате.": {
+    "en": "The request to the connected service failed. Available results are saved in the source conversation.",
+    "fr": "La demande au service connecté a échoué. Les résultats disponibles sont enregistrés dans la conversation source.",
+    "es": "Falló la solicitud al servicio conectado. Los resultados disponibles están guardados en la conversación de origen.",
+    "he": "הבקשה לשירות המחובר נכשלה. התוצאות הזמינות נשמרו בשיחת המקור.",
+    "ru": "Не удалось выполнить запрос к подключённому сервису. Доступные результаты сохранены в исходном чате."
   }
 }

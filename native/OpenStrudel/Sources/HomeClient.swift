@@ -1241,6 +1241,19 @@ final class HomeClient: ObservableObject, Identifiable {
     /// A reader's page or feed, through this connection, leaving the chat's selection and history alone.
     func read<T: Decodable>(_ path: String) async throws -> T { try await request(path) }
 
+    /// Preserve HTTP capability/access refusals so an older Home never looks like an empty activity feed.
+    func readActivity() async throws -> HomeActivity {
+        var refusal: Int?
+        do {
+            let data = try await requestData("/v1/activity", refused: { refusal = $0 })
+            return try JSONDecoder().decode(HomeActivity.self, from: data)
+        } catch {
+            if refusal == 404 { throw ActivityReadError.unsupported }
+            if refusal == 403 { throw ActivityReadError.ownerOnly }
+            throw error
+        }
+    }
+
     /// The one chat is this Home's main assistant. A selection saved by an earlier version opens as a reader now,
     /// never as the composer's target; its draft keeps its own key.
     func pinToMain() {
@@ -1878,6 +1891,8 @@ final class HomeClient: ObservableObject, Identifiable {
             return Data()
         }
         guard (200..<300).contains(http.statusCode) else {
+            // Capability and access refusals matter even if a proxy returns a non-JSON body.
+            refused?(http.statusCode)
             if http.statusCode == 401 { throw HomeClientError.authenticationExpired }
             if let envelope = try? decoder.decode(HomeFailure.self, from: data) {
                 if http.statusCode == 409, let moved = envelope.moved, mayRelocate {
@@ -1892,7 +1907,6 @@ final class HomeClient: ObservableObject, Identifiable {
                 }
                 // The Home's own answer, with the status that tells a refusal from a failure.
                 if let message = envelope.error {
-                    refused?(http.statusCode)
                     if let code = envelope.code { throw HomeClientError.refused(code: code, message: message, detail: envelope.detail) }
                     throw HomeClientError.server(message)
                 }

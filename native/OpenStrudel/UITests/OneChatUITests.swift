@@ -21,12 +21,12 @@ final class OneChatUITests: XCTestCase {
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 5) { consent.tap() }
 
-        // 1. The chat is the first place: history already there, the composer ready, exactly two tabs.
+        // 1. The chat is the first place: history already there, the composer ready, exactly three tabs.
         let composer = app.textFields["Сообщение"]
         XCTAssertTrue(composer.waitForExistence(timeout: 30), app.debugDescription)
         XCTAssertTrue(app.staticTexts["Три встречи и один акт на подпись."].waitForExistence(timeout: 40), app.debugDescription)
-        XCTAssertTrue(app.tabBars.buttons["Чат"].exists && app.tabBars.buttons["Клиенты"].exists, app.debugDescription)
-        XCTAssertEqual(app.tabBars.buttons.count, 2)
+        XCTAssertTrue(app.tabBars.buttons["Чат"].exists && app.tabBars.buttons["Инсайты"].exists && app.tabBars.buttons["Прогресс"].exists, app.debugDescription)
+        XCTAssertEqual(app.tabBars.buttons.count, 3)
         XCTAssertFalse(app.buttons["newEmployee"].exists)
         let send = app.buttons["sendMessage"]
         XCTAssertTrue(send.waitForExistence(timeout: 10), app.debugDescription)
@@ -109,8 +109,34 @@ final class OneChatUITests: XCTestCase {
         XCTAssertEqual(app.textFields["Сообщение"].waitForExistence(timeout: 10) ? app.textFields["Сообщение"].value as? String : nil, "Черновик, который должен выжить")
         try await assertNoSend(since: state)
 
+        // Insights and Progress are readers; neither takes ownership of the main draft or sends a message.
+        app.tabBars.buttons["Инсайты"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["insightsRoot"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.textFields["Сообщение"].exists)
+        let activity = try XCTUnwrap(state["activity"] as? [String: Any])
+        let insight = app.buttons["insight-" + (try XCTUnwrap(activity["id"] as? String))]
+        XCTAssertTrue(insight.waitForExistence(timeout: 15), app.debugDescription); insight.tap()
+        XCTAssertTrue(app.staticTexts["Проверены два материала. Решение по публикации остаётся за вами."].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.textFields["Сообщение"].exists)
+        XCTAssertTrue(app.buttons["insightSource"].exists)
+        app.buttons["discussInsight"].tap()
+        XCTAssertTrue(composer.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(composer.value as? String, "Черновик, который должен выжить")
+        let insightChip = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND label == %@", "draftContext", "Из переписки · Утренний обзор")).firstMatch
+        XCTAssertTrue(insightChip.waitForExistence(timeout: 10), app.debugDescription)
+        try await assertNoSend(since: state)
+        capture("insight-discuss-draft", app)
+        app.buttons["removeDraftContext"].tap()
+        app.tabBars.buttons["Прогресс"].tap()
+        XCTAssertTrue(app.buttons["openClients"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.textFields["Сообщение"].exists)
+        app.tabBars.buttons["Чат"].tap()
+        XCTAssertTrue(composer.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(composer.value as? String, "Черновик, который должен выжить")
+        try await assertNoSend(since: state)
+
         // 4. Clients: the real list from the connector, a client, its files, and Discuss back into the same draft.
-        app.tabBars.buttons["Клиенты"].tap()
+        openClients(app)
         let acme = app.buttons["client-c-acme"]
         XCTAssertTrue(acme.waitForExistence(timeout: 20), app.debugDescription)
         XCTAssertTrue(app.buttons["client-c-north"].exists)
@@ -135,7 +161,7 @@ final class OneChatUITests: XCTestCase {
         app.tabBars.buttons["Чат"].tap()
         XCTAssertTrue(composer.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(composer.value as? String, "Черновик, который должен выжить")
-        app.tabBars.buttons["Клиенты"].tap()
+        openClients(app)
         XCTAssertTrue(app.descendants(matching: .any)["clientDetail"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(file.waitForExistence(timeout: 15), app.debugDescription)
         // A highlighted list row is not navigation. Back and a different row must
@@ -153,7 +179,7 @@ final class OneChatUITests: XCTestCase {
         try await assertNoSend(since: state)
         capture("chat-north-context", app)
         // A new Discuss replaces the attached client with the current one and preserves the words.
-        app.tabBars.buttons["Клиенты"].tap()
+        openClients(app)
         XCTAssertTrue(acme.waitForExistence(timeout: 10), app.debugDescription)
         acme.tap()
         XCTAssertTrue(file.waitForExistence(timeout: 15), app.debugDescription)
@@ -167,7 +193,7 @@ final class OneChatUITests: XCTestCase {
         // Discuss intentionally returns Clients to its list. The same client must
         // open again after that tab transition, without selecting a different row first.
         app.buttons["removeDraftContext"].tap()
-        app.tabBars.buttons["Клиенты"].tap()
+        openClients(app)
         XCTAssertTrue(acme.waitForExistence(timeout: 10), app.debugDescription)
         acme.tap()
         XCTAssertTrue(app.descendants(matching: .any)["clientDetail"].waitForExistence(timeout: 10), app.debugDescription)
@@ -220,9 +246,8 @@ final class OneChatUITests: XCTestCase {
         app.terminate(); app.launch()
         for (mode, code) in [("empty", "empty"), ("unauthorized", "service_auth"), ("forbidden", "service_denied"), ("ok", "ready")] {
             _ = try await read("/company?mode=" + mode)
-            let clientsTab = app.tabBars.buttons["Клиенты"]
-            XCTAssertTrue(clientsTab.waitForExistence(timeout: 30), app.debugDescription); clientsTab.tap()
-            if !app.buttons["refreshClients"].waitForExistence(timeout: 3), clientsTab.isSelected, app.navigationBars.buttons.element(boundBy: 0).exists { app.navigationBars.buttons.element(boundBy: 0).tap() }
+            openClients(app)
+            if !app.buttons["refreshClients"].waitForExistence(timeout: 3), app.navigationBars.buttons.element(boundBy: 0).exists { app.navigationBars.buttons.element(boundBy: 0).tap() }
             XCTAssertTrue(app.buttons["refreshClients"].waitForExistence(timeout: 10), app.debugDescription)
             app.buttons["refreshClients"].tap()
             XCTAssertTrue(app.descendants(matching: .any)["clientsState-" + code].waitForExistence(timeout: 20), "mode \(mode): " + app.debugDescription)
@@ -239,11 +264,11 @@ final class OneChatUITests: XCTestCase {
         XCTAssertFalse(app.buttons["removeDraftContext"].exists)
         let second = try await read("/company?mode=empty", from: secondFixture)
         XCTAssertNotEqual(second["main"] as? String, after["main"] as? String)
-        app.tabBars.buttons["Клиенты"].tap()
+        openClients(app)
         XCTAssertTrue(acme.waitForExistence(timeout: 10), app.debugDescription); acme.tap()
         XCTAssertTrue(file.waitForExistence(timeout: 15), app.debugDescription)
         try await pair(app, fixture: secondFixture, name: secondHome)
-        app.tabBars.buttons["Клиенты"].tap()
+        openClients(app)
         XCTAssertTrue(app.descendants(matching: .any)["clientsState-empty"].waitForExistence(timeout: 20), app.debugDescription)
         XCTAssertFalse(app.descendants(matching: .any)["clientDetail"].exists)
         XCTAssertFalse(file.exists)
@@ -260,7 +285,7 @@ final class OneChatUITests: XCTestCase {
         let firstHomeOption = app.buttons[firstHome]
         XCTAssertTrue(firstHomeOption.waitForExistence(timeout: 5), app.debugDescription); firstHomeOption.tap()
         app.buttons["Готово"].tap()
-        app.tabBars.buttons["Клиенты"].tap()
+        openClients(app)
         XCTAssertTrue(acme.waitForExistence(timeout: 20), app.debugDescription)
         XCTAssertTrue(app.buttons["refreshClients"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["clientDetail"].exists)
@@ -270,6 +295,15 @@ final class OneChatUITests: XCTestCase {
         XCTAssertEqual((secondAfter["turns"] as? [[String: Any]])?.count, 0)
         XCTAssertEqual(secondAfter["messageRequests"] as? Int, 0)
         XCTAssertEqual((secondAfter["sentMessages"] as? [[String: Any]])?.count, 0)
+    }
+
+    /// Progress keeps its native client destination across ordinary tab visits.
+    @MainActor private func openClients(_ app: XCUIApplication) {
+        let progress = app.tabBars.buttons["Прогресс"]
+        XCTAssertTrue(progress.waitForExistence(timeout: 30), app.debugDescription)
+        progress.tap()
+        let entry = app.buttons["openClients"]
+        if entry.waitForExistence(timeout: 2) { entry.tap() }
     }
 
     @MainActor private func pair(_ app: XCUIApplication, fixture: String, name: String) async throws {
