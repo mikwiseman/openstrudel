@@ -944,8 +944,8 @@ export class TelegramAdapter {
   private async acceptLink(code: string, update: TelegramUpdate): Promise<void> {
     const message = update.message!;
     const chatId = String(message.chat.id);
-    const sender = message.from?.id ?? (Number(chatId) > 0 ? Number(chatId) : undefined);
-    if (!sender || message.sender_chat || message.from?.is_bot) return;
+    const sender = message.from?.id;
+    if (!sender || !Number.isSafeInteger(sender) || sender <= 0 || message.sender_chat || message.from?.is_bot || Number(chatId) > 0 && String(sender) !== chatId) return;
     // Owner pairing is never a way for a scoped participant to upgrade themselves.
     if (isRestrictedSubject(this.store, String(sender))) return;
     const row = this.store.db.prepare("SELECT payload FROM telegram_links WHERE hash=?").get(sha256(code));

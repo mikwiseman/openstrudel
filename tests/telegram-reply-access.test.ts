@@ -103,3 +103,15 @@ it("does not infer a private sender's identity from the destination chat id",() 
   expect(adapter.authorizedSender("42",42)).toBe(true);
   for (const sender of [undefined,NaN,Infinity,42.5,-42,0]) expect(adapter.authorizedSender("42",sender)).toBe(false);
 });
+
+it("does not pair a private account without its matching human sender identity",async () => {
+  const {store,adapter} = fixture(); const link = adapter.createLink();
+  for (const [i,from] of [undefined,{id:42},{id:77,is_bot:true}].entries()) {
+    await adapter.processUpdate({update_id:i+1,message:{message_id:i+1,chat:{id:77,type:"private"},from,text:"/start " + link.code}});
+  }
+  expect(store.getTelegramChat("77")).toBeNull();
+  expect(adapter.linkStatus(link.code)).toEqual({status:"waiting"});
+  expect(fetch).not.toHaveBeenCalled();
+  await adapter.processUpdate({update_id:4,message:{message_id:4,chat:{id:77,type:"private"},from:{id:77},text:"/start " + link.code}});
+  expect(store.getTelegramChat("77")?.allowedSenders).toEqual(["77"]);
+});
