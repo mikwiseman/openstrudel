@@ -63,6 +63,11 @@ export class OpenStrudelRuntime {
       assertCurrent?.();
       if (isProtectedTelegramAudience(this.store, chat)) throw new Error("Фоновая доставка в чат с ограниченным доступом недоступна.");
     });
+    this.scheduler.sendPoll=async(chat,poll,key)=>{
+      if (isProtectedTelegramAudience(this.store, chat)) throw new Error("Фоновая доставка в чат с ограниченным доступом недоступна.");
+      return this.telegram.sendPoll(chat,poll,key);
+    };
+    this.scheduler.stopPoll=(chat,messageId)=>this.telegram.stopPoll(chat,messageId);
     this.api = new HttpApi(this.store, this.messages, this.telegram, options.apiToken ?? (options.engine ? null : process.env.OPENSTRUDEL_API_TOKEN), this.account, this.engine, { mobileDirectory: resolve(options.rootDirectory ?? process.cwd(), ".data/mobile"), mobilePort: options.mobilePort }, this.accounts);
     this.startTelegram = options.startTelegram ?? true;
   }

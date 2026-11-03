@@ -31,6 +31,7 @@ import { sharedWithAllChats, shareWithAllChats, ownerOnlyServers } from "./exten
 import { privateSourceSchedule, unipileSettings } from "./private-sources.js";
 import { UnipileAdapter, unipileReadSchema } from "./unipile.js";
 import { readActivity } from "./activity.js";
+import { parsePoll } from "./check-ins.js";
 import type { ServiceSignIn } from "./types.js";
 import { MAX_SPEECH_BYTES, isSpeechFile, saveSpeechSettings, speechSettings, transcribeRecording } from "./speech.js";
 import { diagnosticReport, recordDiagnostic, saveDiagnosticLevel } from "./diagnostics.js";
@@ -734,7 +735,7 @@ export class HttpApi {
           // Only the owner sends a schedule's results to another Telegram chat.
           if(b.telegramChatId && !canManageAccount && this.store.getTelegramChat(String(b.telegramChatId))?.conversationId !== conversationId) throw new HomeError("Доставку в другой Telegram-чат настраивает владелец устройства.",403);
           const existing = b.id ? scheduler.list(conversationId).find(s => s.id === String(b.id)) : undefined;
-          const schedule=scheduler.save({conversationId,id:b.id ? String(b.id):undefined,name:String(b.name ?? ""),prompt:String(b.prompt ?? ""),cron:String(b.cron ?? ""),timezone:String(b.timezone ?? ""),enabled:b.enabled!==false,telegramChatId:b.telegramChatId ? String(b.telegramChatId):null,delivery:b.delivery === "app" || b.delivery === "telegram" ? b.delivery : existing?.delivery,backupOf:existing?.backupOf});
+          const schedule=scheduler.save({conversationId,id:b.id ? String(b.id):undefined,name:String(b.name ?? ""),prompt:String(b.prompt ?? ""),cron:String(b.cron ?? ""),timezone:String(b.timezone ?? ""),enabled:b.enabled!==false,telegramChatId:b.telegramChatId ? String(b.telegramChatId):null,delivery:b.delivery === "app" || b.delivery === "telegram" ? b.delivery : existing?.delivery,backupOf:existing?.backupOf,poll:b.poll === undefined ? existing?.poll ?? null : parsePoll(b.poll)});
           this.send(response,201,{schedule});return;
         }
       }

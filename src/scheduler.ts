@@ -8,12 +8,15 @@ import { agentTransfer } from "./agent-move.js";
 import { scheduleTiming } from "./schedule-timing.js";
 import { errorProblem, failedRun, quietReply } from "./operations.js";
 import { privateSourceSchedule } from "./private-sources.js";
+import { checkInSummary, ensureCheckInTables, localDate, markPollClosed, openPolls, parsePoll, recordPoll, type SchedulePoll } from "./check-ins.js";
 
 export interface ScheduleInput {
   id?: string; conversationId: string; name: string; prompt: string; cron: string; timezone: string;
   enabled?: boolean; telegramChatId?: string | null; delivery?: "app" | "telegram" | "bound"; backupOf?: string | null;
+  /** A fixed question instead of a request: the clock posts it as a Telegram poll and records the answers. */
+  poll?: SchedulePoll | null;
 }
-export interface Schedule extends ScheduleInput { id: string; enabled: boolean; nextRunAt: string; lastRunStatus?: string | null }
+export interface Schedule extends ScheduleInput { id: string; enabled: boolean; nextRunAt: string; poll: SchedulePoll | null; lastRunStatus?: string | null }
 type Row = Record<string, any>;
 
 /** The clock only wakes the existing chat. Codex still owns the work. */
@@ -24,6 +27,8 @@ export class Scheduler {
   get hasActiveRuns() { return this.active.size > 0; }
   isRunning(conversationId: string) { return this.list(conversationId).some(s => this.active.has(s.id)); }
   deliver?: (chatId: string, text: string, key: string, attachments?: Attachment[], assertCurrent?: () => void) => Promise<void>;
+  sendPoll?: (chatId: string, poll: SchedulePoll, key: string) => Promise<{ pollId: string; messageId: number }>;
+  stopPoll?: (chatId: string, messageId: number) => Promise<void>;
   constructor(private readonly store: Store, private readonly messages: MessageService) {
     store.db.exec(`CREATE TABLE IF NOT EXISTS schedules (
       id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations(id),
@@ -37,6 +42,8 @@ export class Scheduler {
     // Existing schedules retain their previously agreed delivery. New ones are app-only.
     if (!columns.some(c => c.name === "delivery")) store.db.exec("ALTER TABLE schedules ADD COLUMN delivery TEXT NOT NULL DEFAULT 'bound'");
     if (!columns.some(c => c.name === "backup_of")) store.db.exec("ALTER TABLE schedules ADD COLUMN backup_of TEXT REFERENCES schedules(id)");
+    if (!columns.some(c => c.name === "poll_json")) store.db.exec("ALTER TABLE schedules ADD COLUMN poll_json TEXT");
+    ensureCheckInTables(store);
     const runColumns = store.db.prepare("PRAGMA table_info(schedule_runs)").all() as Row[];
     // Keep the approval on the existing durable run receipt: deleting a grant
     // must not turn a pending private edition into an ordinary delivery on restart.
@@ -44,13 +51,15 @@ export class Scheduler {
   }
   save(input: ScheduleInput, now = new Date(), moveFrom?: string): Schedule {
     if (!this.store.getConversation(input.conversationId)) throw new Error("Чат не найден");
-    if (!input.name?.trim() || !input.prompt?.trim() || input.name.length > 120) throw new Error("Укажите название и поручение");
+    const poll = parsePoll(input.poll ?? null);
+    if (!input.name?.trim() || (!poll && !input.prompt?.trim()) || input.name.length > 120) throw new Error("Укажите название и поручение");
     const timing = scheduleTiming(input.cron, input.timezone, now), next = timing.nextRunAt;
     if (timing.once && input.enabled !== false && new Date(next) <= now) throw new Error("Время напоминания уже прошло. Укажите новое время.");
     if (input.telegramChatId && !this.store.getTelegramChat(input.telegramChatId)) throw new Error("Сначала подключите этот Telegram-чат");
     const delivery = input.delivery ?? (input.telegramChatId ? "telegram" : "app");
     if (!["app", "telegram", "bound"].includes(delivery)) throw new Error("Выберите место доставки");
     if (delivery === "telegram" && !input.telegramChatId) throw new Error("Выберите подключённый Telegram-чат");
+    if (poll && (delivery === "app" || !(input.telegramChatId || this.store.telegramChats().some(c => c.conversationId === input.conversationId)))) throw new Error("Опрос публикуется в Telegram: выберите подключённый чат.");
     const previous = input.id ? this.list(moveFrom ?? input.conversationId).find(s => s.id === input.id) : undefined;
     if (input.id && !previous) throw new Error("Расписание этого чата не найдено");
     const moving = previous && previous.conversationId !== input.conversationId;
@@ -65,10 +74,10 @@ export class Scheduler {
     const id = input.id ?? randomUUID();
     this.store.db.exec("BEGIN IMMEDIATE");
     try {
-      this.store.db.prepare(`INSERT INTO schedules(id,conversation_id,name,prompt,cron,timezone,enabled,next_run_at,telegram_chat_id,delivery,backup_of) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+      this.store.db.prepare(`INSERT INTO schedules(id,conversation_id,name,prompt,cron,timezone,enabled,next_run_at,telegram_chat_id,delivery,backup_of,poll_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
       conversation_id=excluded.conversation_id,name=excluded.name,prompt=excluded.prompt,cron=excluded.cron,timezone=excluded.timezone,
-      enabled=excluded.enabled,next_run_at=excluded.next_run_at,telegram_chat_id=excluded.telegram_chat_id,delivery=excluded.delivery,backup_of=excluded.backup_of`)
-      .run(id,input.conversationId,input.name.trim(),input.prompt.trim(),input.cron.trim(),input.timezone,input.enabled === false ? 0 : 1,next,input.telegramChatId ?? null,delivery,input.backupOf ?? null);
+      enabled=excluded.enabled,next_run_at=excluded.next_run_at,telegram_chat_id=excluded.telegram_chat_id,delivery=excluded.delivery,backup_of=excluded.backup_of,poll_json=excluded.poll_json`)
+      .run(id,input.conversationId,input.name.trim(),(input.prompt ?? "").trim(),input.cron.trim(),input.timezone,input.enabled === false ? 0 : 1,next,input.telegramChatId ?? null,delivery,input.backupOf ?? null,poll ? JSON.stringify(poll) : null);
       for (const backup of backups) {
         const chatId = backup.telegramChatId ?? (backup.delivery === "bound" ? this.store.telegramChats().find(c=>c.conversationId === backup.conversationId)?.chatId : null) ?? null;
         this.store.db.prepare("UPDATE schedules SET conversation_id=?,telegram_chat_id=?,delivery=? WHERE id=?")
@@ -81,7 +90,7 @@ export class Scheduler {
   }
   /** A chat's schedules, or every schedule on this Home without a chat. */
   list(conversationId?: string): Schedule[] {
-    return (this.store.db.prepare(`SELECT s.*,(SELECT status FROM schedule_runs r WHERE r.schedule_id=s.id AND (s.cron NOT LIKE '@once %' OR r.scheduled_for=s.next_run_at) ORDER BY scheduled_for DESC LIMIT 1) AS last_run_status FROM schedules s${conversationId ? " WHERE conversation_id=?" : ""} ORDER BY s.rowid`).all(...conversationId ? [conversationId] : []) as Row[]).map(r => ({ id:r.id,conversationId:r.conversation_id,name:r.name,prompt:r.prompt,cron:r.cron,timezone:r.timezone,enabled:r.enabled===1,nextRunAt:r.next_run_at,telegramChatId:r.telegram_chat_id,delivery:r.delivery,backupOf:r.backup_of,lastRunStatus:r.last_run_status }));
+    return (this.store.db.prepare(`SELECT s.*,(SELECT status FROM schedule_runs r WHERE r.schedule_id=s.id AND (s.cron NOT LIKE '@once %' OR r.scheduled_for=s.next_run_at) ORDER BY scheduled_for DESC LIMIT 1) AS last_run_status FROM schedules s${conversationId ? " WHERE conversation_id=?" : ""} ORDER BY s.rowid`).all(...conversationId ? [conversationId] : []) as Row[]).map(r => ({ id:r.id,conversationId:r.conversation_id,name:r.name,prompt:r.prompt,cron:r.cron,timezone:r.timezone,enabled:r.enabled===1,nextRunAt:r.next_run_at,telegramChatId:r.telegram_chat_id,delivery:r.delivery,backupOf:r.backup_of,poll:r.poll_json ? JSON.parse(r.poll_json) as SchedulePoll : null,lastRunStatus:r.last_run_status }));
   }
   runs(conversationId: string) {
     return (this.store.db.prepare("SELECT * FROM schedule_runs WHERE conversation_id=? ORDER BY created_at DESC,rowid DESC LIMIT 30").all(conversationId) as Row[]).map(r => ({ id:r.id,scheduleId:r.schedule_id,status:r.status,scheduledFor:r.scheduled_for,messageId:r.message_id,error:r.error }));
@@ -166,19 +175,37 @@ export class Scheduler {
           this.store.db.prepare("UPDATE schedule_runs SET status='skipped' WHERE id=?").run(runId); return;
         }
       }
+      if (schedule.poll) { await this.runPoll(schedule, runId, scheduledFor); return; }
       const assertPrivateSources = this.privateSourceDeliveryGuard(runId, schedule.conversationId);
       assertPrivateSources?.();
       const destination = this.destination(schedule.conversationId, schedule.telegramChatId, schedule.delivery);
+      const checkIns = checkInSummary(this.store, schedule.conversationId, new Date(scheduledFor));
       const deliveryInstructions = destination
         ? assertPrivateSources
           ? "Return the completed private edition here. The application alone handles its approved delivery and rechecks private-source access before each part. Do not call send_telegram_message or send it through another service."
           : `Return the completed edition here; the application handles delivery to Telegram chat ${destination}. Only if the saved request explicitly requires separate messages, use send_telegram_message for that destination and return NO_REPLY to avoid an extra automatic post. Check each delivery receipt; never repeat an unknown or partial delivery. Do not send to another chat.`
         : "Return the completed edition here; it stays in the app. Do not send it to Telegram.";
       const result = await this.messages.handle({ channel:"api",conversationId:schedule.conversationId,externalId:`schedule:${runId}`,scheduled:true,scheduleTelegramChatId:destination,
-        text:`Scheduled request: ${schedule.name}\nScheduled for: ${scheduledFor} (${schedule.timezone}). Current time: ${new Date().toISOString()}.\n${schedule.prompt}\n${deliveryInstructions} Do not create another schedule. Follow the saved request's rules for a quiet run: NO_REPLY when there is nothing to publish. If the saved work could not be done, return only "FAILED: " and one plain line why; it goes to the owner, never to the chat. Never invent facts or sources.` });
+        text:`Scheduled request: ${schedule.name}\nScheduled for: ${scheduledFor} (${schedule.timezone}). Current time: ${new Date().toISOString()}.\n${schedule.prompt}\n${checkIns ? checkIns + "\n" : ""}${deliveryInstructions} Do not create another schedule. Follow the saved request's rules for a quiet run: NO_REPLY when there is nothing to publish. If the saved work could not be done, return only "FAILED: " and one plain line why; it goes to the owner, never to the chat. Never invent facts or sources.` });
       this.store.db.prepare("UPDATE schedule_runs SET status='ready',message_id=? WHERE id=?").run(result.messageId,runId);
       await this.finish(runId,schedule.conversationId,result.messageId,schedule.telegramChatId,schedule.delivery);
     } catch (error) { await this.fail(runId,error); }
+  }
+  /** The clock asks the fixed question itself: a non-anonymous poll in the schedule's Telegram chat, no model turn. */
+  private async runPoll(schedule: Schedule, runId: string, scheduledFor: string): Promise<void> {
+    const destination = this.destination(schedule.conversationId, schedule.telegramChatId, schedule.delivery);
+    if (!destination) throw new Error("Опрос не отправлен: чат Telegram недоступен или на паузе.");
+    if (isRestrictedChat(this.store, destination) || isRestrictedSubject(this.store, destination)) throw new Error("Фоновая доставка в чат с ограниченным доступом недоступна.");
+    if (!this.sendPoll) throw new Error("Доставка Telegram недоступна");
+    // The previous question closes when the next one is asked; a late answer still belongs to its own day.
+    for (const previous of openPolls(this.store, schedule.id)) {
+      try { await this.stopPoll?.(previous.chatId, previous.messageId); } catch { /* already closed or deleted */ }
+      markPollClosed(this.store, previous.pollId);
+    }
+    const sent = await this.sendPoll(destination, schedule.poll!, `schedule:${runId}`);
+    recordPoll(this.store, { pollId: sent.pollId, scheduleId: schedule.id, conversationId: schedule.conversationId, chatId: destination, messageId: sent.messageId,
+      localDate: localDate(scheduledFor, schedule.timezone), question: schedule.poll!.question, options: schedule.poll!.options, createdAt: new Date().toISOString() });
+    this.store.db.prepare("UPDATE schedule_runs SET status='completed',error=NULL WHERE id=?").run(runId);
   }
   private async finish(runId: string, conversationId: string, messageId: string, chatId?: string | null, delivery = "app"): Promise<void> {
     let deliveryAttempted = false;

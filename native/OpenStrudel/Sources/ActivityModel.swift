@@ -36,10 +36,24 @@ struct HomeActivity: Decodable, Equatable {
         let milestones: [Milestone]
         func reached(_ id: String) -> Bool { milestones.contains { $0.id == id && $0.reached } }
     }
+    /// A recurring question the clock asks as a Telegram poll; the numbers are the people's own answers, never a judgement.
+    struct CheckIn: Decodable, Identifiable, Equatable {
+        struct Participant: Decodable, Identifiable, Equatable {
+            struct Latest: Decodable, Equatable { let date: String; let value: Int }
+            let id: String; let name: String; let streak: Int; let latest: Latest?; let average: Double?
+        }
+        struct Day: Decodable, Equatable { let date: String; let values: [String: Int] }
+        let id: String; let name: String; let question: String; let conversationId: String; let chat: String?
+        let scale: Int; let today: String; let days: [Day]; let participants: [Participant]
+        func value(of participant: Participant, on date: String) -> Int? { days.first { $0.date == date }?.values[participant.id] }
+    }
     let checkedAt: String
     let period: Period
     let insights: [Insight]
+    /// Absent on a Home that predates polls.
+    let checkIns: [CheckIn]?
     let progress: Progress
+    var rituals: [CheckIn] { checkIns ?? [] }
     var attention: [Insight] { insights.filter(\.needsAttention) }
     var results: [Insight] { insights.filter { $0.kind == "result" } }
     static func date(_ value: String) -> Date? {
