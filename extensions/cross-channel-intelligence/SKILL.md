@@ -11,7 +11,7 @@ When `correspondence_checkpoint` is available, call it immediately before each w
 
 ## Read the relevant conversations
 
-Use `wai-telegram` for Telegram. Start with bounded `get_inbox` pages, including read chats; unread does not mean unanswered. Read further through the returned cursor when the original question, a later correction or the outcome is missing. A known missing latest message requires a targeted freshness check; an old sync date alone does not. Do not mark messages read or fetch every attachment by default.
+Use `wai-telegram` for Telegram. For an event, pass its exact numeric `threadId` to `search_chats`, then use the returned internal chat UUID for message reads and drafts. Keep the original Telegram ID in event receipts. Do not pass numeric IDs where a reader expects a UUID or scan the inbox to resolve them. For a separate inbox review, start with bounded `get_inbox` pages, including read chats; unread does not mean unanswered. Read further through the returned cursor when the original question, a later correction or the outcome is missing. A known missing latest message requires a targeted freshness check; an old sync date alone does not. Do not mark messages read or fetch every attachment by default.
 
 Use the connected Gmail app for mail and Google Calendar for availability. For WhatsApp and LinkedIn use the Home's `unipile_accounts` and `unipile_read` tools. Copy the returned account ID and source fingerprint; choose LinkedIn's inbox before its chats. Keep the page's coverage, cursor and unknown-state warnings. These tools read only explicitly verified accounts; a disconnected account or denied source is missing evidence, not an empty inbox. Attachment metadata is not the attachment's contents.
 
