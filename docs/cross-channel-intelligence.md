@@ -1,6 +1,6 @@
 # Personal sources and Telegram drafts
 
-The existing Gmail and Google Calendar apps provide mail and real free/busy reads. Wai Telegram remains the primary Telegram reader and native draft writer. Unipile adds bounded reads for verified LinkedIn and WhatsApp identities through the Home's existing service configuration. It does not add a listener, indexing database or scheduling process.
+The existing Gmail and Google Calendar apps provide mail and real free/busy reads. Wai Telegram remains the primary Telegram reader and native draft writer. Unipile adds bounded reads for verified LinkedIn and WhatsApp identities through the Home's existing service configuration. The [correspondence workflow](architecture/correspondence-2026-11-05.md) receives source events and uses these readers; it adds no message index or periodic inbox scan.
 
 The upstream Unipile MCP offers a generic `execute_request` tool that can make writes and reach every account permitted by its key. An instruction naming two accounts is not an access boundary. The Home adapter therefore requires all three settings before its first request:
 
@@ -26,7 +26,7 @@ Coverage describes one live page, its cursor or offset, total when supplied, and
 
 ## Drafts and meetings
 
-The [cross-channel-intelligence skill](../extensions/cross-channel-intelligence/SKILL.md) combines existing source tools and the native scheduler. Automatic mode preserves every existing Telegram draft. An authorized new save requires current conversation evidence, an immediate empty-draft check and exact post-save readback. On an uncertain result, reconcile before retrying.
+The [cross-channel-intelligence skill](../extensions/cross-channel-intelligence/SKILL.md) combines the existing readers with the event-driven owner workflow. It preserves human and unknown drafts. Updating its own draft requires an exact prior receipt, unchanged live content/bindings, current conversation evidence and post-save readback. On an uncertain result, reconcile before retrying.
 
 Telegram's [`messages.saveDraft`](https://core.telegram.org/method/messages.saveDraft) has no expected revision or hash parameter. The current Wai Telegram writer replaces the draft and returns the submitted text; a separate `list_drafts` read is needed to verify stored state. Checking before saving reduces the race but is not atomic CAS against another Telegram client. A strict guarantee against overwriting a simultaneous manual edit requires leaving the proposal in the app.
 
@@ -34,7 +34,7 @@ Meeting proposals use [Google Calendar free/busy](https://developers.google.com/
 
 ## Automatic calendar capture
 
-The same skill supports an explicitly authorized recurring calendar writer. It reads Telegram, Gmail, the verified LinkedIn/WhatsApp accounts, and both work and personal Zoom recordings through their existing connections. Run it in the owner's main private conversation, with app-only delivery and a private-source grant bound to the exact schedule. One writer covers the calendar across both contexts; a second Home must not run the same scan independently.
+The same skill supports explicitly authorized automatic calendar capture from Telegram, Gmail, verified LinkedIn/WhatsApp accounts, and work/personal Zoom recordings. Source events enter the owner's main private conversation with app-only results. Authorization binds the source accounts, destination calendar, duration policy and live audience; a real running event receipt is required for private-source tools. One workflow covers both contexts; a second Home must not write the same calendar or draft independently.
 
 The saved request specifies the destination calendar, default duration, timezone policy, scan cadence and source coverage. Only actual agreed future appointments involving the owner become events. Missing dates/times or ambiguous timezone remain pending. A configured duration is labelled as reserved when not agreed. Existing invitations, calendar entries, later corrections and owner deletions are reconciled before writes. Events are private copies without attendees; the workflow neither sends invitations nor provisions Zoom rooms.
 
@@ -42,7 +42,7 @@ Zoom capture runs after the existing recording pipeline makes the transcript ava
 
 `calendar-capture/state.json` in the owner's private workspace holds source cursors, pending decisions and verified calendar receipts. Keep raw messages and transcripts in their source systems. The calendar remains authoritative for deduplication; uncertain writes are read back before retrying. Do not advance a failed source's cursor or call incomplete pagination exhaustive.
 
-Activation requires a real source-to-calendar run and a repeat that finds the existing event. Verify source date/time, preserved call link, privacy, no attendees, and independent source coverage. Skill installation and an enabled schedule alone are not proof of functioning automation.
+Activation requires a real source-to-calendar run and a repeat that finds the existing event. Verify source date/time, preserved call link, privacy, no attendees, and each source's actual event delivery. Skill installation or an accepted test webhook alone is not proof of a live provider subscription.
 
 ## Validation and activation
 

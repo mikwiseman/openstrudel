@@ -83,6 +83,8 @@ export function telegramTools(store: Store, context: TelegramToolContext) {
         .map(chat => ({chatId:chat.chatId,title:chat.title,type:Number(chat.chatId)<0?"group":"private", ...managementTurn(store,context) ? {profileId:chat.profileId,conversationId:chat.conversationId,enabled:chat.enabled,replyAccess:chat.access,allowedSenders:chat.allowedSenders} : {}}))};
     }
     if (name !== "send_telegram_message") throw new Error("Unknown Telegram tool");
+    if (context.scheduled && store.getMessage(context.conversationId, context.messageId)?.externalId?.startsWith("correspondence:"))
+      throw new Error("Correspondence prepares private drafts and calendar copies; it does not send Telegram messages.");
     if (context.scheduled && store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schedule_runs'").get()) {
       const run = store.db.prepare(`SELECT r.private_source_fingerprint FROM schedule_runs r JOIN messages m
         ON m.external_id='schedule:'||r.id AND m.conversation_id=r.conversation_id AND m.direction='inbound' AND m.channel='api'

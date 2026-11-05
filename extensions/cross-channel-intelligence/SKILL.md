@@ -5,6 +5,10 @@ description: Find commitments across Telegram, WhatsApp, LinkedIn, mail and Zoom
 
 Use the owner's existing services to identify conversations that need a decision or reply. Keep the original source IDs, message dates, people and the time checked. A page of recent conversations is a starting point, not the entire inbox or account history.
 
+An event-driven correspondence run names one changed conversation. Read that conversation directly; do not begin with another whole-inbox scan. Calendar capture and drafting share the same retrieved context. Before either action, resolve the actual person/project, read relevant decisions and documents through the existing company or personal brain, and verify the original evidence. Use the source's allowed space and the recipient's audience. An unavailable brain or unread attachment is missing evidence, never permission to invent an answer.
+
+When `correspondence_checkpoint` is available, call it immediately before each write. A stale revision means stop writes and let the newer event refresh context. Also check the live provider: unreceived events and a person's native editor are outside that checkpoint. Record draft IDs, source revisions, exact content hashes, pending context and uncertain attempts in `correspondence/state.json`, atomically. Keep operational notes out of the recipient's draft.
+
 ## Read the relevant conversations
 
 Use `wai-telegram` for Telegram. Start with bounded `get_inbox` pages, including read chats; unread does not mean unanswered. Read further through the returned cursor when the original question, a later correction or the outcome is missing. A known missing latest message requires a targeted freshness check; an old sync date alone does not. Do not mark messages read or fetch every attachment by default.
@@ -29,9 +33,9 @@ Create an owner-only, private event with no attendees and no generated conferenc
 
 For a later accepted reschedule or corrected call link, read and update the same automation-created event. Preserve unrelated manual edits. A proposal to reschedule is not acceptance. For an explicit cancellation of an automation-created event, mark its title cancelled and its time transparent; do not delete history or modify an organizer's invitation. If a user edit conflicts with source evidence, ask rather than overwrite it.
 
-Use one scheduled writer for the selected calendar across personal and work sources. In its private workspace maintain `calendar-capture/state.json`: per-source successful scan times/cursors, pending sources and questions, source aliases mapped to calendar/event IDs, last verified event fields, and uncertain write attempts. This is a receipt ledger, not a copy of the private message archive. Write the intended source identity before attempting a mutation. On timeout or restart, reconcile with the real calendar before retrying; an uncertain result must never become a fresh create. A failed source read must not advance that source's cursor. Keep enough overlap to catch late indexing, edited messages and later transcripts; paginate instead of calling one page complete. Save state atomically after each handled page or verified mutation.
+Use one owner workflow for the selected calendar across personal and work sources. In its private workspace maintain `calendar-capture/state.json`: successfully handled source references/cursors, pending sources and questions, source aliases mapped to calendar/event IDs, last verified event fields, and uncertain write attempts. This is a receipt ledger, not a copy of the private message archive. Write the intended source identity before attempting a mutation. On timeout or restart, reconcile with the real calendar before retrying; an uncertain result must never become a fresh create. A failed source read must not advance that source's cursor. Late media/transcript readiness and message edits need a fresh source event; paginate a targeted thread instead of calling one page complete. Save state atomically after each handled source or verified mutation.
 
-Reports distinguish created, updated, already present, pending and unavailable sources. No changes or new questions means `NO_REPLY`. State a partial coverage gap without claiming that every channel was checked. Use the existing scheduler's private app delivery; do not separately message contacts or groups.
+Reports distinguish created, updated, already present, pending and unavailable sources. No changes or new questions means `NO_REPLY`. State a partial coverage gap without claiming that every channel was checked. Return results privately in the app; do not separately message contacts or groups.
 
 ## Prepare a useful reply
 
@@ -43,7 +47,7 @@ An outgoing reschedule request is pending until the participants accept it. Grou
 
 ## Preserve Telegram drafts
 
-Automatic drafting leaves every existing native Telegram draft untouched, including drafts with attachments, formatting, reply/topic bindings or unknown local chat IDs. Read `list_drafts`, identify the recipient, and check the latest conversation before considering an empty chat. Updating or clearing an existing draft requires an explicit request covering that draft. Prefer the existing `telegram-drafts` skill when installed; its source-specific workflow still applies.
+Automatic drafting leaves human and unknown native Telegram drafts untouched, including drafts with attachments, formatting, reply/topic bindings or unknown local chat IDs. Read `list_drafts`, identify the recipient, and check the latest conversation before considering an empty chat. An explicitly activated correspondence workflow may update only its own draft whose exact live content and bindings still match its last verified receipt. Any changed, missing or ambiguous draft stays untouched. Other existing drafts require an explicit request. Prefer the existing `telegram-drafts` skill when installed; its source-specific workflow still applies. Apply the same ownership and latest-thread checks to Gmail reply drafts, preserving recipients, reply headers and attachments.
 
 Do not recreate a disappeared draft from an older run: it may have been sent or deliberately cleared. Respect saved exclusions; a new unanswered message or an explicit request needs its own current evidence.
 

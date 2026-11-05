@@ -76,6 +76,7 @@ export class OpenStrudelRuntime {
     if (this.started) throw new Error("runtime already started");
     const address = await this.api.listen();
     if (process.env.OPENSTRUDEL_METRICS_PORT) await this.api.listenDailyMetrics();
+    if (process.env.OPENSTRUDEL_HOOKS_PORT) await this.api.listenHooks();
     if (this.publishLocalConnection) {
       const directory = resolve(".data");
       mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -115,6 +116,7 @@ export class OpenStrudelRuntime {
     if (this.startTelegram) await this.telegram.start();
     if (this.engine instanceof AccountEngines) this.accounts.startQuotaChecks();
     this.scheduler.start();
+    this.api.correspondence.start();
     this.started = true;
     return { host: address.address, port: address.port };
   }
@@ -126,6 +128,7 @@ export class OpenStrudelRuntime {
       this.setup = undefined;
     }
     this.scheduler.stop();
+    this.api.correspondence.stop();
     await this.accounts.stopQuotaChecks();
     this.telegram.stop();
     await this.messages.close();
