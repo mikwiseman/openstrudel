@@ -1,6 +1,6 @@
 # Event-driven correspondence
 
-**Status:** central receiver deployed; source cutover and live delivery verification in progress.
+**Status:** central workflow deployed and live Telegram/WhatsApp/Zoom processing verified. Gmail push still requires consent; LinkedIn awaits its first delivery.
 **Date:** 5 November 2026
 **Owner:** Mik
 
@@ -40,7 +40,7 @@ flowchart LR
 
 | Source | Normal trigger | Recovery / activation constraint |
 | --- | --- | --- |
-| Telegram | Existing Telethon new/edit/delete callbacks; late media readiness | Transactional outbox, immediate Celery wakeup; existing beat retries only pending deliveries. Owner account only; channels excluded. No historic media replay. |
+| Telegram | Existing Telethon new/edit/delete callbacks; late media readiness | Transactional outbox, immediate Celery wakeup; existing beat retries only pending deliveries. Owner account only; channels excluded. No historic media replay. Resolve the numeric event chat ID through owner-scoped `search_chats`, then use its internal UUID for reads/drafts. |
 | WhatsApp / LinkedIn | Unipile `message.new`, `message.update`, `message.delete`, including outgoing replies | Exact account subscriptions and signed webhook secrets. Registering endpoints needs a service API key. Keep that setup key out of the model's runtime connection. |
 | Gmail | Unipile Google `email.new` and `email.delete`, then native Gmail full-thread read | Read-only Google connection requires owner consent. Native Gmail remains the draft writer. Signed events normalize native message/thread IDs; deletion without a thread resolves against accepted receipts. Ignore draft events to avoid a feedback loop. Native connected tools alone do not expose mailbox push. |
 | Zoom, personal and work | Existing pipeline's transcript/card-ready event | Reuse its durable webhook outbox and scoped recording tools. Resolve future agreements from the actual transcript, not its summary or recording start time. |
@@ -63,6 +63,8 @@ Unipile's [webhook contract](https://developer.unipile.com/v2.0/docs/configure-a
 - For each source, trace a real changed conversation through ingestion, context retrieval and a verified provider result. Simulated webhooks or connector badges do not prove a live subscription.
 - Retire competing draft writers only after their replacement is verified. Record pending provider setup honestly; no claim that every channel is live from a passing unit suite.
 
+The 45-second quiet window is a minimum processing delay, not an end-to-end latency guarantee. A busy owner queue or slow source read can add delay. Webhook receipt, completed model run and verified external result are separate states.
+
 ## Operations
 
 `POST /v1/correspondence` is owner-only configuration. `GET /v1/correspondence` reports source identities and processing receipts without credentials. `POST /hooks/correspondence/<source>` accepts only its configured source credential; it cannot call Home management. `OPENSTRUDEL_HOOKS_PORT` is an optional proxy listener exposing only these source routes.
@@ -79,6 +81,16 @@ The private `correspondence/state.json` and `calendar-capture/state.json` hold a
 
 ### Verified on 5 November
 
-- OpenStrudel receiver releases [#98](https://github.com/mikwiseman/openstrudel/pull/98) and [#99](https://github.com/mikwiseman/openstrudel/pull/99) are merged and deployed. The metrics and isolated review routes remain available.
+- OpenStrudel receiver releases [#98](https://github.com/mikwiseman/openstrudel/pull/98), [#99](https://github.com/mikwiseman/openstrudel/pull/99), [#100](https://github.com/mikwiseman/openstrudel/pull/100) and [#101](https://github.com/mikwiseman/openstrudel/pull/101) are merged and deployed at `47339786aab8`. Stored-data checks and SQLite integrity passed; the isolated review container was unchanged. The metrics and review routes returned HTTP 200 after deployment. The latest rollback snapshot is marked healthy.
 - A real Gmail source reference traversed the public HTTPS receiver and shared queue. The workflow read the relevant 71-message thread, resolved the company client and read an original company transcript. It recognized the existing private calendar entry and made no duplicate or draft mutation. An independent Google Calendar read confirmed the agreed start, 60-minute reserved duration, original meeting link, private visibility and no attendees. This proves central processing; it does not yet prove a Gmail push subscription.
-- Account-scoped WhatsApp/LinkedIn subscriptions are registered; actual signed delivery and processing must be checked separately. Telegram and Zoom producers are merged in [wai-telegram #59](https://github.com/mikwiseman/wai-telegram/pull/59) and [waiwai #240](https://github.com/mikwiseman/waiwai/pull/240).
+- WhatsApp's actual signed `message.update` delivery received HTTP 202 in 222 ms after a targeted replay of the initial route failure. The resumed worker used the native V2 reader, read the conversation and latest source version, searched both permitted brains, and kept an unverified identity match out of the proposed reply. Its private Home reply proposal is visible. No future time was agreed, so no calendar event was created. Nothing was sent.
+- LinkedIn's account-scoped subscription is enabled. No provider delivery has arrived yet; registration alone is not end-to-end proof.
+- Telegram's live listener delivered 131 real events through its durable outbox, with zero undelivered rows at the live check. Source retries recovered receiver downtime without changing event IDs. The worker exposed a numeric-ID/internal-UUID mismatch; [wai-telegram #61](https://github.com/mikwiseman/wai-telegram/pull/61) adds an exact owner-scoped lookup, with the original failure reproduced before the fix. The exact-ID reader is deployed at `9369bf93da54`; production [run 42017019455](https://github.com/mikwiseman/wai-telegram/actions/runs/42017019455) passed. Queued events were released. The recovered private-chat run read both changed messages, the reply parent, the latest owner reply and a subsequent call record. It searched only the personal brain and correctly made no draft or calendar change: the owner had already replied and the call record was not a future appointment. The former resolution gap is cleared.
+- Zoom producers are deployed from [waiwai #240](https://github.com/mikwiseman/waiwai/pull/240). Two existing real transcript-ready events were delivered only to the new personal/work targets, both HTTP 202. The worker read the full original transcripts through their respective connections. A past personal plan matched an existing event; unconfirmed work timing stayed pending. Existing notification targets were not replayed.
+- Gmail's read-only Unipile consent remains pending. The existing Gmail draft task remains enabled until a real signed Gmail event and native thread read are verified. The new 15-minute calendar polling schedule remains paused.
+
+The installed correspondence skill has digest `5cac6fddfd4562f3448bb3a262281cc526607301b7aa8a4624a9eeb7d6fb98e8`. Its event path explicitly resolves Telegram IDs directly; inbox review remains a separate workflow. The skill update waited for the active turn to finish.
+
+### Draft writer cutover
+
+WAI Messages automatic drafting is disabled. Readback confirmed all 137 existing drafts retained their exact text, source message and revision; monitoring remains enabled for its inbox UI. WaiClaw's “Кто ждёт ответа” schedule is now read-only, with its weekday 10:30/15:30 Moscow cadence and private delivery unchanged. Other schedules were preserved. The existing morning and legal briefings were already read-only. Gmail's current event-triggered draft task remains enabled until the replacement push connection is verified.
