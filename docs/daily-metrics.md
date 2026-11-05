@@ -1,0 +1,45 @@
+# Выдох · Telegram Mini App
+
+Four daily scores: calm, focus, energy and mood. New entries use 1–10; higher means better. The app shows each participant's day, a 7/30-day trend and a dated table. A gap means no answer. The archived bustle series is projected once as `calm = 10 − bustle`; historical zero stays zero. Other metrics are never invented for earlier dates.
+
+Telegram signs the identity. Only people in the owner-installed `dailyMetrics.config` can read the shared journal, and each person can save only their own four scores for today in the configured timezone. The app does not grant Home administration or access to other conversations. Telegram initialization data expires after 24 hours and is never stored by the app.
+
+Scores from the app use closed, non-delivered poll records in the existing journal. Actual Telegram votes are retained. The newest answer for a person, date and metric wins. The morning schedule receives the same normalized data; it must not invert calm a second time.
+
+## Deployment
+
+The owner installs this setting in the Home database; real IDs and credentials stay outside Git:
+
+```json
+{
+  "conversationId": "configured-conversation-id",
+  "chatId": "-1000000000000",
+  "timezone": "Europe/Moscow",
+  "publicOrigin": "https://your-domain.example",
+  "participants": [{"id": "123456789", "name": "Person"}],
+  "metrics": {
+    "calm": "calm-schedule-id",
+    "focus": "focus-schedule-id",
+    "energy": "energy-schedule-id",
+    "mood": "mood-schedule-id"
+  },
+  "legacyCalmScheduleId": "optional-disabled-bustle-schedule-id"
+}
+```
+
+Set `OPENSTRUDEL_METRICS_PORT=7790` for the optional private HTTP listener. It serves only `/check-in/`, its assets, and `/check-in/api`. Do not publish that port on the host. Place the Home and HTTPS proxy on a private Docker network, then add an exact route while retaining other routes:
+
+```caddyfile
+redir /check-in /check-in/ 308
+handle /check-in/* {
+  reverse_proxy openstrudel-home-1:7790
+}
+```
+
+Use the existing bot's `setChatMenuButton` with `type: web_app`, `text: Выдох`, and the public HTTPS URL ending in `/check-in/`. Set it for the configured participants' private chats. Read it back with `getChatMenuButton`. No chat message is required.
+
+Before replacing the Home image: wait for active work to finish, preserve a consistent rollback snapshot, and keep the paired TLS identity and review deployment unchanged. Validate the proxy before reloading. Check the public assets, unauthenticated rejection, both identities, database integrity, the existing review route, and an actual Telegram launch after the update.
+
+## Verification
+
+`npm test -- tests/daily-metrics.test.ts tests/check-ins.test.ts tests/web-routes.test.ts` covers signed identity, expiry, tampering, access boundaries, original votes, legacy zero, missing dates, duplicate dates, atomic own-day writes, and scoped HTTP routes. Render the app at narrow phone and desktop widths; exercise save/reopen, both people, all metrics, periods, dark mode, and errors. Use disposable fixture data for writes, never synthetic production scores.

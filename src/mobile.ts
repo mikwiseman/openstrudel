@@ -161,6 +161,8 @@ export class MobileAccess {
       const path = new URL(req.url ?? "/", "https://localhost").pathname;
       // The notification route verifies its own destination-scoped credential.
       if (path === "/hooks/telegram") { this.handle(req, res, false); return; }
+      // The Mini App validates its own Telegram signature and participant scope, never a Home session.
+      if (["/check-in", "/check-in/", "/check-in/app.js", "/check-in/style.css", "/check-in/api"].includes(path)) { this.handle(req, res, false); return; }
       if (req.method === "GET" && /^\/oauth\/service\/[a-f0-9]{48}(?:\/[^/]+)?$/.test(path)) { this.handle(req, res, false); return; }
       if (/^\/characters\/(coil|fold|knot|curl|wave|pillow)\.png$/.test(path) || ["/", "/agent-characters.js", "/home-settings.js", "/localization.js", "/localizations.json", "/manifest.webmanifest", "/strudel-cream.png", "/strudel-graphite.png", "/favicon.ico", "/auth/session", "/auth/logout"].includes(path)) { this.handle(req, res, false); return; }
       if (isPeerRoute(new URL(req.url ?? "/", "https://localhost").pathname)) { this.handle(req, res, false); return; }

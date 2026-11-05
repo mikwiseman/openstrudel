@@ -11604,5 +11604,47 @@
     "es": "El dispositivo del asistente no está disponible. Vuelve a conectarte y abre Proyecto.",
     "he": "המכשיר של העוזר אינו זמין. יש להתחבר מחדש ולפתוח את הפרויקט.",
     "ru": "Устройство сотрудника недоступно. Подключитесь снова и откройте «Проект»."
+  },
+  "Check-ins": {
+    "en": "Check-ins",
+    "fr": "Bilans",
+    "es": "Encuestas",
+    "he": "סקרים",
+    "ru": "Опросы"
+  },
+  "Streak: {0}": {
+    "en": "Streak: {0}",
+    "fr": "Série : {0}",
+    "es": "Racha: {0}",
+    "he": "רצף: {0}",
+    "ru": "Серия: {0}"
+  },
+  "Average {0}": {
+    "en": "Average {0}",
+    "fr": "Moyenne {0}",
+    "es": "Media {0}",
+    "he": "ממוצע {0}",
+    "ru": "Среднее {0}"
+  },
+  "Today: {0}": {
+    "en": "Today: {0}",
+    "fr": "Aujourd’hui : {0}",
+    "es": "Hoy: {0}",
+    "he": "היום: {0}",
+    "ru": "Сегодня: {0}"
+  },
+  "No answers yet today": {
+    "en": "No answers yet today",
+    "fr": "Pas encore de réponse aujourd’hui",
+    "es": "Aún no hay respuestas hoy",
+    "he": "עדיין אין תשובות היום",
+    "ru": "Сегодня ещё нет ответов"
+  },
+  "Latest answer {0}": {
+    "en": "Latest answer {0}",
+    "fr": "Dernière réponse {0}",
+    "es": "Última respuesta {0}",
+    "he": "התשובה האחרונה {0}",
+    "ru": "Последний ответ {0}"
   }
 }

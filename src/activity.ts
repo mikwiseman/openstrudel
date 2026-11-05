@@ -3,6 +3,7 @@ import { HomeError } from "./home.js";
 import { problemText, type ProblemCode } from "./operations.js";
 import type { Store } from "./store.js";
 import { ownerTimezone } from "./timezone.js";
+import { readCheckIns, type CheckIn } from "./check-ins.js";
 
 export interface ActivityInsight {
   id: string; kind: "result" | "attention"; title: string; text: string; occurredAt: string;
@@ -12,6 +13,8 @@ export interface Activity {
   checkedAt: string;
   period: { start: string; end: string; timeZone: string };
   insights: ActivityInsight[];
+  /** Recurring poll questions and each person's answers, fourteen local dates. */
+  checkIns: CheckIn[];
   progress: {
     activeDays: number; completedRequests: number; completedRuns: number; quietRuns: number; failedRuns: number; activeSchedules: number;
     milestones: Array<{ id: "first-request" | "first-automation" | "three-active-days"; reached: boolean }>;
@@ -181,7 +184,7 @@ export function readActivity(store: Store, owner: boolean, now = new Date()): Ac
   insights.push(...attention(store, insightStart, end, scheduler));
   insights.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || b.id.localeCompare(a.id));
   const activeDays = Number(requests.active_days);
-  return { checkedAt: end, period: { start, end, timeZone }, insights: insights.slice(0, limit), progress: {
+  return { checkedAt: end, period: { start, end, timeZone }, insights: insights.slice(0, limit), checkIns: readCheckIns(store, { now }), progress: {
     activeDays, completedRequests: Number(requests.completed_requests), completedRuns, quietRuns, failedRuns, activeSchedules,
     milestones: [
       { id: "first-request", reached: firstRequest },

@@ -123,6 +123,9 @@ struct ProgressTab: View {
             ActivityStatus(model: model, scope: scope, openChat: openChat)
             if let activity {
                 Section { ProgressCharacter(progress: activity.progress) }.listRowBackground(Color.clear)
+                if !activity.rituals.isEmpty {
+                    Section(L("Check-ins")) { ForEach(activity.rituals) { CheckInCard(checkIn: $0) } }
+                }
                 Section {
                     count(L("Answered requests"), activity.progress.completedRequests)
                     count(L("Automation results"), activity.progress.completedRuns)
@@ -195,6 +198,77 @@ struct ProgressTab: View {
         case "first-automation": L("First automation result")
         default: L("Three active days")
         }
+    }
+}
+
+/// Fourteen days of a Telegram poll: each person's own bars, their streak of answers and today's state. Opens the chat it lives in.
+private struct CheckInCard: View {
+    @EnvironmentObject private var client: HomeClient
+    let checkIn: HomeActivity.CheckIn
+
+    var body: some View {
+        NavigationLink(value: ReaderRoute(connectionID: client.id, kind: .conversation(checkIn.conversationId), title: checkIn.chat ?? checkIn.name)) {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(checkIn.question).font(.body.weight(.medium)).foregroundStyle(.primary)
+                    if let chat = checkIn.chat { Text(chat).font(.caption).foregroundStyle(.secondary) }
+                }
+                ForEach(checkIn.participants) { person in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(person.name).font(.subheadline.weight(.medium))
+                            Spacer(minLength: 8)
+                            if let latest = person.latest {
+                                Text(latest.value.formatted()).font(.title3.weight(.semibold)).monospacedDigit()
+                                    .accessibilityLabel(L("Latest answer \(latest.value.formatted())"))
+                            }
+                        }
+                        CheckInBars(days: checkIn.days, participant: person.id, scale: checkIn.scale)
+                        if !caption(person).isEmpty { Text(caption(person)).font(.caption).foregroundStyle(.secondary) }
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+                Text(todayLine).font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+        }
+        .accessibilityIdentifier("checkIn-" + checkIn.id)
+    }
+
+    private func caption(_ person: HomeActivity.CheckIn.Participant) -> String {
+        var parts: [String] = []
+        if person.streak > 0 { parts.append(L("Streak: \(person.streak.formatted())")) }
+        if let average = person.average { parts.append(L("Average \(average.formatted(.number.precision(.fractionLength(0...1))))")) }
+        return parts.joined(separator: " · ")
+    }
+
+    private var todayLine: String {
+        let answered = checkIn.participants.compactMap { person -> String? in
+            guard let value = checkIn.value(of: person, on: checkIn.today) else { return nil }
+            return person.name + " " + value.formatted()
+        }
+        return answered.isEmpty ? L("No answers yet today") : L("Today: \(answered.joined(separator: " · "))")
+    }
+}
+
+/// One bar per local date, taller and darker with the answer; a day without an answer stays a faint base line.
+private struct CheckInBars: View {
+    let days: [HomeActivity.CheckIn.Day]
+    let participant: String
+    let scale: Int
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 3) {
+            ForEach(days, id: \.date) { day in
+                let share = day.values[participant].map { Double($0) / Double(max(scale, 1)) }
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(share.map { Color.primary.opacity(0.3 + 0.7 * $0) } ?? Color.secondary.opacity(0.18))
+                    .frame(height: share.map { max(6, 28 * $0) } ?? 4)
+                    .frame(maxWidth: .infinity, alignment: .bottom)
+            }
+        }
+        .frame(height: 28, alignment: .bottom)
+        .accessibilityHidden(true)
     }
 }
 

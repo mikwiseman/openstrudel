@@ -14,11 +14,13 @@ import type { MessageService } from "./messages.js";
 import type { Store } from "./store.js";
 import { agentTransfer, assertAgentWritable } from "./agent-move.js";
 import { isEnabledScopedGroup, isProtectedTelegramAudience, isRestrictedChat, isRestrictedSubject, telegramAuthorization, migrateScopedChat, protectScopedTelegramTransport } from "./authorization.js";
+import { recordAnswer, type SchedulePoll } from "./check-ins.js";
 
 export interface TelegramUpdate {
   update_id: number;
   my_chat_member?: { chat: { id: number | string; title?: string; type?: string }; from: { id: number }; date: number; old_chat_member: { status: string }; new_chat_member: { status: string; is_member?: boolean } };
   callback_query?: { id: string; from?: { id:number }; data?: string; message?: { message_id: number; chat: { id: number | string } } };
+  poll_answer?: { poll_id: string; user?: { id: number; first_name?: string; last_name?: string; is_bot?: boolean }; voter_chat?: { id: number }; option_ids: number[] };
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
 }
@@ -411,6 +413,30 @@ export class TelegramAdapter {
     }
   }
 
+  /** A non-anonymous poll through the durable outbox: one Telegram poll per delivery key, never a second one on retry. */
+  async sendPoll(chatId: string | number, poll: SchedulePoll, deliveryKey: string): Promise<{ pollId: string; messageId: number }> {
+    if (!this.token) throw new Error("Telegram не подключён");
+    const key = `${chatId}:${deliveryKey}:poll`;
+    const payload = JSON.stringify({ chat_id: chatId, question: poll.question, options: poll.options.map(text => ({ text })), is_anonymous: false, allows_multiple_answers: false });
+    this.store.db.prepare("INSERT OR IGNORE INTO telegram_outbox(key,chat_id,payload,status,kind) VALUES(?,?,?,'pending','poll')").run(key, String(chatId), payload);
+    const row = this.store.db.prepare("SELECT * FROM telegram_outbox WHERE key=?").get(key)!;
+    if (row.payload !== payload) throw new Error("Содержимое доставки изменилось");
+    if (row.status !== "pending") throw new Error("Доставка требует проверки в Telegram перед повтором");
+    this.store.db.prepare("UPDATE telegram_outbox SET status='sending' WHERE key=?").run(key);
+    try {
+      const sent = await this.call<{ message_id: number; poll: { id: string } }>("sendPoll", JSON.parse(payload));
+      this.store.db.prepare("UPDATE telegram_outbox SET status='delivered',message_id=? WHERE key=?").run(String(sent.message_id), key);
+      return { pollId: String(sent.poll.id), messageId: sent.message_id };
+    } catch (error) {
+      this.store.db.prepare("UPDATE telegram_outbox SET status=?,error=? WHERE key=?").run(...(refused(error) ? ["not_sent", REFUSED] : ["unknown", "Ответ Telegram не подтверждён; автоматический повтор остановлен"]), key);
+      throw error;
+    }
+  }
+  async stopPoll(chatId: string | number, messageId: number): Promise<void> {
+    if (!this.token) throw new Error("Telegram не подключён");
+    await this.call("stopPoll", { chat_id: chatId, message_id: messageId });
+  }
+
   /** An answer and its files. Photos Telegram accepts arrive as one captioned photo or album; other files keep their form. */
   async sendAnswer(chatId: string | number, text: string, files: Attachment[] = [], deliveryKey: string, replyToMessageId?: number, assertCurrent?: () => void): Promise<void> {
     assertCurrent?.();
@@ -627,6 +653,15 @@ export class TelegramAdapter {
           }
           else await this.discoverGroup(chatId, member.chat.title ?? "Группа", member.from.id, update.update_id);
         }
+      }
+      this.store.markTelegramUpdate(update.update_id); return;
+    }
+    if (update.poll_answer) {
+      // Telegram names the voter of a poll this Home posted; a channel's vote has no person and is skipped.
+      const answer = update.poll_answer, user = answer.user;
+      if (user && !user.is_bot && Number.isSafeInteger(user.id) && user.id > 0 && Array.isArray(answer.option_ids)) {
+        recordAnswer(this.store, { pollId: String(answer.poll_id), userId: String(user.id), userName: [user.first_name, user.last_name].filter(Boolean).join(" ").trim() || String(user.id),
+          optionIds: answer.option_ids.map(Number), at: new Date().toISOString() });
       }
       this.store.markTelegramUpdate(update.update_id); return;
     }
@@ -925,7 +960,7 @@ export class TelegramAdapter {
     const controller = this.controller;
     while (this.running && controller === this.controller) {
       try {
-        const updates = await this.call<TelegramUpdate[]>("getUpdates", { offset: this.offset, timeout: 20, allowed_updates: ["message", "edited_message", "callback_query", "my_chat_member"] });
+        const updates = await this.call<TelegramUpdate[]>("getUpdates", { offset: this.offset, timeout: 20, allowed_updates: ["message", "edited_message", "callback_query", "my_chat_member", "poll_answer"] });
         if (!this.running || controller !== this.controller) return;
         if (this.connectionError) recordDiagnostic(this.store, "telegram.connected");
         this.connectionError = null;

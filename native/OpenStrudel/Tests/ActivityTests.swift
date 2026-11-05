@@ -26,6 +26,23 @@ import Testing
         #expect(HomeActivity.date("2026-11-03T12:00:00Z") != nil)
     }
 
+    @Test func checkInsDecodeTheirOwnAnswersAndAreAbsentOnAnOlderHome() throws {
+        #expect(try snapshot().rituals.isEmpty)
+        let value = try JSONDecoder().decode(HomeActivity.self, from: Data("""
+        {"checkedAt":"2026-11-07T17:00:00.000Z","period":{"start":"2026-11-01T00:00:00.000Z","end":"2026-11-07T17:00:00.000Z","timeZone":"Europe/Moscow"},"insights":[],
+         "checkIns":[{"id":"evening","name":"Суетолог · вечер","question":"Сколько суеты сегодня?","conversationId":"group-chat","chat":"WAI HQ","scale":10,"today":"2026-11-07",
+           "days":[{"date":"2026-11-06","values":{"42":5,"77":8}},{"date":"2026-11-07","values":{"42":3}}],
+           "participants":[{"id":"42","name":"Mik","streak":5,"latest":{"date":"2026-11-07","value":3},"average":5.4},{"id":"77","name":"Гриша","streak":1,"latest":{"date":"2026-11-06","value":8},"average":null}]}],
+         "progress":{"activeDays":0,"completedRequests":0,"completedRuns":0,"quietRuns":0,"failedRuns":0,"activeSchedules":2,"milestones":[]}}
+        """.utf8))
+        let ritual = try #require(value.rituals.first)
+        #expect(ritual.question == "Сколько суеты сегодня?" && ritual.chat == "WAI HQ" && ritual.scale == 10)
+        let mik = try #require(ritual.participants.first), grisha = try #require(ritual.participants.last)
+        #expect(ritual.value(of: mik, on: ritual.today) == 3)
+        #expect(ritual.value(of: grisha, on: ritual.today) == nil) // Today is still open for Гриша: no number is invented.
+        #expect(grisha.average == nil && grisha.streak == 1 && mik.latest?.value == 3)
+    }
+
     @Test func aLateResponseCannotReplaceTheSelectedHomesActivity() async throws {
         let model = ActivityModel(), old = try snapshot("old"), current = try snapshot("new")
         var pending: CheckedContinuation<HomeActivity, Error>?

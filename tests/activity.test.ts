@@ -63,7 +63,7 @@ it("reads an empty Home without creating scheduler tables, conversations or sett
   store.deleteSetting("owner.timezone");
   const before = store.db.prepare("SELECT total_changes() AS n").get()!.n;
   expect(readActivity(store, true, now)).toEqual({
-    checkedAt: now.toISOString(), period: { start: "2026-10-27T00:00:00.000Z", end: now.toISOString(), timeZone: "UTC" }, insights: [],
+    checkedAt: now.toISOString(), period: { start: "2026-10-27T00:00:00.000Z", end: now.toISOString(), timeZone: "UTC" }, insights: [], checkIns: [],
     progress: { activeDays: 0, completedRequests: 0, completedRuns: 0, quietRuns: 0, failedRuns: 0, activeSchedules: 0,
       milestones: [{ id: "first-request", reached: false }, { id: "first-automation", reached: false }, { id: "three-active-days", reached: false }] },
   });

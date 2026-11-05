@@ -222,6 +222,7 @@ struct OpenStrudelRootView: View {
             ProgressTab(model: activity, limits: limits, scope: activityScope, refresh: { await refreshActivity(includeLimits: true, force: true) }, openChat: { tab = .chat })
                 .navigationDestination(for: ProgressDestination.self) { _ in ClientsTab() }
                 .navigationDestination(for: ClientRoute.self) { route in ClientDetail(client: route.client, source: route.source, discuss: discuss) }
+                .navigationDestination(for: ReaderRoute.self) { route in ReaderScreen(route: route, discuss: discuss) }
         }
         .id(client.id)
     }
