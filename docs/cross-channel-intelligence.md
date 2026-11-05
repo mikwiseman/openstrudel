@@ -32,6 +32,18 @@ Telegram's [`messages.saveDraft`](https://core.telegram.org/method/messages.save
 
 Meeting proposals use [Google Calendar free/busy](https://developers.google.com/workspace/calendar/api/v3/reference/freebusy/query), with explicit offset-bearing timestamps and an IANA response timezone. Check every relevant owner and accessible attendee calendar, handle per-calendar errors as unknown availability, and label unverified attendee options tentative. Room availability, an email promise or an old calendar event is not a substitute. Drafting does not create invitations.
 
+## Automatic calendar capture
+
+The same skill supports an explicitly authorized recurring calendar writer. It reads Telegram, Gmail, the verified LinkedIn/WhatsApp accounts, and both work and personal Zoom recordings through their existing connections. Run it in the owner's main private conversation, with app-only delivery and a private-source grant bound to the exact schedule. One writer covers the calendar across both contexts; a second Home must not run the same scan independently.
+
+The saved request specifies the destination calendar, default duration, timezone policy, scan cadence and source coverage. Only actual agreed future appointments involving the owner become events. Missing dates/times or ambiguous timezone remain pending. A configured duration is labelled as reserved when not agreed. Existing invitations, calendar entries, later corrections and owner deletions are reconciled before writes. Events are private copies without attendees; the workflow neither sends invitations nor provisions Zoom rooms.
+
+Zoom capture runs after the existing recording pipeline makes the transcript available. Recording summaries select passages to read; they do not independently establish agreement. Track pending transcripts and source notification cursors so a late transcript is not skipped because its meeting happened before the latest scan.
+
+`calendar-capture/state.json` in the owner's private workspace holds source cursors, pending decisions and verified calendar receipts. Keep raw messages and transcripts in their source systems. The calendar remains authoritative for deduplication; uncertain writes are read back before retrying. Do not advance a failed source's cursor or call incomplete pagination exhaustive.
+
+Activation requires a real source-to-calendar run and a repeat that finds the existing event. Verify source date/time, preserved call link, privacy, no attendees, and independent source coverage. Skill installation and an enabled schedule alone are not proof of functioning automation.
+
 ## Validation and activation
 
 Focused tests cover custom-header validation and persistence, private-service inheritance across audiences, fail-closed policy parsing, allowlisted identity verification, permission/configuration changes, fixed GET routing, blocked URL/write inputs, unknown pagination coverage, source mismatch, secret reflection, response bounds and deadlines. They use synthetic records and fake transport; they never contact private accounts or modify drafts.
