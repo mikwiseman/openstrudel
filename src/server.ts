@@ -40,6 +40,7 @@ import { runtimeIssues } from "./operations.js";
 import { newsFeed, newsStamp } from "./news.js";
 import { ClientsAdapter, ClientsError, clientSourceSchema, clientsRefusal, type ClientRef } from "./clients.js";
 import { resolveMessageContext } from "./message-context.js";
+import { Correspondence, configureCorrespondence, correspondenceWebhook } from "./correspondence.js";
 
 const MAX_BODY_BYTES = 1_048_576;
 
@@ -49,6 +50,8 @@ const DAILY_METRICS_PATHS = ["/check-in", "/check-in/", "/check-in/app.js", "/ch
 export class HttpApi {
   private server: Server | null = null;
   private metricsServer?: Server;
+  private hooksServer?: Server;
+  readonly correspondence: Correspondence;
   readonly mobile: MobileAccess;
   readonly home: Home;
   readonly homeLink: HomeLink;
@@ -71,6 +74,7 @@ export class HttpApi {
     options: { mobileDirectory?: string; mobilePort?: number } = {},
     private readonly accounts?: Accounts,
   ) {
+    this.correspondence = new Correspondence(store, messages);
     if (this.token === undefined || this.token === "") {
       this.token=store.getSetting("api.local_token") ?? randomBytes(32).toString("hex");
       store.setSetting("api.local_token",this.token);
@@ -100,6 +104,19 @@ export class HttpApi {
   }
   /** Business clients, read through the company service the owner connected to the main chat. */
   private readonly clients?: ClientsAdapter;
+
+  /** Only event ingress is exposed to the HTTPS proxy; Home management stays private. */
+  async listenHooks(host = "0.0.0.0", port = Number(process.env.OPENSTRUDEL_HOOKS_PORT)): Promise<AddressInfo> {
+    if (this.hooksServer || !Number.isInteger(port) || port < 0 || port > 65535) throw new Error("Invalid event ingress listener.");
+    const server = createServer((request, response) => {
+      const path = new URL(request.url ?? "/", "http://localhost").pathname;
+      if (!/^\/hooks\/correspondence\/[a-z0-9-]{1,64}$/.test(path)) { response.writeHead(404).end(); return; }
+      void this.handle(request, response);
+    });
+    await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { server.off("error", reject); resolve(); }); });
+    this.hooksServer = server;
+    return server.address() as AddressInfo;
+  }
 
   /** What the app attached to a message. A client needs the owner and the company connector; a quote of this Home is read here. */
   private async messageContext(body: Record<string, any>, canManageAccount: boolean) {
@@ -196,6 +213,12 @@ export class HttpApi {
   }
 
   async close(): Promise<void> {
+    this.correspondence.stop();
+    await this.correspondence.idle();
+    if (this.hooksServer) {
+      const hooks = this.hooksServer; this.hooksServer = undefined; hooks.closeAllConnections();
+      await new Promise<void>((resolve, reject) => hooks.close(error => error ? reject(error) : resolve()));
+    }
     for (const id of this.serviceSignIns.keys()) this.cancelServiceSignIn(id);
     await this.homeLink.stop();
     await this.mobile.close();
@@ -273,6 +296,18 @@ export class HttpApi {
     if (DAILY_METRICS_PATHS.includes(path)) { await this.handleDailyMetrics(request, response, path); return; }
     let counted = false;
     try {
+      const sourceHook = path.match(/^\/hooks\/correspondence\/([a-z0-9-]{1,64})$/);
+      if (sourceHook) {
+        if (request.method !== "POST") throw new HomeError("method_not_allowed", 405);
+        this.home.assertPrimary();
+        if (this.store.getSetting("home.transfer")) throw new HomeError("Home is transferring; retry later.", 409);
+        this.activeWrites++; counted = true;
+        const reading = readBody(request, 128 * 1024); reading.catch(() => undefined);
+        let timer: NodeJS.Timeout | undefined;
+        const body = await Promise.race([reading, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new HomeError("Request timeout.", 408)), 5_000); })]).finally(() => clearTimeout(timer));
+        const incoming = correspondenceWebhook(this.store, sourceHook[1]!, request.headers, body);
+        this.send(response, 202, incoming ? this.correspondence.receive(incoming.source, incoming.event) : { accepted: true, ignored: true }); return;
+      }
       if (path === "/hooks/telegram") {
         const caller = notificationCaller(this.store, request.headers.authorization);
         if (request.method !== "POST") throw new HomeError("method_not_allowed", 405);
@@ -309,6 +344,13 @@ export class HttpApi {
       const homeResponse = await this.homeApi.handle(request, canManageAccount, localExecution);
       if (homeResponse) { this.sendWire(response, homeResponse); return; }
       url = new URL(request.url ?? "/", "http://localhost"); path = url.pathname;
+      if (path === "/v1/correspondence" && ["GET", "POST"].includes(request.method ?? "")) {
+        if (request.method === "POST") {
+          const result = configureCorrespondence(this.store, canManageAccount, await this.body(request, 32_768));
+          this.correspondence.wake(); this.send(response, 200, result);
+        } else this.send(response, 200, this.correspondence.status(canManageAccount));
+        return;
+      }
       if (path === "/v1/activity" && request.method === "GET") {
         this.send(response, 200, readActivity(this.store, canManageAccount)); return;
       }

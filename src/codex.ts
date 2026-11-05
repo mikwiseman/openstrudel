@@ -156,8 +156,8 @@ export class CodexEngineAdapter implements CodexEngine {
     try {
       // Native dynamicTools are fixed at thread/start. Existing chats get the current
       // management schemas through the same per-turn MCP bridge already used by Grok.
-      if (!this.options.restricted && options.tools?.definitions.some(t=>t.name === "read_model_settings")) {
-        const names = new Set(["list_employees","create_employee","update_employee","list_schedules","save_schedule","pause_schedule","list_telegram_chats","read_model_settings","save_model_settings","configure_telegram_chat","list_projects","bind_employee_project","read_project_result"]);
+      if (!this.options.restricted && options.tools?.definitions.some(t=>t.name === "read_model_settings" || t.name === "correspondence_checkpoint")) {
+        const names = new Set(["list_employees","create_employee","update_employee","list_schedules","save_schedule","pause_schedule","list_telegram_chats","read_model_settings","save_model_settings","configure_telegram_chat","list_projects","bind_employee_project","read_project_result","correspondence_checkpoint"]);
         const { toolBridge } = await import("./acp-mcp.js");
         bridge = await toolBridge({ definitions:options.tools.definitions.filter(t=>names.has(t.name)), call:options.tools.call });
       }

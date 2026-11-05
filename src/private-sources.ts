@@ -6,6 +6,7 @@ import { HomeError } from "./home.js";
 import { assertNativeAccess, isRestrictedSubject } from "./authorization.js";
 import { ownerTurn, type TelegramToolContext } from "./telegram-tools.js";
 import { UnipileAdapter, UNIPILE_ACCOUNTS_SETTING, unipileAccountsSchema, unipileReadSchema } from "./unipile.js";
+import { correspondenceAudience } from "./correspondence.js";
 
 const grantKey = (id: string) => "private_sources.schedule." + id;
 const deny = () => { throw new HomeError("Private messages are available only in the owner's main private chat or an explicitly approved private schedule.", 403); };
@@ -24,7 +25,7 @@ function sourceScope(store: Store, conversationId: string): string {
   return store.getSetting("conversation.context." + conversationId)
     ?? (conversation?.profileId ? store.getSetting("employee.context." + conversation.profileId) ?? store.getProfile(conversation.profileId)?.domain ?? "personal" : "personal");
 }
-function privateMain(store: Store, conversationId: string): boolean {
+export function privateMainConversation(store: Store, conversationId: string): boolean {
   const conversation = store.getConversation(conversationId);
   if (!conversation || conversation.profileId || sourceScope(store, conversationId) !== "personal") return false;
   const bindings = store.telegramChats().filter(c => c.conversationId === conversationId);
@@ -38,7 +39,7 @@ function scheduleState(store: Store, id: string, conversationId: string) {
   if (!row) throw new HomeError("Schedule not found.", 404);
   if (String(row.cron).trim().startsWith("@once ")) throw new HomeError("Private sources currently work in the owner's main private chat or a recurring private brief. One-time schedules do not support private-source access.", 400);
   assertNativeAccess(store, conversationId);
-  if (!privateMain(store, conversationId)) deny();
+  if (!privateMainConversation(store, conversationId)) deny();
   const bindings = store.telegramChats().filter(c => c.conversationId === conversationId), bound = bindings[0];
   const conversation = store.getConversation(conversationId)!;
   const audience = [conversation.channel, conversation.externalId, conversation.profileId ?? null, sourceScope(store, conversationId),
@@ -67,11 +68,12 @@ export function privateSourceSchedule(store: Store, owner: boolean, conversation
 export function privateSourceAudience(store: Store, context: TelegramToolContext): boolean {
   try {
     assertNativeAccess(store, context.conversationId, context.telegramSenderId);
-    if (context.access === false || context.scope !== "personal" || !privateMain(store, context.conversationId)) return false;
+    if (context.access === false || context.scope !== "personal" || !privateMainConversation(store, context.conversationId)) return false;
     if (!context.scheduled) return context.channel === "api" ? context.byOwner === true
       : ownerTurn(store, context) && pairedOwner(store, context.telegramSenderId)
         && store.getTelegramChat(context.telegramSenderId!)?.conversationId === context.conversationId;
     if (context.channel !== "api") return false;
+    if (correspondenceAudience(store, context)) return true;
     const inbound = store.db.prepare("SELECT external_id,status FROM messages WHERE id=? AND conversation_id=? AND direction='inbound'").get(context.messageId, context.conversationId);
     if (!inbound || inbound.status !== "running" || !String(inbound.external_id).startsWith("schedule:")) return false;
     const run = store.db.prepare("SELECT schedule_id,private_source_fingerprint FROM schedule_runs WHERE id=? AND conversation_id=? AND status='running'").get(String(inbound.external_id).slice(9), context.conversationId);
