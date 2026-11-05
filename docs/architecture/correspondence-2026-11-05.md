@@ -1,6 +1,6 @@
 # Event-driven correspondence
 
-**Status:** central workflow deployed and live Telegram/WhatsApp/Zoom processing verified. Gmail push still requires consent; LinkedIn awaits its first delivery.
+**Status:** central workflow deployed and live Telegram/WhatsApp/Zoom processing verified. Native Gmail push setup remains outstanding; LinkedIn awaits its first delivery.
 **Date:** 5 November 2026
 **Owner:** Mik
 
@@ -42,7 +42,7 @@ flowchart LR
 | --- | --- | --- |
 | Telegram | Existing Telethon new/edit/delete callbacks; late media readiness | Transactional outbox, immediate Celery wakeup; existing beat retries only pending deliveries. Owner account only; channels excluded. No historic media replay. Resolve the numeric event chat ID through owner-scoped `search_chats`, then use its internal UUID for reads/drafts. |
 | WhatsApp / LinkedIn | Unipile `message.new`, `message.update`, `message.delete`, including outgoing replies | Exact account subscriptions and signed webhook secrets. Registering endpoints needs a service API key. Keep that setup key out of the model's runtime connection. |
-| Gmail | Unipile Google `email.new` and `email.delete`, then native Gmail full-thread read | Read-only Google connection requires owner consent. Native Gmail remains the draft writer. Signed events normalize native message/thread IDs; deletion without a thread resolves against accepted receipts. Ignore draft events to avoid a feedback loop. Native connected tools alone do not expose mailbox push. |
+| Gmail | Native Gmail `watch` → Google Cloud Pub/Sub → incremental `history.list` → the same receiver | Use `gmail.metadata` for the event adapter; the existing Gmail connection reads bodies and saves drafts. Persist the history cursor, verify push identity, deduplicate message/thread IDs, ignore draft-only changes and renew the watch. Existing connected Gmail tools do not expose watch registration. Google-side setup for the owner mailbox is still required. |
 | Zoom, personal and work | Existing pipeline's transcript/card-ready event | Reuse its durable webhook outbox and scoped recording tools. Resolve future agreements from the actual transcript, not its summary or recording start time. |
 
 Unipile's [webhook contract](https://developer.unipile.com/v2.0/docs/configure-a-webhook) requires a fast acknowledgment and raw-body signature verification. Its [message events](https://developer.unipile.com/v2.0/reference/event-types-1) include changes made from other devices. Google's [Gmail push contract](https://developers.google.com/workspace/gmail/api/guides/push) requires Pub/Sub, history handling and watch renewal.
@@ -71,7 +71,7 @@ The 45-second quiet window is a minimum processing delay, not an end-to-end late
 
 Internal event shape: `{id, threadId, messageId?, type, occurredAt}`. Types are `message.new`, `message.updated`, `message.deleted`, `transcript.ready`. No source can supply its own account, audience, prompt or destination. Source IDs and times are evidence, not instruction.
 
-Sources may explicitly select `auth: "unipile"` for Gmail, WhatsApp or LinkedIn. Omitted auth preserves the original defaults: WhatsApp/LinkedIn use Unipile signatures, internal producers use bearer credentials. Unipile's generated signing secrets are 30 characters; internal bearer credentials must have at least 32. Gmail additionally requires `account_provider: "google"` and the exact connected account ID.
+The deployed receiver also supports signed Unipile Google events, but that path was not activated for Gmail. Native Google push is the selected direction; Unipile remains the existing WhatsApp/LinkedIn adapter. Omitted auth uses Unipile signatures for WhatsApp/LinkedIn and bearer credentials for internal producers. Unipile signing secrets are 30 characters; internal bearer credentials require at least 32.
 
 Resumed native Codex threads retain their original dynamic-tool list. The per-turn Home MCP bridge therefore includes the currently authorized `unipile_accounts` and `unipile_read` schemas alongside the correspondence checkpoint. This gives an existing owner chat the verified V2 reader without resetting its history or exposing a generic provider request executor.
 
@@ -87,10 +87,16 @@ The private `correspondence/state.json` and `calendar-capture/state.json` hold a
 - LinkedIn's account-scoped subscription is enabled. No provider delivery has arrived yet; registration alone is not end-to-end proof.
 - Telegram's live listener delivered 131 real events through its durable outbox, with zero undelivered rows at the live check. Source retries recovered receiver downtime without changing event IDs. The worker exposed a numeric-ID/internal-UUID mismatch; [wai-telegram #61](https://github.com/mikwiseman/wai-telegram/pull/61) adds an exact owner-scoped lookup, with the original failure reproduced before the fix. The exact-ID reader is deployed at `9369bf93da54`; production [run 42017019455](https://github.com/mikwiseman/wai-telegram/actions/runs/42017019455) passed. Queued events were released. The recovered private-chat run read both changed messages, the reply parent, the latest owner reply and a subsequent call record. It searched only the personal brain and correctly made no draft or calendar change: the owner had already replied and the call record was not a future appointment. The former resolution gap is cleared.
 - Zoom producers are deployed from [waiwai #240](https://github.com/mikwiseman/waiwai/pull/240). Two existing real transcript-ready events were delivered only to the new personal/work targets, both HTTP 202. The worker read the full original transcripts through their respective connections. A past personal plan matched an existing event; unconfirmed work timing stayed pending. Existing notification targets were not replayed.
-- Gmail's read-only Unipile consent remains pending. The existing Gmail draft task remains enabled until a real signed Gmail event and native thread read are verified. The new 15-minute calendar polling schedule remains paused.
+- Gmail was not connected to Unipile and no Gmail access was granted to it. The existing Gmail draft task remains enabled until native Google event delivery and thread reading are verified. The new 15-minute calendar polling schedule remains paused.
 
 The installed correspondence skill has digest `5cac6fddfd4562f3448bb3a262281cc526607301b7aa8a4624a9eeb7d6fb98e8`. Its event path explicitly resolves Telegram IDs directly; inbox review remains a separate workflow. The skill update waited for the active turn to finish.
 
 ### Draft writer cutover
 
 WAI Messages automatic drafting is disabled. Readback confirmed all 137 existing drafts retained their exact text, source message and revision; monitoring remains enabled for its inbox UI. WaiClaw's “Кто ждёт ответа” schedule is now read-only, with its weekday 10:30/15:30 Moscow cadence and private delivery unchanged. Other schedules were preserved. The existing morning and legal briefings were already read-only. Gmail's current event-triggered draft task remains enabled until the replacement push connection is verified.
+
+### Native Gmail decision
+
+Unipile is not required for Gmail. Google supports push delivery and incremental history with the `gmail.metadata` scope; the event adapter need not read email bodies. The existing managed Gmail tools remain responsible for full thread reads and native drafts. Google requires watch renewal at least every seven days and recommends daily renewal; this is subscription maintenance, not repeated inbox scanning. Lost notifications need history reconciliation, with an explicit recovery path for an expired cursor.
+
+The available Gmail tools do not expose `watch` or `history.list`. An existing WAI School OAuth item and push implementation belong to `hi@wai.school`; they were not repurposed for the owner mailbox. No native push subscription for `hi@mikwiseman.com` was activated in this rollout.
