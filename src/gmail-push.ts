@@ -7,6 +7,9 @@ import { correspondenceSource, type Correspondence } from "./correspondence.js";
 import type { Store } from "./store.js";
 
 const historyId = z.string().regex(/^[1-9]\d{0,29}$/);
+// Gmail sends numbers in live Pub/Sub data, while its REST responses use strings.
+// Reject rounded JSON numbers; large string IDs retain their exact value.
+const notificationHistoryId = z.union([historyId, z.number().int().positive().max(Number.MAX_SAFE_INTEGER).transform(String)]);
 const configSchema = z.object({ sourceId: z.string().regex(/^[a-z0-9-]{1,64}$/), sourceToken: z.string().min(32), mailbox: z.email(),
   clientId: z.string().min(1), clientSecret: z.string().min(1), refreshToken: z.string().min(1),
   topic: z.string().regex(/^projects\/[^/]+\/topics\/[^/]+$/), subscription: z.string().regex(/^projects\/[^/]+\/subscriptions\/[^/]+$/),
@@ -91,7 +94,7 @@ export class GmailPush {
     const envelope = z.object({ subscription: z.string(), message: z.object({ messageId: z.string().min(1).max(128),
       publishTime: z.iso.datetime({ offset: true }), data: z.string().min(1).max(4096) }) }).parse(JSON.parse(raw.toString("utf8")));
     if (envelope.subscription !== this.config.subscription) throw new HomeError("Unapproved Google push subscription.", 403);
-    const notification = z.object({ emailAddress: z.email(), historyId }).strict().parse(JSON.parse(Buffer.from(envelope.message.data, "base64").toString("utf8")));
+    const notification = z.object({ emailAddress: z.email(), historyId: notificationHistoryId }).strict().parse(JSON.parse(Buffer.from(envelope.message.data, "base64").toString("utf8")));
     if (notification.emailAddress !== this.config.mailbox) throw new HomeError("Unapproved Gmail mailbox.", 403);
     this.source(); // Authorization may have changed during signature verification.
     const { messageId, publishTime } = envelope.message;
