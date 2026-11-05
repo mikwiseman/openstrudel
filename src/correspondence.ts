@@ -11,10 +11,12 @@ const DEBOUNCE = 45_000, MAX_WAIT = 120_000;
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const identifier = z.string().min(1).max(256).regex(/^[^\s\x00-\x1f]+$/);
 const sourceSchema = z.object({ id: z.string().regex(/^[a-z0-9-]{1,64}$/), provider: z.enum(["telegram", "gmail", "whatsapp", "linkedin", "zoom"]),
-  accountId: identifier, space: z.enum(["personal", "company", "both"]), tokenHash: z.string().regex(/^[a-f0-9]{64}$/), signatureSecret: z.string().min(32).optional() }).strict();
+  accountId: identifier, space: z.enum(["personal", "company", "both"]), tokenHash: z.string().regex(/^[a-f0-9]{64}$/), signatureSecret: z.string().min(16).optional() }).strict();
 const configSchema = z.object({ enabled: z.boolean(), conversationId: identifier, calendarId: identifier,
   defaultDurationMinutes: z.number().int().min(5).max(480), sources: z.array(sourceSchema).min(1).max(20) }).strict();
-const inputSchema = configSchema.extend({ sources: z.array(sourceSchema.omit({ tokenHash: true, signatureSecret: true }).extend({ token: z.string().min(32).max(512).optional() })).min(1).max(20) });
+const inputSchema = configSchema.extend({ sources: z.array(sourceSchema.omit({ tokenHash: true, signatureSecret: true })
+  .extend({ token: z.string().min(16).max(512).optional() }).refine(source => !source.token
+    || source.provider === "whatsapp" || source.provider === "linkedin" || source.token.length >= 32)).min(1).max(20) });
 const eventSchema = z.object({ id: identifier, threadId: identifier, messageId: identifier.optional(),
   type: z.enum(["message.new", "message.updated", "message.deleted", "transcript.ready"]), occurredAt: z.iso.datetime({ offset: true }) }).strict();
 type Config = z.infer<typeof configSchema>;
