@@ -93,6 +93,8 @@ The private `correspondence/state.json` and `calendar-capture/state.json` hold a
 
 The installed correspondence skill has digest `5cac6fddfd4562f3448bb3a262281cc526607301b7aa8a4624a9eeb7d6fb98e8`. Its event path explicitly resolves Telegram IDs directly; inbox review remains a separate workflow. The skill update waited for the active turn to finish.
 
+At Gmail cutover, 439 earlier events remained in review: 417 Telegram, 21 WhatsApp and one work Zoom event. Recent failed runs reported exhausted model quotas; later runs, including the Gmail verification, completed. These earlier events were not replayed because their external draft/calendar state must be reconciled first. No native Gmail event was in review.
+
 ### Draft writer cutover
 
 WAI Messages automatic drafting is disabled. Readback confirmed all 137 existing drafts retained their exact text, source message and revision; monitoring remains enabled for its inbox UI. WaiClaw's “Кто ждёт ответа” schedule is now read-only, with its weekday 10:30/15:30 Moscow cadence and private delivery unchanged. Other schedules were preserved. The existing morning and legal briefings were already read-only. Gmail's former event-triggered draft task is paused; native Google push now feeds the shared writer.
