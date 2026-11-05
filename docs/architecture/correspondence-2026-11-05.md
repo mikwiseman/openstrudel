@@ -1,6 +1,6 @@
 # Event-driven correspondence
 
-**Status:** central workflow deployed and live Telegram/WhatsApp/Zoom processing verified. Native Gmail push setup remains outstanding; LinkedIn awaits its first delivery.
+**Status:** central workflow deployed and live Telegram/WhatsApp/Zoom processing verified. The native Gmail adapter is implemented; mailbox activation and cutover remain pending verification. LinkedIn awaits its first delivery.
 **Date:** 5 November 2026
 **Owner:** Mik
 
@@ -42,7 +42,7 @@ flowchart LR
 | --- | --- | --- |
 | Telegram | Existing Telethon new/edit/delete callbacks; late media readiness | Transactional outbox, immediate Celery wakeup; existing beat retries only pending deliveries. Owner account only; channels excluded. No historic media replay. Resolve the numeric event chat ID through owner-scoped `search_chats`, then use its internal UUID for reads/drafts. |
 | WhatsApp / LinkedIn | Unipile `message.new`, `message.update`, `message.delete`, including outgoing replies | Exact account subscriptions and signed webhook secrets. Registering endpoints needs a service API key. Keep that setup key out of the model's runtime connection. |
-| Gmail | Native Gmail `watch` → Google Cloud Pub/Sub → incremental `history.list` → the same receiver | Use `gmail.metadata` for the event adapter; the existing Gmail connection reads bodies and saves drafts. Persist the history cursor, verify push identity, deduplicate message/thread IDs, ignore draft-only changes and renew the watch. Existing connected Gmail tools do not expose watch registration. Google-side setup for the owner mailbox is still required. |
+| Gmail | Native Gmail `watch` → Google Cloud Pub/Sub → incremental `history.list` → the same receiver | Use `gmail.metadata` for the event adapter; the existing Gmail connection reads bodies and saves drafts. Persist the history cursor, verify push identity, deduplicate message/thread IDs, ignore draft-only changes and renew the watch. The native Home adapter verifies Google OIDC and persists its history cursor. See the [setup and recovery runbook](gmail-push.md). Mailbox activation is a separate verified rollout step. |
 | Zoom, personal and work | Existing pipeline's transcript/card-ready event | Reuse its durable webhook outbox and scoped recording tools. Resolve future agreements from the actual transcript, not its summary or recording start time. |
 
 Unipile's [webhook contract](https://developer.unipile.com/v2.0/docs/configure-a-webhook) requires a fast acknowledgment and raw-body signature verification. Its [message events](https://developer.unipile.com/v2.0/reference/event-types-1) include changes made from other devices. Google's [Gmail push contract](https://developers.google.com/workspace/gmail/api/guides/push) requires Pub/Sub, history handling and watch renewal.

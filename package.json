@@ -24,6 +24,7 @@
     "@openai/codex": "0.156.1",
     "@xai-official/grok": "1.0.52",
     "cron-parser": "5.10.1",
+    "google-auth-library": "11.3.3",
     "marked": "18.0.14",
     "smol-toml": "1.9.0",
     "zod": "4.6.7"

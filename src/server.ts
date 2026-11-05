@@ -41,6 +41,7 @@ import { newsFeed, newsStamp } from "./news.js";
 import { ClientsAdapter, ClientsError, clientSourceSchema, clientsRefusal, type ClientRef } from "./clients.js";
 import { resolveMessageContext } from "./message-context.js";
 import { Correspondence, configureCorrespondence, correspondenceWebhook } from "./correspondence.js";
+import { GmailPush } from "./gmail-push.js";
 
 const MAX_BODY_BYTES = 1_048_576;
 
@@ -52,6 +53,7 @@ export class HttpApi {
   private metricsServer?: Server;
   private hooksServer?: Server;
   readonly correspondence: Correspondence;
+  readonly gmailPush?: GmailPush;
   readonly mobile: MobileAccess;
   readonly home: Home;
   readonly homeLink: HomeLink;
@@ -75,6 +77,7 @@ export class HttpApi {
     private readonly accounts?: Accounts,
   ) {
     this.correspondence = new Correspondence(store, messages);
+    this.gmailPush = GmailPush.fromEnvironment(store, this.correspondence);
     if (this.token === undefined || this.token === "") {
       this.token=store.getSetting("api.local_token") ?? randomBytes(32).toString("hex");
       store.setSetting("api.local_token",this.token);
@@ -213,6 +216,8 @@ export class HttpApi {
   }
 
   async close(): Promise<void> {
+    this.gmailPush?.stop();
+    await this.gmailPush?.idle();
     this.correspondence.stop();
     await this.correspondence.idle();
     if (this.hooksServer) {
@@ -305,6 +310,9 @@ export class HttpApi {
         const reading = readBody(request, 128 * 1024); reading.catch(() => undefined);
         let timer: NodeJS.Timeout | undefined;
         const body = await Promise.race([reading, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new HomeError("Request timeout.", 408)), 5_000); })]).finally(() => clearTimeout(timer));
+        if (this.gmailPush && this.gmailPush.config.sourceId === sourceHook[1]) {
+          this.send(response, 202, await this.gmailPush.receive(request.headers.authorization, body)); return;
+        }
         const incoming = correspondenceWebhook(this.store, sourceHook[1]!, request.headers, body);
         this.send(response, 202, incoming ? this.correspondence.receive(incoming.source, incoming.event) : { accepted: true, ignored: true }); return;
       }
@@ -348,7 +356,7 @@ export class HttpApi {
         if (request.method === "POST") {
           const result = configureCorrespondence(this.store, canManageAccount, await this.body(request, 32_768));
           this.correspondence.wake(); this.send(response, 200, result);
-        } else this.send(response, 200, this.correspondence.status(canManageAccount));
+        } else this.send(response, 200, { ...this.correspondence.status(canManageAccount), ...(this.gmailPush ? { gmailPush: this.gmailPush.status() } : {}) });
         return;
       }
       if (path === "/v1/activity" && request.method === "GET") {
