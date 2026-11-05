@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { CodexEngineAdapter } from "../src/codex.js";
 afterEach(() => {wire.request.mockReset();vi.useRealTimers();});
 
-it("offers current management tools to an existing native thread and closes them after the turn", async () => {
+it.each(["read_model_settings", "correspondence_checkpoint", "unipile_accounts", "unipile_read"])("offers current %s to an existing native thread and closes it after the turn", async (toolName) => {
   let endpoint: { url: string; http_headers: Record<string,string>; default_tools_approval_mode?: string } | undefined;
   const call = vi.fn(async () => ({ saved: true }));
   wire.request.mockImplementation(async (method: string, params: any) => {
@@ -27,8 +27,8 @@ it("offers current management tools to an existing native thread and closes them
       // Codex would otherwise refuse the Home's own tools under approval_policy "never" (seen on Wolf, 3 November 2026).
       expect(endpoint?.default_tools_approval_mode).toBe("approve");
       const post = (method: string, params = {}) => fetch(endpoint!.url,{method:"POST",headers:{...endpoint!.http_headers,"content-type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method,params})}).then(r=>r.json());
-      expect((await post("tools/list")).result.tools[0].name).toBe("read_model_settings");
-      expect((await post("tools/call",{name:"read_model_settings",arguments:{scope:"home",id:null}})).result.isError).toBeUndefined();
+      expect((await post("tools/list")).result.tools[0].name).toBe(toolName);
+      expect((await post("tools/call",{name:toolName,arguments:{scope:"home",id:null}})).result.isError).toBeUndefined();
       queueMicrotask(()=>wire.notify?.({method:"turn/completed",params:{threadId:params.threadId,turn:{status:"completed"}}}));
       return {turn:{id:"turn"}};
     }
@@ -36,8 +36,8 @@ it("offers current management tools to an existing native thread and closes them
   });
   const engine = new CodexEngineAdapter();
   try {
-    await engine.run("Change the model",{threadId:"existing",tools:{definitions:[{type:"function",name:"read_model_settings",description:"Read",inputSchema:{type:"object",properties:{}}}],call}});
-    expect(call).toHaveBeenCalledWith("read_model_settings",{scope:"home",id:null});
+    await engine.run("Use the current tool",{threadId:"existing",tools:{definitions:[{type:"function",name:toolName,description:"Read",inputSchema:{type:"object",properties:{}}}],call}});
+    expect(call).toHaveBeenCalledWith(toolName,{scope:"home",id:null});
     expect(wire.request.mock.calls.some(([m])=>m === "thread/start")).toBe(false);
     await expect(fetch(endpoint!.url)).rejects.toThrow();
   } finally {engine.close();}

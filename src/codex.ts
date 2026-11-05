@@ -155,9 +155,9 @@ export class CodexEngineAdapter implements CodexEngine {
     let bridge: Awaited<ReturnType<typeof import("./acp-mcp.js").toolBridge>> | undefined;
     try {
       // Native dynamicTools are fixed at thread/start. Existing chats get the current
-      // management schemas through the same per-turn MCP bridge already used by Grok.
-      if (!this.options.restricted && options.tools?.definitions.some(t=>t.name === "read_model_settings" || t.name === "correspondence_checkpoint")) {
-        const names = new Set(["list_employees","create_employee","update_employee","list_schedules","save_schedule","pause_schedule","list_telegram_chats","read_model_settings","save_model_settings","configure_telegram_chat","list_projects","bind_employee_project","read_project_result","correspondence_checkpoint"]);
+      // management and private-source schemas through the per-turn MCP bridge.
+      if (!this.options.restricted && options.tools?.definitions.some(t=>["read_model_settings", "correspondence_checkpoint", "unipile_accounts", "unipile_read"].includes(t.name))) {
+        const names = new Set(["list_employees","create_employee","update_employee","list_schedules","save_schedule","pause_schedule","list_telegram_chats","read_model_settings","save_model_settings","configure_telegram_chat","list_projects","bind_employee_project","read_project_result","correspondence_checkpoint","unipile_accounts","unipile_read"]);
         const { toolBridge } = await import("./acp-mcp.js");
         bridge = await toolBridge({ definitions:options.tools.definitions.filter(t=>names.has(t.name)), call:options.tools.call });
       }

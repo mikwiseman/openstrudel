@@ -71,6 +71,8 @@ Internal event shape: `{id, threadId, messageId?, type, occurredAt}`. Types are 
 
 Sources may explicitly select `auth: "unipile"` for Gmail, WhatsApp or LinkedIn. Omitted auth preserves the original defaults: WhatsApp/LinkedIn use Unipile signatures, internal producers use bearer credentials. Unipile's generated signing secrets are 30 characters; internal bearer credentials must have at least 32. Gmail additionally requires `account_provider: "google"` and the exact connected account ID.
 
+Resumed native Codex threads retain their original dynamic-tool list. The per-turn Home MCP bridge therefore includes the currently authorized `unipile_accounts` and `unipile_read` schemas alongside the correspondence checkpoint. This gives an existing owner chat the verified V2 reader without resetting its history or exposing a generic provider request executor.
+
 The production proxy forwards only `/hooks/correspondence/*` to the isolated listener on 7791 with upstream `Host: localhost`; source authentication still applies and incoming Origin headers remain intact. It does not expose the Home API. When Caddy mounts an individual config file, an atomic host-side replacement can leave the container on the old inode: validate and reload the exact updated file inside the container, then verify the public route.
 
 The private `correspondence/state.json` and `calendar-capture/state.json` hold action receipts and pending evidence. They are not another message archive. A completed event run does not imply every requested action succeeded; the external readback remains the authority.
