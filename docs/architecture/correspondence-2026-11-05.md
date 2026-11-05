@@ -1,6 +1,6 @@
 # Event-driven correspondence
 
-**Status:** implementation in progress; live source activation requires separate evidence.
+**Status:** central receiver deployed; source cutover and live delivery verification in progress.
 **Date:** 5 November 2026
 **Owner:** Mik
 
@@ -34,7 +34,7 @@ flowchart LR
 4. **Retrieve once for both actions.** Read the original thread/branch, relevant earlier agreements, actual attachment contents and subsequent human replies. Resolve identities before targeted retrieval from the existing brains. Personal and company connections retain their scopes. A draft includes only facts appropriate for its recipient.
 5. **Check again before saving.** `correspondence_checkpoint` checks the running receipt, live authorization and whether newer events arrived. Re-read provider state too. Preserve human or unknown drafts, sent replies and deliberate deletions. Telegram has no conditional native draft write; a read-before-write check cannot eliminate the editor race. Keep a private proposal when that guarantee is required.
 6. **Calendar copies are private.** Confirmed personal/work appointments only, no attendees or invitations. Reserve 60 minutes when only duration is missing, and label it reserved. Match existing calendar invitations and cross-channel source aliases before creating. Accepted changes update the same managed event. Read back every mutation.
-7. **No blind retry after uncertain actions.** Pending events survive a restart. An interrupted run with a message receipt moves to review; reconcile the real draft/calendar before retrying. A newer source event can revisit the conversation with the existing receipt ledgers. Credentials, source/account changes, audience changes and Home transfer revoke prior grants.
+7. **No blind retry after uncertain actions.** Pending events survive a restart. An interrupted run with a message receipt moves to review; reconcile the real draft/calendar before retrying. A newer source event can revisit the conversation with the existing receipt ledgers. Each receipt binds its own source configuration and the shared owner/audience/calendar policy. Changing an unrelated source preserves accepted work; changing its own credentials/account or the shared policy revokes it. Unchanged receipts from the first release migrate on restart only while their original owner grant remains valid.
 
 ## Source contracts
 
@@ -42,7 +42,7 @@ flowchart LR
 | --- | --- | --- |
 | Telegram | Existing Telethon new/edit/delete callbacks; late media readiness | Transactional outbox, immediate Celery wakeup; existing beat retries only pending deliveries. Owner account only; channels excluded. No historic media replay. |
 | WhatsApp / LinkedIn | Unipile `message.new`, `message.update`, `message.delete`, including outgoing replies | Exact account subscriptions and signed webhook secrets. Registering endpoints needs a service API key. Keep that setup key out of the model's runtime connection. |
-| Gmail | Mailbox push, then history delta and full thread | Native connected read/draft tools do not by themselves expose `watch`. Reuse a verified existing cloud event bridge, or configure Google Pub/Sub with the correct OAuth project. Watch renewal and missed-event reconciliation are maintenance, not the normal processing loop. |
+| Gmail | Unipile Google `email.new` and `email.delete`, then native Gmail full-thread read | Read-only Google connection requires owner consent. Native Gmail remains the draft writer. Signed events normalize native message/thread IDs; deletion without a thread resolves against accepted receipts. Ignore draft events to avoid a feedback loop. Native connected tools alone do not expose mailbox push. |
 | Zoom, personal and work | Existing pipeline's transcript/card-ready event | Reuse its durable webhook outbox and scoped recording tools. Resolve future agreements from the actual transcript, not its summary or recording start time. |
 
 Unipile's [webhook contract](https://developer.unipile.com/v2.0/docs/configure-a-webhook) requires a fast acknowledgment and raw-body signature verification. Its [message events](https://developer.unipile.com/v2.0/reference/event-types-1) include changes made from other devices. Google's [Gmail push contract](https://developers.google.com/workspace/gmail/api/guides/push) requires Pub/Sub, history handling and watch renewal.
@@ -69,4 +69,14 @@ Unipile's [webhook contract](https://developer.unipile.com/v2.0/docs/configure-a
 
 Internal event shape: `{id, threadId, messageId?, type, occurredAt}`. Types are `message.new`, `message.updated`, `message.deleted`, `transcript.ready`. No source can supply its own account, audience, prompt or destination. Source IDs and times are evidence, not instruction.
 
+Sources may explicitly select `auth: "unipile"` for Gmail, WhatsApp or LinkedIn. Omitted auth preserves the original defaults: WhatsApp/LinkedIn use Unipile signatures, internal producers use bearer credentials. Unipile's generated signing secrets are 30 characters; internal bearer credentials must have at least 32. Gmail additionally requires `account_provider: "google"` and the exact connected account ID.
+
+The production proxy forwards only `/hooks/correspondence/*` to the isolated listener on 7791 with upstream `Host: localhost`; source authentication still applies and incoming Origin headers remain intact. It does not expose the Home API. When Caddy mounts an individual config file, an atomic host-side replacement can leave the container on the old inode: validate and reload the exact updated file inside the container, then verify the public route.
+
 The private `correspondence/state.json` and `calendar-capture/state.json` hold action receipts and pending evidence. They are not another message archive. A completed event run does not imply every requested action succeeded; the external readback remains the authority.
+
+### Verified on 5 November
+
+- OpenStrudel receiver releases [#98](https://github.com/mikwiseman/openstrudel/pull/98) and [#99](https://github.com/mikwiseman/openstrudel/pull/99) are merged and deployed. The metrics and isolated review routes remain available.
+- A real Gmail source reference traversed the public HTTPS receiver and shared queue. The workflow read the relevant 71-message thread, resolved the company client and read an original company transcript. It recognized the existing private calendar entry and made no duplicate or draft mutation. An independent Google Calendar read confirmed the agreed start, 60-minute reserved duration, original meeting link, private visibility and no attendees. This proves central processing; it does not yet prove a Gmail push subscription.
+- Account-scoped WhatsApp/LinkedIn subscriptions are registered; actual signed delivery and processing must be checked separately. Telegram and Zoom producers are merged in [wai-telegram #59](https://github.com/mikwiseman/wai-telegram/pull/59) and [waiwai #240](https://github.com/mikwiseman/waiwai/pull/240).

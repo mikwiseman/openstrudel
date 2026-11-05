@@ -11,14 +11,14 @@ import { configureCorrespondence } from "../src/correspondence.js";
 
 const close: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const fn of close.splice(0)) await fn(); });
-async function fixture(provider = "telegram", token = "source-secret-32-characters-or-more") {
+async function fixture(provider = "telegram", token = "source-secret-32-characters-or-more", auth?: "unipile") {
   const root = mkdtempSync(join(tmpdir(), "strudel-events-")), store = new Store(join(root, "db.sqlite"));
   const messages = new MessageService(store, { run: async () => { throw new Error("Webhook must acknowledge before running the model"); } }, root);
   const telegram = new TelegramAdapter(undefined, store, messages);
   const api = new HttpApi(store, messages, telegram, "owner-key", undefined, undefined, { mobileDirectory: join(root, "mobile"), mobilePort: 0 });
   const main = await api.listen("127.0.0.1", 0), hooks = await api.listenHooks("127.0.0.1", 0);
   configureCorrespondence(store, true, { enabled: true, conversationId: store.primaryConversation().id, calendarId: "owner@example.com", defaultDurationMinutes: 60,
-    sources: [{ id: "source", provider, accountId: "account-one", space: "both", token }] });
+    sources: [{ id: "source", provider, accountId: "account-one", space: "both", token, ...(auth ? { auth } : {}) }] });
   const base = `http://127.0.0.1:${hooks.port}`, home = `http://127.0.0.1:${main.port}`;
   const post = (body: string, headers: Record<string, string> = { authorization: "Bearer " + token }) => fetch(base + "/hooks/correspondence/source", {
     method: "POST", headers: { "content-type": "application/json", ...headers }, body,
@@ -38,6 +38,26 @@ it("exposes only authenticated, durable event ingress on the proxy listener", as
   expect((await fetch(f.home + "/v1/correspondence", { headers: { authorization: "Bearer " + f.token } })).status).toBe(401);
   const status = await (await fetch(f.home + "/v1/correspondence", { headers: { authorization: "Bearer owner-key" } })).json();
   expect(status.counts).toEqual({ pending: 1 }); expect(JSON.stringify(status)).not.toContain(f.token);
+});
+
+it("normalizes signed Gmail events to native IDs and resolves deletion from accepted source history", async () => {
+  const f = await fixture("gmail", "p".repeat(30), "unipile");
+  const timestamp = Math.floor(Date.now()/1000);
+  const send = (event: unknown) => {
+    const raw = JSON.stringify(event);
+    return f.post(raw, { "unipile-signature": `t=${timestamp},v0=${createHmac("sha256", f.token).update(timestamp + "." + raw).digest("hex")}` });
+  };
+  const event = { id: "evt_gmail", account_id: "account-one", account_provider: "google", created_at: new Date().toISOString(), type: "email.new",
+    payload: { folder_id: "INBOX", email: { id: "1a1aacf9936ee883", thread_id: "1a06b74f347f42ce", body: "Untrusted email content" } } };
+  expect((await send(event)).status).toBe(202);
+  expect((await send({ ...event, id: "evt_wrong", account_provider: "outlook" })).status).toBe(403);
+  expect((await send({ ...event, id: "evt_delete", type: "email.delete", payload: { email: { id: "1a1aacf9936ee883" } } })).status).toBe(202);
+  expect((await send({ ...event, id: "evt_draft", type: "email.draft.new" })).status).toBe(202);
+  const events = f.store.db.prepare("SELECT payload FROM correspondence_events ORDER BY seq").all().map(r => JSON.parse(String(r.payload)));
+  expect(events).toHaveLength(2);
+  expect(events[0]).toMatchObject({ threadId: "1a06b74f347f42ce", messageId: "1a1aacf9936ee883", type: "message.new" });
+  expect(events[1]).toMatchObject({ threadId: "1a06b74f347f42ce", type: "message.deleted" });
+  expect(JSON.stringify(events)).not.toContain("Untrusted");
 });
 it("verifies the raw Unipile signature and exact account before reducing a provider event to references", async () => {
   // Unipile's actual generated signing secrets are 30 characters.

@@ -11,17 +11,22 @@ const DEBOUNCE = 45_000, MAX_WAIT = 120_000;
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const identifier = z.string().min(1).max(256).regex(/^[^\s\x00-\x1f]+$/);
 const sourceSchema = z.object({ id: z.string().regex(/^[a-z0-9-]{1,64}$/), provider: z.enum(["telegram", "gmail", "whatsapp", "linkedin", "zoom"]),
+  auth: z.enum(["bearer", "unipile"]).optional(),
   accountId: identifier, space: z.enum(["personal", "company", "both"]), tokenHash: z.string().regex(/^[a-f0-9]{64}$/), signatureSecret: z.string().min(16).optional() }).strict();
 const configSchema = z.object({ enabled: z.boolean(), conversationId: identifier, calendarId: identifier,
   defaultDurationMinutes: z.number().int().min(5).max(480), sources: z.array(sourceSchema).min(1).max(20) }).strict();
 const inputSchema = configSchema.extend({ sources: z.array(sourceSchema.omit({ tokenHash: true, signatureSecret: true })
   .extend({ token: z.string().min(16).max(512).optional() }).refine(source => !source.token
-    || source.provider === "whatsapp" || source.provider === "linkedin" || source.token.length >= 32)).min(1).max(20) });
+    || unipileSource(source) || source.token.length >= 32)
+    .refine(source => !unipileSource(source) || ["gmail", "whatsapp", "linkedin"].includes(source.provider))).min(1).max(20) });
 const eventSchema = z.object({ id: identifier, threadId: identifier, messageId: identifier.optional(),
   type: z.enum(["message.new", "message.updated", "message.deleted", "transcript.ready"]), occurredAt: z.iso.datetime({ offset: true }) }).strict();
 type Config = z.infer<typeof configSchema>;
 type Source = z.infer<typeof sourceSchema> & { fingerprint: string };
 type Event = z.infer<typeof eventSchema>;
+function unipileSource(source: { provider: string; auth?: string }) {
+  return source.auth === "unipile" || source.auth === undefined && ["whatsapp", "linkedin"].includes(source.provider);
+}
 type Row = { seq: number; source_id: string; thread_id: string; payload: string; fingerprint: string; run_id: string | null; status: string };
 
 function schema(store: Store) {
@@ -37,9 +42,9 @@ function schema(store: Store) {
 function config(store: Store): Config | null {
   try { return configSchema.parse(JSON.parse(store.getSetting(SETTING) ?? "null")); } catch { return null; }
 }
-function fingerprint(store: Store, value: Config): string {
+function fingerprint(store: Store, value: Config, source?: Config["sources"][number]): string {
   const conversation = store.getConversation(value.conversationId);
-  return hash(JSON.stringify([POLICY, value, conversation?.channel, conversation?.externalId, conversation?.profileId,
+  return hash(JSON.stringify([POLICY, source ? { ...value, sources: [source] } : value, conversation?.channel, conversation?.externalId, conversation?.profileId,
     store.getSetting("home.state"), store.getSetting("conversation.context." + value.conversationId), store.telegramChats().filter(c => c.conversationId === value.conversationId)
       .map(c => [c.chatId, c.enabled !== false, [...c.allowedSenders].sort()]).sort()]));
 }
@@ -65,8 +70,8 @@ export function configureCorrespondence(store: Store, owner: boolean, raw: unkno
     const old = previous?.sources.find(s => s.id === source.id && s.provider === source.provider && s.accountId === source.accountId);
     const tokenHash = token ? hash(token) : old?.tokenHash;
     if (!tokenHash) throw new HomeError("A new source needs a private credential.", 400);
-    const signatureSecret = source.provider === "whatsapp" || source.provider === "linkedin" ? token ?? old?.signatureSecret : undefined;
-    if ((source.provider === "whatsapp" || source.provider === "linkedin") && !signatureSecret) throw new HomeError("Unipile needs its webhook signing secret.", 400);
+    const signatureSecret = unipileSource(source) ? token ?? old?.signatureSecret : undefined;
+    if (unipileSource(source) && !signatureSecret) throw new HomeError("Unipile needs its webhook signing secret.", 400);
     return { ...source, tokenHash, ...(signatureSecret ? { signatureSecret } : {}) };
   });
   const saved: Config = { ...value, sources };
@@ -85,7 +90,7 @@ export function correspondenceSource(store: Store, id: string, authorization: st
   const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
   if (!source || source.signatureSecret || !token || !timingSafeEqual(Buffer.from(source.tokenHash, "hex"), Buffer.from(hash(token), "hex")))
     throw new HomeError("Unauthorized source.", 401);
-  return { ...source, fingerprint: fingerprint(store, value) };
+  return { ...source, fingerprint: fingerprint(store, value, source) };
 }
 
 /** Provider payloads are authenticated before parsing and reduced to identifiers.
@@ -105,10 +110,20 @@ export function correspondenceWebhook(store: Store, id: string, headers: { autho
   if (!timingSafeEqual(expected, Buffer.from(parts[2]!, "hex"))) throw new HomeError("Invalid webhook signature.", 401);
   const parsed = z.object({ id: identifier, type: z.string(), account_id: identifier, account_provider: z.string(),
     created_at: z.iso.datetime({ offset: true }), payload: z.record(z.string(), z.unknown()) }).parse(JSON.parse(raw.toString("utf8")));
-  if (parsed.account_id !== source.accountId || parsed.account_provider !== source.provider) throw new HomeError("Unapproved source account.", 403);
+  if (parsed.account_id !== source.accountId || parsed.account_provider !== (source.provider === "gmail" ? "google" : source.provider)) throw new HomeError("Unapproved source account.", 403);
+  if (source.provider === "gmail") {
+    if (!["email.new", "email.delete"].includes(parsed.type)) return null;
+    const email = z.object({ id: z.string().regex(/^[a-f0-9]{8,32}$/), thread_id: z.string().regex(/^[a-f0-9]{8,32}$/).optional() }).parse(parsed.payload.email);
+    const prior = email.thread_id ? undefined : store.db.prepare("SELECT thread_id FROM correspondence_events WHERE source_id=? AND json_extract(payload,'$.messageId')=? ORDER BY seq DESC LIMIT 1").get(source.id, email.id);
+    const threadId = email.thread_id ?? prior?.thread_id;
+    // A deletion without a known thread cannot invalidate any accepted work.
+    if (!threadId && parsed.type === "email.delete") return null;
+    return { source: { ...source, fingerprint: fingerprint(store, value, source) }, event: eventSchema.parse({ id: parsed.id,
+      type: parsed.type === "email.new" ? "message.new" : "message.deleted", threadId, messageId: email.id, occurredAt: parsed.created_at }) };
+  }
   const type = ({ "message.new": "message.new", "message.update": "message.updated", "message.delete": "message.deleted" } as const)[parsed.type as "message.new"];
   if (!type) return null; // Unknown/read-receipt events do not invoke the model.
-  return { source: { ...source, fingerprint: fingerprint(store, value) }, event: eventSchema.parse({ id: parsed.id, type,
+  return { source: { ...source, fingerprint: fingerprint(store, value, source) }, event: eventSchema.parse({ id: parsed.id, type,
     threadId: parsed.payload.chat_id, messageId: parsed.payload.id, occurredAt: parsed.created_at }) };
 }
 
@@ -121,7 +136,10 @@ function run(store: Store, context: TelegramToolContext) {
   if (!message || !String(message.external_id).startsWith("correspondence:")) throw new HomeError("Private event receipt required.", 403);
   const rows = store.db.prepare("SELECT * FROM correspondence_events WHERE run_id=? AND status='running' ORDER BY seq")
     .all(String(message.external_id).slice(15)) as unknown as Row[];
-  if (!rows.length || rows.some(r => r.fingerprint !== fingerprint(store, value))) throw new HomeError("Event authorization changed.", 403);
+  if (!rows.length || rows.some(r => {
+    const source = value.sources.find(s => s.id === r.source_id);
+    return !source || r.fingerprint !== fingerprint(store, value, source);
+  })) throw new HomeError("Event authorization changed.", 403);
   return { value, rows };
 }
 export function correspondenceAudience(store: Store, context: TelegramToolContext): boolean {
@@ -150,7 +168,16 @@ export class Correspondence {
   private timer?: NodeJS.Timeout;
   private active?: Promise<void>;
   private stopped = true;
-  constructor(private readonly store: Store, private readonly messages: Pick<MessageService, "submit">) { schema(store); }
+  constructor(private readonly store: Store, private readonly messages: Pick<MessageService, "submit">) {
+    schema(store);
+    // Upgrade unchanged, still-authorized receipts from the original whole-config grant.
+    // Revoked receipts never acquire a fresh grant merely because the process restarted.
+    try {
+      const value = permitted(store), previous = fingerprint(store, value);
+      for (const source of value.sources) store.db.prepare("UPDATE correspondence_events SET fingerprint=? WHERE source_id=? AND fingerprint=? AND status IN ('pending','running')")
+        .run(fingerprint(store, value, source), source.id, previous);
+    } catch { /* Disabled or changed grants stay revoked. */ }
+  }
   start() {
     if (!this.stopped) return;
     this.stopped = false;
@@ -167,7 +194,8 @@ export class Correspondence {
   async idle() { await this.active; }
   receive(source: Source, raw: unknown) {
     const value = permitted(this.store);
-    if (source.fingerprint !== fingerprint(this.store, value) || !value.sources.some(s => s.id === source.id && s.tokenHash === source.tokenHash)) throw new HomeError("Source authorization changed.", 403);
+    const configured = value.sources.find(s => s.id === source.id);
+    if (!configured || source.fingerprint !== fingerprint(this.store, value, configured) || configured.tokenHash !== source.tokenHash) throw new HomeError("Source authorization changed.", 403);
     const parsed = eventSchema.safeParse(raw);
     if (!parsed.success || (parsed.data.type === "transcript.ready") !== (source.provider === "zoom")) throw new HomeError("Invalid source event.", 400);
     const event = parsed.data, payload = JSON.stringify(event);
@@ -219,8 +247,8 @@ export class Correspondence {
     try {
       value = permitted(this.store);
       const current = value.sources.find(s => s.id === first.source_id);
-      if (!current || rows.some(r => r.fingerprint !== fingerprint(this.store, value))) throw new Error("Source configuration changed");
-      source = { ...current, fingerprint: fingerprint(this.store, value) };
+      if (!current || rows.some(r => r.fingerprint !== fingerprint(this.store, value, current))) throw new Error("Source configuration changed");
+      source = { ...current, fingerprint: fingerprint(this.store, value, current) };
     } catch {
       this.store.db.prepare("UPDATE correspondence_events SET status='revoked',error='Owner grant or source changed' WHERE source_id=? AND thread_id=? AND status='pending'").run(first.source_id, first.thread_id);
       return;

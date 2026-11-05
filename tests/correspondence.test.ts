@@ -79,8 +79,30 @@ it("requires an owner grant, exact source credential, private audience and real 
   expect(() => correspondenceCheckpoint(f.store, context)).toThrow();
 });
 
+it("keeps accepted work authorized when the owner adds an unrelated source", async () => {
+  const f = fixture(); f.worker.receive(f.source(), f.event());
+  configureCorrespondence(f.store, true, { ...f.input, sources: [...f.input.sources,
+    { id: "gmail", provider: "gmail", accountId: "owner@example.com", space: "both", token: "other-private-source-token-with-32-characters" }] });
+  await vi.advanceTimersByTimeAsync(45_000);
+  expect(f.calls).toHaveLength(1);
+  const m = f.store.findMessageByExternal("api", f.calls[0]!.externalId!)!;
+  expect(correspondenceCheckpoint(f.store, { conversationId: f.conversation.id, messageId: m.id, channel: "api", scope: "personal", scheduled: true }).current).toBe(true);
+});
+
+it("does not revive an old receipt after its source credential changes and the worker restarts", async () => {
+  const f = fixture(); f.worker.receive(f.source(), f.event()); f.worker.stop();
+  f.store.db.prepare("UPDATE correspondence_events SET fingerprint=?").run(f.store.getSetting("correspondence.grant")!);
+  configureCorrespondence(f.store, true, { ...f.input, sources: [{ ...f.input.sources[0], token: "replacement-private-token-with-32-characters" }] });
+  const recovered = new Correspondence(f.store, { submit: f.submit }); workers.push(recovered); recovered.start();
+  await vi.advanceTimersByTimeAsync(45_000);
+  expect(f.calls).toHaveLength(0);
+  expect(recovered.status(true).counts).toEqual({ revoked: 1 });
+});
+
 it("recovers accepted work after restart without repeating a completed or uncertain action", async () => {
   const f = fixture(); f.worker.receive(f.source(), f.event()); f.worker.stop();
+  // Upgrade from the initial release, where receipts used the whole configuration grant.
+  f.store.db.prepare("UPDATE correspondence_events SET fingerprint=?").run(f.store.getSetting("correspondence.grant")!);
   const recovered = new Correspondence(f.store, { submit: f.submit }); workers.push(recovered); recovered.start();
   await vi.advanceTimersByTimeAsync(45_000); expect(f.calls).toHaveLength(1); recovered.stop();
   const inbound = f.store.findMessageByExternal("api", f.calls[0]!.externalId!)!;
