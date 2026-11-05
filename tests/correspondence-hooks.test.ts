@@ -57,13 +57,13 @@ it("accepts a Google-signed native Gmail push through the public listener withou
     const data = Buffer.from(JSON.stringify({ alg: "RS256", kid: "test" })).toString("base64url") + "." + Buffer.from(JSON.stringify({ iss: "https://accounts.google.com", aud: "https://home.example/hooks/correspondence/source", sub: "123", email: "push@test.iam.gserviceaccount.com", email_verified: true, iat: now, exp: now + 3600, ...extra })).toString("base64url");
     return data + "." + sign("RSA-SHA256", Buffer.from(data), keys.privateKey).toString("base64url");
   };
-  const body = JSON.stringify({ subscription: "projects/test/subscriptions/gmail", message: { messageId: "real-format", publishTime: new Date().toISOString(), data: Buffer.from(JSON.stringify({ emailAddress: "owner@example.com", historyId: "90071992547409930" })).toString("base64") } });
+  const body = JSON.stringify({ subscription: "projects/test/subscriptions/gmail", message: { messageId: "real-format", message_id: "real-format", publishTime: new Date().toISOString(), publish_time: new Date().toISOString(), data: Buffer.from(JSON.stringify({ emailAddress: "owner@example.com", historyId: 12411202 })).toString("base64") } });
   expect((await f.post(body, { authorization: "Bearer " + jwt({ aud: "wrong" }) })).status).toBe(401);
   expect((await f.post(body, { authorization: "Bearer " + jwt({ iss: "https://attacker.example" }) })).status).toBe(401);
   expect((await f.post(body, { authorization: "Bearer " + jwt({ exp: now - 1000 }) })).status).toBe(401);
   expect((await f.post(body, { authorization: "Bearer " + jwt() })).status).toBe(202);
   expect((await f.post(body)).status).toBe(401); // Internal bearer no longer bypasses Google's native push authentication.
-  expect(f.api.gmailPush!.status()).toMatchObject({ target: "90071992547409930", pendingNotifications: 1 });
+  expect(f.api.gmailPush!.status()).toMatchObject({ target: "12411202", pendingNotifications: 1 });
   expect(f.api.correspondence.status(true).counts).toEqual({});
 });
 

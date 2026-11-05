@@ -24,7 +24,7 @@ function fixture() {
   const verify = vi.fn(async () => ({ email: config.pushServiceAccount, email_verified: true }));
   const gateway: GmailGateway = { request, verify };
   const push = new GmailPush(store, worker, config, gateway);
-  const notify = (historyId = "200", id = "notification-1", extra: Record<string, unknown> = {}) => push.receive("Bearer signed-google-token", Buffer.from(JSON.stringify({
+  const notify = (historyId: string | number = "200", id = "notification-1", extra: Record<string, unknown> = {}) => push.receive("Bearer signed-google-token", Buffer.from(JSON.stringify({
     subscription: config.subscription, message: { messageId: id, publishTime: new Date().toISOString(),
       data: Buffer.from(JSON.stringify({ emailAddress: config.mailbox, historyId, ...extra })).toString("base64") } })));
   const events = () => store.db.prepare("SELECT payload FROM correspondence_events ORDER BY seq").all().map(r => JSON.parse(String(r.payload)));
@@ -125,4 +125,15 @@ it("invalidates managed messages on deletion/archive without processing draft de
   });
   await f.push.maintain();
   expect(f.events().map(e => e.type)).toEqual(['message.new', 'message.updated', 'message.deleted']);
+});
+
+it("normalizes Gmail's live numeric notification watermark without accepting lossy integers", async () => {
+  const f = fixture(); await f.push.maintain();
+  expect(await f.notify(12411202, "gmail-native-number")).toMatchObject({ accepted: true });
+  expect(f.push.status().target).toBe("12411202");
+  await expect(f.notify(Number.MAX_SAFE_INTEGER + 1, "unsafe-number")).rejects.toThrow();
+  await expect(f.notify(1.5, "fraction")).rejects.toThrow();
+  await expect(f.notify(0, "zero")).rejects.toThrow();
+  expect(await f.notify("90071992547409930", "large-exact-string")).toMatchObject({ accepted: true });
+  expect(f.push.status().target).toBe("90071992547409930");
 });
