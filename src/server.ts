@@ -19,6 +19,7 @@ import { LocalAgentMoves, assertAgentWritable } from "./agent-move.js";
 import { HomeApi, isPeerRoute, readBody } from "./home-api.js";
 import { homeRequest } from "./home-transport.js";
 import { WebAccess, sameOrigin } from "./web-access.js";
+import { authenticateDailyMetrics, dailyMetricsConfig, readDailyMetrics, saveDailyMetrics } from "./daily-metrics.js";
 import type { Accounts } from "./accounts.js";
 import { hostingOrigin } from "./hosting-origin.js";
 import { approvalSetting, isApprovalMode, readApprovalMode } from "./approval-mode.js";
@@ -42,9 +43,12 @@ import { resolveMessageContext } from "./message-context.js";
 
 const MAX_BODY_BYTES = 1_048_576;
 
+const DAILY_METRICS_PATHS = ["/check-in", "/check-in/", "/check-in/app.js", "/check-in/style.css", "/check-in/api"];
+
 /** Small HTTP transport shared by the native clients and Telegram setup. */
 export class HttpApi {
   private server: Server | null = null;
+  private metricsServer?: Server;
   readonly mobile: MobileAccess;
   readonly home: Home;
   readonly homeLink: HomeLink;
@@ -136,10 +140,70 @@ export class HttpApi {
     return address;
   }
 
+  /** A private reverse-proxy transport for this Mini App only; no Home routes or credentials. */
+  async listenDailyMetrics(host = "0.0.0.0", port = Number(process.env.OPENSTRUDEL_METRICS_PORT)): Promise<AddressInfo> {
+    if (this.metricsServer) throw new Error("Daily metrics API already started");
+    if (!Number.isInteger(port) || port < 0 || port > 65535 || !dailyMetricsConfig(this.store).publicOrigin) throw new Error("Configure the daily metrics port and public HTTPS origin first.");
+    const server = createServer(async (request, response) => {
+      response.setHeader("content-type", "application/json; charset=utf-8");
+      response.setHeader("cache-control", "no-store");
+      const path = new URL(request.url ?? "/", "http://localhost").pathname;
+      if (!DAILY_METRICS_PATHS.includes(path)) { this.send(response, 404, { error: "not_found" }); return; }
+      try {
+        const origin = dailyMetricsConfig(this.store).publicOrigin;
+        // TLS terminates at the private proxy. Trust the configured public origin, never forwarding headers.
+        if (!origin || request.headers.origin && request.headers.origin !== origin || request.method === "POST" && request.headers.origin !== origin)
+          throw new HomeError("Запрос с постороннего сайта отклонён.", 403);
+        await this.handleDailyMetrics(request, response, path);
+      } catch (error) { this.send(response, error instanceof HomeError ? error.status : 400, { error: error instanceof Error ? error.message : String(error) }); }
+    });
+    await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { server.off("error", reject); resolve(); }); });
+    this.metricsServer = server;
+    return server.address() as AddressInfo;
+  }
+
+  private async handleDailyMetrics(request: IncomingMessage, response: ServerResponse, path: string): Promise<void> {
+    response.setHeader("cache-control", "no-store");
+    response.setHeader("x-content-type-options", "nosniff");
+    let counted = false;
+    try {
+      if (path !== "/check-in/api") {
+        if (request.method !== "GET") throw new HomeError("Метод недоступен.", 405);
+        if (path === "/check-in") { response.writeHead(308, { location: "/check-in/" }).end(); return; }
+        response.setHeader("content-security-policy", "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors https://web.telegram.org https://*.telegram.org; base-uri 'none'; form-action 'none'");
+        response.setHeader("referrer-policy", "no-referrer");
+        response.setHeader("x-robots-tag", "noindex, nofollow, noarchive");
+        await this.asset(response, path === "/check-in/" ? "check-in/index.html" : path.slice(1), path.endsWith(".js") ? "text/javascript; charset=utf-8" : path.endsWith(".css") ? "text/css; charset=utf-8" : "text/html; charset=utf-8");
+        return;
+      }
+      if (request.method !== "GET" && request.method !== "POST") throw new HomeError("Метод недоступен.", 405);
+      const person = authenticateDailyMetrics(this.store, request.headers.authorization);
+      if (request.method === "GET") { this.send(response, 200, readDailyMetrics(this.store, person.id)); return; }
+      if (!request.headers["content-type"]?.startsWith("application/json")) throw new HomeError("Нужен запрос JSON.", 415);
+      const writable = () => {
+        if (this.home.state.role !== "primary" || this.store.getSetting("home.transfer")) throw new HomeError("Дождитесь завершения обновления и повторите.", 409);
+      };
+      writable(); this.activeWrites++; counted = true;
+      const reading = this.body(request, 2048); reading.catch(() => undefined);
+      let timer: NodeJS.Timeout | undefined;
+      const body = await Promise.race([reading, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new HomeError("Запрос пришёл слишком медленно.", 408)), 15_000); })]).finally(() => clearTimeout(timer));
+      writable();
+      const current = authenticateDailyMetrics(this.store, request.headers.authorization);
+      if (current.id !== person.id) throw new HomeError("Откройте приложение заново.", 401);
+      this.send(response, 200, saveDailyMetrics(this.store, current.id, body));
+    } catch (error) { this.send(response, error instanceof HomeError ? error.status : 400, { error: error instanceof Error ? error.message : String(error) }); }
+    finally { if (counted) this.activeWrites--; }
+  }
+
   async close(): Promise<void> {
     for (const id of this.serviceSignIns.keys()) this.cancelServiceSignIn(id);
     await this.homeLink.stop();
     await this.mobile.close();
+    if (this.metricsServer) {
+      const metrics = this.metricsServer; this.metricsServer = undefined;
+      metrics.closeAllConnections();
+      await new Promise<void>((resolve, reject) => metrics.close(error => error ? reject(error) : resolve()));
+    }
     if (!this.server) return;
     const server = this.server;
     this.server = null;
@@ -206,6 +270,7 @@ export class HttpApi {
     if (request.method === "GET" && path === "/agent-characters.js") { await this.asset(response, "agent-characters.js", "text/javascript; charset=utf-8"); return; }
     if (request.method === "GET" && path === "/markdown.js") { await this.asset(response, "markdown.js", "text/javascript; charset=utf-8"); return; }
     if (request.method === "GET" && /^\/characters\/(main|coil|fold|knot|curl|wave|pillow)\.png$/.test(path)) { await this.asset(response, path.slice(1), "image/png"); return; }
+    if (DAILY_METRICS_PATHS.includes(path)) { await this.handleDailyMetrics(request, response, path); return; }
     let counted = false;
     try {
       if (path === "/hooks/telegram") {

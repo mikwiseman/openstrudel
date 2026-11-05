@@ -10,6 +10,7 @@ import { OpenStrudelRuntime } from "../src/runtime.js";
 import { MockCodexEngine } from "../src/codex.js";
 import { AccountUnavailableError } from "../src/account-errors.js";
 import { ProviderKeyError, providerFailure, providerInfo, providerNotConnected } from "../src/providers.js";
+import { runtimeIssues } from "../src/operations.js";
 const stores:Store[]=[];
 const deliveryCalls=()=>vi.mocked(fetch).mock.calls.filter(([url])=>!String(url).endsWith("/sendChatAction"));
 afterEach(()=>{vi.useRealTimers();vi.unstubAllGlobals();vi.unstubAllEnvs();for(const s of stores.splice(0))s.close();});
@@ -20,6 +21,40 @@ function setup() {
  vi.stubGlobal("fetch",vi.fn(async()=>Response.json({ok:true,result:{message_id:99}})));
  return {s,m,a,run};
 }
+it("keeps a scheduled clarification reply with its employee after a runtime restart", async () => {
+ const s=new Store(":memory:");stores.push(s);
+ s.linkTelegramChat({chatId:"42",title:"Owner",allowedSenders:["42"]});
+ const profile=s.createProfile({name:"Юрист",instructions:"Review the owner's agreements"}),chat=s.profileConversation(profile.id);
+ const question="Не нашёл BBF в каталоге клиентов. Где искать договор: под другим названием или по ссылке? Можно прислать файл сюда.";
+ const m=new MessageService(s,{async run(_text,options){
+  options!.onEvent!({type:"item/completed",payload:{item:{type:"mcpToolCall",server:"company",tool:"company_client_files_list",status:"completed",result:{structuredContent:{found:false,clientQuery:"BBF",ambiguous:false,matches:[]}}}}});
+  return {threadId:"legal-thread",response:question,events:[]};
+ }});
+ vi.stubGlobal("fetch",vi.fn(async()=>Response.json({ok:true,result:{message_id:99}})));
+ const a=new TelegramAdapter("123:test",s,m);m.telegram=a;
+ const scheduler=new Scheduler(s,m);scheduler.deliver=(chatId,text,key)=>a.sendMessage(chatId,text,key);
+ scheduler.save({conversationId:chat.id,name:"Review",prompt:"Check BBF agreements",cron:"@once 2030-01-15T09:00:00Z",timezone:"UTC",delivery:"telegram",telegramChatId:"42"},new Date("2030-01-15T08:00:00Z"));
+ await scheduler.tick(new Date("2030-01-15T09:00:00Z"));await scheduler.idle();
+ expect(scheduler.runs(chat.id)[0]?.status).toBe("completed");
+ expect(runtimeIssues(s)).toEqual([]);
+ expect(deliveryCalls()).toHaveLength(1);
+ expect(JSON.parse(String(deliveryCalls()[0]![1]!.body)).text).toContain(question);
+ a.stop();await m.close();
+
+ const run=vi.fn(async()=>({threadId:"legal-thread",response:"Проверю договор по этой ссылке.",events:[]}));
+ const resumed=new MessageService(s,{run}),telegram=new TelegramAdapter("123:test",s,resumed);
+ try {
+  await telegram.processUpdate({update_id:200,message:{message_id:200,from:{id:42},chat:{id:42,type:"private"},reply_to_message:{message_id:99,from:{id:123,is_bot:true}},text:"Договор здесь: https://example.test/bbf.pdf"}});
+  expect(run).toHaveBeenCalledTimes(1);
+  expect(run.mock.calls[0]?.[1]).toMatchObject({conversationId:chat.id,threadId:"legal-thread",profile:expect.stringContaining("Юрист")});
+  expect(run.mock.calls[0]?.[0]).toContain("https://example.test/bbf.pdf");
+  expect(s.listMessages(chat.id).map(message=>message.text)).toContain("Договор здесь: https://example.test/bbf.pdf");
+  expect(runtimeIssues(s)).toEqual([]);
+  expect(s.getTelegramChat("42")?.profileId).toBeNull();
+  await telegram.processUpdate({update_id:201,message:{message_id:201,from:{id:42},chat:{id:42,type:"private"},reply_to_message:{message_id:999,from:{id:123,is_bot:true}},text:"Unrelated reply"}});
+  expect(run.mock.calls[1]?.[1]?.conversationId).not.toBe(chat.id);
+ } finally {telegram.stop();await resumed.close();}
+});
 it("never shows a group an account incident and tells the owner privately once until recovery", async () => {
  const {s,m,a,run}=setup();s.setSetting("telegram.bot_username","core_bot");m.telegram=a;
  s.linkTelegramChat({chatId:"42",title:"Mik",allowedSenders:["42"]});

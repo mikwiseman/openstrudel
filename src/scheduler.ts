@@ -9,6 +9,7 @@ import { scheduleTiming } from "./schedule-timing.js";
 import { errorProblem, failedRun, quietReply } from "./operations.js";
 import { privateSourceSchedule } from "./private-sources.js";
 import { checkInSummary, ensureCheckInTables, localDate, markPollClosed, openPolls, parsePoll, recordPoll, type SchedulePoll } from "./check-ins.js";
+import { dailyMetricsSummary } from "./daily-metrics.js";
 
 export interface ScheduleInput {
   id?: string; conversationId: string; name: string; prompt: string; cron: string; timezone: string;
@@ -179,14 +180,14 @@ export class Scheduler {
       const assertPrivateSources = this.privateSourceDeliveryGuard(runId, schedule.conversationId);
       assertPrivateSources?.();
       const destination = this.destination(schedule.conversationId, schedule.telegramChatId, schedule.delivery);
-      const checkIns = checkInSummary(this.store, schedule.conversationId, new Date(scheduledFor));
+      const checkIns = dailyMetricsSummary(this.store, schedule.conversationId, new Date(scheduledFor)) ?? checkInSummary(this.store, schedule.conversationId, new Date(scheduledFor));
       const deliveryInstructions = destination
         ? assertPrivateSources
           ? "Return the completed private edition here. The application alone handles its approved delivery and rechecks private-source access before each part. Do not call send_telegram_message or send it through another service."
           : `Return the completed edition here; the application handles delivery to Telegram chat ${destination}. Only if the saved request explicitly requires separate messages, use send_telegram_message for that destination and return NO_REPLY to avoid an extra automatic post. Check each delivery receipt; never repeat an unknown or partial delivery. Do not send to another chat.`
         : "Return the completed edition here; it stays in the app. Do not send it to Telegram.";
       const result = await this.messages.handle({ channel:"api",conversationId:schedule.conversationId,externalId:`schedule:${runId}`,scheduled:true,scheduleTelegramChatId:destination,
-        text:`Scheduled request: ${schedule.name}\nScheduled for: ${scheduledFor} (${schedule.timezone}). Current time: ${new Date().toISOString()}.\n${schedule.prompt}\n${checkIns ? checkIns + "\n" : ""}${deliveryInstructions} Do not create another schedule. Follow the saved request's rules for a quiet run: NO_REPLY when there is nothing to publish. If the saved work could not be done, return only "FAILED: " and one plain line why; it goes to the owner, never to the chat. Never invent facts or sources.` });
+        text:`Scheduled request: ${schedule.name}\nScheduled for: ${scheduledFor} (${schedule.timezone}). Current time: ${new Date().toISOString()}.\n${schedule.prompt}\n${checkIns ? checkIns + "\n" : ""}${deliveryInstructions} Do not create another schedule. Follow the saved request's rules for a quiet run: NO_REPLY when there is nothing to publish. If progress needs information only the user can provide, return one concise question in the saved request's language, with useful choices when available. Ask in your reply so the user can answer later and continue in this chat; do not wait in a question tool or repeat an unanswered question from recent history. Missing information is not FAILED. For an actual execution failure that prevents the work, return only "FAILED: " and one plain line why; it goes to the owner, never to the chat. Never invent facts or sources.` });
       this.store.db.prepare("UPDATE schedule_runs SET status='ready',message_id=? WHERE id=?").run(result.messageId,runId);
       await this.finish(runId,schedule.conversationId,result.messageId,schedule.telegramChatId,schedule.delivery);
     } catch (error) { await this.fail(runId,error); }

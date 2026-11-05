@@ -47,6 +47,14 @@ const shiftDate = (date: string, daysAgo: number) => new Date(Date.parse(date + 
 /** A leading number is the answer's value ("7 · много"); otherwise the option's position, from 1. */
 export const answerValue = (option: string, index: number): number => { const match = /^\s*(\d{1,3})(?!\d)/.exec(option); return match ? Number(match[1]) : index + 1; };
 
+/** Early journal imports stored the whole poll; live Telegram rows store just its options. */
+export function readPollOptions(json: string): string[] {
+  try {
+    const parsed = JSON.parse(json), options = Array.isArray(parsed) ? parsed : parsed?.options;
+    return Array.isArray(options) && options.every(option => typeof option === "string") ? options : [];
+  } catch { return []; }
+}
+
 export function recordPoll(store: Store, poll: { pollId: string; scheduleId: string; conversationId: string; chatId: string; messageId: number | null; localDate: string; question: string; options: string[]; createdAt: string }): void {
   store.db.prepare("INSERT OR IGNORE INTO schedule_polls(poll_id,schedule_id,conversation_id,chat_id,message_id,local_date,question,options_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)")
     .run(poll.pollId, poll.scheduleId, poll.conversationId, poll.chatId, poll.messageId, poll.localDate, poll.question, JSON.stringify(poll.options), poll.createdAt);
@@ -63,7 +71,8 @@ export function recordAnswer(store: Store, answer: { pollId: string; userId: str
   if (!hasTables(store)) return false;
   const poll = store.db.prepare("SELECT options_json FROM schedule_polls WHERE poll_id=?").get(answer.pollId) as Row | undefined;
   if (!poll) return false;
-  const options = JSON.parse(String(poll.options_json)) as string[];
+  const options = readPollOptions(String(poll.options_json));
+  if (!options.length) return false;
   const index = answer.optionIds.find(id => Number.isInteger(id) && id >= 0 && id < options.length);
   if (index === undefined) { store.db.prepare("DELETE FROM schedule_poll_answers WHERE poll_id=? AND user_id=?").run(answer.pollId, answer.userId); return true; }
   store.db.prepare("INSERT INTO schedule_poll_answers(poll_id,user_id,user_name,option_index,answered_at) VALUES(?,?,?,?,?) ON CONFLICT(poll_id,user_id) DO UPDATE SET user_name=excluded.user_name,option_index=excluded.option_index,answered_at=excluded.answered_at")
@@ -85,30 +94,25 @@ export function readCheckIns(store: Store, options: { conversationId?: string; d
     let today: string; try { today = localDate(now, String(schedule.timezone)); } catch { today = now.toISOString().slice(0, 10); }
     const dates = Array.from({ length: days }, (_, i) => shiftDate(today, days - 1 - i));
     const answers = store.db.prepare(`SELECT p.local_date,p.options_json,a.user_id,a.user_name,a.option_index,a.answered_at FROM schedule_polls p
-      JOIN schedule_poll_answers a ON a.poll_id=p.poll_id WHERE p.schedule_id=? AND p.local_date BETWEEN ? AND ? ORDER BY p.local_date,a.answered_at`).all(schedule.id, dates[0]!, today) as Row[];
-    const polls = (store.db.prepare("SELECT local_date FROM schedule_polls WHERE schedule_id=? ORDER BY local_date DESC").all(schedule.id) as Row[]).map(row => String(row.local_date));
+      JOIN schedule_poll_answers a ON a.poll_id=p.poll_id WHERE p.schedule_id=? AND p.local_date<=? ORDER BY p.local_date,julianday(a.answered_at),p.rowid`).all(schedule.id, today) as Row[];
     const byDate = new Map(dates.map(date => [date, {} as Record<string, number>]));
-    const people = new Map<string, { name: string; answered: Set<string>; values: Array<{ date: string; value: number }> }>();
+    const people = new Map<string, string>(), answeredDates = new Map<string, Set<string>>();
     for (const row of answers) {
-      const pollOptions = JSON.parse(String(row.options_json)) as string[], index = Number(row.option_index);
-      const value = answerValue(pollOptions[index] ?? "", index), date = String(row.local_date), id = String(row.user_id);
-      const person = people.get(id) ?? { name: String(row.user_name), answered: new Set<string>(), values: [] };
-      person.name = String(row.user_name); person.answered.add(date); person.values.push({ date, value }); people.set(id, person);
-      byDate.get(date)![id] = value;
+      const pollOptions = readPollOptions(String(row.options_json)), index = Number(row.option_index);
+      if (!Number.isInteger(index) || index < 0 || index >= pollOptions.length) continue;
+      const value = answerValue(pollOptions[index]!, index), date = String(row.local_date), id = String(row.user_id);
+      const answered = answeredDates.get(id) ?? new Set<string>(); answered.add(date); answeredDates.set(id, answered);
+      const day = byDate.get(date);
+      if (day) { day[id] = value; people.set(id, String(row.user_name)); }
     }
-    // Answers before the window still count for a streak: look at every poll date, newest first.
-    const answeredDates = new Map<string, Set<string>>();
-    for (const row of store.db.prepare("SELECT p.local_date,a.user_id FROM schedule_polls p JOIN schedule_poll_answers a ON a.poll_id=p.poll_id WHERE p.schedule_id=?").all(schedule.id) as Row[]) {
-      const set = answeredDates.get(String(row.user_id)) ?? new Set<string>(); set.add(String(row.local_date)); answeredDates.set(String(row.user_id), set);
-    }
-    const participants: CheckInParticipant[] = [...people.entries()].map(([id, person]) => {
+    const participants: CheckInParticipant[] = [...people.entries()].map(([id, name]) => {
       const answered = answeredDates.get(id) ?? new Set<string>();
-      // The newest poll may still be open: a missing answer there does not break the streak yet.
-      let streak = 0; const sequence = polls.length && !answered.has(polls[0]!) ? polls.slice(1) : polls;
-      for (const date of sequence) { if (answered.has(date)) streak++; else break; }
-      const recent = person.values.slice(-7);
+      // Today's answer is optional until the day ends; a missing calendar day breaks the streak.
+      let streak = 0, date = answered.has(today) ? today : shiftDate(today, 1);
+      while (answered.has(date)) { streak++; date = shiftDate(date, 1); }
+      const recent = dates.flatMap(date => byDate.get(date)![id] === undefined ? [] : [{ date, value: byDate.get(date)![id]! }]).slice(-7);
       const average = recent.length ? Math.round(recent.reduce((sum, item) => sum + item.value, 0) / recent.length * 10) / 10 : null;
-      return { id, name: person.name, streak, latest: person.values.at(-1) ?? null, average };
+      return { id, name, streak, latest: recent.at(-1) ?? null, average };
     }).sort((a, b) => a.name.localeCompare(b.name));
     return { id: String(schedule.id), name: String(schedule.name), question: poll.question, conversationId: String(schedule.conversation_id), chat: schedule.chat == null ? null : String(schedule.chat),
       scale: poll.options.length, today, days: dates.map(date => ({ date, values: byDate.get(date)! })), participants };

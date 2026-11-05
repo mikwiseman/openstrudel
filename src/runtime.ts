@@ -75,6 +75,7 @@ export class OpenStrudelRuntime {
   async start(): Promise<{ host: string; port: number }> {
     if (this.started) throw new Error("runtime already started");
     const address = await this.api.listen();
+    if (process.env.OPENSTRUDEL_METRICS_PORT) await this.api.listenDailyMetrics();
     if (this.publishLocalConnection) {
       const directory = resolve(".data");
       mkdirSync(directory, { recursive: true, mode: 0o700 });

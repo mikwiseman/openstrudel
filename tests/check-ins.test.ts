@@ -8,7 +8,7 @@ import { readActivity } from "../src/activity.js";
 import { checkInSummary, parsePoll, readCheckIns, recordAnswer } from "../src/check-ins.js";
 
 const stores: Store[] = [];
-afterEach(() => { vi.unstubAllGlobals(); for (const store of stores.splice(0)) store.close(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); for (const store of stores.splice(0)) store.close(); });
 const poll = { question: "Сколько суеты сегодня?", options: ["1 · спокойно", "2", "3", "4", "5", "6", "7", "8", "9", "10 · сплошная суета"] };
 const saved = new Date("2026-11-03T10:00:00Z");
 
@@ -159,6 +159,7 @@ describe("the bot", () => {
   });
 
   it("lets a Home manager set up a poll from the group and read the answers back", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(saved);
     const { store, scheduler, messages, chat, answer, conversationId } = setup();
     store.setSetting("access.managers", JSON.stringify(["77"]));
     const adapter = new TelegramAdapter("123:test", store, messages); messages.telegram = adapter;

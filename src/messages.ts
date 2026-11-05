@@ -75,11 +75,14 @@ export class MessageService {
     const binding = input.channel === "telegram" && input.externalChatId ? this.store.getTelegramChat(input.externalChatId) : null;
     const candidate = input.conversationId ? this.store.getConversation(input.conversationId) : null;
     if (input.conversationId && !candidate) throw new Error("Чат не найден");
-    // Telegram addresses choose the employee; message text and replies cannot
-    // silently switch to another employee or their private conversation.
+    // Group addresses choose the employee; a reply must not expose another
+    // employee's private conversation to that audience.
     const requested = input.channel === "telegram" && Number(input.externalChatId) < 0 && candidate?.externalId?.split("::")[0] !== input.externalChatId ? null : candidate;
     const boundTelegram = input.channel === "telegram" && !input.scheduled && binding !== null;
-    const pinnedProfile = boundTelegram ? binding.profileId : input.profile ?? candidate?.profileId;
+    // In the owner's DM, the adapter resolves a reply from its delivered outbox
+    // receipt. Continue that employee's question without rebinding the whole DM.
+    const ownerReply = input.byOwner === true && Number(input.externalChatId) > 0 && input.replyToAssistant && input.replyTo && requested && !this.isGroupChat(requested.id);
+    const pinnedProfile = boundTelegram && !ownerReply ? binding.profileId : input.profile ?? requested?.profileId;
     // The conversation belongs to its audience. Native Codex delegation picks
     // expertise without silently moving a message into an employee's private chat.
     const route = { profile: pinnedProfile ? this.store.getProfile(pinnedProfile) : null };
