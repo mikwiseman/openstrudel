@@ -117,6 +117,7 @@ export class OpenStrudelRuntime {
     if (this.engine instanceof AccountEngines) this.accounts.startQuotaChecks();
     this.scheduler.start();
     this.api.correspondence.start();
+    this.api.gmailPush?.start();
     this.started = true;
     return { host: address.address, port: address.port };
   }
@@ -128,6 +129,7 @@ export class OpenStrudelRuntime {
       this.setup = undefined;
     }
     this.scheduler.stop();
+    this.api.gmailPush?.stop();
     this.api.correspondence.stop();
     await this.accounts.stopQuotaChecks();
     this.telegram.stop();
