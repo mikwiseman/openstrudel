@@ -4,6 +4,8 @@ Gmail sends a mailbox history watermark through an authenticated Google Pub/Sub 
 
 The adapter reads incremental history and minimal message references with `gmail.metadata`. It forwards incoming messages, sent replies and relevant deletion/archive changes to the existing correspondence queue. Draft-only changes, read flags and repeated deliveries do not run the model. The existing Gmail tools, scoped personal/company sources and correspondence skill handle thread context, native drafts and private calendar copies.
 
+Live Pub/Sub payloads can contain numeric `historyId` values, while Gmail REST responses use strings. Normalize only positive safe integers to strings; preserve string IDs exactly and reject numbers that may already have lost precision.
+
 ## Deployment
 
 Use an existing Google project and its OAuth client. Authorize the owner mailbox with **only** `https://www.googleapis.com/auth/gmail.metadata`, offline access and PKCE. Keep the refresh token in 1Password and the Home's private configuration, never in a model prompt, repository, container image or log.
@@ -41,5 +43,11 @@ SQLite stores the cursor, renewal deadline, notification receipts and recovery s
 An expired history cursor (HTTP 404) sets `recoveryRequired` and stops automatic history processing. It never silently jumps to the present or drafts from an incomplete mailbox. Recovery requires an explicit bounded mailbox reconciliation against existing draft/calendar receipts, followed by an operator checkpoint of the verified current cursor. Keep the pending notification receipts until reconciliation is complete. Changing the configured mailbox, topic, subscription, client or push identity also requires reconciling the existing cursor; credential rotation alone retains it.
 
 Rollback uses the existing Home release and managed backup. Do not remove the Pub/Sub topic/subscription or stop the watch during a short rollback: Google retains unacknowledged pushes for redelivery. If the former Gmail writer is re-enabled, first pause the new source and reconcile pending/uncertain actions to avoid two writers.
+
+## Production verification, 5 November 2026
+
+Release `1848e6bc2ffc` is live at `magic.mikwiseman.com`. The owner mailbox has a metadata-only grant, saved as “OpenStrudel — Gmail native push” in 1Password. The `openstrudel-gmail-home` subscription in `waiwai-451109` authenticates to `/hooks/correspondence/gmail-mik` using the dedicated keyless push identity.
+
+Google's actual notifications received HTTP 202. A newly arrived email produced incremental-history events and one completed shared run, including full original-thread reading, a fresh source re-read and a current checkpoint. The newsletter correctly caused no external mutation. The old Gmail drafting task was then paused and its UI state verified. All 24 pre-existing draft/message/thread identities were preserved. Home's stored-data checks, SQLite integrity, Telegram, metrics route and isolated review route passed; the review container was unchanged.
 
 References: [Gmail push](https://developers.google.com/workspace/gmail/api/guides/push), [history](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.history/list), [authenticated Pub/Sub push](https://docs.cloud.google.com/pubsub/docs/authenticate-push-subscriptions).
