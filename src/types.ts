@@ -1,6 +1,7 @@
 import type { MessageContext } from "./message-context.js";
 
 export type Channel = "api" | "telegram";
+export interface TelegramLinkButton { text: string; url: string }
 
 export interface Conversation {
   id: string;

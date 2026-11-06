@@ -6,7 +6,7 @@ import { MessageService } from "../src/messages.js";
 import { TelegramAdapter } from "../src/telegram.js";
 import { HttpApi } from "../src/server.js";
 import { readCheckIns, recordAnswer, recordPoll } from "../src/check-ins.js";
-import { authenticateDailyMetrics, dailyMetricsSummary, readDailyMetrics, saveDailyMetrics, type DailyMetricsConfig } from "../src/daily-metrics.js";
+import { authenticateDailyMetrics, dailyMetricsReportConfig, dailyMetricsSummary, readDailyMetrics, saveDailyMetrics, type DailyMetricsConfig } from "../src/daily-metrics.js";
 
 const now = new Date("2026-11-05T14:00:00.000Z"), token = "123:test-token";
 const stores: Store[] = [];
@@ -52,6 +52,18 @@ describe("Telegram daily metrics authentication", () => {
   });
 });
 describe("the metrics journal", () => {
+  it("selects only the configured report and leaves unrelated schedules independent of malformed metrics settings", () => {
+    const { store, config, scheduler, conversationId } = setup();
+    const report = scheduler.save({ conversationId, name: "Report", prompt: "Daily scores", cron: "30 7 * * *", timezone: config.timezone, delivery: "bound" }, now);
+    store.setSetting("dailyMetrics.config", JSON.stringify({ ...config, summaryScheduleId: report.id }));
+    expect(dailyMetricsReportConfig(store, conversationId, report.id)?.summaryScheduleId).toBe(report.id);
+    expect(dailyMetricsReportConfig(store, conversationId, "unrelated")).toBeNull();
+    expect(() => dailyMetricsReportConfig(store, "other-chat", report.id)).toThrow();
+    store.db.prepare("UPDATE schedules SET timezone='UTC' WHERE id=?").run(report.id);
+    expect(() => dailyMetricsReportConfig(store, conversationId, report.id)).toThrow();
+    store.setSetting("dailyMetrics.config", "invalid JSON");
+    expect(dailyMetricsReportConfig(store, conversationId, "unrelated")).toBeNull();
+  });
   it("projects archived bustle once, preserves zero, gaps and participants, and takes the latest daily answer", () => {
     const { store, vote, conversationId } = setup();
     vote("legacy-1", "legacy", "2026-11-01", "42", 10, "2026-11-01T17:00:00Z", true);
@@ -125,7 +137,7 @@ it("serves the separate signed API without creating a Home session or exposing H
     expect(read.status).toBe(200);
     expect(read.headers.get("set-cookie")).toBeNull();
     expect(read.headers.get("cache-control")).toBe("no-store");
-    expect(await read.json()).toMatchObject({ viewerId: "42", today: "2026-11-05", version: "1.0.0" });
+    expect(await read.json()).toMatchObject({ viewerId: "42", today: "2026-11-05", version: "1.1.0" });
     expect((await fetch(base + "/v1/activity", { headers })).status).toBe(401);
     expect((await fetch(base + "/check-in/api", { headers: { ...headers, origin: "https://evil.example" } })).status).toBe(403);
     expect((await fetch(base + "/check-in/api", { method: "POST", headers, body: JSON.stringify({ date: "2026-11-05", scores: { calm: 8, focus: 7, energy: 9, mood: 10 } }) })).status).toBe(200);
