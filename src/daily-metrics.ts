@@ -4,14 +4,14 @@ import { HomeError } from "./home.js";
 import { answerValue, localDate, readPollOptions, recordAnswer, recordPoll } from "./check-ins.js";
 import { assertAgentWritable } from "./agent-move.js";
 
-export const DAILY_METRICS_VERSION = "1.0.0";
+export const DAILY_METRICS_VERSION = "1.1.0";
 export const METRICS = ["calm", "focus", "energy", "mood"] as const;
 export type Metric = typeof METRICS[number];
 type Scores = Partial<Record<Metric, number>>;
 type Person = { id: string; name: string };
 export interface DailyMetricsConfig {
   conversationId: string; chatId: string; timezone: string; participants: Person[];
-  metrics: Record<Metric, string>; legacyCalmScheduleId?: string; publicOrigin?: string;
+  metrics: Record<Metric, string>; legacyCalmScheduleId?: string; publicOrigin?: string; summaryScheduleId?: string;
 }
 export interface DailyMetrics {
   version: string; today: string; timezone: string; viewerId: string; participants: Person[];
@@ -46,6 +46,23 @@ export function dailyMetricsConfig(store: Store): DailyMetricsConfig {
     }
   } catch { throw unavailable(); }
   return value;
+}
+
+/** Only the explicitly selected morning schedule renders the shared journal. */
+export function dailyMetricsReportConfig(store: Store, conversationId: string, scheduleId: string): DailyMetricsConfig | null {
+  const raw = store.getSetting("dailyMetrics.config");
+  if (!raw) return null;
+  try { if (JSON.parse(raw)?.summaryScheduleId !== scheduleId) return null; } catch { return null; }
+  const value = dailyMetricsConfig(store);
+  const schedule = store.db.prepare("SELECT conversation_id,timezone FROM schedules WHERE id=?").get(scheduleId);
+  if (value.conversationId !== conversationId || schedule?.conversation_id !== conversationId || schedule.timezone !== value.timezone) throw unavailable();
+  return value;
+}
+
+export function dailyMetricsLaunchButton(store: Store) {
+  const username = store.getSetting("telegram.bot_username");
+  if (!username || !/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(username)) throw unavailable();
+  return { text: "Открыть Выдох", url: `https://t.me/${username}?startapp=checkin` };
 }
 
 /** Telegram's HMAC proves the caller; the explicitly configured participants define access. */

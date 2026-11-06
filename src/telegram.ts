@@ -1,7 +1,7 @@
 import { recordDiagnostic } from "./diagnostics.js";
 import { randomBytes, randomUUID } from "node:crypto";
 import { sha256, sleep } from "./util.js";
-import type { Attachment, Interaction, MessageInput, MessageResult, TelegramChat } from "./types.js";
+import type { Attachment, Interaction, MessageInput, MessageResult, TelegramChat, TelegramLinkButton } from "./types.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -387,13 +387,14 @@ export class TelegramAdapter {
     return { messageId: reply.id };
   }
 
-  async sendMessage(chatId: string | number, text: string, deliveryKey: string = randomUUID(), replyToMessageId?: number, options: { silent?: boolean; linkPreview?: boolean; assertCurrent?: () => void } = {}): Promise<void> {
+  async sendMessage(chatId: string | number, text: string, deliveryKey: string = randomUUID(), replyToMessageId?: number, options: { silent?: boolean; linkPreview?: boolean; assertCurrent?: () => void; button?: TelegramLinkButton } = {}): Promise<void> {
     if (!this.token) throw new Error("Telegram не подключён");
     const chunks=telegramText(text);
     for (const [index,chunk] of chunks.entries()) {
       options.assertCurrent?.();
       const key=`${chatId}:${deliveryKey}:${index}`;
       const payload=JSON.stringify({chat_id:chatId,...chunk,link_preview_options:{is_disabled:options.linkPreview !== true},
+        ...(index === 0 && options.button ? {reply_markup:{inline_keyboard:[[options.button]]}} : {}),
         ...(options.silent ? { disable_notification:true } : {}),
         // The owner's words still reach the group if the original was deleted.
         ...(index === 0 && replyToMessageId ? { reply_parameters: { message_id: replyToMessageId, allow_sending_without_reply: true } } : {})});
@@ -438,23 +439,23 @@ export class TelegramAdapter {
   }
 
   /** An answer and its files. Photos Telegram accepts arrive as one captioned photo or album; other files keep their form. */
-  async sendAnswer(chatId: string | number, text: string, files: Attachment[] = [], deliveryKey: string, replyToMessageId?: number, assertCurrent?: () => void): Promise<void> {
+  async sendAnswer(chatId: string | number, text: string, files: Attachment[] = [], deliveryKey: string, replyToMessageId?: number, assertCurrent?: () => void, button?: TelegramLinkButton): Promise<void> {
     assertCurrent?.();
     const prefix = `${chatId}:${deliveryKey}:`;
     const begun = new Set(this.store.db.prepare("SELECT key FROM telegram_outbox WHERE key>=? AND key<?").all(prefix, prefix + "\uffff").map(row => String(row.key)));
     // A delivery begun as text and documents finishes that way; a receipt is never sent again in another form.
     const photos: Attachment[] = [];
     for (const file of files) if (!begun.has(prefix + "file:" + file.id) && await this.isPhoto(file)) photos.push(file);
-    const caption = photos.length && !begun.has(prefix + "0") ? captionFor(text) : null;
-    if (!caption) await this.sendMessage(chatId, text, deliveryKey, replyToMessageId, { assertCurrent });
+    const caption = photos.length && !(button && photos.length !== 1) && !begun.has(prefix + "0") ? captionFor(text) : null;
+    if (!caption) await this.sendMessage(chatId, text, deliveryKey, replyToMessageId, { assertCurrent, button });
     for (let first = 0; first < photos.length; first += 10) {
       const batch = photos.slice(first, first + 10), captioned = Boolean(caption && !first);
       assertCurrent?.();
-      try { await this.sendPhotos(String(chatId), batch, deliveryKey, first, { ...(captioned ? { caption: caption!, replyTo: replyToMessageId } : {}), assertCurrent }); }
+      try { await this.sendPhotos(String(chatId), batch, deliveryKey, first, { ...(captioned ? { caption: caption!, replyTo: replyToMessageId, button } : {}), assertCurrent }); }
       catch (error) {
         // Telegram refused the photos, so nothing went out: the answer still arrives as text and files.
         if (!refused(error)) throw error;
-        if (captioned) await this.sendMessage(chatId, text, deliveryKey, replyToMessageId, { assertCurrent });
+        if (captioned) await this.sendMessage(chatId, text, deliveryKey, replyToMessageId, { assertCurrent, button });
         await this.sendFiles(chatId, batch, deliveryKey, { assertCurrent });
       }
     }
@@ -538,8 +539,10 @@ export class TelegramAdapter {
   }
 
   /** Up to ten photos in one request: sendPhoto for one, sendMediaGroup for an album. Each photo keeps an album receipt. */
-  private async sendPhotos(chatId:string, files:Attachment[], deliveryKey:string, first:number, options:{silent?:boolean;caption?:TelegramText;replyTo?:number;assertCurrent?:()=>void}):Promise<void> {
+  private async sendPhotos(chatId:string, files:Attachment[], deliveryKey:string, first:number, options:{silent?:boolean;caption?:TelegramText;replyTo?:number;assertCurrent?:()=>void;button?:TelegramLinkButton}):Promise<void> {
     const single=files.length===1, form=new FormData();form.set("chat_id",chatId);
+    const markup = single && options.button ? {inline_keyboard:[[options.button]]} : undefined;
+    if (markup) form.set("reply_markup",JSON.stringify(markup));
     if (options.silent) form.set("disable_notification","true");
     const reply=options.replyTo ? {message_id:options.replyTo,allow_sending_without_reply:true} : undefined;
     if (reply) form.set("reply_parameters",JSON.stringify(reply));
@@ -554,7 +557,7 @@ export class TelegramAdapter {
     }
     options.assertCurrent?.();
     const rows=files.map((file,index)=>({key:`${chatId}:${deliveryKey}:album:${first+index}`,
-      payload:JSON.stringify({chat_id:chatId,media,fileIds:files.map(f=>f.id),fileId:file.id,...(options.silent?{disable_notification:true}:{}),...(reply?{reply_parameters:reply}:{})})}));
+      payload:JSON.stringify({chat_id:chatId,media,fileIds:files.map(f=>f.id),fileId:file.id,...(options.silent?{disable_notification:true}:{}),...(reply?{reply_parameters:reply}:{}),...(markup?{reply_markup:markup}:{})})}));
     // Reserve every photo together; a lost response must not replay the album.
     this.store.db.exec("BEGIN IMMEDIATE");
     try {

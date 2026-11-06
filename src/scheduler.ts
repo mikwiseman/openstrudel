@@ -3,13 +3,14 @@ import { randomUUID } from "node:crypto";
 import { isRestrictedChat, isRestrictedSubject } from "./authorization.js";
 import type { Store } from "./store.js";
 import type { MessageService } from "./messages.js";
-import type { Attachment } from "./types.js";
+import type { Attachment, TelegramLinkButton } from "./types.js";
 import { agentTransfer } from "./agent-move.js";
 import { scheduleTiming } from "./schedule-timing.js";
 import { errorProblem, failedRun, quietReply } from "./operations.js";
 import { privateSourceSchedule } from "./private-sources.js";
 import { checkInSummary, ensureCheckInTables, localDate, markPollClosed, openPolls, parsePoll, recordPoll, type SchedulePoll } from "./check-ins.js";
-import { dailyMetricsSummary } from "./daily-metrics.js";
+import { dailyMetricsSummary, dailyMetricsReportConfig, dailyMetricsLaunchButton, readDailyMetrics } from "./daily-metrics.js";
+import { dailyMetricsCard } from "./daily-metrics-card.js";
 
 export interface ScheduleInput {
   id?: string; conversationId: string; name: string; prompt: string; cron: string; timezone: string;
@@ -27,7 +28,7 @@ export class Scheduler {
   private readonly active = new Map<string, Promise<void>>();
   get hasActiveRuns() { return this.active.size > 0; }
   isRunning(conversationId: string) { return this.list(conversationId).some(s => this.active.has(s.id)); }
-  deliver?: (chatId: string, text: string, key: string, attachments?: Attachment[], assertCurrent?: () => void) => Promise<void>;
+  deliver?: (chatId: string, text: string, key: string, attachments?: Attachment[], assertCurrent?: () => void, button?: TelegramLinkButton) => Promise<void>;
   sendPoll?: (chatId: string, poll: SchedulePoll, key: string) => Promise<{ pollId: string; messageId: number }>;
   stopPoll?: (chatId: string, messageId: number) => Promise<void>;
   constructor(private readonly store: Store, private readonly messages: MessageService) {
@@ -180,6 +181,20 @@ export class Scheduler {
       const assertPrivateSources = this.privateSourceDeliveryGuard(runId, schedule.conversationId);
       assertPrivateSources?.();
       const destination = this.destination(schedule.conversationId, schedule.telegramChatId, schedule.delivery);
+      const metrics = dailyMetricsReportConfig(this.store, schedule.conversationId, schedule.id);
+      if (metrics) {
+        if (destination !== metrics.chatId) throw new Error("Чат сводки Выдоха изменился. Проверьте расписание.");
+        dailyMetricsLaunchButton(this.store);
+        const card = dailyMetricsCard(readDailyMetrics(this.store, metrics.participants[0]!.id, new Date(scheduledFor)));
+        const attachment = this.messages.files.put(schedule.conversationId, this.messages.contextFor(schedule.conversationId), {
+          name: `vydoh-${card.date}.png`, mimeType: "image/png", contentBase64: card.png.toString("base64"),
+        });
+        const request = this.store.addMessage({ conversationId: schedule.conversationId, channel: "api", direction: "inbound", externalId: `schedule:${runId}`, text: `Выдох · ${card.date}` });
+        const reply = this.store.addMessage({ conversationId: schedule.conversationId, channel: "api", direction: "outbound", replyToId: request.id, text: card.caption, attachments: [attachment] });
+        this.store.db.prepare("UPDATE schedule_runs SET status='ready',message_id=? WHERE id=?").run(reply.id, runId);
+        await this.finish(runId, schedule.conversationId, reply.id, schedule.telegramChatId, schedule.delivery);
+        return;
+      }
       const checkIns = dailyMetricsSummary(this.store, schedule.conversationId, new Date(scheduledFor)) ?? checkInSummary(this.store, schedule.conversationId, new Date(scheduledFor));
       const deliveryInstructions = destination
         ? assertPrivateSources
@@ -231,7 +246,10 @@ export class Scheduler {
         const profileId=this.store.getConversation(conversationId)?.profileId;
         const name=profileId ? this.store.getProfile(profileId)?.name : null;
         deliveryAttempted = true;
-        await this.deliver(destination,name ? `**${name.replace(/[*_`]/g,"")}**\n\n${reply.text}` : reply.text,`schedule:${runId}`,JSON.parse(reply.attachments_json ?? "[]") as Attachment[],assertPrivateSources);
+        const run = this.store.db.prepare("SELECT schedule_id FROM schedule_runs WHERE id=?").get(runId)!;
+        const metrics = dailyMetricsReportConfig(this.store, conversationId, String(run.schedule_id));
+        if (metrics && metrics.chatId !== destination) throw new Error("Чат сводки Выдоха изменился. Проверьте расписание.");
+        await this.deliver(destination,name ? `**${name.replace(/[*_`]/g,"")}**\n\n${reply.text}` : reply.text,`schedule:${runId}`,JSON.parse(reply.attachments_json ?? "[]") as Attachment[],assertPrivateSources,metrics ? dailyMetricsLaunchButton(this.store) : undefined);
       }
       this.store.db.prepare("UPDATE schedule_runs SET status='completed',error=NULL WHERE id=?").run(runId);
     } catch (error) {
