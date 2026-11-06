@@ -4,7 +4,7 @@ import { HomeError } from "./home.js";
 import { answerValue, localDate, readPollOptions, recordAnswer, recordPoll } from "./check-ins.js";
 import { assertAgentWritable } from "./agent-move.js";
 
-export const DAILY_METRICS_VERSION = "1.1.0";
+export const DAILY_METRICS_VERSION = "1.1.1";
 export const METRICS = ["calm", "focus", "energy", "mood"] as const;
 export type Metric = typeof METRICS[number];
 type Scores = Partial<Record<Metric, number>>;
