@@ -137,7 +137,7 @@ it("serves the separate signed API without creating a Home session or exposing H
     expect(read.status).toBe(200);
     expect(read.headers.get("set-cookie")).toBeNull();
     expect(read.headers.get("cache-control")).toBe("no-store");
-    expect(await read.json()).toMatchObject({ viewerId: "42", today: "2026-11-05", version: "1.1.0" });
+    expect(await read.json()).toMatchObject({ viewerId: "42", today: "2026-11-05", version: "1.1.1" });
     expect((await fetch(base + "/v1/activity", { headers })).status).toBe(401);
     expect((await fetch(base + "/check-in/api", { headers: { ...headers, origin: "https://evil.example" } })).status).toBe(403);
     expect((await fetch(base + "/check-in/api", { method: "POST", headers, body: JSON.stringify({ date: "2026-11-05", scores: { calm: 8, focus: 7, energy: 9, mood: 10 } }) })).status).toBe(200);

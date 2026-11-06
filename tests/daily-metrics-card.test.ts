@@ -10,16 +10,22 @@ const data: DailyMetrics = { version: "1.0.0", today: "2026-11-06", timezone: "E
   participants: [{ id: "42", name: "Мик & <Гриша>" }], days: [
     { date: "2026-11-03", values: { "42": { calm: 0 } } }, { date: "2026-11-04", values: {} },
     { date: "2026-11-05", values: { "42": { calm: 5, focus: 7, energy: 7 } } }, { date: "2026-11-06", values: { "42": { calm: 10 } } }] };
-it("renders yesterday, preserves zero and missing answers, and does not bridge a missing date", () => {
+it("renders a dated score for every metric without inventing missing answers", () => {
   const card = dailyMetricsCard(data);
   expect(card.date).toBe("2026-11-05");
-  expect(card.caption).toContain("Настроение —");
-  expect(card.caption).toContain("Спокойствие 5/10");
-  expect(card.caption).not.toContain("10/10");
+  expect(card.caption).toContain("Выдох · 5 ноября");
+  expect(card.caption.length).toBeLessThan(140);
   expect(card.svg).toContain("Мик &amp; &lt;Гриша&gt;");
-  expect(card.svg).toContain('data-score="0"');
-  expect(card.svg).toContain('data-missing="true"');
-  expect(card.svg).not.toContain('data-trend-segment');
+  for (const metric of ["calm", "focus", "energy", "mood"]) {
+    expect(card.svg.match(new RegExp(`data-metric="${metric}"`, "g"))).toHaveLength(7);
+    expect(card.svg).toContain(`data-metric="${metric}" data-date="2026-11-04" data-missing="true"`);
+  }
+  expect(card.svg).toContain('data-metric="calm" data-date="2026-11-03" data-score="0"');
+  expect(card.svg).toContain('data-metric="focus" data-date="2026-11-05" data-score="7"');
+  expect(card.svg).toContain('data-metric="energy" data-date="2026-11-05" data-score="7"');
+  expect(card.svg).toContain('data-metric="mood" data-date="2026-11-05" data-missing="true"');
+  expect(card.svg).not.toContain('data-score="10"');
+  expect(card.svg).not.toContain('data-date="2026-11-06"');
   expect(card.png.subarray(1, 4).toString()).toBe("PNG");
 });
 
@@ -29,9 +35,13 @@ it("keeps Monday averages and changes separate by metric, excluding missing answ
   days[7]!.values["42"] = { calm: 4, focus: 6, mood: 3 };
   days[13]!.values["42"] = { calm: 8, focus: 8 };
   days[14]!.values["42"] = { calm: 1, mood: 10 }; // Monday belongs to the next edition.
-  const { caption } = dailyMetricsCard({ ...data, today: "2026-11-09", days });
-  expect(caption).toContain("Спокойствие 6,0 (+6,0 п.) · Фокус 7,0 (-1,0 п.) · Энергия — · Настроение 3,0");
-  expect(caption).toContain("Самый спокойный день: 08.11 · 8/10.");
+  const { svg, caption } = dailyMetricsCard({ ...data, today: "2026-11-09", days: days.reverse() });
+  expect(svg).toContain("Неделя: 6,0 · +6,0");
+  expect(svg).toContain("Неделя: 7,0 · −1,0");
+  expect(svg).toContain("Неделя: —");
+  expect(svg).toContain("Неделя: 3,0");
+  expect(svg).toContain("Спокойнее всего: 08.11 · 8/10");
+  expect(caption.length).toBeLessThan(140);
 });
 
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
