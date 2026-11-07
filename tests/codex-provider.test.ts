@@ -44,7 +44,7 @@ it("defines the key provider on every thread start and resume, without ChatGPT c
     // The employee answers and acts; Codex does not stop the turn with a question card.
     expect(start.config).not.toHaveProperty("features.default_mode_request_user_input");
     expect(start.developerInstructions).not.toContain("request_user_input");
-    expect(start.developerInstructions).toContain("state the assumption in one short line");
+    expect(start.developerInstructions).toContain("Use reasonable assumptions for harmless details");
     const [turn] = calls("turn/start");
     expect(turn).toMatchObject({ model: "grok-4.7" });
     expect(turn).not.toHaveProperty("effort");

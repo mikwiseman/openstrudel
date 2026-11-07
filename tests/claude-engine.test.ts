@@ -89,7 +89,7 @@ it("reports the session at once, resumes it and sends a changed SOUL every turn"
   expect(prompt).toMatchObject({ type: "preset", preset: "claude_code", snapshot: false });
   expect(prompt.append).toContain("Current employee SOUL (authoritative):\nИмя: Ада\nОтвечай стихами");
   // The agent answers first; it is not told to stop for a question.
-  expect(prompt.append).toContain("state the assumption in one short line");
+  expect(prompt.append).toContain("Use reasonable assumptions for harmless details");
   expect(prompt.append).not.toMatch(/Codex's|request_user_input/);
 });
 
