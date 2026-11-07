@@ -218,9 +218,20 @@ describe("News stories", () => {
       const otherGroup = store.bindTelegramChat("-200", other.id);
       store.addMessage({ conversationId: otherGroup.conversationId!, channel: "telegram", direction: "outbound", text: "[П](https://example.com/other-desk)", externalId: "-200:send:fixture" });
       await publish("other-desk", "https://example.com/other-desk");
+      // Only its own send_telegram_message posts count: neither a reply in the group nor a notification hook's post.
+      await publish("group-reply-story", "https://example.com/group-reply");
+      store.addMessage({ conversationId: group.conversationId!, channel: "telegram", direction: "outbound", text: "Источник: https://example.com/group-reply" });
+      await publish("notified-story", "https://example.com/notified");
+      store.addMessage({ conversationId: group.conversationId!, channel: "telegram", direction: "outbound", text: "[П](https://example.com/notified)", externalId: "notification:abc" });
+      // A run may post its card before it publishes the story.
+      const early = await post("Карточка до истории", "https://example.com/early");
+      age(store, early.messageId, 10 / 60);
+      await publish("early-card", "https://example.com/early");
+      const earlyAt = store.getMessage(group.conversationId!, early.messageId)!.createdAt;
 
       expect(await telegramOf()).toEqual({ "other-desk": "not in Telegram", "refused-story": "not in Telegram", "cursor-changelog": "not in Telegram",
-        "granola-voice-typing": `Telegram ${minute(card.at)}`, "gemini-computer-use": "not in Telegram" });
+        "granola-voice-typing": `Telegram ${minute(card.at)}`, "gemini-computer-use": "not in Telegram",
+        "group-reply-story": "not in Telegram", "notified-story": "not in Telegram", "early-card": `Telegram ${minute(earlyAt)}` });
       expect(await tools().call("read_news", { storyId: "granola-voice-typing" })).toMatchObject({ telegram: card.at });
       // Its own card counts, and the first post stays its time.
       const gemini = await post("Gemini: computer use для всех", "https://ai.google.dev/gemini-api/docs/changelog");
