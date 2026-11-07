@@ -278,7 +278,8 @@ export class CodexEngineAdapter implements CodexEngine {
     const abort = () => { if (active.turnId) void rpc.request("turn/interrupt", { threadId, turnId: active.turnId }).catch(() => undefined); };
     options.signal?.addEventListener("abort", abort, { once: true });
     try {
-      const result = await rpc.request("turn/start", { threadId, model, ...(effort ? {effort} : {}), ...tier, ...policy, ...(employees.length ? { multiAgentMode: "proactive" } : {}), input: [{ type: "text", text: input }, ...(options.images ?? []).map(path=>({type:"localImage",path}))] });
+      // A native app's schema constrains only this turn's final answer; tools and the thread stay as they are.
+      const result = await rpc.request("turn/start", { threadId, model, ...(effort ? {effort} : {}), ...tier, ...policy, ...(employees.length ? { multiAgentMode: "proactive" } : {}), ...(options.outputSchema ? { outputSchema: options.outputSchema } : {}), input: [{ type: "text", text: input }, ...(options.images ?? []).map(path=>({type:"localImage",path}))] });
       active.turnId = result.turn.id;
       if (options.signal?.aborted) abort();
       return await completion;

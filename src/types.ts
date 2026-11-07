@@ -108,6 +108,8 @@ export interface CodexEngine {
       /** Permanent employees offered as native Codex roles on this device. */
       employees?: EmployeeProfile[];
       images?: string[];
+      /** A native app's JSON Schema for this turn's final answer. The engine constrains the reply to it. */
+      outputSchema?: Record<string, unknown>;
       /** Snapshotted when the queued turn starts on its execution device. */
       approvalMode?: import("./approval-mode.js").ApprovalMode;
       groupContext?: boolean;
@@ -181,6 +183,8 @@ export interface MessageInput {
   uploads?: Array<{ id: string; name: string; mimeType?: string; contentBase64: string }>;
   /** Trusted: the server resolved it against this Home's store or the client source before submitting. */
   context?: MessageContext;
+  /** A native app asks for a structured answer: the reply's text is one JSON document matching this schema. */
+  outputSchema?: Record<string, unknown>;
 }
 
 export interface MessageResult {

@@ -45,6 +45,14 @@ import { GmailPush } from "./gmail-push.js";
 
 const MAX_BODY_BYTES = 1_048_576;
 
+/** A native app's answer contract: one JSON Schema object, small enough to travel with every turn. */
+export function answerSchema(value: unknown): Record<string, unknown> | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value) || (value as Record<string, unknown>).type !== "object" || JSON.stringify(value).length > 65_536)
+    throw new HomeError("Схема ответа должна быть JSON Schema объекта (type: object) не больше 64 КБ.");
+  return value as Record<string, unknown>;
+}
+
 const DAILY_METRICS_PATHS = ["/check-in", "/check-in/", "/check-in/app.js", "/check-in/style.css", "/check-in/api"];
 
 /** Small HTTP transport shared by the native clients and Telegram setup. */
@@ -993,6 +1001,7 @@ export class HttpApi {
       if (request.method === "POST" && path === "/v1/messages") {
         const body = await this.body(request);
         if (body.mode !== undefined && body.mode !== "steer" && body.mode !== "queue") throw new HomeError("Выберите: уточнить сейчас или отправить после ответа.");
+        const outputSchema = answerSchema(body.outputSchema);
         const context = await this.messageContext(body, canManageAccount);
         const submission = await this.messages.submit({
           mode: body.mode,
@@ -1007,6 +1016,7 @@ export class HttpApi {
           replyToId: body.replyToId == null ? undefined : String(body.replyToId),
           byOwner: canManageAccount,
           context,
+          outputSchema,
         });
         this.send(response, url.searchParams.get("async") === "true" ? 202 : 200, url.searchParams.get("async") === "true" ? submission.receipt : await submission.completion);
         return;
