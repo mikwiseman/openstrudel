@@ -380,6 +380,40 @@ describe("durable cron", () => {
       expect(store.listMessages(root.id).map(m => m.text)).toEqual([`Требует внимания · News\nРасписание: Радар\nЗадача не выполнена: ${error}`]);
     } finally { vi.useRealTimers(); }
   });
+  it("tells each run when its chat's last successful run was due, so a failed hour is read again", async () => {
+    const store = new Store(":memory:"); stores.push(store);
+    const seen: Array<{ name: string; previous: string | null }> = [];
+    const replies: Record<string, string | Error> = { "Утро": "NO_REPLY", "Радар": "NO_REPLY", "Стартапы": "Обзор готов" };
+    const messages = new MessageService(store, { async run(input) {
+      const name = input.match(/^Scheduled request: (.+)$/m)![1]!;
+      seen.push({ name, previous: input.match(/^Previous successful run in this chat: (.+)$/m)?.[1] ?? null });
+      const reply = replies[name]!;
+      if (reply instanceof Error) throw reply;
+      return { threadId: "t", response: reply, events: [] };
+    } });
+    const scheduler = new Scheduler(store, messages);
+    const news = store.getOrCreateConversation({ channel: "api", externalId: "news", title: "News" });
+    const startups = store.getOrCreateConversation({ channel: "api", externalId: "startups", title: "Startups" });
+    const saved = new Date("2026-11-07T03:00:00Z");
+    scheduler.save({ conversationId: news.id, name: "Утро", prompt: "Собери выпуск", cron: "45 6 * * *", timezone: "Europe/Moscow" }, saved);
+    scheduler.save({ conversationId: news.id, name: "Радар", prompt: "Проверь очередь", cron: "5 8-23 * * *", timezone: "Europe/Moscow" }, saved);
+    scheduler.save({ conversationId: startups.id, name: "Стартапы", prompt: "Обзор", cron: "50 * * * *", timezone: "UTC" }, saved);
+    const run = async (at: string) => { await scheduler.tick(new Date(at)); await scheduler.idle(); };
+    await run("2026-11-07T03:45:01Z");
+    await run("2026-11-07T05:05:01Z");
+    replies["Радар"] = new Error("Grok не завершил ответ: Internal error");
+    await run("2026-11-07T06:05:01Z");
+    replies["Радар"] = "Карточка опубликована";
+    await run("2026-11-07T07:05:01Z");
+    await run("2026-11-07T08:05:01Z");
+    const previous = (name: string) => seen.filter(s => s.name === name).map(s => s.previous);
+    // The chat's first run has no line. A quiet edition counts, a failed radar does not, and another chat never does.
+    expect(previous("Утро")).toEqual([null]);
+    expect(previous("Радар")).toEqual(["2026-11-07T03:45:00.000Z", "2026-11-07T05:05:00.000Z", "2026-11-07T05:05:00.000Z", "2026-11-07T07:05:00.000Z"]);
+    expect(previous("Стартапы")).toEqual([null, "2026-11-07T04:50:00.000Z", "2026-11-07T05:50:00.000Z", "2026-11-07T06:50:00.000Z"]);
+    expect(scheduler.runs(news.id).map(r => [r.scheduledFor, r.status]).reverse()).toEqual([["2026-11-07T03:45:00.000Z", "quiet"], ["2026-11-07T05:05:00.000Z", "quiet"],
+      ["2026-11-07T06:05:00.000Z", "failed"], ["2026-11-07T07:05:00.000Z", "completed"], ["2026-11-07T08:05:00.000Z", "completed"]]);
+  });
   it("does not rerun an interrupted action on recovery", async () => {
     const { store, scheduler, calls } = setup();
     const c = store.primaryConversation();

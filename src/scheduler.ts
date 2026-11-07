@@ -203,6 +203,9 @@ export class Scheduler {
         return;
       }
       const checkIns = dailyMetricsSummary(this.store, schedule.conversationId, new Date(scheduledFor)) ?? checkInSummary(this.store, schedule.conversationId, new Date(scheduledFor));
+      // A run reads from where the chat's last successful run began, so nothing seen during a failed or skipped run is lost.
+      const previous = (this.store.db.prepare("SELECT MAX(scheduled_for) AS at FROM schedule_runs WHERE conversation_id=? AND status IN ('completed','quiet') AND id<>?")
+        .get(schedule.conversationId, runId) as { at: string | null }).at;
       const deliveryInstructions = destination
         ? assertPrivateSources
           ? "Return the completed private edition here. The application alone handles its approved delivery and rechecks private-source access before each part. Do not call send_telegram_message or send it through another service."
@@ -217,7 +220,7 @@ export class Scheduler {
       }, RUN_LIMIT_MINUTES * 60_000);
       limit.unref();
       const result = await this.messages.handle({ channel:"api",conversationId:schedule.conversationId,externalId:`schedule:${runId}`,scheduled:true,scheduleTelegramChatId:destination,
-        text:`Scheduled request: ${schedule.name}\nScheduled for: ${scheduledFor} (${schedule.timezone}). Current time: ${new Date().toISOString()}.\n${schedule.prompt}\n${checkIns ? checkIns + "\n" : ""}${deliveryInstructions} Do not create another schedule. Follow the saved request's rules for a quiet run: NO_REPLY when there is nothing to publish. If progress needs information only the user can provide, return one concise question in the saved request's language, with useful choices when available. Ask in your reply so the user can answer later and continue in this chat; do not wait in a question tool or repeat an unanswered question from recent history. Missing information is not FAILED. For an actual execution failure that prevents the work, return only "FAILED: " and one plain line why; it goes to the owner, never to the chat. Never invent facts or sources.` })
+        text:`Scheduled request: ${schedule.name}\nScheduled for: ${scheduledFor} (${schedule.timezone}). Current time: ${new Date().toISOString()}.\n${previous ? `Previous successful run in this chat: ${previous}\n` : ""}${schedule.prompt}\n${checkIns ? checkIns + "\n" : ""}${deliveryInstructions} Do not create another schedule. Follow the saved request's rules for a quiet run: NO_REPLY when there is nothing to publish. If progress needs information only the user can provide, return one concise question in the saved request's language, with useful choices when available. Ask in your reply so the user can answer later and continue in this chat; do not wait in a question tool or repeat an unanswered question from recent history. Missing information is not FAILED. For an actual execution failure that prevents the work, return only "FAILED: " and one plain line why; it goes to the owner, never to the chat. Never invent facts or sources.` })
         .finally(() => clearTimeout(limit))
         .catch(async error => {
           if (!overdue) throw error;
