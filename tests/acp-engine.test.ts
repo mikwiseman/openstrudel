@@ -20,12 +20,14 @@ const configOptions = [{ id: "model", name: "Model", category: "model", type: "s
 /** The engine against the scripted agent, which logs every launch and message. */
 function mock(scenario: Record<string, unknown> = {}) {
   const dir = mkdtempSync(join(root, "mock-")), script = join(dir, "scenario.json"), log = join(dir, "log.jsonl");
-  writeFileSync(script, JSON.stringify({ configOptions, ...scenario })); writeFileSync(log, "");
+  // Every turn starts the agent again, so a new script applies from the engine's next turn.
+  const rescript = (next: Record<string, unknown>) => writeFileSync(script, JSON.stringify({ configOptions, ...next }));
+  rescript(scenario); writeFileSync(log, "");
   const models: unknown[] = [];
   const engine = new AcpEngine({ root, provider: providerInfo("grok")!, onModels: list => models.push(list),
     command: () => ({ bin: process.execPath, args: [fixture], env: { MOCK_GROK_SCENARIO: script, MOCK_GROK_LOG: log } }) });
   const messages = () => readFileSync(log, "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line));
-  return { engine, models, messages, calls: (method: string) => messages().filter(m => m.method === method).map(m => m.params),
+  return { engine, models, messages, rescript, calls: (method: string) => messages().filter(m => m.method === method).map(m => m.params),
     chosen: () => messages().filter(m => m.answered === "session/request_permission").map(m => m.result.outcome.optionId ?? m.result.outcome.outcome) };
 }
 
@@ -132,8 +134,10 @@ it("forwards each permission request by kind and answers only once", async () =>
 
 // A schedule under approve-all, as on WaiClaw: nobody can approve anything.
 const unattended = { approvalMode: "approve_all" as const, onRequest: () => { throw new Error("Выпуск остановлен: нужно разрешение пользователя. Продолжите в чате."); } };
+// A schedule on a Home that asks first: nobody can approve, and nothing beyond the workspace runs by itself.
+const asking = { onRequest: unattended.onRequest };
 
-it("lets a turn create scratch files in the OS temp directory and use only the ones it created", async () => {
+it("lets a turn that nobody approves create scratch files in the OS temp directory and use only the ones it created", async () => {
   // Grok keeps large tool inputs and its own cursors in scratch files such as /tmp/publish-cursor.json.
   const temp = realpathSync(tmpdir()), id = randomUUID(), home = realpathSync(root), cwd = join(home, ".data/workspace/personal");
   const own = join(temp, `grok-own-${id}.json`), other = join(temp, `grok-other-${id}.json`), keys = join(home, ".data/openstrudel.sqlite");
@@ -149,18 +153,48 @@ it("lets a turn create scratch files in the OS temp directory and use only the o
       // A file it did not create stays closed, also through a link, and nothing new reaches into the Home.
       permission("r2", "read", other), permission("e2", "edit", other), permission("r3", "read", link), permission("e3", "edit", link),
       permission("w2", "edit", join(folder, "planted.json")), permission("w3", "edit", join(cwd, "..", "work", `grok-${id}.md`)),
-      // A path is normalized before it is checked.
-      permission("w4", "edit", `${temp}/grok-sub-${id}/../../grok-outside-${id}.json`),
+      // A path is normalized before it is checked, and a directory beside the temp directory is not inside it.
+      permission("w4", "edit", `${temp}/grok-sub-${id}/../../grok-outside-${id}.json`), permission("w5", "edit", `${temp}-${id}/x.json`),
     ] });
-    await g.engine.run("Выпуск", unattended);
-    expect(g.chosen()).toEqual(["once", "once", "once", "once", "no", "no", "no", "no", "no", "no", "no"]);
+    await g.engine.run("Выпуск", asking);
+    expect(g.chosen()).toEqual(["once", "once", "once", "once", "no", "no", "no", "no", "no", "no", "no", "no"]);
     expect(readFileSync(own, "utf8")).toBe("scratch");
     expect(readFileSync(keys, "utf8")).toBe("keys");
-    // Another turn did not create it.
-    const next = mock({ turn: [permission("r4", "read", own), permission("e4", "edit", own)] });
-    await next.engine.run("Дальше", unattended);
-    expect(next.chosen()).toEqual(["no", "no"]);
+    // The next turn did not create it, although one engine runs every turn of every employee.
+    g.rescript({ turn: [permission("r4", "read", own), permission("e4", "edit", own)] });
+    await g.engine.run("Дальше", asking);
+    expect(g.chosen().slice(-2)).toEqual(["no", "no"]);
   } finally { for (const path of [own, other, link, folder]) try { unlinkSync(path); } catch {} }
+});
+
+it("opens the temp directory like the workspace under approve-all, where Grok's own commands already read and write it", async () => {
+  // A refused permission ends Grok's whole turn. The container's /tmp keeps every scratch file between runs, News writes the
+  // same names again (/tmp/wai-card.txt, /tmp/publish-cursor.json), and its commands could overwrite them anyway.
+  const temp = realpathSync(tmpdir()), id = randomUUID(), home = realpathSync(root), cwd = join(home, ".data/workspace/personal");
+  const queue = join(temp, `q-1205-${id}.json`), cursor = join(temp, `publish-cursor-${id}.json`), keys = join(home, ".data/openstrudel.sqlite");
+  const link = join(temp, `grok-link-${id}`), folder = join(temp, `grok-folder-${id}`);
+  mkdirSync(join(home, ".data"), { recursive: true }); writeFileSync(keys, "keys");
+  symlinkSync(keys, link); symlinkSync(join(home, ".data"), folder);
+  const permission = (toolCallId: string, kind: string, title: string, path: string | null, write?: string) =>
+    ({ permission: { toolCall: { toolCallId, kind, title, rawInput: {}, locations: path ? [{ path }] : [] } }, ...write ? { write } : {} });
+  const radar = { ...unattended, scheduled: true };
+  try {
+    // The 10:05 run writes the queue with a command, edits and reads it, and creates its cursor.
+    const g = mock({ cancelOnReject: true, turn: [permission("x1", "execute", `python3 wai-news.py queue > ${queue}`, null, queue),
+      permission("e1", "edit", "search_replace", queue), permission("r1", "read", "read_file", queue), permission("w1", "edit", "write", cursor, cursor), { text: "NO_REPLY" }] });
+    expect(await g.engine.run("Радар 10:05", radar)).toMatchObject({ response: "NO_REPLY" });
+    // The 11:05 run, the engine's next turn, writes both names again.
+    g.rescript({ cancelOnReject: true, turn: [permission("w2", "edit", "write", cursor, cursor), permission("e2", "edit", "search_replace", queue), { text: "NO_REPLY" }] });
+    expect(await g.engine.run("Радар 11:05", radar)).toMatchObject({ response: "NO_REPLY" });
+    expect(g.chosen()).toEqual(["once", "once", "once", "once", "once", "once"]);
+    // The Home stays closed: through a link, into another workspace, out of the temp directory, or beside it.
+    g.rescript({ turn: [permission("r3", "read", "read_file", link), permission("e3", "edit", "write", link), permission("w3", "edit", "write", join(folder, "planted.json")),
+      permission("w4", "edit", "write", join(cwd, "..", "work", `grok-${id}.md`)), permission("w5", "edit", "write", `${temp}/grok-sub-${id}/../../grok-outside-${id}.json`),
+      permission("w6", "edit", "write", `${temp}-${id}/x.json`)] });
+    await g.engine.run("Проверка", radar);
+    expect(g.chosen().slice(-6)).toEqual(["no", "no", "no", "no", "no", "no"]);
+    expect(readFileSync(keys, "utf8")).toBe("keys");
+  } finally { for (const path of [queue, cursor, link, folder]) try { unlinkSync(path); } catch {} }
 });
 
 it("names the refused permission when Grok then ends the turn, instead of a stop", async () => {

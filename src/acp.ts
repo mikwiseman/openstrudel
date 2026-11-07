@@ -131,10 +131,12 @@ export class AcpEngine implements CodexEngine {
 
     /** As with the Claude engine, the workspace is readable and writable without asking and nothing beyond it is readable.
      * Changes beyond it need the owner. Approve-all runs sandboxed commands and services by itself. Fetches stay with Grok.
-     * Grok also keeps scratch files in the OS temp directory: a turn may create new files there and use the ones it created,
-     * never another turn's file, and never a path into this Home. Paths count once normalized and with links followed. */
-    const scratch = (path: string) => { const target = physical(resolve(cwd, path)); return !existsSync(target) && temp.some(dir => within(dir, target)) && !within(home, target); };
-    const ours = (path: string) => insideWorkspace(cwd, path) || created.has(physical(resolve(cwd, path)));
+     * Grok also keeps scratch files in the OS temp directory, never a path into this Home. Approve-all commands already read and
+     * write there, so under approve-all it is open like the workspace. Otherwise a turn may create new files there and use the
+     * ones it created, never another turn's. Paths count once normalized and with links followed. */
+    const temporary = (target: string) => temp.some(dir => within(dir, target)) && !within(home, target);
+    const scratch = (path: string) => { const target = physical(resolve(cwd, path)); return !existsSync(target) && temporary(target); };
+    const ours = (path: string) => { const target = physical(resolve(cwd, path)); return insideWorkspace(cwd, path) || created.has(target) || approveAll && temporary(target); };
     const allowed = async (update: acp.ToolCallUpdate): Promise<boolean> => {
       const call = { ...calls.get(update.toolCallId), ...defined(update) }, title = call.title ?? "", input = (call.rawInput ?? {}) as Record<string, any>;
       const locations = (call.locations ?? []).map(l => l.path), inside = locations.every(ours);
