@@ -160,7 +160,10 @@ def mark_healthy_and_prune(root, selected, keep=2):
     candidates = sorted(healthy, reverse=True)[keep:]
     opened = []
     if candidates:
-        result = subprocess.run(['/usr/sbin/lsof', '-nP', '-Fn'], capture_output=True, text=True)
+        lsof = shutil.which('lsof')
+        if not lsof:
+            raise RuntimeError('Cannot verify open backup files; retention skipped')
+        result = subprocess.run([lsof, '-nP', '-Fn'], capture_output=True, text=True)
         if result.returncode:
             raise RuntimeError('Cannot verify open backup files; retention skipped')
         opened = [line[1:] for line in result.stdout.splitlines() if line.startswith('n/')]
