@@ -159,6 +159,7 @@ export class ClaudeEngine implements CodexEngine {
     try {
       const turn = (this.options.query ?? sdkQuery)({ prompt: (async function* () { yield message; })(), options: {
         cwd, env, model, ...(effort ? {effort} : {}), abortController: abort, resume: options.threadId ?? undefined, permissionMode: "default", canUseTool, mcpServers: sdkServers, extraArgs: { "mcp-config": mcpConfig },
+        ...(options.outputSchema ? { outputFormat: { type: "json_schema" as const, schema: options.outputSchema } } : {}),
         // Nothing from ~/.claude, the workspace's .mcp.json or CLAUDE.md. User text never runs CLI slash commands or @file mentions.
         settingSources: [], strictMcpConfig: true, verbatimPrompts: true,
         // Not recorded in the session, so a changed SOUL applies on resume.
@@ -186,7 +187,8 @@ export class ClaudeEngine implements CodexEngine {
         else if (m.type === "system" && m.subtype === "api_retry" && (m.error_status === 401 || m.error_status === 403)
           || m.type === "assistant" && m.error === "authentication_failed" && !exhaustedPlan(JSON.stringify(m.message.content))) { rejected = true; stop(); }
         if (m.type === "result") {
-          if (m.subtype === "success" && !m.is_error) response = m.result;
+          // A structured answer is the SDK's validated object, not the prose around it.
+          if (m.subtype === "success" && !m.is_error) response = options.outputSchema && m.structured_output !== undefined ? JSON.stringify(m.structured_output) : m.result;
           else if (m.subtype === "success" && (m.api_error_status === 401 || m.api_error_status === 403) && !exhaustedPlan(m.result)) rejected = true;
           else failure = (m.subtype === "success" ? m.result : m.errors.join("\n")) || m.subtype;
         }

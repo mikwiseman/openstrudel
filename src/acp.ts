@@ -103,6 +103,8 @@ export class AcpEngine implements CodexEngine {
 
   private async turn(context: string, input: string, options: RunOptions = {}): Promise<CodexRunResult> {
     if (options.signal?.aborted) throw stopped();
+    // ACP has no structured final answer; an app must not receive prose it would read as data.
+    if (options.outputSchema) throw new Error("Grok не умеет отвечать приложению по схеме. Выберите для этого чата модель ChatGPT, OpenAI или Claude.");
     // Grok applies the rules only when a session starts, so the saved thread is the session with a hash of its rules.
     const rules = instructions + (options.profile ? `\n\nCurrent employee SOUL (authoritative):\n${options.profile}` : "");
     const signed = "#" + createHash("sha256").update(rules).digest("hex").slice(0, 16);

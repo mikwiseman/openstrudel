@@ -57,7 +57,7 @@ The default follows the account's recommended model and reasoning effort from Co
 
 ## Channels and employees
 
-- `POST /v1/messages` sends a message to the main chat or to an employee.
+- `POST /v1/messages` sends a message to the main chat or to an employee. With `outputSchema`, a native [personal app](docs/personal-apps.md) receives one JSON answer from the main assistant, which keeps all it knows about the owner.
 - `GET/POST /v1/profiles` lists or creates named employees.
 - `GET /v1/conversation` loads the main chat.
 - `GET /v1/agents/<id>/conversation` loads an employee chat.
