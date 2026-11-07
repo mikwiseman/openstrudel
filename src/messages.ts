@@ -279,6 +279,7 @@ export class MessageService {
             onEvent: event => {
               projectRun?.observe(event);
               if (event.type === "thread.started") { running.threadId = (event.payload as { threadId: string }).threadId; this.store.setConversationThread(current.id, running.threadId); }
+              if (event.type === "turn.usage" && input.scheduled && input.externalId?.startsWith("schedule:")) this.scheduler?.recordUsage(input.externalId.slice("schedule:".length), event.payload);
               const failure=toolProblem(event);
               if(failure)problem=failure;
               else if(toolRecovered(event))problem=undefined;

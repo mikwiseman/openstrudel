@@ -20,6 +20,8 @@ export interface ScheduleInput {
 }
 export interface Schedule extends ScheduleInput { id: string; enabled: boolean; nextRunAt: string; poll: SchedulePoll | null; lastRunStatus?: string | null }
 type Row = Record<string, any>;
+/** The longest a scheduled turn may run. */
+const RUN_LIMIT_MINUTES = 30;
 
 /** The clock only wakes the existing chat. Codex still owns the work. */
 export class Scheduler {
@@ -50,6 +52,11 @@ export class Scheduler {
     // Keep the approval on the existing durable run receipt: deleting a grant
     // must not turn a pending private edition into an ordinary delivery on restart.
     if (!runColumns.some(c => c.name === "private_source_fingerprint")) store.db.exec("ALTER TABLE schedule_runs ADD COLUMN private_source_fingerprint TEXT");
+    if (!runColumns.some(c => c.name === "usage_json")) store.db.exec("ALTER TABLE schedule_runs ADD COLUMN usage_json TEXT");
+  }
+  /** What a run's turn spent, and the subscription's allowance after it, as its engine reported them. */
+  recordUsage(runId: string, usage: unknown): void {
+    this.store.db.prepare("UPDATE schedule_runs SET usage_json=? WHERE id=?").run(JSON.stringify(usage), runId);
   }
   save(input: ScheduleInput, now = new Date(), moveFrom?: string): Schedule {
     if (!this.store.getConversation(input.conversationId)) throw new Error("Чат не найден");
@@ -201,8 +208,23 @@ export class Scheduler {
           ? "Return the completed private edition here. The application alone handles its approved delivery and rechecks private-source access before each part. Do not call send_telegram_message or send it through another service."
           : `Return the completed edition here; the application handles delivery to Telegram chat ${destination}. Only if the saved request explicitly requires separate messages, use send_telegram_message for that destination and return NO_REPLY to avoid an extra automatic post. Check each delivery receipt; never repeat an unknown or partial delivery. Do not send to another chat.`
         : "Return the completed edition here; it stays in the app. Do not send it to Telegram.";
+      // A hung turn would hold its chat's queue and keep spending. It is stopped as an owner's cancel would stop it, so the owner hears of it from here.
+      let overdue = false;
+      const limit = setTimeout(() => {
+        overdue = true;
+        const request = this.store.findMessageByExternal("api", `schedule:${runId}`);
+        try { if (request) this.messages.cancel(schedule.conversationId, request.id); } catch { /* it has just finished */ }
+      }, RUN_LIMIT_MINUTES * 60_000);
+      limit.unref();
       const result = await this.messages.handle({ channel:"api",conversationId:schedule.conversationId,externalId:`schedule:${runId}`,scheduled:true,scheduleTelegramChatId:destination,
-        text:`Scheduled request: ${schedule.name}\nScheduled for: ${scheduledFor} (${schedule.timezone}). Current time: ${new Date().toISOString()}.\n${schedule.prompt}\n${checkIns ? checkIns + "\n" : ""}${deliveryInstructions} Do not create another schedule. Follow the saved request's rules for a quiet run: NO_REPLY when there is nothing to publish. If progress needs information only the user can provide, return one concise question in the saved request's language, with useful choices when available. Ask in your reply so the user can answer later and continue in this chat; do not wait in a question tool or repeat an unanswered question from recent history. Missing information is not FAILED. For an actual execution failure that prevents the work, return only "FAILED: " and one plain line why; it goes to the owner, never to the chat. Never invent facts or sources.` });
+        text:`Scheduled request: ${schedule.name}\nScheduled for: ${scheduledFor} (${schedule.timezone}). Current time: ${new Date().toISOString()}.\n${schedule.prompt}\n${checkIns ? checkIns + "\n" : ""}${deliveryInstructions} Do not create another schedule. Follow the saved request's rules for a quiet run: NO_REPLY when there is nothing to publish. If progress needs information only the user can provide, return one concise question in the saved request's language, with useful choices when available. Ask in your reply so the user can answer later and continue in this chat; do not wait in a question tool or repeat an unanswered question from recent history. Missing information is not FAILED. For an actual execution failure that prevents the work, return only "FAILED: " and one plain line why; it goes to the owner, never to the chat. Never invent facts or sources.` })
+        .finally(() => clearTimeout(limit))
+        .catch(async error => {
+          if (!overdue) throw error;
+          const reason = `Расписание остановлено: выполнение заняло больше ${RUN_LIMIT_MINUTES} минут.`;
+          await this.messages.reportProblem(schedule.conversationId, runId, "execution", undefined, reason);
+          throw new Error(reason);
+        });
       this.store.db.prepare("UPDATE schedule_runs SET status='ready',message_id=? WHERE id=?").run(result.messageId,runId);
       await this.finish(runId,schedule.conversationId,result.messageId,schedule.telegramChatId,schedule.delivery);
     } catch (error) { await this.fail(runId,error); }
