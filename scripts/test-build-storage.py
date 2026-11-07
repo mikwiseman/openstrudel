@@ -293,7 +293,41 @@ class StorageSafety(unittest.TestCase):
             self.assertEqual(backup.mark_healthy_and_prune(root, root / 'backup-2'), [])
         self.assertTrue((root / 'backup-0').exists())
 
-    def test_retention_keeps_snapshots_when_lsof_is_unavailable(self):
+    def test_retention_without_lsof_reads_proc_and_deletes_only_the_oldest(self):
+        root = self.base / 'backups'
+        root.mkdir()
+        for i in range(3):
+            candidate = root / f'backup-{i}'
+            candidate.mkdir()
+            (candidate / 'backup.json').write_text(json.dumps({'schema': backup.SCHEMA, 'created': str(i),
+                'sqlite_integrity': 'ok', 'deployment_healthy': True}))
+        proc = self.base / 'proc'
+        (proc / '1/fd').mkdir(parents=True)
+        (proc / '1/cwd').symlink_to(root)
+        (proc / '1/fd/0').symlink_to('pipe:[42]')
+        (proc / '1/fd/1').symlink_to(self.base / 'unrelated.log')
+        with patch.object(backup.shutil, 'which', return_value=None), patch.object(backup, 'PROC', proc):
+            self.assertEqual(backup.mark_healthy_and_prune(root, root / 'backup-2'), [str(root / 'backup-0')])
+        self.assertEqual(sorted(p.name for p in root.iterdir()), ['backup-1', 'backup-2'])
+
+    def test_retention_without_lsof_keeps_snapshots_a_process_uses(self):
+        root = self.base / 'backups'
+        root.mkdir()
+        for i in range(3):
+            candidate = root / f'backup-{i}'
+            candidate.mkdir()
+            (candidate / 'backup.json').write_text(json.dumps({'schema': backup.SCHEMA, 'created': str(i),
+                'sqlite_integrity': 'ok', 'deployment_healthy': True}))
+        for link, target in (('cwd', 'backup-0'), ('fd/3', 'backup-0/user-data/openstrudel.sqlite')):
+            with self.subTest(link=link):
+                proc = self.base / 'proc' / link.replace('/', '-')
+                (proc / '4242/fd').mkdir(parents=True)
+                (proc / '4242' / link).symlink_to(root / target)
+                with patch.object(backup.shutil, 'which', return_value=None), patch.object(backup, 'PROC', proc):
+                    self.assertEqual(backup.mark_healthy_and_prune(root, root / 'backup-2'), [])
+                self.assertTrue((root / 'backup-0').exists())
+
+    def test_retention_keeps_snapshots_when_open_files_cannot_be_checked(self):
         root = self.base / 'backups'
         root.mkdir()
         for i in range(3):
@@ -302,6 +336,7 @@ class StorageSafety(unittest.TestCase):
             (candidate / 'backup.json').write_text(json.dumps({'schema': backup.SCHEMA, 'created': str(i),
                 'sqlite_integrity': 'ok', 'deployment_healthy': True}))
         with patch.object(backup.shutil, 'which', return_value=None), \
+                patch.object(backup, 'PROC', self.base / 'no-proc'), \
                 patch.object(backup.subprocess, 'run') as run:
             with self.assertRaisesRegex(RuntimeError, 'Cannot verify open backup files'):
                 backup.mark_healthy_and_prune(root, root / 'backup-2')
