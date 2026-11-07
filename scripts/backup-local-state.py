@@ -19,6 +19,7 @@ import uuid
 
 SCHEMA = 'openstrudel-local-backup-v1'
 SQLITE_LOCK_TIMEOUT = 10
+MIN_FREE_BYTES = 512 * 1024 * 1024
 DEFAULT_SOURCE = Path.home() / 'Library/Application Support/OpenStrudel'
 DEFAULT_DEST = Path.home() / 'Library/Application Support/OpenStrudelBackups'
 EXCLUDED = {('deployment',), ('releases',), ('runtime', 'node_modules'),
@@ -34,7 +35,28 @@ if sys.platform == 'darwin':
         CLONE_FILE.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int]
         CLONE_FILE.restype = ctypes.c_int
 
+def require_space(destination, size=0):
+    if shutil.disk_usage(Path(destination).parent).free < size + MIN_FREE_BYTES:
+        raise RuntimeError('Backup would consume the operating reserve; source data is unchanged')
+
+def temporary_plugin_cache(parts):
+    # Codex downloads these catalog clones again. Do not match workspace .tmp
+    # folders, installed/local plugins, skills, sessions or native memories.
+    if len(parts) < 4 or parts[-2] != '.tmp' or not (parts[-1] == 'plugins' or parts[-1].startswith('plugins-clone-')):
+        return False
+    home = parts[:-2]
+    if home[:1] == ('runtime',):
+        home = home[1:]
+    if home[:1] != ('.data',):
+        return False
+    home = home[1:]
+    return (home == ('codex',)
+            or len(home) == 2 and home[0] == 'contexts'
+            or len(home) == 3 and home[0] == 'accounts' and home[2] == 'codex'
+            or len(home) == 4 and home[0] == 'accounts' and home[2] == 'contexts')
+
 def copy_regular_file(source, destination):
+    require_space(destination)
     if CLONE_FILE is not None:
         if CLONE_FILE(os.fsencode(source), os.fsencode(destination), 0) == 0:
             shutil.copystat(source, destination)
@@ -42,6 +64,7 @@ def copy_regular_file(source, destination):
         error = ctypes.get_errno()
         if error not in (errno.EXDEV, errno.ENOTSUP, errno.ENOSYS):
             raise OSError(error, os.strerror(error), str(source))
+    require_space(destination, Path(source).stat().st_size)
     return shutil.copy2(source, destination)
 
 def is_sqlite(path):
@@ -57,7 +80,7 @@ def copy_state(source, destination):
         skipped = []
         for name in names:
             components = (relative / name).parts
-            if components in EXCLUDED:
+            if components in EXCLUDED or temporary_plugin_cache(components):
                 skipped.append(name)
             elif name.endswith(('-wal', '-shm', '-journal')):
                 base = Path(directory) / name.rsplit('-', 1)[0]
@@ -78,6 +101,8 @@ def copy_state(source, destination):
                 else:
                     blocked_since = None
             with closing(sqlite3.connect(src.as_uri() + '?mode=ro', uri=True, timeout=1)) as original:
+                wal = src.with_name(src.name + '-wal')
+                require_space(dest, src.stat().st_size + (wal.stat().st_size if wal.is_file() else 0))
                 with closing(sqlite3.connect(dest)) as snapshot:
                     original.backup(snapshot, pages=256, progress=progress, sleep=0.1)
                     snapshot.execute('PRAGMA journal_mode=DELETE')
@@ -124,7 +149,7 @@ def create_backup(source, root, app, extras=()):
             shutil.copy2(extra, stage / extra.name)
     meta = {'schema': SCHEMA, 'created': stamp, 'source': str(source), 'build': build,
             'sqlite_integrity': 'ok', 'databases': databases, 'deployment_healthy': False,
-            'excluded': ['/'.join(p) for p in sorted(EXCLUDED)]}
+            'excluded': ['/'.join(p) for p in sorted(EXCLUDED)] + ['Codex home/.tmp/plugins', 'Codex home/.tmp/plugins-clone-*']}
     (stage / 'backup.json').write_text(json.dumps(meta, indent=2) + '\n')
     stage.rename(final)
     return final
