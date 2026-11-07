@@ -13,32 +13,54 @@ export const problemText = {
   voice: "Запись не распознана. Подробности сохранены в исходном чате.",
 } as const;
 export type ProblemCode = keyof typeof problemText;
-type RuntimeIssue = { conversationId:string; messageId:string; title:string; code:ProblemCode; time:string; tools?:string[]; detail?:string; scope?:string; taskName?:string };
+type RuntimeIssue = { conversationId:string; messageId:string; title:string; code:ProblemCode; time:string; tools?:string[]; connections?:Record<string,string>; detail?:string; scope?:string; taskName?:string };
 const prefix="runtime.issue.";
 
+export type ConnectorOutcome = { tool:string; server:string; failed:boolean; connection?:boolean };
+
 /** Native MCP receipts are emitted even for calls made inside code mode. */
-export function connectorOutcome(event:EngineEvent):{tool:string;failed:boolean}|undefined {
+export function connectorOutcome(event:EngineEvent):ConnectorOutcome|undefined {
   const item=(event.payload as any)?.item;
   if(event.type!=="item/completed" || item?.type!=="mcpToolCall" || !["failed","completed"].includes(item.status))return;
   if(![item.server,item.tool].every(v=>typeof v==="string" && /^[a-zA-Z0-9_.:-]+$/.test(v)))return;
   if(/user rejected MCP tool call/i.test(item.error?.message ?? ""))return;
-  return{tool:item.server+"."+item.tool,failed:item.status==="failed" || Boolean(item.error) || item.result?.isError===true};
+  const failed=item.status==="failed" || Boolean(item.error) || item.result?.isError===true;
+  // A startup failure precedes the tool itself. A later call reaching this
+  // server proves recovery; it does not prove that a failed attachment or write worked.
+  const connection=failed && /handshaking with MCP server failed|MCP startup failed|failed to get client/i.test(item.error?.message ?? "");
+  return{tool:item.server+"."+item.tool,server:item.server,failed,...connection?{connection:true}:{}};
 }
 
-/** Keep partial answers. Only a successful call to the failed tool resolves its incident. */
-export function reportConnectorIssues(store:Store,conversationId:string,messageId:string,outcomes:Map<string,boolean>):Message|undefined {
-  if(!outcomes.size)return;
+function connectorService(tool:string):string {
+  if(tool.startsWith("wai-telegram."))return "Telegram";
+  if(tool.startsWith("codex_apps.gmail."))return "Gmail";
+  if(tool.startsWith("unipile."))return "Unipile";
+  return tool.split(".")[0]!;
+}
+
+/** Keep partial answers and unresolved action failures, but close recovered connections. */
+export function reportConnectorIssues(store:Store,conversationId:string,messageId:string,outcomes:ConnectorOutcome[]):Message|undefined {
+  if(!outcomes.length)return;
   const key=prefix+"connector."+conversationId,previous=JSON.parse(store.getSetting(key) ?? "null") as RuntimeIssue|null;
-  const tools=new Set(previous?.tools ?? []);
-  for(const [tool,failed] of outcomes)if(failed)tools.add(tool);else tools.delete(tool);
-  const names=[...tools].sort();
-  if(JSON.stringify(names)===JSON.stringify(previous?.tools ?? []))return;
-  const title=store.getConversation(conversationId)?.title ?? "Чат",root=store.primaryConversation();
-  // A recovery is not news; the incident narrows or closes silently.
-  if(!names.length){ store.deleteSetting(key); return; }
-  if(previous && names.every(name=>previous.tools?.includes(name))){ store.setSetting(key,JSON.stringify({...previous,tools:names})); return; }
-  store.setSetting(key,JSON.stringify({conversationId,messageId,title,code:"connector",tools:names,time:new Date().toISOString()}));
-  return store.addMessage({conversationId:root.id,channel:"api",direction:"outbound",kind:"notice",text:`Требует внимания · ${title}\n${problemText.connector}\n${names.join(", ")}`});
+  const tools=new Set(previous?.tools ?? []),connections=new Map(Object.entries(previous?.connections ?? {}));
+  for(const outcome of outcomes){
+    const {tool,server,failed,connection}=outcome;
+    if(failed){tools.add(tool);if(connection)connections.set(tool,server);else connections.delete(tool);}
+    else{
+      tools.delete(tool);connections.delete(tool);
+      for(const [name,connectionServer] of connections)if(connectionServer===server){tools.delete(name);connections.delete(name);}
+    }
+  }
+  const names=[...tools].sort(),connectionServers=Object.fromEntries([...connections].sort());
+  if(JSON.stringify(names)===JSON.stringify(previous?.tools ?? []) && JSON.stringify(connectionServers)===JSON.stringify(previous?.connections ?? {}))return;
+  const title=store.getConversation(conversationId)?.title ?? "Чат";
+  if(!names.length){store.deleteSetting(key);return;}
+  const added=names.filter(name=>!previous?.tools?.includes(name));
+  store.setSetting(key,JSON.stringify({...added.length?{conversationId,messageId,title,code:"connector",time:new Date().toISOString()}:previous,tools:names,connections:connectionServers}));
+  // Recoveries are silent. An old unresolved tool is not a new failure.
+  if(!added.length)return;
+  const services=[...new Set(added.map(connectorService))].join(", ");
+  return store.addMessage({conversationId:store.primaryConversation().id,channel:"api",direction:"outbound",kind:"notice",text:`Требует внимания · ${title}\nНе выполнен запрос к сервису: ${services}. Подробности — в исходном чате.`});
 }
 
 function infrastructureProblem(text:string):ProblemCode|undefined {

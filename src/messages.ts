@@ -17,7 +17,7 @@ import { providerInfo, ProviderIncident } from "./providers.js";
 import type { TelegramAdapter } from "./telegram.js";
 import { readFile } from "node:fs/promises";
 import { isSpeechFile, transcribeRecording } from "./speech.js";
-import { connectorOutcome, reportConnectorIssues, errorProblem, failedRun, quietReply, problemText, reportIssue, resolveIssue, resolveVoiceIssue, runtimeIssues, toolProblem, toolRecovered, type ProblemCode } from "./operations.js";
+import { connectorOutcome, reportConnectorIssues, errorProblem, failedRun, quietReply, problemText, reportIssue, resolveIssue, resolveVoiceIssue, runtimeIssues, toolProblem, toolRecovered, type ProblemCode, type ConnectorOutcome } from "./operations.js";
 import { ownerKnowledge, historyConversation, workingMemory } from "./knowledge.js";
 import { privateSourceAudience } from "./private-sources.js";
 import { correspondenceAudience } from "./correspondence.js";
@@ -160,7 +160,7 @@ export class MessageService {
     const completion = this.enqueue(conversation.id, inbound.id, input.channel, async () => {
       let problem:ProblemCode|undefined;
       let projectRun: ProjectRun | undefined, projectOutcome: "completed" | "failed" = "failed";
-      const connectors=new Map<string,boolean>();
+      const connectors:ConnectorOutcome[]=[];
       try {
         // Read at execution time: a waiting message may have been edited.
         const text = this.store.getMessage(conversation.id, inbound.id)?.text.trim() ?? inbound.text.trim();
@@ -282,7 +282,7 @@ export class MessageService {
               if(failure)problem=failure;
               else if(toolRecovered(event))problem=undefined;
               const connector=connectorOutcome(event);
-              if(connector)connectors.set(connector.tool,connector.failed);
+              if(connector)connectors.push(connector);
             },
           });
         if (result.threadId) this.store.setConversationThread(current.id, result.threadId);
@@ -299,7 +299,7 @@ export class MessageService {
         this.store.setMessageStatus(inbound.id, "completed");
         // The owner reads the shown answer to his own request; only a failure no owner saw opens an incident.
         const seen=!hidden && ownerTurn(this.store,{conversationId:current.id,messageId:inbound.id,channel:input.channel,scheduled,byOwner:input.byOwner,telegramSenderId:input.telegramSenderId});
-        const connectorNotice=reportConnectorIssues(this.store,current.id,inbound.id,seen?new Map([...connectors].filter(([,failed])=>!failed)):connectors);
+        const connectorNotice=reportConnectorIssues(this.store,current.id,inbound.id,seen?connectors.filter(outcome=>!outcome.failed):connectors);
         if(connectorNotice)await this.telegram?.notifyOwner(connectorNotice);
         if(text!=="/help" && !(input.scheduled && failedRun(result.response)) && (!quietReply(result.response) || scheduled)) {
           const notice=resolveIssue(this.store,current.id,inbound.id);
