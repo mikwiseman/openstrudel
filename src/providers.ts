@@ -96,6 +96,10 @@ export function providerInfos(): ProviderInfo[] {
   return providers.map(p => providerInfo(p.id)!);
 }
 
+/** A schedule on a subscription's own agent (Grok) runs in a new session every time: no saved thread, no chat seed, nothing saved back.
+ * A resumed session carried the whole chat into every check; the employee's own tools carry what a run needs. */
+export const freshSession = (provider: string | null | undefined, scheduled: boolean | undefined): boolean => scheduled === true && providerInfo(provider ?? "")?.engine === "acp";
+
 /** A key route fails every turn until the owner acts, so a Telegram group hears about one `reason` once. */
 export class ProviderIncident extends HomeError {
   constructor(message: string, status: number, readonly reason: string) { super(message, status); }

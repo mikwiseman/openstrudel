@@ -313,6 +313,59 @@ describe("Grok subscription", () => {
     expect(engines.run).toHaveBeenCalledTimes(1);
     await messages.close();
   });
+  it("starts every scheduled turn in a new session that it never saves, and the owner's next turn resumes his own", async () => {
+    // A resumed session made every News check carry the whole chat again: 0.5 to 1.4 million input tokens a turn.
+    const { store, pool } = fixture(); signedIn(store);
+    const news = store.createProfile({ name: "News" }), chat = store.profileConversation(news.id);
+    saveModelSelection(store, { provider: "grok", model: "grok-4.7", serviceTier: "default" }, news.id);
+    store.addMessage({ channel: "api", conversationId: chat.id, direction: "outbound", text: "Remember this story" });
+    let sessions = 0;
+    engines.run.mockImplementation(async (_route, _context, _input, options) => {
+      const threadId = options.threadId ?? `s-${++sessions}`;
+      if (!options.threadId) options.onEvent?.({ type: "thread.started", payload: { threadId } });
+      return { threadId, response: options.scheduled ? "NO_REPLY" : "ok", events: [] };
+    });
+    const messages = new MessageService(store, pool);
+    const calls = () => engines.run.mock.calls.map(([route, , input, options]) => ({ route, input: input as string, threadId: options.threadId }));
+    const saved = () => ["codex.thread.provider-grok.", "codex.threadOwner.", "codex.threadCheckpoint.provider-grok."].map(key => store.getSetting(key + chat.id));
+    await messages.handle({ channel: "api", conversationId: chat.id, text: "Что нового?", byOwner: true });
+    const owner = saved();
+    expect(owner.slice(0, 2)).toEqual(["s-1", "provider-grok"]);
+    for (const run of [1, 2]) await messages.handle({ channel: "api", conversationId: chat.id, text: "Радар", scheduled: true, externalId: `schedule:run-${run}` });
+    // Two new sessions, neither seeded with the chat.
+    expect(calls().slice(1)).toEqual([{ route: "acp-grok", input: expect.any(String), threadId: undefined }, { route: "acp-grok", input: expect.any(String), threadId: undefined }]);
+    expect(sessions).toBe(3);
+    for (const { input } of calls().slice(1)) expect(input).not.toMatch(/Earlier chat|Recent conversation|Remember this story/);
+    // Nothing they started is saved: the thread, its owner and checkpoint stay the owner's.
+    expect(saved()).toEqual(owner);
+    expect(store.getConversation(chat.id)?.codexThreadId).toBe("s-1");
+    await messages.handle({ channel: "api", conversationId: chat.id, text: "А подробнее?", byOwner: true });
+    expect(calls()[3]).toEqual({ route: "acp-grok", input: expect.not.stringContaining("Earlier chat"), threadId: "s-1" });
+    await messages.close();
+  });
+  it("keeps a chat that only schedules use without seed or recent history on every run, and other providers resume as before", async () => {
+    const { store, pool } = fixture(); signedIn(store);
+    store.setSetting("providers.xai.key", "xai-key");
+    const startups = store.createProfile({ name: "Startups" }), chat = store.profileConversation(startups.id);
+    saveModelSelection(store, { provider: "grok", model: "grok-4.7", serviceTier: "default" }, startups.id);
+    for (const text of ["Yesterday's issue", "An older story"]) store.addMessage({ channel: "api", conversationId: chat.id, direction: "outbound", text });
+    let sessions = 0;
+    engines.run.mockImplementation(async (route, _context, _input, options) => ({ threadId: options.threadId ?? `${route}-${++sessions}`, response: "NO_REPLY", events: [] }));
+    const messages = new MessageService(store, pool);
+    for (const run of [1, 2]) await messages.handle({ channel: "api", conversationId: chat.id, text: "Выпуск", scheduled: true, externalId: `schedule:run-${run}` });
+    for (const [, , input, options] of engines.run.mock.calls) {
+      expect(options.threadId).toBeUndefined();
+      expect(input).not.toMatch(/Earlier chat|Recent conversation|Yesterday's issue/);
+    }
+    expect(store.getConversation(chat.id)?.codexThreadId).toBeNull();
+    expect(store.getSetting("codex.thread.provider-grok." + chat.id)).toBeNull();
+    // A schedule on another route keeps resuming and saving its thread.
+    store.setSetting("codex.thread.provider-xai." + chat.id, "xai-thread");
+    await pool.run("Выпуск", { conversationId: chat.id, provider: "xai", model: "grok-4.7", scheduled: true });
+    expect(engines.run.mock.calls[2]?.[3].threadId).toBe("xai-thread");
+    expect(store.getSetting("codex.threadOwner." + chat.id)).toBe("provider-xai");
+    await messages.close();
+  });
   it("reads the agent's catalog once when none is stored, so a failed read at sign-in does not hide Grok's models", async () => {
     const { store, pool } = fixture();
     store.setSetting("providers.grok.signedIn", "2026-10-15T10:00:00.000Z");
