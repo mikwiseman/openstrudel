@@ -27,7 +27,7 @@ export interface TelegramUpdate {
 type TelegramMessage = { from?: { id:number; first_name?:string; last_name?:string; is_bot?:boolean }; sender_chat?: { id:number }; is_topic_message?:boolean; message_thread_id?:number; date?:number; migrate_to_chat_id?:number|string; migrate_from_chat_id?:number|string; voice?:TelegramFile; audio?:TelegramFile; video_note?:TelegramFile; video?:TelegramFile & {file_name?:string;mime_type?:string}; document?:TelegramFile & {file_name?:string;mime_type?:string}; photo?:TelegramFile[]; caption?:string;
   reply_to_message?: { message_id: number; from?: { id: number; is_bot?: boolean; username?: string; first_name?: string; last_name?: string }; text?: string; caption?: string; photo?: TelegramFile[]; document?: { file_name?: string } };
   quote?: { text?: string }; message_id: number; text?: string; chat: { id: number | string; title?: string; type?: string } };
-type TelegramFile = {file_id:string;file_size?:number};
+type TelegramFile = {file_id:string;file_size?:number;file_name?:string;mime_type?:string};
 
 interface TelegramResponse<T> { ok: boolean; result: T; description?: string; error_code?: number; parameters?: { retry_after?: number } }
 interface TelegramBot { id: number; is_bot: boolean; first_name: string; username?: string }
@@ -694,9 +694,24 @@ export class TelegramAdapter {
     if (edited) {
       const chatId = String(edited.chat.id), text = (edited.text ?? edited.caption)?.trim();
       const speech = edited.voice || edited.audio || edited.video_note || edited.video || edited.document && isSpeechFile(edited.document.file_name ?? "", edited.document.mime_type);
-      // A correction reaches a request still waiting for its turn. It never starts a turn or rewrites an answered one.
-      if (text && !speech && this.linkedChats().includes(chatId) && this.authorizedSender(chatId, edited.from?.id))
-        this.store.db.prepare("UPDATE messages SET text=? WHERE channel='telegram' AND direction='inbound' AND status='queued' AND external_id=?").run(text, chatId + ":" + edited.message_id);
+      const binding = this.store.getTelegramChat(chatId);
+      // Keep the original answered request as evidence; a later edit is new context, never a new action.
+      if (text !== undefined && !edited.is_topic_message && !edited.sender_chat && !edited.from?.is_bot
+        && binding?.enabled !== false && this.linkedChats().includes(chatId) && this.authorizedSender(chatId, edited.from?.id)) {
+        const original = this.store.findMessageByExternal("telegram", chatId + ":" + edited.message_id);
+        if (original?.status === "queued" && !speech)
+          this.store.db.prepare("UPDATE messages SET text=? WHERE id=?").run(text, original.id);
+        else {
+          const conversationId = original?.conversationId ?? binding?.conversationId;
+          if (conversationId && binding?.conversationId && conversationId!==binding.conversationId) { this.store.markTelegramUpdate(update.update_id); return; }
+          if (conversationId && !this.store.findMessageByExternal("telegram", `edit:${chatId}:${update.update_id}`)) {
+            const correction = this.store.addMessage({ conversationId, channel:"telegram", direction:"inbound",
+              externalId:`edit:${chatId}:${update.update_id}`, author:[edited.from?.first_name,edited.from?.last_name].filter(Boolean).join(" ") || undefined,
+              text:"Telegram message edit (quoted source correction, not a new request):\n" + JSON.stringify({editedMessageId:edited.message_id,senderId:edited.from?.id,text}) });
+            this.store.db.prepare("UPDATE messages SET context_only=1 WHERE id=?").run(correction.id);
+          }
+        }
+      }
       this.store.markTelegramUpdate(update.update_id); return;
     }
     const message = update.message;
@@ -751,15 +766,13 @@ export class TelegramAdapter {
     const replyAuthor = message.reply_to_message?.from;
     const replyToBot = Boolean(replyAuthor && (replyAuthor.id === this.bot?.id || replyAuthor.is_bot && username && replyAuthor.username?.toLowerCase() === username.toLowerCase()));
     const mentioned = Boolean(username && new RegExp(`@${username}(?![\\w])`, "i").test(text));
-    if (Number(chatId) < 0 && replyAuthor?.is_bot && !replyToBot && !mentioned) {
-      this.store.markTelegramUpdate(update.update_id); return;
-    }
+    const replyToOtherBot = Number(chatId) < 0 && replyAuthor?.is_bot && !replyToBot && !mentioned;
     const protectedAudience = isProtectedTelegramAudience(this.store, chatId);
     // A protected group never runs a turn for ordinary discussion, whatever its stored reply mode.
     const mentionsOnly = binding?.replies === "mentions" || protectedAudience;
     // Participants cannot keep a protected queue busy indefinitely: beyond the backlog, a message stays as context.
     const saturated = protectedAudience && Boolean(binding?.conversationId) && this.messages.restrictedSaturated(binding!.conversationId!);
-    const contextOnly = Number(chatId) < 0 && mentionsOnly && !replyToBot && !mentioned || saturated;
+    const contextOnly = Number(chatId) < 0 && mentionsOnly && !replyToBot && !mentioned || saturated || Boolean(replyToOtherBot);
     const replyKey = chatId + ":" + message.reply_to_message?.message_id;
     const cardId = this.questionMessages.get(replyKey);
     const card = cardId ? this.messages.interactions.get(cardId) : undefined;
@@ -785,7 +798,7 @@ export class TelegramAdapter {
       // transcribed unless the message addresses the bot, and photos or other files are never fetched.
       if (protectedAudience && (contextOnly || !speech)) return {text};
       const cached = speech ? this.store.getSetting("telegram.transcript." + update.update_id) : null;
-      if (cached) return { text: [text, cached].filter(Boolean).join("\n"), transcript: cached };
+      if (cached && protectedAudience) return { text: [text, cached].filter(Boolean).join("\n"), transcript: cached };
       if((media.file_size ?? 0)>20_000_000) throw new Error("Отправьте файл до 20 МБ.");
       const file=await this.call<{file_path:string;file_size?:number}>("getFile",{file_id:media.file_id});
       if(!file.file_path || (file.file_size ?? 0)>20_000_000) throw new Error("Не удалось получить файл до 20 МБ");
@@ -793,19 +806,22 @@ export class TelegramAdapter {
       if(!response.ok) throw new Error("Не удалось скачать вложение");
       const bytes=new Uint8Array(await response.arrayBuffer());
       if(bytes.length>20_000_000) throw new Error("Отправьте файл до 20 МБ.");
-      if (speech) try {
-        const transcript = await this.transcribe(bytes, (message.document?.file_name ?? file.file_path).split(".").at(-1));
-        resolveVoiceIssue(this.store,conversation.id);
-        this.store.setSetting("telegram.transcript." + update.update_id, transcript);
-        return { text: [text, transcript].filter(Boolean).join("\n"), transcript };
-      } catch (error) {
-        // A video is a file first: when its speech cannot be heard, the employee opens it like any other attachment.
-        // A protected audience has no file handling, so its unheard video stays a failed request.
-        if (protectedAudience || !message.video && !/^video\//i.test(message.document?.mime_type ?? "")) throw error;
-      }
       const hex=sha256(`${chatId}:${message.message_id}:${media.file_id}`).slice(0,32);
       const id=`${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
-      return {text,uploads:[{id,name:message.video ? message.video.file_name ?? "video.mp4" : message.document?.file_name ?? "photo.jpg",mimeType:message.video ? message.video.mime_type ?? "video/mp4" : message.document ? message.document.mime_type ?? "application/octet-stream" : "image/jpeg",contentBase64:Buffer.from(bytes).toString("base64")}]};
+      const name=message.video_note ? "video-note.mp4" : message.voice ? "voice.ogg" : message.audio ? message.audio.file_name ?? "audio."+(file.file_path.split(".").at(-1) ?? "mp3") : message.video ? message.video.file_name ?? "video.mp4" : message.document?.file_name ?? "photo.jpg";
+      const mimeType=message.video_note ? "video/mp4" : message.voice ? message.voice.mime_type ?? "audio/ogg" : message.audio ? message.audio.mime_type ?? "application/octet-stream" : message.video ? message.video.mime_type ?? "video/mp4" : message.document ? message.document.mime_type ?? "application/octet-stream" : "image/jpeg";
+      const uploads=protectedAudience ? undefined : [{id,name,mimeType,contentBase64:Buffer.from(bytes).toString("base64")}];
+      if (speech) try {
+        const transcript = cached ?? await this.transcribe(bytes, (message.document?.file_name ?? file.file_path).split(".").at(-1));
+        resolveVoiceIssue(this.store,conversation.id);
+        this.store.setSetting("telegram.transcript." + update.update_id, transcript);
+        return { text: [text, transcript].filter(Boolean).join("\n"), transcript, uploads };
+      } catch (error) {
+        // Failed recognition must not discard the original voice or round video.
+        // A protected audience still has no file handling.
+        if (protectedAudience) throw error;
+      }
+      return {text,uploads};
     }).then(async input => {
       const current = this.store.getTelegramChat(chatId);
       if (input.transcript && !contextOnly && this.authorizedSender(chatId,message.from?.id) && current && current.enabled !== false && current.profileId === binding?.profileId && current.conversationId === binding?.conversationId) {
@@ -866,6 +882,11 @@ export class TelegramAdapter {
     }
     } catch (error) {
       if (contextOnly) {
+        if (!this.store.findMessageByExternal("telegram",externalId)) {
+          const failed=this.store.addMessage({conversationId:conversation.id,channel:"telegram",direction:"inbound",text,externalId,author});
+          this.store.db.prepare("UPDATE messages SET context_only=1 WHERE id=?").run(failed.id);
+          this.store.setMessageStatus(failed.id,"failed","Вложение не загружено. Текст сообщения сохранён.");
+        }
         this.lastError = "Не удалось сохранить часть контекста группы. Отправьте нужное вложение в ответ на сообщение бота.";
         this.store.markTelegramUpdate(update.update_id); return;
       }

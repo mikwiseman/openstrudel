@@ -9,7 +9,7 @@ import { stringify } from "smol-toml";
 import { stdioBridge, toolBridge } from "./acp-mcp.js";
 import { agentInstructions, contextServers, hostEnvironment, imageType, insideWorkspace } from "./claude.js";
 import { modelReasoning, reasoningChoices, type ModelChoice } from "./model-settings.js";
-import { ProviderIncident, type ProviderInfo } from "./providers.js";
+import { ProviderIncident, providerFailure, type ProviderInfo } from "./providers.js";
 import { contextPattern } from "./scopes.js";
 import type { CodexEngine, CodexRunResult } from "./types.js";
 
@@ -55,7 +55,7 @@ export function launchGrok(command: GrokCommand, args: string[], cwd: string, ho
   child.stdin!.on("error", () => {});
   const kill = () => { try { process.kill(-child.pid!, "SIGKILL"); } catch {} };
   const closed = new Promise<void>(done => { child.once("close", () => { kill(); done(); }); child.once("error", () => done()); });
-  return { child, kill, closed, stderr: () => stderr.split("\n").map(line => line.trim()).filter(Boolean).pop() ?? "" };
+  return { child, kill, closed, diagnostics: () => stderr, stderr: () => stderr.split("\n").map(line => line.trim()).filter(Boolean).pop() ?? "" };
 }
 
 /** Grok lost its sign-in (`-32000`). The owner signs in again in Accounts. */
@@ -216,6 +216,10 @@ export class AcpEngine implements CodexEngine {
     if (signedOut(failure)) throw new ProviderSignInError(provider);
     if (result?.stopReason === "end_turn") return { threadId: sessionId + signed, response: response || "Готово.", events: [] };
     if (halted || result?.stopReason === "cancelled") throw stopped();
+    // ACP can return only "Internal error" while the CLI reports a specific quota failure on stderr.
+    // Classify the bounded diagnostic internally; never expose raw provider logs or credentials.
+    const diagnostic=providerFailure(provider,new Error(agent.diagnostics()));
+    if(diagnostic instanceof ProviderIncident)throw diagnostic;
     const detail = failure instanceof acp.RequestError ? failure.message : agent.stderr() || (failure instanceof Error ? failure.message : result?.stopReason) || "no reply";
     throw new Error(`${provider.name} не завершил ответ: ${detail.split("\n")[0]!.slice(0, 300)}`);
   }

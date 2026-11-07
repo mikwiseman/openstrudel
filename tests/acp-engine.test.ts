@@ -60,7 +60,7 @@ it("runs the pinned agent in the workspace with a private home, the employee too
     const [created] = g.calls("session/new");
     expect(created.cwd).toBe(workspace);
     // The agent answers first; it is not told to stop for a question.
-    expect(created._meta.rules).toContain("state the assumption in one short line");
+    expect(created._meta.rules).toContain("Use reasonable assumptions for harmless details.");
     expect(created._meta.rules).toMatch(/Current employee SOUL \(authoritative\):\nИмя: Ада$/);
     expect(created.mcpServers).toEqual([
       { type: "http", name: "openstrudel", url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/[0-9a-f]{32}$/), headers: [{ name: "Authorization", value: expect.stringMatching(/^Bearer [0-9a-f]{64}$/) }] },
@@ -177,6 +177,14 @@ it("stops with session/cancel, kills an agent that ignores it after 5 s, and nam
   expect(offline.message).toBe("Grok не завершил ответ: error sending request for url (https://auth.x.ai/.well-known/openid-configuration)");
   await expect(mock({ prompt: { code: -32603, message: "rate limit exceeded\nretry later" } }).engine.run("Привет")).rejects.toThrow(/^Grok не завершил ответ: rate limit exceeded$/);
   await expect(mock({ turn: [{ stderr: "panic: out of memory\n", exit: 3 }] }).engine.run("Привет")).rejects.toThrow(/^Grok не завершил ответ: panic: out of memory$/);
+});
+
+it("preserves a provider balance failure hidden behind a generic ACP error", async () => {
+  const g=mock({turn:[{stderr:"API error (status 402 Payment Required): Grok Build usage balance exhausted\ncleanup complete\n"}],prompt:{code:-32603,message:"Internal error"}});
+  const failure=await g.engine.run("Check the news").catch(error=>error);
+  expect(failure).toMatchObject({reason:"limits:grok",status:429});
+  expect(failure.message).toContain("Лимит подписки Grok");
+  expect(failure.message).not.toContain("Internal error");
 });
 
 it("reads the agent's model catalog for the picker from a scratch session that sends no prompt", async () => {

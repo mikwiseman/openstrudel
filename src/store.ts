@@ -344,6 +344,10 @@ export class Store {
     for (const row of this.db.prepare("SELECT * FROM messages WHERE conversation_id=? AND imported=1 AND hidden=0 ORDER BY created_at,rowid").iterate(conversationId)) yield this.mapMessage(row);
   }
 
+  *groupHistory(conversationId: string): IterableIterator<Message> {
+    for (const row of this.db.prepare("SELECT * FROM messages WHERE conversation_id=? AND hidden=0 AND kind<>'notice' AND status IN ('completed','failed') ORDER BY created_at,rowid").iterate(conversationId)) yield this.mapMessage(row);
+  }
+
   listConversations(): Conversation[] {
     return (this.db.prepare("SELECT * FROM conversations ORDER BY updated_at DESC").all() as Row[]).map((row) => this.mapConversation(row));
   }
@@ -449,7 +453,7 @@ export class Store {
     // A thread holds its own turns, not what a notification key delivered into the chat meanwhile (a report draft):
     // that comes once as context too, or the next question about it is answered about something else.
     const rows = this.db.prepare(`SELECT * FROM messages WHERE conversation_id=?
-      AND hidden=0 AND imported=0 AND status='completed' AND kind<>'notice'
+      AND hidden=0 AND imported=0 AND (status='completed' OR (context_only=1 AND status='failed')) AND kind<>'notice'
       ${pendingOnly ? "AND (context_only=1 OR (direction='outbound' AND external_id LIKE 'notification:%'))" : ""}
       AND rowid < (SELECT rowid FROM messages WHERE id=? AND conversation_id=?)
       AND rowid > COALESCE((SELECT rowid FROM messages WHERE id=? AND conversation_id=?),0)
