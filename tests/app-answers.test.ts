@@ -19,7 +19,8 @@ import { CodexEngineAdapter } from "../src/codex.js";
 import { MessageService } from "../src/messages.js";
 import { providerInfo } from "../src/providers.js";
 import { OpenStrudelRuntime } from "../src/runtime.js";
-import { answerSchema } from "../src/server.js";
+import { answerSchema, appEffort } from "../src/server.js";
+import { saveConversationModelSelection, saveModelSelection } from "../src/model-settings.js";
 import { Store } from "../src/store.js";
 import type { CodexEngine } from "../src/types.js";
 
@@ -126,4 +127,22 @@ it("refuses a structured request on Grok instead of returning prose", async () =
   const root = mkdtempSync(join(tmpdir(), "strudel-app-grok-")); cleanups.push(() => rmSync(root, { recursive: true, force: true }));
   const engine = new AcpEngine({ root, provider: providerInfo("grok")!, command: () => { throw new Error("must not start"); } });
   await expect(engine.run("Next films", { outputSchema: schema })).rejects.toThrow("по схеме");
+});
+
+it("lets an app's chat think lighter until the owner chooses its model", async () => {
+  expect(appEffort(undefined)).toBeUndefined();
+  expect(appEffort("medium")).toBe("medium");
+  for (const wrong of ["", "Medium", 3, "x".repeat(41)]) expect(() => appEffort(wrong)).toThrow("уровень");
+  const store = new Store(":memory:"), seen: Array<string | null | undefined> = [];
+  const messages = new MessageService(store, { async run(_input, options) { seen.push(options?.reasoningEffort); return { threadId: "t", response: "{}", events: [] }; } });
+  try {
+    saveModelSelection(store, { provider: "chatgpt", model: "gpt-6-astra", serviceTier: "default", reasoningEffort: "xhigh" });
+    const app = { channel: "api" as const, externalChatId: "app:cinema", byOwner: true, outputSchema: schema };
+    const first = await messages.handle({ ...app, text: "Next films", reasoningEffort: "medium" });
+    await messages.handle({ ...app, text: "Next films without a level" });
+    saveConversationModelSelection(store, first.conversationId, { provider: "chatgpt", model: "gpt-6-astra", serviceTier: "default", reasoningEffort: "high" });
+    await messages.handle({ ...app, text: "Next films after the owner chose", reasoningEffort: "medium" });
+    await messages.handle({ channel: "api", externalChatId: "home", byOwner: true, text: "The main chat keeps the device level" });
+    expect(seen).toEqual(["medium", "xhigh", "high", "xhigh"]);
+  } finally { await messages.close(); store.close(); }
 });

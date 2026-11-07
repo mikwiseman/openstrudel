@@ -185,6 +185,8 @@ export interface MessageInput {
   context?: MessageContext;
   /** A native app asks for a structured answer: the reply's text is one JSON document matching this schema. */
   outputSchema?: Record<string, unknown>;
+  /** A native app's reasoning level for its own chat, used while the owner has chosen no model for that chat. */
+  reasoningEffort?: string;
 }
 
 export interface MessageResult {

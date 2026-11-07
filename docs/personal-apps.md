@@ -24,6 +24,10 @@ The app sends `POST /v1/messages` with `externalChatId: "app:<name>"` and a `tit
 }
 ```
 
+## Thinking level
+
+An app can send `reasoningEffort` (for example `"medium"`) for its own chat. It applies while the owner has chosen no model for that chat; a model chosen for the chat in OpenStrudel always wins, and the engine fits the level to the model it runs. Measured on 7 November 2026 on Wolf with GPT-6 Astra and the same film request: xhigh answered in 152 seconds, medium in 27, with picks of the same quality. A swipe deck cannot wait two and a half minutes, so Cinema asks for medium.
+
 ## Retries
 
 Send a new `externalId` UUID with every request and keep it until the answer arrives. Sending the same request again returns the saved answer and does not start another turn. Without `async=true` the call waits for the answer; there is no total turn timeout. With `async=true` the app receives the receipt at once and reads the answer from the conversation later.

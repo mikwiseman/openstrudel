@@ -53,6 +53,13 @@ export function answerSchema(value: unknown): Record<string, unknown> | undefine
   return value as Record<string, unknown>;
 }
 
+/** The same level names the model settings accept; the engine fits the level to the model it runs. */
+export function appEffort(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string" || !/^[a-z][a-z0-9_-]{0,39}$/.test(value)) throw new HomeError("Выберите уровень обдумывания.");
+  return value;
+}
+
 const DAILY_METRICS_PATHS = ["/check-in", "/check-in/", "/check-in/app.js", "/check-in/style.css", "/check-in/api"];
 
 /** Small HTTP transport shared by the native clients and Telegram setup. */
@@ -1001,7 +1008,7 @@ export class HttpApi {
       if (request.method === "POST" && path === "/v1/messages") {
         const body = await this.body(request);
         if (body.mode !== undefined && body.mode !== "steer" && body.mode !== "queue") throw new HomeError("Выберите: уточнить сейчас или отправить после ответа.");
-        const outputSchema = answerSchema(body.outputSchema);
+        const outputSchema = answerSchema(body.outputSchema), reasoningEffort = appEffort(body.reasoningEffort);
         const context = await this.messageContext(body, canManageAccount);
         const submission = await this.messages.submit({
           mode: body.mode,
@@ -1017,6 +1024,7 @@ export class HttpApi {
           byOwner: canManageAccount,
           context,
           outputSchema,
+          reasoningEffort,
         });
         this.send(response, url.searchParams.get("async") === "true" ? 202 : 200, url.searchParams.get("async") === "true" ? submission.receipt : await submission.completion);
         return;
