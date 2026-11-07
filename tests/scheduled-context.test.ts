@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/store.js";
 import { MessageService } from "../src/messages.js";
+import { saveModelSelection } from "../src/model-settings.js";
 
 const cleanup:Array<()=>Promise<void>>=[];
 afterEach(async()=>{for(const close of cleanup.splice(0))await close();});
@@ -69,4 +70,22 @@ it("does not read another employee's group or retain the grant after reassignmen
   await expect(tools.call("read_chat_history",{before:null})).rejects.toThrow();
   await expect(service.handle(request)).rejects.toThrow();
   expect(run).toHaveBeenCalledTimes(1);
+});
+
+it("gives a scheduled Grok run in its new session the group's comments, while its own posts stay with read_news",async()=>{
+  // A news employee's delivery group holds mostly its own long posts; about fifty of them would seed every hourly run again.
+  const fill=({store,group}:ReturnType<typeof setup>)=>{
+    for(let i=0;i<3;i++)store.addMessage({conversationId:group.conversationId!,channel:"telegram",direction:"outbound",text:`OWN_POST_${i} `+"карточка радара ".repeat(120)});
+    store.addMessage({conversationId:group.conversationId!,channel:"telegram",direction:"inbound",author:"Alisa",text:"This one was a repeat."});
+  };
+  const grok=setup();fill(grok);
+  saveModelSelection(grok.store,{provider:"grok",model:"grok-4.7",serviceTier:"default"},grok.employee.id);
+  await grok.service.handle(grok.request);
+  expect(grok.run.mock.calls[0]![0]).toContain("This one was a repeat.");
+  expect(grok.run.mock.calls[0]![0]).not.toContain("OWN_POST_");
+  // A run on another engine resumes its chat's thread and still reads the whole group.
+  const other=setup();fill(other);
+  await other.service.handle(other.request);
+  expect(other.run.mock.calls[0]![0]).toContain("This one was a repeat.");
+  expect(other.run.mock.calls[0]![0]).toContain("OWN_POST_2");
 });

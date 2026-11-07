@@ -96,6 +96,10 @@ export function providerInfos(): ProviderInfo[] {
   return providers.map(p => providerInfo(p.id)!);
 }
 
+/** A schedule on a subscription's own agent (Grok) runs in a new session every time: no saved thread, no chat seed, nothing saved back.
+ * A resumed session carried the whole chat into every check; the employee's own tools carry what a run needs. */
+export const freshSession = (provider: string | null | undefined, scheduled: boolean | undefined): boolean => scheduled === true && providerInfo(provider ?? "")?.engine === "acp";
+
 /** A key route fails every turn until the owner acts, so a Telegram group hears about one `reason` once. */
 export class ProviderIncident extends HomeError {
   constructor(message: string, status: number, readonly reason: string) { super(message, status); }
@@ -213,6 +217,9 @@ export function providerFailure(info: ProviderInfo, error: unknown): unknown {
   const message = error instanceof Error ? error.message : String(error), subscription = info.auth === "signin";
   const limits = new ProviderIncident(subscription ? `Лимит подписки ${info.name} исчерпан. Повторите позже или выберите другую модель.`
     : `У ключа ${info.name} закончился лимит или баланс. Проверьте оплату у провайдера или повторите позже.`, 429, "limits:" + info.id);
+  // The agent's own HTTP status decides before its words, which may quote a tool or a page (Grok keeps it in the request's data).
+  const status = error instanceof Error ? (error.cause as { data?: { http_status?: unknown } } | undefined)?.data?.http_status : undefined;
+  if (typeof status === "number") return status === 402 || status === 429 ? limits : error;
   if (exhaustedPlan(message)) return limits;
   if (!subscription && (isOpenAIAuthenticationError(error) || /\b40[13]\b|forbidden|authentication|invalid.{0,20}(?:api.?key|token)/i.test(message))) return new ProviderKeyError(info);
   if (/\b4(?:02|29)\b|rate.?limit|quota|insufficient|billing|credit|balance|usage limit|too many requests/i.test(message)) return limits;

@@ -320,6 +320,170 @@ describe("durable cron", () => {
     expect(scheduler.list(c.id)[0]?.nextRunAt).toBe("2026-09-30T03:00:00.000Z");
     expect(scheduler.runs(c.id)).toEqual([expect.objectContaining({ status: "completed", scheduledFor: "2026-09-29T03:00:00.000Z" })]);
   });
+  it("adds a usage column to an existing run history and keeps its rows", () => {
+    const store = new Store(":memory:"); stores.push(store);
+    const c = store.primaryConversation();
+    // The tables as a Home before this change created them, with a run on record.
+    store.db.exec(`CREATE TABLE schedules (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations(id), name TEXT NOT NULL, prompt TEXT NOT NULL, cron TEXT NOT NULL,
+      timezone TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, next_run_at TEXT NOT NULL, telegram_chat_id TEXT, delivery TEXT NOT NULL DEFAULT 'bound', backup_of TEXT REFERENCES schedules(id), poll_json TEXT);
+      CREATE TABLE schedule_runs (id TEXT PRIMARY KEY, schedule_id TEXT NOT NULL REFERENCES schedules(id), conversation_id TEXT NOT NULL, scheduled_for TEXT NOT NULL, status TEXT NOT NULL,
+      created_at TEXT NOT NULL, message_id TEXT, error TEXT, private_source_fingerprint TEXT, UNIQUE(schedule_id,scheduled_for));`);
+    store.db.prepare("INSERT INTO schedules(id,conversation_id,name,prompt,cron,timezone,next_run_at) VALUES(?,?,?,?,?,?,?)").run("radar", c.id, "Радар", "Проверь", "5 * * * *", "UTC", "2026-11-07T08:05:00.000Z");
+    store.db.prepare("INSERT INTO schedule_runs(id,schedule_id,conversation_id,scheduled_for,status,created_at,error) VALUES(?,?,?,?,?,?,?)")
+      .run("old-run", "radar", c.id, "2026-11-06T08:05:00.000Z", "failed", "2026-11-06T08:05:00.000Z", "Grok не завершил ответ: Internal error");
+    const scheduler = new Scheduler(store, new MessageService(store, { async run() { return { threadId: "t", response: "NO_REPLY", events: [] }; } }));
+    new Scheduler(store, new MessageService(store, { async run() { return { threadId: "t", response: "NO_REPLY", events: [] }; } }));
+    expect((store.db.prepare("PRAGMA table_info(schedule_runs)").all() as Array<{ name: string }>).map(column => column.name)).toContain("usage_json");
+    expect(scheduler.runs(c.id)).toEqual([{ id: "old-run", scheduleId: "radar", status: "failed", scheduledFor: "2026-11-06T08:05:00.000Z", messageId: null, error: "Grok не завершил ответ: Internal error" }]);
+    expect(store.db.prepare("SELECT usage_json FROM schedule_runs WHERE id='old-run'").get()).toEqual({ usage_json: null });
+  });
+  it("records what each run spent and the allowance after it, also when the run fails", async () => {
+    const store = new Store(":memory:"); stores.push(store);
+    const usage = { inputTokens: 52_000, cachedReadTokens: 41_000, outputTokens: 900, modelCalls: 3, costUsdTicks: 312_000_000 };
+    const billing = { config: { creditUsagePercent: 17.5 }, subscription_tier: "Super" };
+    let fail = false;
+    const messages = new MessageService(store, { async run(_input, options) {
+      options?.onEvent?.({ type: "turn.usage", payload: { usage, billing } });
+      if (fail) throw new Error("Grok прервал ответ: не разрешено «Write /data/x»");
+      return { threadId: "t", response: "NO_REPLY", events: [] };
+    } });
+    const scheduler = new Scheduler(store, messages); messages.scheduler = scheduler;
+    const chat = store.getOrCreateConversation({ channel: "api", externalId: "news", title: "News" });
+    scheduler.save({ conversationId: chat.id, name: "Радар", prompt: "Проверь", cron: "5 * * * *", timezone: "UTC" }, new Date("2026-11-07T07:00:00Z"));
+    await scheduler.tick(new Date("2026-11-07T07:05:01Z")); await scheduler.idle();
+    fail = true;
+    await scheduler.tick(new Date("2026-11-07T08:05:01Z")); await scheduler.idle();
+    const rows = store.db.prepare("SELECT status,usage_json FROM schedule_runs ORDER BY scheduled_for").all() as Array<{ status: string; usage_json: string }>;
+    expect(rows.map(row => [row.status, JSON.parse(row.usage_json)])).toEqual([["quiet", { usage, billing }], ["failed", { usage, billing }]]);
+  });
+  it("stops a scheduled run that takes more than 30 minutes and tells the owner why", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const store = new Store(":memory:"); stores.push(store);
+      const turns: string[] = [];
+      // A hung turn: it ends only when it is stopped.
+      const messages = new MessageService(store, { run: (_input, options) => new Promise((_, reject) => {
+        turns.push("started");
+        options?.signal?.addEventListener("abort", () => { turns.push("stopped"); reject(new Error("Ответ остановлен")); });
+      }) });
+      const scheduler = new Scheduler(store, messages), root = store.primaryConversation();
+      const chat = store.getOrCreateConversation({ channel: "api", externalId: "news", title: "News" });
+      scheduler.save({ conversationId: chat.id, name: "Радар", prompt: "Проверь", cron: "5 * * * *", timezone: "UTC" }, new Date("2026-11-07T07:00:00Z"));
+      await scheduler.tick(new Date("2026-11-07T07:05:01Z"));
+      await vi.advanceTimersByTimeAsync(30 * 60_000 - 1);
+      expect(turns).toEqual(["started"]);
+      expect(scheduler.runs(chat.id)[0]?.status).toBe("running");
+      await vi.advanceTimersByTimeAsync(1); await scheduler.idle();
+      expect(turns).toEqual(["started", "stopped"]);
+      const error = "Расписание остановлено: выполнение заняло больше 30 минут.";
+      expect(scheduler.runs(chat.id)[0]).toMatchObject({ status: "failed", error });
+      expect(store.listMessages(root.id).map(m => m.text)).toEqual([`Требует внимания · News\nРасписание: Радар\nЗадача не выполнена: ${error}`]);
+    } finally { vi.useRealTimers(); }
+  });
+  it("counts a run's 30 minutes from when it starts, not while it waits behind another turn of its chat", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const store = new Store(":memory:"); stores.push(store);
+      const log: string[] = [];
+      // The owner's task takes the minutes it names, «Кто ждёт ответа» 12, and «Мой день» hangs. A stopped turn ends at once.
+      const messages = new MessageService(store, { run: (input, options) => new Promise((resolve, reject) => {
+        const name = input.match(/^Scheduled request: (.+)$/m)?.[1] ?? "owner";
+        const length = ({ "Кто ждёт ответа": 12 } as Record<string, number>)[name] ?? Number(input.match(/Задача на (\d+) минут/)?.[1]);
+        log.push(`${name} started`);
+        const timer = Number.isNaN(length) ? undefined : setTimeout(() => {
+          log.push(`${name} finished`);
+          resolve({ threadId: "t", response: name === "owner" ? "Готово" : "NO_REPLY", events: [] });
+        }, length * 60_000);
+        options?.signal?.addEventListener("abort", () => { clearTimeout(timer); log.push(`${name} stopped`); reject(new Error("Ответ остановлен")); });
+      }) });
+      const scheduler = new Scheduler(store, messages), root = store.primaryConversation();
+      const chat = store.getOrCreateConversation({ channel: "api", externalId: "owner-chat", title: "Главный" });
+      for (const [name, cron] of [["Кто ждёт ответа", "5 10 * * *"], ["Мой день", "5 11 * * *"]] as const)
+        scheduler.save({ conversationId: chat.id, name, prompt: "Проверь", cron, timezone: "UTC" }, new Date("2026-11-07T09:00:00Z"));
+      // At 10:00 the owner starts a 40-minute task. The 10:05 run waits 35 minutes behind it, then runs its 12.
+      const first = messages.handle({ channel: "api", conversationId: chat.id, text: "Задача на 40 минут", byOwner: true });
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      await scheduler.tick(new Date("2026-11-07T10:05:01Z"));
+      await vi.advanceTimersByTimeAsync(47 * 60_000);
+      await first; await scheduler.idle();
+      expect(log).toEqual(["owner started", "owner finished", "Кто ждёт ответа started", "Кто ждёт ответа finished"]);
+      expect(scheduler.runs(chat.id)[0]).toMatchObject({ status: "quiet" });
+      // At 11:00 a 20-minute task. The 11:05 run starts at 11:20 and hangs: it is stopped at 11:50, 30 minutes after it started.
+      log.length = 0;
+      const second = messages.handle({ channel: "api", conversationId: chat.id, text: "Задача на 20 минут", byOwner: true });
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      await scheduler.tick(new Date("2026-11-07T11:05:01Z"));
+      await vi.advanceTimersByTimeAsync(45 * 60_000 - 1);
+      await second;
+      expect(log).toEqual(["owner started", "owner finished", "Мой день started"]);
+      await vi.advanceTimersByTimeAsync(1); await scheduler.idle();
+      expect(log.at(-1)).toBe("Мой день stopped");
+      const error = "Расписание остановлено: выполнение заняло больше 30 минут.";
+      expect(scheduler.runs(chat.id)[0]).toMatchObject({ status: "failed", error });
+      expect(store.listMessages(root.id).map(m => m.text)).toEqual([`Требует внимания · Главный\nРасписание: Мой день\nЗадача не выполнена: ${error}`]);
+    } finally { vi.useRealTimers(); }
+  });
+  it("tells each run when its chat's last successful run was due, so a failed hour is read again", async () => {
+    const store = new Store(":memory:"); stores.push(store);
+    const seen: Array<{ name: string; previous: string | null }> = [];
+    const replies: Record<string, string | Error> = { "Утро": "NO_REPLY", "Радар": "NO_REPLY", "Стартапы": "Обзор готов" };
+    const messages = new MessageService(store, { async run(input) {
+      const name = input.match(/^Scheduled request: (.+)$/m)![1]!;
+      seen.push({ name, previous: input.match(/^Previous successful run in this chat: (.+)$/m)?.[1] ?? null });
+      const reply = replies[name]!;
+      if (reply instanceof Error) throw reply;
+      return { threadId: "t", response: reply, events: [] };
+    } });
+    const scheduler = new Scheduler(store, messages);
+    const news = store.getOrCreateConversation({ channel: "api", externalId: "news", title: "News" });
+    const startups = store.getOrCreateConversation({ channel: "api", externalId: "startups", title: "Startups" });
+    const saved = new Date("2026-11-07T03:00:00Z");
+    scheduler.save({ conversationId: news.id, name: "Утро", prompt: "Собери выпуск", cron: "45 6 * * *", timezone: "Europe/Moscow" }, saved);
+    scheduler.save({ conversationId: news.id, name: "Радар", prompt: "Проверь очередь", cron: "5 8-23 * * *", timezone: "Europe/Moscow" }, saved);
+    scheduler.save({ conversationId: startups.id, name: "Стартапы", prompt: "Обзор", cron: "50 * * * *", timezone: "UTC" }, saved);
+    const run = async (at: string) => { await scheduler.tick(new Date(at)); await scheduler.idle(); };
+    await run("2026-11-07T03:45:01Z");
+    await run("2026-11-07T05:05:01Z");
+    replies["Радар"] = new Error("Grok не завершил ответ: Internal error");
+    await run("2026-11-07T06:05:01Z");
+    replies["Радар"] = "Карточка опубликована";
+    await run("2026-11-07T07:05:01Z");
+    await run("2026-11-07T08:05:01Z");
+    const previous = (name: string) => seen.filter(s => s.name === name).map(s => s.previous);
+    // The chat's first run has no line. A quiet edition counts, a failed radar does not, and another chat never does.
+    expect(previous("Утро")).toEqual([null]);
+    expect(previous("Радар")).toEqual(["2026-11-07T03:45:00.000Z", "2026-11-07T05:05:00.000Z", "2026-11-07T05:05:00.000Z", "2026-11-07T07:05:00.000Z"]);
+    expect(previous("Стартапы")).toEqual([null, "2026-11-07T04:50:00.000Z", "2026-11-07T05:50:00.000Z", "2026-11-07T06:50:00.000Z"]);
+    expect(scheduler.runs(news.id).map(r => [r.scheduledFor, r.status]).reverse()).toEqual([["2026-11-07T03:45:00.000Z", "quiet"], ["2026-11-07T05:05:00.000Z", "quiet"],
+      ["2026-11-07T06:05:00.000Z", "failed"], ["2026-11-07T07:05:00.000Z", "completed"], ["2026-11-07T08:05:00.000Z", "completed"]]);
+  });
+  it("counts neither a skipped backup nor a run a restart left uncertain as the chat's last successful run", async () => {
+    const store = new Store(":memory:"); stores.push(store);
+    const seen: Array<{ name: string; previous: string | null }> = [];
+    // The 06:05 radar is still running when the Home restarts.
+    const engine = { run: (input: string) => {
+      seen.push({ name: input.match(/^Scheduled request: (.+)$/m)![1]!, previous: input.match(/^Previous successful run in this chat: (.+)$/m)?.[1] ?? null });
+      return input.includes("Scheduled for: 2026-11-07T06:05:00.000Z") ? new Promise<never>(() => {}) : Promise.resolve({ threadId: "t", response: "NO_REPLY", events: [] });
+    } };
+    const scheduler = new Scheduler(store, new MessageService(store, engine));
+    const news = store.getOrCreateConversation({ channel: "api", externalId: "news", title: "News" }), saved = new Date("2026-11-07T03:00:00Z");
+    const utro = scheduler.save({ conversationId: news.id, name: "Утро", prompt: "Собери выпуск", cron: "45 6 * * *", timezone: "Europe/Moscow" }, saved);
+    scheduler.save({ conversationId: news.id, name: "Утро, резерв", prompt: "Собери выпуск", cron: "15 7 * * *", timezone: "Europe/Moscow", backupOf: utro.id }, saved);
+    scheduler.save({ conversationId: news.id, name: "Радар", prompt: "Проверь очередь", cron: "5 8-23 * * *", timezone: "Europe/Moscow" }, saved);
+    const run = async (clock: Scheduler, at: string) => { await clock.tick(new Date(at)); await clock.idle(); };
+    await run(scheduler, "2026-11-07T03:45:01Z");
+    // The edition went out, so its backup is skipped.
+    await run(scheduler, "2026-11-07T04:15:01Z");
+    await run(scheduler, "2026-11-07T05:05:01Z");
+    // The Home restarts during the 06:05 radar, and the new clock marks that run uncertain.
+    await scheduler.tick(new Date("2026-11-07T06:05:01Z"));
+    const restarted = new Scheduler(store, new MessageService(store, engine)); restarted.recover();
+    await run(restarted, "2026-11-07T07:05:01Z");
+    expect(restarted.runs(news.id).map(r => [r.scheduledFor, r.status]).reverse()).toEqual([["2026-11-07T03:45:00.000Z", "quiet"], ["2026-11-07T04:15:00.000Z", "skipped"],
+      ["2026-11-07T05:05:00.000Z", "quiet"], ["2026-11-07T06:05:00.000Z", "uncertain"], ["2026-11-07T07:05:00.000Z", "quiet"]]);
+    // The 07:05 radar reads again from 05:05, the hour the cut-off run never finished.
+    expect(seen.filter(s => s.name === "Радар").map(s => s.previous)).toEqual(["2026-11-07T03:45:00.000Z", "2026-11-07T05:05:00.000Z", "2026-11-07T05:05:00.000Z"]);
+  });
   it("does not rerun an interrupted action on recovery", async () => {
     const { store, scheduler, calls } = setup();
     const c = store.primaryConversation();

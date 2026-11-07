@@ -77,7 +77,7 @@ export function publishEdition(store: Store, conversationId: string, args: Recor
   const edition = String(args.edition ?? ""), ids = args.storyIds;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(edition) || Number.isNaN(Date.parse(edition)) || new Date(edition).toISOString().slice(0, 10) !== edition) throw new Error("Укажите дату выпуска YYYY-MM-DD.");
   if (!Array.isArray(ids) || !ids.length || ids.length > 100 || ids.some(id => typeof id !== "string") || new Set(ids).size !== ids.length) throw new Error("Укажите разные storyIds по порядку значимости.");
-  const available = new Map(readNews(store, conversationId).stories.map(m => [m.story.id, m.story]));
+  const available = new Map(latestStories(store, conversationId).map(m => [m.story.id, m.story]));
   const selected = ids.map(id => { const story = available.get(id); if (!story) throw new Error(`История ${id} не найдена в недавних новостях этого чата.`); return story; });
   store.db.exec("BEGIN IMMEDIATE");
   try {
@@ -117,13 +117,83 @@ export function newsFeed(store: Store, conversationId: string, days = 14): { mes
   return { messages, stamp: newsStamp(store, conversationId) };
 }
 
-/** The editor needs the stories themselves, even after hundreds of quiet scheduled turns. */
-export function readNews(store: Store, conversationId: string) {
-  const latest = new Map<string, Message>();
-  for (const message of storyMessages(store, conversationId, 2)) {
-    if (message.story) latest.set(message.story.id, message);
+/** Grok keeps the first 20,000 bytes of an MCP result, and a Russian letter takes two. */
+const READ_NEWS_BYTES = 18_000;
+/** A run posts and publishes within its 30 minutes, in either order. */
+const POSTED_BEFORE_STORY_MS = 30 * 60_000;
+const LINKS = /https?:\/\/[^\s<>()[\]"'«»*]+/g;
+type StoryMessage = Message & { story: NewsStory };
+
+/** The latest version of each story published or updated in the last 72 hours, most recently changed first. */
+function latestStories(store: Store, conversationId: string): StoryMessage[] {
+  const latest = new Map<string, StoryMessage>();
+  for (const message of storyMessages(store, conversationId, 3)) {
+    if (!message.story) continue;
+    latest.delete(message.story.id);
+    latest.set(message.story.id, message as StoryMessage);
   }
-  return { stories: [...latest.values()].reverse().map(message => ({
-    messageId: message.id, updatedAt: message.createdAt, story: message.story!,
-  })) };
+  return [...latest.values()].reverse();
+}
+
+/** One page however a post or a story writes its address: trailing punctuation and slash removed. */
+function page(url: string): string | null {
+  try {
+    const parsed = new URL(url.replace(/[.,;:!?]+$/, ""));
+    parsed.pathname = parsed.pathname.replace(/(.)\/+$/, "$1");
+    return parsed.href;
+  } catch { return null; }
+}
+
+/** When each story first went out: the earliest delivered send_telegram_message post in this employee's Telegram chats that links one
+ * of its sources. A post counts from 30 minutes before the story first appeared here; an older post of the same page, a changelog
+ * for instance, belongs to an earlier story. */
+function telegramTimes(store: Store, conversationId: string, stories: StoryMessage[]): Map<string, string> {
+  const sent = new Map<string, string>();
+  if (!stories.length) return sent;
+  const shown = new Set(stories.map(m => m.story.id)), from = new Map<string, number>();
+  const firstSeen = store.db.prepare("SELECT story_id AS id, MIN(created_at) AS at FROM messages WHERE conversation_id=? AND story_json IS NOT NULL AND hidden=0 GROUP BY story_id")
+    .all(conversationId) as Array<{ id: string; at: string }>;
+  for (const row of firstSeen) if (shown.has(row.id)) from.set(row.id, Date.parse(row.at) - POSTED_BEFORE_STORY_MS);
+  const since = new Date(Math.min(...from.values())).toISOString();
+  const posts = (store.db.prepare(`SELECT m.created_at AS at, m.text FROM messages m JOIN conversations c ON c.id=m.conversation_id
+    WHERE c.profile_id IS ? AND m.channel='telegram' AND m.direction='outbound' AND m.status='completed' AND m.external_id LIKE '%:send:%' AND m.created_at>=?
+    ORDER BY m.created_at, m.rowid`).all(store.getConversation(conversationId)?.profileId ?? null, since) as Array<{ at: string; text: string }>)
+    .map(post => ({ at: post.at, pages: new Set((post.text.match(LINKS) ?? []).map(page)) }));
+  for (const { story } of stories) {
+    const pages = story.sources.map(source => page(source.url)).filter(Boolean), start = from.get(story.id) ?? 0;
+    const post = posts.find(p => Date.parse(p.at) >= start && pages.some(url => p.pages.has(url)));
+    if (post) sent.set(story.id, post.at);
+  }
+  return sent;
+}
+
+const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+const minute = (iso: string) => new Date(iso).toISOString().slice(0, 16) + "Z";
+/** The event's UTC minute, or its date alone when only the date is known. */
+const eventTime = (at: string | null) => !at ? "undated" : /^\d{4}-\d{2}-\d{2}$/.test(at) || Number.isNaN(Date.parse(at)) ? oneLine(at) : minute(at);
+/** The bytes a line adds to the JSON text the tool bridge sends, its line break included. */
+const encoded = (line: string) => Buffer.byteLength(JSON.stringify(line));
+
+/** The editor's view of its reader. By default one line per story of the last 72 hours, newest first, within what Grok reads of a tool
+ * result: `storyId | event time | title | section | Telegram <time> or not in Telegram | first source`, then "+N older stories omitted"
+ * when the rest does not fit. With a storyId, that story's latest full version at any age. */
+export function readNews(store: Store, conversationId: string, args: Record<string, unknown> = {}) {
+  if (args.storyId != null && typeof args.storyId !== "string") throw new Error("storyId — ключ истории из read_news.");
+  if (args.storyId) {
+    const row = store.db.prepare("SELECT id FROM messages WHERE conversation_id=? AND story_id=? AND story_json IS NOT NULL AND hidden=0 ORDER BY created_at DESC, rowid DESC LIMIT 1")
+      .get(conversationId, args.storyId) as { id: string } | undefined;
+    const message = row && store.getMessage(conversationId, row.id);
+    if (!message?.story) throw new Error(`История ${args.storyId} не найдена в этом чате.`);
+    return { messageId: message.id, updatedAt: message.createdAt, telegram: telegramTimes(store, conversationId, [message as StoryMessage]).get(message.story.id) ?? null, story: message.story };
+  }
+  const stories = latestStories(store, conversationId);
+  if (!stories.length) return "No stories in the last 72 hours.";
+  const sent = telegramTimes(store, conversationId, stories);
+  const lines = stories.map(({ story }) => [story.id, eventTime(story.eventAt), oneLine(story.title), oneLine(story.section),
+    sent.has(story.id) ? `Telegram ${minute(sent.get(story.id)!)}` : "not in Telegram", story.sources[0]?.url ?? ""].join(" | "));
+  // Room for the last line stays free until the last story fits.
+  const room = encoded(`+${lines.length} older stories omitted`);
+  let shown = 0, used = 0;
+  while (shown < lines.length && used + encoded(lines[shown]!) + (shown + 1 < lines.length ? room : 0) <= READ_NEWS_BYTES) used += encoded(lines[shown++]!);
+  return [...lines.slice(0, shown), ...shown < lines.length ? [`+${lines.length - shown} older stories omitted`] : []].join("\n");
 }

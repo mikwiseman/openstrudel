@@ -7,7 +7,7 @@ import type { Store } from "./store.js";
 import type { CodexEngine } from "./types.js";
 import { AccountUnavailableError, isOpenAIAuthenticationError } from "./account-errors.js";
 import { resolveModelSelection, followsDeviceModel, readModelFallbacks } from "./model-settings.js";
-import { ProviderIncident, providerConnected, providerFailure, providerInfo, providerInfos, providerKey, providerModels, providerNotConnected, subscriptionModels, type ProviderInfo } from "./providers.js";
+import { ProviderIncident, freshSession, providerConnected, providerFailure, providerInfo, providerInfos, providerKey, providerModels, providerNotConnected, subscriptionModels, type ProviderInfo } from "./providers.js";
 import { ClaudeEngine } from "./claude.js";
 import { AcpEngine, AcpSessionLost, ProviderSignInError } from "./acp.js";
 import { GrokLogin } from "./acp-login.js";
@@ -251,19 +251,21 @@ export class AccountEngines implements CodexEngine {
         if (service) locked = { id, service };
         // A sender without access gets a thread of their own, which never had the listed people's services or memories.
         const route = options?.access === false ? id + ".guest" : id;
-        const threadKey = options?.conversationId ? `codex.thread.${route}.${options.conversationId}` : undefined;
+        // A schedule on a subscription's agent starts a new session: the chat's thread, seed and checkpoint stay the owner's.
+        const fresh = freshSession(provider, options?.scheduled), chat = fresh ? undefined : options?.conversationId;
+        const threadKey = chat ? `codex.thread.${route}.${chat}` : undefined;
         const saved = threadKey ? this.accounts.store.getSetting(threadKey) : undefined;
         this.accounts.active.set(id, (this.accounts.active.get(id) ?? 0) + 1);
         runningProvider = provider;
         try {
-          const ownerKey = options?.conversationId ? "codex.threadOwner." + options.conversationId : undefined;
+          const ownerKey = chat ? "codex.threadOwner." + chat : undefined;
           const owner = ownerKey ? this.accounts.store.getSetting(ownerKey) : null;
           const threadId = saved ?? (route === "default" && (!owner || owner === route) ? options?.threadId : undefined);
           // A new thread is seeded with the chat. A thread resumed after another route answered gets the turns made since its last one.
-          const checkpointKey = options?.conversationId ? `codex.threadCheckpoint.${route}.${options.conversationId}` : undefined;
+          const checkpointKey = chat ? `codex.threadCheckpoint.${route}.${chat}` : undefined;
           const resumedElsewhere = threadId && owner && owner !== route;
           const checkpoint = resumedElsewhere && checkpointKey ? this.accounts.store.getSetting(checkpointKey) : null;
-          const recent = options?.conversationId && (!threadId || resumedElsewhere) ? this.accounts.store.listMessages(options.conversationId, 200) : [];
+          const recent = chat && (!threadId || resumedElsewhere) ? this.accounts.store.listMessages(chat, 200) : [];
           const history = recent.slice(recent.findIndex(m => m.id === checkpoint) + 1).filter(m => m.kind !== "notice" && m.status === "completed" && (!checkpoint || m.replyToId !== checkpoint))
             // Who said what, and the files: a group's seed otherwise reads as one anonymous user with empty lines.
             .map(m => `${m.direction === "inbound" ? m.author || "User" : "Assistant"}: ${[m.text, m.attachments?.length ? `[${m.attachments.map(f => f.name).join(", ")}]` : ""].filter(Boolean).join(" ")}`).join("\n");
@@ -277,12 +279,13 @@ export class AccountEngines implements CodexEngine {
             onEvent: event => {
               if (threadKey && event.type === "thread.started") this.accounts.store.setSetting(threadKey, (event.payload as any).threadId);
               if (ownerKey && event.type === "thread.started") this.accounts.store.setSetting(ownerKey, route);
-              options?.onEvent?.(event);
+              if (!fresh || event.type !== "thread.started") options?.onEvent?.(event);
             } });
           if (threadKey) this.accounts.store.setSetting(threadKey, result.threadId);
           if (ownerKey) this.accounts.store.setSetting(ownerKey, route);
           if (checkpointKey && options?.messageId) this.accounts.store.setSetting(checkpointKey, options.messageId);
-          return result;
+          // Nothing to resume, so the chat keeps its own thread.
+          return fresh ? { ...result, threadId: "" } : result;
         } catch (error) {
           // Grok no longer knows the saved session, or Claude failed before writing it:
           // a new one starts, seeded with the chat, once.
@@ -331,9 +334,10 @@ export class AccountEngines implements CodexEngine {
             if (id) this.limited.delete(id);
             return result;
           } catch (error) {
+            // A key or subscription route's failure was named by providerFailure, from the agent's status before its words.
             const quota = error instanceof AccountUnavailableError ? error.reason === "limits"
               : error instanceof ProviderIncident ? error.reason.startsWith("limits:")
-              : /\b429\b|rate[_ -]?limit|quota|usage limit|too many requests/i.test(error instanceof Error ? error.message : "");
+              : provider === "chatgpt" && /\b429\b|rate[_ -]?limit|quota|usage limit|too many requests/i.test(error instanceof Error ? error.message : "");
             if (!quota) throw error;
             if (id) {
               const failures = (this.limited.get(id)?.failures ?? 0) + 1;

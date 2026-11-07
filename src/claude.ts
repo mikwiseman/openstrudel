@@ -205,12 +205,12 @@ export class ClaudeEngine implements CodexEngine {
 
 type Service = McpServerConfig & { toolLists?: { enabled?: string[]; disabled?: string[] } };
 /** The same services as the Codex scope: the owner's when shared with every chat, then shared, installer-provisioned, and Telegram's for the verified sender only.
- * A sender without access gets only the services that check the sender themselves. */
-export function contextServers(root: string, context: string, options: Pick<RunOptions, "telegramActor" | "conversationId" | "access">): Record<string, Service> {
+ * A sender without access gets only the services that check the sender themselves. Without `inherit`, the owner's are left out. */
+export function contextServers(root: string, context: string, options: Pick<RunOptions, "telegramActor" | "conversationId" | "access">, inherit = true): Record<string, Service> {
   const own = { ...readToml(resolve(root, ".data/extensions", context, "config.toml")).mcp_servers, ...readToml(resolve(root, ".data/connections", context + ".toml")).mcp_servers };
   const telegram = resolve(root, ".data/connections", context + ".telegram.json");
   const verified = existsSync(telegram) ? JSON.parse(readFileSync(telegram, "utf8")) : undefined;
-  const servers: Record<string, Service> = options.access === false ? {} : extensionServers({ ...inheritedIntegrations(root, context, { servers: own, telegram: verified }).servers, ...own });
+  const servers: Record<string, Service> = options.access === false ? {} : extensionServers({ ...inherit ? inheritedIntegrations(root, context, { servers: own, telegram: verified }).servers : {}, ...own });
   for (const [key, s] of Object.entries(telegramMcpConfig(verified, options.telegramActor, options.conversationId)) as Array<[string, any]>)
     if (s.enabled) servers[key.slice("mcp_servers.".length)] = { type: "http", url: s.url, headers: s.http_headers };
   return servers;
@@ -234,7 +234,7 @@ function extensionServers(table: Record<string, unknown>): Record<string, Servic
 export const insideWorkspace = (workspace: string, path: unknown) => typeof path === "string" && (physical(resolve(workspace, path)) + sep).startsWith(workspace + sep);
 
 /** The path a tool touches once links are followed, also when the file or a link's target does not exist yet. */
-function physical(path: string, hops = 0): string {
+export function physical(path: string, hops = 0): string {
   try { return realpathSync(path); } catch {}
   if (hops > 40) throw new Error("Too many symbolic links.");
   let link: string | undefined;
