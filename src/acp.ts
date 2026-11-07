@@ -249,7 +249,9 @@ export class AcpEngine implements CodexEngine {
     if (result?.stopReason === "cancelled") throw refused ? new AcpRefusal(`${provider.name} прервал ответ: не разрешено ${refused}`) : stopped();
     // ACP can return only "Internal error" while the CLI reports a specific quota failure on stderr.
     // Classify the bounded diagnostic internally; never expose raw provider logs or credentials.
-    const diagnostic=providerFailure(provider,new Error(agent.diagnostics()));
+    // A status in Grok's failed request decides first (providerFailure reads it from the cause): its log may quote a story or a page.
+    const stated = failure instanceof acp.RequestError && typeof (failure.data as { http_status?: unknown } | null | undefined)?.http_status === "number";
+    const diagnostic = stated ? undefined : providerFailure(provider, new Error(agent.diagnostics()));
     if(diagnostic instanceof ProviderIncident)throw diagnostic;
     const detail = failure instanceof acp.RequestError ? cause(failure) : agent.stderr() || (failure instanceof Error ? failure.message : result?.stopReason) || "no reply";
     throw new Error(`${provider.name} не завершил ответ: ${detail.split("\n")[0]!.slice(0, 300)}`, { cause: failure });

@@ -337,6 +337,15 @@ it("preserves a provider balance failure hidden behind a generic ACP error", asy
   expect(failure.message).not.toContain("Internal error");
 });
 
+it("reads Grok's stderr for a limit only when the failed request carries no status of its own", async () => {
+  // Grok logs what it was doing, here a story about credits it was publishing; the status in its failed request decides.
+  const log = "publish_story failed: OpenAI cuts the credit balance and rate limits of free accounts\n";
+  const outage = await mock({ turn: [{ stderr: log }], prompt: { code: -32603, message: "Internal error", data: { message: "upstream connect error", http_status: 503 } } }).engine.run("Радар").catch(e => e);
+  expect(outage).not.toBeInstanceOf(ProviderIncident);
+  expect(outage.message).toBe("Grok не завершил ответ: Internal error (HTTP 503): upstream connect error");
+  expect(providerFailure(providerInfo("grok")!, outage)).toBe(outage);
+});
+
 it("reads the agent's model catalog for the picker from a scratch session that sends no prompt", async () => {
   const g = mock();
   expect((await g.engine.models()).map(m => [m.id, m.isDefault])).toEqual([["grok-4.7", true], ["grok-4.6", false]]);
