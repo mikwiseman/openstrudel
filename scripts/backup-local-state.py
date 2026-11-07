@@ -19,6 +19,7 @@ import uuid
 
 SCHEMA = 'openstrudel-local-backup-v1'
 SQLITE_LOCK_TIMEOUT = 10
+PROC = Path('/proc')
 DEFAULT_SOURCE = Path.home() / 'Library/Application Support/OpenStrudel'
 DEFAULT_DEST = Path.home() / 'Library/Application Support/OpenStrudelBackups'
 EXCLUDED = {('deployment',), ('releases',), ('runtime', 'node_modules'),
@@ -129,6 +130,31 @@ def create_backup(source, root, app, extras=()):
     stage.rename(final)
     return final
 
+def open_paths():
+    """Paths that running processes hold open or use as their working directory."""
+    lsof = shutil.which('lsof')
+    if lsof:
+        result = subprocess.run([lsof, '-nP', '-Fn'], capture_output=True, text=True)
+        if result.returncode:
+            raise RuntimeError('Cannot verify open backup files; retention skipped')
+        return [line[1:] for line in result.stdout.splitlines() if line.startswith('n/')]
+    if not PROC.is_dir():
+        raise RuntimeError('Cannot verify open backup files; retention skipped')
+    # Linux without lsof: read the same descriptors and working directories from /proc.
+    opened = []
+    for pid in filter(str.isdigit, os.listdir(PROC)):
+        links = [PROC / pid / 'cwd']
+        try:
+            links += [PROC / pid / 'fd' / fd for fd in os.listdir(PROC / pid / 'fd')]
+        except OSError:
+            pass  # It exited, or is another user's process, which lsof run by this user cannot see either.
+        for link in links:
+            try:
+                opened.append(os.readlink(link))
+            except OSError:
+                pass
+    return opened
+
 def mark_healthy_and_prune(root, selected, keep=2):
     check_root(root)
     if selected.parent != root or selected.is_symlink() or not selected.name.startswith('backup-'):
@@ -158,15 +184,7 @@ def mark_healthy_and_prune(root, selected, keep=2):
             continue
     deleted = []
     candidates = sorted(healthy, reverse=True)[keep:]
-    opened = []
-    if candidates:
-        lsof = shutil.which('lsof')
-        if not lsof:
-            raise RuntimeError('Cannot verify open backup files; retention skipped')
-        result = subprocess.run([lsof, '-nP', '-Fn'], capture_output=True, text=True)
-        if result.returncode:
-            raise RuntimeError('Cannot verify open backup files; retention skipped')
-        opened = [line[1:] for line in result.stdout.splitlines() if line.startswith('n/')]
+    opened = open_paths() if candidates else []
     for _, candidate in candidates:
         if candidate == selected:
             continue
