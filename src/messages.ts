@@ -68,7 +68,8 @@ export class MessageService {
     if(notice)await this.telegram?.notifyOwner(notice,exceptChatId);
   }
 
-  async submit(input: MessageInput): Promise<{ receipt: MessageResult; completion: Promise<MessageResult> }> {
+  /** `started` settles when a queued turn begins to run, after the turns ahead of it in its chat. */
+  async submit(input: MessageInput): Promise<{ receipt: MessageResult; completion: Promise<MessageResult>; started?: Promise<void> }> {
     if (this.closing) throw new Error("OpenStrudel завершает работу");
     const text = input.text.trim();
     if (!text && !input.attachments?.length && !input.uploads?.length) throw new Error("Напишите сообщение");
@@ -158,6 +159,8 @@ export class MessageService {
         }
       }
     }
+    let start!: () => void;
+    const started = new Promise<void>(resolve => { start = resolve; });
     const completion = this.enqueue(conversation.id, inbound.id, input.channel, async () => {
       let problem:ProblemCode|undefined;
       let projectRun: ProjectRun | undefined, projectOutcome: "completed" | "failed" = "failed";
@@ -197,6 +200,7 @@ export class MessageService {
         const engine = this.engine.forAgent?.(currentProfile?.id ?? "main", context, current.id) ?? this.engine.forContext?.(context) ?? this.engine;
         const running = { engine, messageId: inbound.id, channel: input.channel, abort: new AbortController(), threadId: undefined as string | undefined };
         this.active.set(current.id, running);
+        start();
         // Telegram recordings were transcribed on arrival; a video it could not hear comes here as a plain file.
         const speech = input.channel === "telegram" ? [] : files.filter(file => isSpeechFile(file.name, file.mimeType));
         const transcripts: Array<{file: string; text: string}> = [];
@@ -323,7 +327,7 @@ export class MessageService {
     });
     this.inflight.set(inbound.id, completion);
     void completion.finally(() => this.inflight.delete(inbound.id)).catch(() => undefined);
-    return { receipt, completion };
+    return { receipt, completion, started };
   }
 
   cancel(conversationId: string, messageId: string) {

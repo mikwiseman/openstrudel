@@ -211,16 +211,19 @@ export class Scheduler {
           ? "Return the completed private edition here. The application alone handles its approved delivery and rechecks private-source access before each part. Do not call send_telegram_message or send it through another service."
           : `Return the completed edition here; the application handles delivery to Telegram chat ${destination}. Only if the saved request explicitly requires separate messages, use send_telegram_message for that destination and return NO_REPLY to avoid an extra automatic post. Check each delivery receipt; never repeat an unknown or partial delivery. Do not send to another chat.`
         : "Return the completed edition here; it stays in the app. Do not send it to Telegram.";
-      // A hung turn would hold its chat's queue and keep spending. It is stopped as an owner's cancel would stop it, so the owner hears of it from here.
-      let overdue = false;
-      const limit = setTimeout(() => {
-        overdue = true;
-        const request = this.store.findMessageByExternal("api", `schedule:${runId}`);
-        try { if (request) this.messages.cancel(schedule.conversationId, request.id); } catch { /* it has just finished */ }
-      }, RUN_LIMIT_MINUTES * 60_000);
-      limit.unref();
-      const result = await this.messages.handle({ channel:"api",conversationId:schedule.conversationId,externalId:`schedule:${runId}`,scheduled:true,scheduleTelegramChatId:destination,
-        text:`Scheduled request: ${schedule.name}\nScheduled for: ${scheduledFor} (${schedule.timezone}). Current time: ${new Date().toISOString()}.\n${previous ? `Previous successful run in this chat: ${previous}\n` : ""}${schedule.prompt}\n${checkIns ? checkIns + "\n" : ""}${deliveryInstructions} Do not create another schedule. Follow the saved request's rules for a quiet run: NO_REPLY when there is nothing to publish. If progress needs information only the user can provide, return one concise question in the saved request's language, with useful choices when available. Ask in your reply so the user can answer later and continue in this chat; do not wait in a question tool or repeat an unanswered question from recent history. Missing information is not FAILED. For an actual execution failure that prevents the work, return only "FAILED: " and one plain line why; it goes to the owner, never to the chat. Never invent facts or sources.` })
+      const { receipt, completion, started } = await this.messages.submit({ channel:"api",conversationId:schedule.conversationId,externalId:`schedule:${runId}`,scheduled:true,scheduleTelegramChatId:destination,
+        text:`Scheduled request: ${schedule.name}\nScheduled for: ${scheduledFor} (${schedule.timezone}). Current time: ${new Date().toISOString()}.\n${previous ? `Previous successful run in this chat: ${previous}\n` : ""}${schedule.prompt}\n${checkIns ? checkIns + "\n" : ""}${deliveryInstructions} Do not create another schedule. Follow the saved request's rules for a quiet run: NO_REPLY when there is nothing to publish. If progress needs information only the user can provide, return one concise question in the saved request's language, with useful choices when available. Ask in your reply so the user can answer later and continue in this chat; do not wait in a question tool or repeat an unanswered question from recent history. Missing information is not FAILED. For an actual execution failure that prevents the work, return only "FAILED: " and one plain line why; it goes to the owner, never to the chat. Never invent facts or sources.` });
+      // A hung turn would hold its chat's queue and keep spending. Its time counts from when it starts, never while it waits behind
+      // another turn of its chat. It is stopped as an owner's cancel would stop it, so the owner hears of it from here.
+      let overdue = false, limit: NodeJS.Timeout | undefined;
+      void started?.then(() => {
+        limit = setTimeout(() => {
+          overdue = true;
+          try { this.messages.cancel(schedule.conversationId, receipt.messageId); } catch { /* it has just finished */ }
+        }, RUN_LIMIT_MINUTES * 60_000);
+        limit.unref();
+      });
+      const result = await completion
         .finally(() => clearTimeout(limit))
         .catch(async error => {
           if (!overdue) throw error;

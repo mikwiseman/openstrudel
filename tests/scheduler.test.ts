@@ -380,6 +380,49 @@ describe("durable cron", () => {
       expect(store.listMessages(root.id).map(m => m.text)).toEqual([`Требует внимания · News\nРасписание: Радар\nЗадача не выполнена: ${error}`]);
     } finally { vi.useRealTimers(); }
   });
+  it("counts a run's 30 minutes from when it starts, not while it waits behind another turn of its chat", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const store = new Store(":memory:"); stores.push(store);
+      const log: string[] = [];
+      // The owner's task takes the minutes it names, «Кто ждёт ответа» 12, and «Мой день» hangs. A stopped turn ends at once.
+      const messages = new MessageService(store, { run: (input, options) => new Promise((resolve, reject) => {
+        const name = input.match(/^Scheduled request: (.+)$/m)?.[1] ?? "owner";
+        const length = ({ "Кто ждёт ответа": 12 } as Record<string, number>)[name] ?? Number(input.match(/Задача на (\d+) минут/)?.[1]);
+        log.push(`${name} started`);
+        const timer = Number.isNaN(length) ? undefined : setTimeout(() => {
+          log.push(`${name} finished`);
+          resolve({ threadId: "t", response: name === "owner" ? "Готово" : "NO_REPLY", events: [] });
+        }, length * 60_000);
+        options?.signal?.addEventListener("abort", () => { clearTimeout(timer); log.push(`${name} stopped`); reject(new Error("Ответ остановлен")); });
+      }) });
+      const scheduler = new Scheduler(store, messages), root = store.primaryConversation();
+      const chat = store.getOrCreateConversation({ channel: "api", externalId: "owner-chat", title: "Главный" });
+      for (const [name, cron] of [["Кто ждёт ответа", "5 10 * * *"], ["Мой день", "5 11 * * *"]] as const)
+        scheduler.save({ conversationId: chat.id, name, prompt: "Проверь", cron, timezone: "UTC" }, new Date("2026-11-07T09:00:00Z"));
+      // At 10:00 the owner starts a 40-minute task. The 10:05 run waits 35 minutes behind it, then runs its 12.
+      const first = messages.handle({ channel: "api", conversationId: chat.id, text: "Задача на 40 минут", byOwner: true });
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      await scheduler.tick(new Date("2026-11-07T10:05:01Z"));
+      await vi.advanceTimersByTimeAsync(47 * 60_000);
+      await first; await scheduler.idle();
+      expect(log).toEqual(["owner started", "owner finished", "Кто ждёт ответа started", "Кто ждёт ответа finished"]);
+      expect(scheduler.runs(chat.id)[0]).toMatchObject({ status: "quiet" });
+      // At 11:00 a 20-minute task. The 11:05 run starts at 11:20 and hangs: it is stopped at 11:50, 30 minutes after it started.
+      log.length = 0;
+      const second = messages.handle({ channel: "api", conversationId: chat.id, text: "Задача на 20 минут", byOwner: true });
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      await scheduler.tick(new Date("2026-11-07T11:05:01Z"));
+      await vi.advanceTimersByTimeAsync(45 * 60_000 - 1);
+      await second;
+      expect(log).toEqual(["owner started", "owner finished", "Мой день started"]);
+      await vi.advanceTimersByTimeAsync(1); await scheduler.idle();
+      expect(log.at(-1)).toBe("Мой день stopped");
+      const error = "Расписание остановлено: выполнение заняло больше 30 минут.";
+      expect(scheduler.runs(chat.id)[0]).toMatchObject({ status: "failed", error });
+      expect(store.listMessages(root.id).map(m => m.text)).toEqual([`Требует внимания · Главный\nРасписание: Мой день\nЗадача не выполнена: ${error}`]);
+    } finally { vi.useRealTimers(); }
+  });
   it("tells each run when its chat's last successful run was due, so a failed hour is read again", async () => {
     const store = new Store(":memory:"); stores.push(store);
     const seen: Array<{ name: string; previous: string | null }> = [];
