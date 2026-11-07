@@ -233,6 +233,65 @@ it("applies an edit to a request still waiting its turn, and never to an answere
   expect(JSON.parse(String(poll[1]!.body)).allowed_updates).toContain("edited_message");
 });
 
+it("retains a later correction once as context and gives it to the next turn", async () => {
+  const { store, chat, run, adapter, update } = setup("instructions");
+  await adapter.processUpdate(update(1, "The budget is 160."));
+  const edit = { update_id: 9, edited_message: update(1, "The budget is 125.").message };
+  await adapter.processUpdate(edit);
+  await adapter.processUpdate(edit);
+  expect(run).toHaveBeenCalledTimes(1);
+  expect(store.findMessageByExternal("telegram", "-100:1")!.text).toBe("The budget is 160.");
+  expect(store.listMessages(chat.conversationId!).filter(m => m.text.includes("The budget is 125."))).toHaveLength(1);
+  await adapter.processUpdate(update(10, "What is the current budget?"));
+  expect(run.mock.calls[1]![0]).toContain("The budget is 125.");
+  const correction=store.listMessages(chat.conversationId!).find(m=>m.text.startsWith("Telegram message edit"))!;
+  expect(JSON.parse(correction.text.split("\n")[1]!)).toMatchObject({editedMessageId:1,senderId:7,text:"The budget is 125."});
+});
+
+it("does not ingest edits from paused groups, strangers, bots or topics", async () => {
+  const { store, chat, adapter, update } = setup();
+  store.db.prepare("UPDATE telegram_chats SET access='approved' WHERE chat_id='-100'").run();
+  await adapter.processUpdate({ update_id: 1, edited_message: update(9, "stranger", 8).message });
+  await adapter.processUpdate({ update_id: 2, edited_message: { ...update(9, "bot").message, from:{id:7,is_bot:true} } });
+  await adapter.processUpdate({ update_id: 3, edited_message: { ...update(9, "topic").message, is_topic_message:true } });
+  adapter.setGroupEnabled("-100", false);
+  await adapter.processUpdate({ update_id: 4, edited_message: update(9, "paused").message });
+  expect(store.listMessages(chat.conversationId!)).toEqual([]);
+});
+
+it("keeps a member's reply to another bot as context without answering it", async () => {
+  const { store, chat, run, adapter, update } = setup("instructions");
+  await adapter.processUpdate({ ...update(1, "No honey for us."), message:{...update(1, "No honey for us.").message,
+    reply_to_message:{message_id:50,from:{id:999,is_bot:true,username:"other_bot"},text:"Recipe"}} });
+  expect(run).not.toHaveBeenCalled();
+  expect(store.listMessages(chat.conversationId!)[0]?.text).toBe("No honey for us.");
+  await adapter.processUpdate(update(2, "Suggest a recipe."));
+  expect(run.mock.calls[0]![0]).toContain("No honey for us.");
+});
+
+it("keeps the original recording when transcription fails, also for unaddressed context", async () => {
+  const { store, chat, messages, run, adapter, update } = setup();
+  adapter.transcribe = vi.fn(async () => { throw new Error("Запись не распознана"); });
+  await adapter.processUpdate({ ...update(1, ""), message:{...update(1, "").message,video_note:{file_id:"round",file_size:9}} });
+  expect(run).not.toHaveBeenCalled();
+  const kept=store.listMessages(chat.conversationId!)[0]!;
+  expect(kept.attachments?.[0]).toMatchObject({name:"video-note.mp4",mimeType:"video/mp4"});
+  expect(messages.files.get(kept.attachments![0]!.id)?.path).toContain("video-note.mp4");
+  await adapter.processUpdate(update(2, "@strudel_bot what did I send?"));
+  expect(run.mock.calls[0]![0]).toContain("video-note.mp4");
+});
+
+it("retains a comment even when its unaddressed attachment cannot be downloaded",async()=>{
+  const {store,chat,adapter,update,run}=setup();
+  const fetcher=vi.mocked(fetch);fetcher.mockRejectedValueOnce(new Error("download unavailable"));
+  const message={...update(1,"").message,text:undefined,caption:"Please use this corrected version.",document:{file_id:"file",file_name:"revised.pdf"}};
+  await adapter.processUpdate({update_id:1,message});
+  expect(store.listMessages(chat.conversationId!)[0]).toMatchObject({text:"Please use this corrected version.",status:"failed"});
+  await adapter.processUpdate(update(2,"@strudel_bot what changed?"));
+  expect(run.mock.calls[0]![0]).toContain("Please use this corrected version.");
+  expect(run.mock.calls[0]![0]).toContain('"status":"failed"');
+});
+
 it("gives a captionless group file as context, and keeps a private one a request", async () => {
   const { store, run, adapter, update } = setup("instructions");
   const file = (id: number, chat: { id: number; type: string }) => ({ update_id: id, message: { message_id: id, from: { id: 7, first_name: "Grisha" }, chat, document: { file_id: "file", file_name: "proposal.txt", mime_type: "text/plain" } } });

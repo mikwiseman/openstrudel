@@ -54,6 +54,26 @@ it("removes an obsolete imported source copy when its final visible message is h
   } finally { await service.close();store.close();rmSync(root,{recursive:true,force:true}); }
 });
 
+it("keeps live group feedback searchable after it leaves the recent context window",async()=>{
+  const root=mkdtempSync(join(tmpdir(),"knowledge-group-")),store=new Store(":memory:");
+  store.linkTelegramChat({chatId:"-100",title:"Family",allowedSenders:["7"]});
+  const group=store.connectTelegramGroup("-100");
+  const owner=store.primaryConversation();
+  store.addMessage({conversationId:owner.id,channel:"api",direction:"inbound",text:"PRIVATE_OWNER_SENTINEL"});
+  const source=store.addMessage({conversationId:group.conversationId!,channel:"telegram",direction:"inbound",author:"Alisa",text:"LONG_LIVED_FAMILY_FEEDBACK"});
+  for(let i=0;i<60;i++)store.addMessage({conversationId:group.conversationId!,channel:"telegram",direction:"inbound",text:`Later ${i}`});
+  const service=new MessageService(store,{async run(){return{threadId:"t",response:"ok",events:[]};}},root);
+  try{
+    await service.handle({channel:"telegram",conversationId:group.conversationId!,externalChatId:"-100",text:"Recall our preferences",telegramSenderId:"7"});
+    const path=join(root,".data/workspace",service.contextFor(group.conversationId!),"history",group.conversationId!,"telegram.jsonl");
+    expect(readFileSync(path,"utf8")).toContain("LONG_LIVED_FAMILY_FEEDBACK");
+    expect(readFileSync(path,"utf8")).not.toContain("PRIVATE_OWNER_SENTINEL");
+    store.db.prepare("UPDATE messages SET hidden=1 WHERE id=?").run(source.id);
+    await service.handle({channel:"telegram",conversationId:group.conversationId!,externalChatId:"-100",text:"Refresh",telegramSenderId:"7"});
+    expect(readFileSync(path,"utf8")).not.toContain("LONG_LIVED_FAMILY_FEEDBACK");
+  }finally{await service.close();store.close();rmSync(root,{recursive:true,force:true});}
+});
+
 it("gives only the owner's root a source catalogue, keeping source text out of the prompt",async()=>{
   const root=mkdtempSync(join(tmpdir(),"knowledge-")),store=new Store(":memory:");
   const employee=store.createProfile({name:"Archive",instructions:"files"});
