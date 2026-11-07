@@ -21,6 +21,7 @@ vi.mock("../src/acp.js", async original => ({ ...await original<object>(), AcpEn
 } }));
 import { Accounts, AccountEngines } from "../src/accounts.js";
 import { MessageService } from "../src/messages.js";
+import { Scheduler } from "../src/scheduler.js";
 import { ProviderKeyError } from "../src/providers.js";
 import { AcpRefusal, AcpSessionLost, ProviderSignInError } from "../src/acp.js";
 import { problemText } from "../src/operations.js";
@@ -349,6 +350,28 @@ describe("Grok subscription", () => {
     expect(calls()[3]).toMatchObject({ route: "acp-grok", threadId: "s-1" });
     expect(calls()[3]!.input).toContain("DRAFT-REPORT-1");
     expect(calls()[3]!.input).not.toContain("Earlier chat");
+    await messages.close();
+  });
+  it("records a scheduled Grok run's usage through the account pool, and its session's start never reaches the chat", async () => {
+    const { store, pool } = fixture(); signedIn(store);
+    const news = store.createProfile({ name: "News" }), chat = store.profileConversation(news.id);
+    saveModelSelection(store, { provider: "grok", model: "grok-4.7", serviceTier: "default" }, news.id);
+    store.setConversationThread(chat.id, "owner-session");
+    const usage = { inputTokens: 52_000, cachedReadTokens: 41_000, outputTokens: 900, modelCalls: 3, costUsdTicks: 312_000_000 };
+    const billing = { config: { creditUsagePercent: 17.5 }, subscription_tier: "Super" };
+    // As the Grok engine reports a scheduled turn: a new session, then what it spent and the allowance after it.
+    engines.run.mockImplementation(async (_route, _context, _input, options) => {
+      options.onEvent?.({ type: "thread.started", payload: { threadId: "s-schedule" } });
+      options.onEvent?.({ type: "turn.usage", payload: { usage, billing } });
+      return { threadId: "s-schedule", response: "NO_REPLY", events: [] };
+    });
+    const messages = new MessageService(store, pool), scheduler = new Scheduler(store, messages); messages.scheduler = scheduler;
+    scheduler.save({ conversationId: chat.id, name: "Радар", prompt: "Проверь очередь", cron: "5 * * * *", timezone: "UTC" }, new Date("2026-11-07T07:00:00Z"));
+    await scheduler.tick(new Date("2026-11-07T07:05:01Z")); await scheduler.idle();
+    const runs = store.db.prepare("SELECT status,usage_json FROM schedule_runs").all() as Array<{ status: string; usage_json: string | null }>;
+    expect(runs.map(run => [run.status, JSON.parse(run.usage_json ?? "null")])).toEqual([["quiet", { usage, billing }]]);
+    expect(engines.run.mock.calls[0]?.[3]).toMatchObject({ scheduled: true, threadId: undefined });
+    expect(store.getConversation(chat.id)?.codexThreadId).toBe("owner-session");
     await messages.close();
   });
   it("keeps a chat that only schedules use without seed or recent history on every run, and other providers resume as before", async () => {
