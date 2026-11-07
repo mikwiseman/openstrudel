@@ -332,16 +332,23 @@ describe("Grok subscription", () => {
     await messages.handle({ channel: "api", conversationId: chat.id, text: "Что нового?", byOwner: true });
     const owner = saved();
     expect(owner.slice(0, 2)).toEqual(["s-1", "provider-grok"]);
+    // A notification hook delivers a report draft into the chat; the owner's session has not seen it yet.
+    store.addMessage({ channel: "telegram", conversationId: chat.id, direction: "outbound", text: "DRAFT-REPORT-1", externalId: "notification:report-1" });
+    const checkpoint = store.getSetting("context.checkpoint." + chat.id);
     for (const run of [1, 2]) await messages.handle({ channel: "api", conversationId: chat.id, text: "Радар", scheduled: true, externalId: `schedule:run-${run}` });
-    // Two new sessions, neither seeded with the chat.
+    // Two new sessions, neither seeded with the chat nor given what is pending for the owner's.
     expect(calls().slice(1)).toEqual([{ route: "acp-grok", input: expect.any(String), threadId: undefined }, { route: "acp-grok", input: expect.any(String), threadId: undefined }]);
     expect(sessions).toBe(3);
-    for (const { input } of calls().slice(1)) expect(input).not.toMatch(/Earlier chat|Recent conversation|Remember this story/);
+    for (const { input } of calls().slice(1)) expect(input).not.toMatch(/Earlier chat|Recent conversation|Remember this story|DRAFT-REPORT-1/);
     // Nothing they started is saved: the thread, its owner and checkpoint stay the owner's.
     expect(saved()).toEqual(owner);
     expect(store.getConversation(chat.id)?.codexThreadId).toBe("s-1");
+    expect(store.getSetting("context.checkpoint." + chat.id)).toBe(checkpoint);
+    // The owner's next turn resumes his session with the draft it has not seen.
     await messages.handle({ channel: "api", conversationId: chat.id, text: "А подробнее?", byOwner: true });
-    expect(calls()[3]).toEqual({ route: "acp-grok", input: expect.not.stringContaining("Earlier chat"), threadId: "s-1" });
+    expect(calls()[3]).toMatchObject({ route: "acp-grok", threadId: "s-1" });
+    expect(calls()[3]!.input).toContain("DRAFT-REPORT-1");
+    expect(calls()[3]!.input).not.toContain("Earlier chat");
     await messages.close();
   });
   it("keeps a chat that only schedules use without seed or recent history on every run, and other providers resume as before", async () => {
