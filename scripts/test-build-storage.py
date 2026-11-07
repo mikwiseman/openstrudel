@@ -244,5 +244,38 @@ class StorageSafety(unittest.TestCase):
         self.assertTrue((root / 'backup-2').exists())
         self.assertTrue((foreign / 'important').exists())
 
+    def test_retention_uses_available_lsof_and_preserves_open_snapshots(self):
+        root = self.base / 'backups'
+        root.mkdir()
+        for i in range(3):
+            candidate = root / f'backup-{i}'
+            candidate.mkdir()
+            (candidate / 'backup.json').write_text(json.dumps({'schema': backup.SCHEMA, 'created': str(i),
+                'sqlite_integrity': 'ok', 'deployment_healthy': True}))
+        opened = root / 'backup-0/user-data'
+        def inspect_files(command, **kwargs):
+            if command[0] != '/usr/bin/lsof':
+                raise FileNotFoundError(command[0])
+            return subprocess.CompletedProcess(command, 0, stdout=f'n{opened}\n', stderr='')
+        with patch.object(backup.shutil, 'which', return_value='/usr/bin/lsof'), \
+                patch.object(backup.subprocess, 'run', side_effect=inspect_files):
+            self.assertEqual(backup.mark_healthy_and_prune(root, root / 'backup-2'), [])
+        self.assertTrue((root / 'backup-0').exists())
+
+    def test_retention_keeps_snapshots_when_lsof_is_unavailable(self):
+        root = self.base / 'backups'
+        root.mkdir()
+        for i in range(3):
+            candidate = root / f'backup-{i}'
+            candidate.mkdir()
+            (candidate / 'backup.json').write_text(json.dumps({'schema': backup.SCHEMA, 'created': str(i),
+                'sqlite_integrity': 'ok', 'deployment_healthy': True}))
+        with patch.object(backup.shutil, 'which', return_value=None), \
+                patch.object(backup.subprocess, 'run') as run:
+            with self.assertRaisesRegex(RuntimeError, 'Cannot verify open backup files'):
+                backup.mark_healthy_and_prune(root, root / 'backup-2')
+            run.assert_not_called()
+        self.assertTrue((root / 'backup-0').exists())
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
