@@ -152,6 +152,37 @@ class StorageSafety(unittest.TestCase):
             for relative in ('deployment', 'releases', 'runtime/node_modules'):
                 self.assertFalse((result / 'user-data' / relative).exists())
 
+    def test_backup_skips_only_codex_temporary_plugin_clones(self):
+        source = self.base / 'source'
+        homes = ['.data/codex', '.data/contexts/personal',
+                 '.data/accounts/owner/codex', '.data/accounts/owner/contexts/work',
+                 'runtime/.data/contexts/personal']
+        skipped = []
+        kept = ['.data/workspace/personal/.tmp/plugins/custom.txt',
+                '.data/contexts/personal/skills/custom/SKILL.md']
+        for home in homes:
+            skipped.extend([home + '/.tmp/plugins/catalog.bin', home + '/.tmp/plugins-clone-ABC/catalog.bin'])
+            kept.extend([home + '/sessions/history.jsonl', home + '/memories/MEMORY.md',
+                         home + '/.tmp/original.txt', home + '/config.toml'])
+        for relative in skipped + kept:
+            p = source / relative; p.parent.mkdir(parents=True, exist_ok=True); p.write_text(relative)
+        result = backup.create_backup(source, self.base / 'backups', app=None)
+        for relative in skipped:
+            self.assertFalse((result / 'user-data' / relative).exists(), relative)
+            self.assertTrue((source / relative).is_file(), relative)
+        for relative in kept:
+            self.assertEqual((result / 'user-data' / relative).read_text(), relative)
+
+    def test_backup_leaves_operating_reserve_before_copying(self):
+        source = self.base / 'source'; source.mkdir()
+        (source / 'private.txt').write_text('keep original')
+        usage = type('Usage', (), {'free': 1024})()
+        with patch.object(backup, 'CLONE_FILE', None), patch.object(backup.shutil, 'disk_usage', return_value=usage):
+            with self.assertRaisesRegex(RuntimeError, 'operating reserve'):
+                backup.create_backup(source, self.base / 'backups', app=None)
+        self.assertEqual((source / 'private.txt').read_text(), 'keep original')
+        self.assertEqual(list((self.base / 'backups').glob('backup-*')), [])
+
     def test_nested_backup_destination_is_rejected(self):
         source = self.base / 'source'
         source.mkdir()
