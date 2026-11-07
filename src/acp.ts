@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { stringify } from "smol-toml";
 import { stdioBridge, toolBridge } from "./acp-mcp.js";
 import { agentInstructions, contextServers, hostEnvironment, imageType, insideWorkspace, physical } from "./claude.js";
+import { HomeError } from "./home.js";
 import { modelReasoning, reasoningChoices, type ModelChoice } from "./model-settings.js";
 import { ProviderIncident, providerFailure, type ProviderInfo } from "./providers.js";
 import { contextPattern } from "./scopes.js";
@@ -66,6 +67,9 @@ export class ProviderSignInError extends ProviderIncident {
 }
 /** Grok no longer knows the saved session, or it started with other rules; the route starts a new one seeded with the chat. */
 export class AcpSessionLost extends Error {}
+/** Grok ended the turn after a refused tool call. Its words carry the tool's title and the path the model chose, so they are the
+ * Home's own: never read as a limit or an account problem. */
+export class AcpRefusal extends HomeError {}
 
 const instructions = agentInstructions();
 const stopped = () => new Error("Ответ остановлен");
@@ -242,7 +246,7 @@ export class AcpEngine implements CodexEngine {
     if (result?.stopReason === "end_turn") return { threadId: sessionId + signed, response: response || "Готово.", events: [] };
     if (halted) throw stopped();
     // Grok ends the whole turn when a permission is refused, and nobody can approve one in a schedule.
-    if (result?.stopReason === "cancelled") throw refused ? new Error(`${provider.name} прервал ответ: не разрешено ${refused}`) : stopped();
+    if (result?.stopReason === "cancelled") throw refused ? new AcpRefusal(`${provider.name} прервал ответ: не разрешено ${refused}`) : stopped();
     // ACP can return only "Internal error" while the CLI reports a specific quota failure on stderr.
     // Classify the bounded diagnostic internally; never expose raw provider logs or credentials.
     const diagnostic=providerFailure(provider,new Error(agent.diagnostics()));

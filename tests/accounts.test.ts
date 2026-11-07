@@ -22,7 +22,8 @@ vi.mock("../src/acp.js", async original => ({ ...await original<object>(), AcpEn
 import { Accounts, AccountEngines } from "../src/accounts.js";
 import { MessageService } from "../src/messages.js";
 import { ProviderKeyError } from "../src/providers.js";
-import { AcpSessionLost, ProviderSignInError } from "../src/acp.js";
+import { AcpRefusal, AcpSessionLost, ProviderSignInError } from "../src/acp.js";
+import { problemText } from "../src/operations.js";
 import { saveModelSelection, saveConversationModelSelection } from "../src/model-settings.js";
 const stores: Store[] = [];
 afterEach(() => { for (const store of stores.splice(0)) store.close(); vi.restoreAllMocks(); engines.run.mockReset(); engines.models.mockReset(); engines.closed.length = 0; });
@@ -383,6 +384,24 @@ describe("Grok subscription", () => {
     vi.spyOn(Date, "now").mockReturnValue(Date.now() + 61_000);
     await expect(route.run("Радар", { scheduled: true })).rejects.toMatchObject(limit);
     expect(engines.run.mock.calls.map(call => call[0])).toEqual(["acp-grok", "acp-grok"]);
+  });
+  it("keeps a refused tool a refusal whatever words the model chose: no limit, no backoff and no account notice", async () => {
+    const { store, pool } = fixture(); signedIn(store);
+    const news = store.createProfile({ name: "News" }), chat = store.profileConversation(news.id);
+    saveModelSelection(store, { provider: "grok", model: "grok-4.7", serviceTier: "default" }, news.id);
+    // As the Grok engine reports a refused write of a scratch file that News named after a story on credits and quotas.
+    const refusal = "Grok прервал ответ: не разрешено «write» (/tmp/mcp-publish-openai-credits-quota.json)";
+    engines.run.mockRejectedValueOnce(new AcpRefusal(refusal)).mockResolvedValue({ threadId: "s-1", response: "ok", events: [] });
+    const messages = new MessageService(store, pool);
+    const error = await messages.handle({ channel: "api", conversationId: chat.id, text: "Радар", scheduled: true, externalId: "schedule:run-1" }).catch(e => e);
+    expect(error).toBeInstanceOf(AcpRefusal);
+    expect(error.message).toBe(refusal);
+    expect(store.findMessageByExternal("api", "schedule:run-1")).toMatchObject({ status: "failed", error: refusal });
+    expect(store.listMessages(store.primaryConversation().id).map(m => m.text)).toEqual([`Требует внимания · News\n${problemText.execution}`]);
+    // Grok is not backed off: the owner's next turn starts it at once.
+    expect(await messages.handle({ channel: "api", conversationId: chat.id, text: "Что нового?", byOwner: true })).toMatchObject({ text: "ok" });
+    expect(engines.run).toHaveBeenCalledTimes(2);
+    await messages.close();
   });
   it("reads the agent's catalog once when none is stored, so a failed read at sign-in does not hide Grok's models", async () => {
     const { store, pool } = fixture();

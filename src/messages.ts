@@ -14,6 +14,7 @@ import { assertAgentWritable, agentTransfer } from "./agent-move.js";
 import { approvalSetting, readApprovalMode } from "./approval-mode.js";
 import { HomeError } from "./home.js";
 import { freshSession, providerInfo, ProviderIncident } from "./providers.js";
+import { AcpRefusal } from "./acp.js";
 import type { TelegramAdapter } from "./telegram.js";
 import { readFile } from "node:fs/promises";
 import { isSpeechFile, transcribeRecording } from "./speech.js";
@@ -313,7 +314,7 @@ export class MessageService {
         if (isOpenAIAuthenticationError(error)) this.onAuthenticationError?.();
         const message = friendlyError(error);
         this.store.setMessageStatus(inbound.id, "failed", message);
-        if (!this.active.get(conversation.id)?.abort.signal.aborted) await this.reportProblem(conversation.id,inbound.id,problem ?? errorProblem(error),input.channel==="telegram" ? input.externalChatId : undefined,
+        if (!this.active.get(conversation.id)?.abort.signal.aborted) await this.reportProblem(conversation.id,inbound.id,problem ?? (error instanceof AcpRefusal ? "execution" : errorProblem(error)),input.channel==="telegram" ? input.externalChatId : undefined,
           error instanceof ProviderIncident || error instanceof AccountUnavailableError ? error.message : undefined);
         if (error instanceof HomeError || error instanceof AccountUnavailableError || error instanceof ProviderIncident) throw error;
         if (isOpenAIAuthenticationError(error)) throw new AccountUnavailableError("sign_in_required");
@@ -517,6 +518,8 @@ export class MessageService {
 
 function friendlyError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
+  // A refusal quotes the path the model chose, so its words name no cause.
+  if (error instanceof AcpRefusal) return message;
   if (isOpenAIAuthenticationError(error)) return OPENAI_SIGN_IN_REQUIRED;
   if (/^Codex не ответил на /u.test(message)) return "Codex не ответил вовремя. Перед повтором проверьте результат последнего действия.";
   if (/active writer|thread-store conflict/i.test(message)) return "Этот чат ещё открыт другим процессом Codex. Закройте его и повторите сообщение. История сохранена.";

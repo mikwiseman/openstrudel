@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parse } from "smol-toml";
-import { AcpEngine, AcpSessionLost, ProviderSignInError, grokCommand } from "../src/acp.js";
+import { AcpEngine, AcpRefusal, AcpSessionLost, ProviderSignInError, grokCommand } from "../src/acp.js";
 import { ProviderIncident, providerFailure, providerInfo } from "../src/providers.js";
 
 // Every turn starts a real Node process for the scripted agent.
@@ -206,6 +206,12 @@ it("names the refused permission when Grok then ends the turn, instead of a stop
   // A title that already names the path is not repeated.
   const hosts = mock({ cancelOnReject: true, turn: [{ permission: { toolCall: { toolCallId: "e1", kind: "edit", title: "Write /etc/hosts", rawInput: {}, locations: [{ path: "/etc/hosts" }] } } }] });
   await expect(hosts.engine.run("Выпуск", unattended)).rejects.toThrow(/^Grok прервал ответ: не разрешено «Write \/etc\/hosts»$/);
+  // The model names the path, often after a story about prices and limits; a refusal is never read as the subscription limit.
+  const credits = mock({ cancelOnReject: true, turn: [{ permission: { toolCall: { toolCallId: "e3", kind: "edit", title: "Write /etc/openai-credits-quota.json", rawInput: {}, locations: [{ path: "/etc/openai-credits-quota.json" }] } } }] });
+  const refused = await credits.engine.run("Выпуск", unattended).catch(e => e);
+  expect(refused).toBeInstanceOf(AcpRefusal);
+  expect(refused.message).toBe("Grok прервал ответ: не разрешено «Write /etc/openai-credits-quota.json»");
+  expect(providerFailure(providerInfo("grok")!, refused)).toBe(refused);
   // Stopped by the owner, it stays a stop.
   const owner = mock({ turn: [{ permission: { toolCall: { toolCallId: "e2", kind: "edit", title: "Write /etc/hosts", rawInput: {}, locations: [{ path: "/etc/hosts" }] } } }, { waitCancel: true }] }), stop = new AbortController();
   const pending = owner.engine.run("Правка", { signal: stop.signal, onRequest: async () => ({ decision: "decline" }) });
@@ -230,6 +236,9 @@ it("keeps Grok's cause of a failed prompt, so a spent weekly allowance is the su
   const outage = await mock({ turn: [], prompt: { code: -32603, message: "Internal error", data: { message: "upstream connect error", http_status: 503 } } }).engine.run("Радар").catch(e => e);
   expect(outage.message).toBe("Grok не завершил ответ: Internal error (HTTP 503): upstream connect error");
   expect(providerFailure(grok, outage)).toBe(outage);
+  // Grok's own status decides before its words, which may quote a tool or a page.
+  const worded503 = await mock({ turn: [], prompt: { code: -32603, message: "Internal error", data: { message: "credit balance service: rate limit of upstream load balancer", http_status: 503 } } }).engine.run("Радар").catch(e => e);
+  expect(providerFailure(grok, worded503)).toBe(worded503);
 });
 
 it("reports every turn's usage and, after a scheduled prompt, one reading of the subscription's allowance", async () => {

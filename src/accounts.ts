@@ -334,9 +334,10 @@ export class AccountEngines implements CodexEngine {
             if (id) this.limited.delete(id);
             return result;
           } catch (error) {
+            // A key or subscription route's failure was named by providerFailure, from the agent's status before its words.
             const quota = error instanceof AccountUnavailableError ? error.reason === "limits"
               : error instanceof ProviderIncident ? error.reason.startsWith("limits:")
-              : /\b429\b|rate[_ -]?limit|quota|usage limit|too many requests/i.test(error instanceof Error ? error.message : "");
+              : provider === "chatgpt" && /\b429\b|rate[_ -]?limit|quota|usage limit|too many requests/i.test(error instanceof Error ? error.message : "");
             if (!quota) throw error;
             if (id) {
               const failures = (this.limited.get(id)?.failures ?? 0) + 1;
