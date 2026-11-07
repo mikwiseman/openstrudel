@@ -21,7 +21,7 @@ it("reports an unresolved native connector failure to root and Telegram while pr
  const telegram=new TelegramAdapter("123:test",store,messages);messages.telegram=telegram;
  try {
   for(let i=0;i<2;i++)expect((await messages.handle({channel:"api",profile:profile.id,text:"check"})).text).toContain("CRM available");
-  expect(sent).toHaveLength(1);expect(sent[0].text).toContain("calendar.list_events");expect(sent[0].text).not.toContain("PRIVATE_SECRET");
+  expect(sent).toHaveLength(1);expect(sent[0].text).toContain("calendar");expect(sent[0].text).not.toContain("list_events");expect(sent[0].text).not.toContain("PRIVATE_SECRET");
   expect(store.listMessages(root.id)).toHaveLength(1);expect(runtimeIssues(store)[0]?.code).toBe("connector");
   failed=false;tool="read_crm";await messages.handle({channel:"api",profile:profile.id,text:"unrelated success"});
   expect(runtimeIssues(store)).toHaveLength(1);expect(sent).toHaveLength(1);
@@ -42,6 +42,58 @@ it("lets Codex recover a connector in the same turn and ignores declined actions
   return{threadId:"t",response:"ok",events:[]};
  }});
  try{await messages.handle({channel:"api",text:"check"});expect(runtimeIssues(store)).toEqual([]);}finally{await messages.close();}
+});
+
+it("closes a startup outage after another tool reaches the same service",async()=>{
+ const store=new Store(":memory:");stores.push(store);
+ let turn=0;
+ const messages=new MessageService(store,{async run(_text,options){
+  const item=turn++===0
+   ? {server:"wai-telegram",tool:"list_mcp_resources",status:"failed",error:{message:"MCP startup failed: All connection attempts failed"}}
+   : {server:"wai-telegram",tool:"get_chat_messages",status:"completed",error:null};
+  options!.onEvent!({type:"item/completed",payload:{item:{type:"mcpToolCall",...item}}});
+  return{threadId:"t",response:"done",events:[]};
+ }});
+ try{
+  await messages.handle({channel:"api",text:"read"});expect(runtimeIssues(store)).toHaveLength(1);
+  await messages.handle({channel:"api",text:"read again"});expect(runtimeIssues(store)).toEqual([]);
+ }finally{await messages.close();}
+});
+
+it("preserves tool failures and respects the order of connection failures and recovery",async()=>{
+ const store=new Store(":memory:");stores.push(store);let calls:any[]=[];
+ const messages=new MessageService(store,{async run(_text,options){
+  for(const call of calls)options!.onEvent!({type:"item/completed",payload:{item:{type:"mcpToolCall",server:"calendar",...call}}});
+  return{threadId:"t",response:"done",events:[]};
+ }});
+ const down={tool:"list_events",status:"failed",error:{message:"MCP startup failed"}};
+ const read={tool:"read_event",status:"completed",error:null};
+ try{
+  calls=[down,read,{tool:"create_event",status:"failed",error:{message:"permission denied"}}];
+  await messages.handle({channel:"api",text:"one"});expect(runtimeIssues(store)[0]?.tools).toEqual(["calendar.create_event"]);
+  calls=[read,down];await messages.handle({channel:"api",text:"two"});
+  expect(runtimeIssues(store)[0]?.tools).toEqual(["calendar.create_event","calendar.list_events"]);
+  calls=[read];await messages.handle({channel:"api",text:"three"});
+  expect(runtimeIssues(store)[0]?.tools).toEqual(["calendar.create_event"]);
+ }finally{await messages.close();}
+});
+
+it("reports only the newly failing service while retaining earlier unresolved tool failures",async()=>{
+ const store=new Store(":memory:");stores.push(store);const root=store.primaryConversation();
+ let turn=0;
+ const messages=new MessageService(store,{async run(_text,options){
+  const item=turn++===0
+   ? {server:"codex_apps",tool:"gmail.read_attachment",status:"failed",error:null}
+   : {server:"wai-telegram",tool:"search_chats",status:"failed",error:{message:"handshaking with MCP server failed"}};
+  options!.onEvent!({type:"item/completed",payload:{item:{type:"mcpToolCall",...item}}});
+  return{threadId:"t",response:"done",events:[]};
+ }});
+ try{
+  await messages.handle({channel:"api",text:"mail"});await messages.handle({channel:"api",text:"chat"});
+  const latest=store.listMessages(root.id).filter(m=>m.kind==="notice").at(-1)!.text;
+  expect(latest).toContain("Telegram");expect(latest).not.toContain("gmail");expect(latest).not.toContain("Gmail");
+  expect(latest).not.toContain("search_chats");expect(runtimeIssues(store)[0]?.tools).toHaveLength(2);
+ }finally{await messages.close();}
 });
 
 it("opens a connector incident only where no owner read the answer",async()=>{
