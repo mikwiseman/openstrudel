@@ -457,6 +457,33 @@ describe("durable cron", () => {
     expect(scheduler.runs(news.id).map(r => [r.scheduledFor, r.status]).reverse()).toEqual([["2026-11-07T03:45:00.000Z", "quiet"], ["2026-11-07T05:05:00.000Z", "quiet"],
       ["2026-11-07T06:05:00.000Z", "failed"], ["2026-11-07T07:05:00.000Z", "completed"], ["2026-11-07T08:05:00.000Z", "completed"]]);
   });
+  it("counts neither a skipped backup nor a run a restart left uncertain as the chat's last successful run", async () => {
+    const store = new Store(":memory:"); stores.push(store);
+    const seen: Array<{ name: string; previous: string | null }> = [];
+    // The 06:05 radar is still running when the Home restarts.
+    const engine = { run: (input: string) => {
+      seen.push({ name: input.match(/^Scheduled request: (.+)$/m)![1]!, previous: input.match(/^Previous successful run in this chat: (.+)$/m)?.[1] ?? null });
+      return input.includes("Scheduled for: 2026-11-07T06:05:00.000Z") ? new Promise<never>(() => {}) : Promise.resolve({ threadId: "t", response: "NO_REPLY", events: [] });
+    } };
+    const scheduler = new Scheduler(store, new MessageService(store, engine));
+    const news = store.getOrCreateConversation({ channel: "api", externalId: "news", title: "News" }), saved = new Date("2026-11-07T03:00:00Z");
+    const utro = scheduler.save({ conversationId: news.id, name: "Утро", prompt: "Собери выпуск", cron: "45 6 * * *", timezone: "Europe/Moscow" }, saved);
+    scheduler.save({ conversationId: news.id, name: "Утро, резерв", prompt: "Собери выпуск", cron: "15 7 * * *", timezone: "Europe/Moscow", backupOf: utro.id }, saved);
+    scheduler.save({ conversationId: news.id, name: "Радар", prompt: "Проверь очередь", cron: "5 8-23 * * *", timezone: "Europe/Moscow" }, saved);
+    const run = async (clock: Scheduler, at: string) => { await clock.tick(new Date(at)); await clock.idle(); };
+    await run(scheduler, "2026-11-07T03:45:01Z");
+    // The edition went out, so its backup is skipped.
+    await run(scheduler, "2026-11-07T04:15:01Z");
+    await run(scheduler, "2026-11-07T05:05:01Z");
+    // The Home restarts during the 06:05 radar, and the new clock marks that run uncertain.
+    await scheduler.tick(new Date("2026-11-07T06:05:01Z"));
+    const restarted = new Scheduler(store, new MessageService(store, engine)); restarted.recover();
+    await run(restarted, "2026-11-07T07:05:01Z");
+    expect(restarted.runs(news.id).map(r => [r.scheduledFor, r.status]).reverse()).toEqual([["2026-11-07T03:45:00.000Z", "quiet"], ["2026-11-07T04:15:00.000Z", "skipped"],
+      ["2026-11-07T05:05:00.000Z", "quiet"], ["2026-11-07T06:05:00.000Z", "uncertain"], ["2026-11-07T07:05:00.000Z", "quiet"]]);
+    // The 07:05 radar reads again from 05:05, the hour the cut-off run never finished.
+    expect(seen.filter(s => s.name === "Радар").map(s => s.previous)).toEqual(["2026-11-07T03:45:00.000Z", "2026-11-07T05:05:00.000Z", "2026-11-07T05:05:00.000Z"]);
+  });
   it("does not rerun an interrupted action on recovery", async () => {
     const { store, scheduler, calls } = setup();
     const c = store.primaryConversation();
