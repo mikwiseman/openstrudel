@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parse } from "smol-toml";
 import { AcpEngine, AcpSessionLost, ProviderSignInError, grokCommand } from "../src/acp.js";
-import { providerInfo } from "../src/providers.js";
+import { ProviderIncident, providerFailure, providerInfo } from "../src/providers.js";
 
 // Every turn starts a real Node process for the scripted agent.
 vi.setConfig({ testTimeout: 30_000 });
@@ -49,7 +50,8 @@ it("runs the pinned agent in the workspace with a private home, the employee too
     expect(start.args).toEqual(["--sandbox", "openstrudel", "agent", "stdio"]);
     expect(start.cwd).toBe(workspace);
     // Grok's own home is private, so it reads no ~/.grok, ~/.claude or ~/.codex of the owner.
-    expect(start.env).toMatchObject({ HOME: home, GROK_HOME: home, GROK_DISABLE_AUTOUPDATER: "1" });
+    // Its cross-session memory is off: notes the employee never sees steered News, and every write to them was refused anyway.
+    expect(start.env).toMatchObject({ HOME: home, GROK_HOME: home, GROK_DISABLE_AUTOUPDATER: "1", GROK_MEMORY: "0" });
     expect(statSync(home).mode & 0o777).toBe(0o700);
     // Grok's own sandbox: the workspace, system paths, installed tools and its home; never the Home's data or the owner's files.
     expect(parse(readFileSync(join(home, "sandbox.toml"), "utf8"))).toEqual({ profiles: { openstrudel: {
@@ -126,6 +128,111 @@ it("forwards each permission request by kind and answers only once", async () =>
   const scheduled = mock({ turn: [permission("c1", "execute", "Run tests", { command: "npm test" }), permission("e3", "edit", "Write report.md", {}, [{ path: join(cwd, "report.md") }])] });
   await scheduled.engine.run("Выпуск", { onRequest: () => { throw new Error("Выпуск остановлен: нужно разрешение пользователя. Продолжите в чате."); } });
   expect(scheduled.chosen()).toEqual(["no", "once"]);
+});
+
+// A schedule under approve-all, as on WaiClaw: nobody can approve anything.
+const unattended = { approvalMode: "approve_all" as const, onRequest: () => { throw new Error("Выпуск остановлен: нужно разрешение пользователя. Продолжите в чате."); } };
+
+it("lets a turn create scratch files in the OS temp directory and use only the ones it created", async () => {
+  // Grok keeps large tool inputs and its own cursors in scratch files such as /tmp/publish-cursor.json.
+  const temp = realpathSync(tmpdir()), id = randomUUID(), home = realpathSync(root), cwd = join(home, ".data/workspace/personal");
+  const own = join(temp, `grok-own-${id}.json`), other = join(temp, `grok-other-${id}.json`), keys = join(home, ".data/openstrudel.sqlite");
+  const link = join(temp, `grok-link-${id}`), folder = join(temp, `grok-folder-${id}`);
+  mkdirSync(join(home, ".data"), { recursive: true }); writeFileSync(keys, "keys"); writeFileSync(other, "another employee's");
+  symlinkSync(keys, link); symlinkSync(join(home, ".data"), folder);
+  const permission = (toolCallId: string, kind: string, path: string, write = false) =>
+    ({ permission: { toolCall: { toolCallId, kind, title: `${kind} ${path}`, rawInput: {}, locations: [{ path }] } }, ...write ? { write: path } : {} });
+  try {
+    const g = mock({ turn: [
+      // A new file there is this turn's own: it may read it back, search it and change it.
+      permission("w1", "edit", own, true), permission("r1", "read", own), permission("s1", "search", own), permission("e1", "edit", own),
+      // A file it did not create stays closed, also through a link, and nothing new reaches into the Home.
+      permission("r2", "read", other), permission("e2", "edit", other), permission("r3", "read", link), permission("e3", "edit", link),
+      permission("w2", "edit", join(folder, "planted.json")), permission("w3", "edit", join(cwd, "..", "work", `grok-${id}.md`)),
+      // A path is normalized before it is checked.
+      permission("w4", "edit", `${temp}/grok-sub-${id}/../../grok-outside-${id}.json`),
+    ] });
+    await g.engine.run("Выпуск", unattended);
+    expect(g.chosen()).toEqual(["once", "once", "once", "once", "no", "no", "no", "no", "no", "no", "no"]);
+    expect(readFileSync(own, "utf8")).toBe("scratch");
+    expect(readFileSync(keys, "utf8")).toBe("keys");
+    // Another turn did not create it.
+    const next = mock({ turn: [permission("r4", "read", own), permission("e4", "edit", own)] });
+    await next.engine.run("Дальше", unattended);
+    expect(next.chosen()).toEqual(["no", "no"]);
+  } finally { for (const path of [own, other, link, folder]) try { unlinkSync(path); } catch {} }
+});
+
+it("names the refused permission when Grok then ends the turn, instead of a stop", async () => {
+  // Grok Build ends the whole turn when a permission is refused: its own memory notes were outside the workspace.
+  const memory = join(realpathSync(root), ".data/providers/grok/home/memory-v2/workspaces/w/topics/news.md");
+  const g = mock({ cancelOnReject: true, turn: [{ text: "Запомню." },
+    { permission: { toolCall: { toolCallId: "m1", kind: "edit", title: "Write news.md", rawInput: {}, locations: [{ path: memory }] } } }, { text: "not reached" }] });
+  await expect(g.engine.run("Выпуск", unattended)).rejects.toThrow(`Grok прервал ответ: не разрешено «Write news.md» (${memory})`);
+  // A title that already names the path is not repeated.
+  const hosts = mock({ cancelOnReject: true, turn: [{ permission: { toolCall: { toolCallId: "e1", kind: "edit", title: "Write /etc/hosts", rawInput: {}, locations: [{ path: "/etc/hosts" }] } } }] });
+  await expect(hosts.engine.run("Выпуск", unattended)).rejects.toThrow(/^Grok прервал ответ: не разрешено «Write \/etc\/hosts»$/);
+  // Stopped by the owner, it stays a stop.
+  const owner = mock({ turn: [{ permission: { toolCall: { toolCallId: "e2", kind: "edit", title: "Write /etc/hosts", rawInput: {}, locations: [{ path: "/etc/hosts" }] } } }, { waitCancel: true }] }), stop = new AbortController();
+  const pending = owner.engine.run("Правка", { signal: stop.signal, onRequest: async () => ({ decision: "decline" }) });
+  await vi.waitFor(() => expect(owner.chosen()).toEqual(["no"]));
+  stop.abort();
+  await expect(pending).rejects.toThrow(/^Ответ остановлен$/);
+});
+
+it("keeps Grok's cause of a failed prompt, so a spent weekly allowance is the subscription limit", async () => {
+  // Grok Build 1.0.52 sends HTTP 402 as JSON-RPC -32603 "Internal error" with the cause in data.
+  const exhausted = { code: -32603, message: "Internal error", data: { message: "API error (status 402 Payment Required): Grok Build usage balance exhausted", http_status: 402 } };
+  const error = await mock({ turn: [], prompt: exhausted }).engine.run("Радар").catch(e => e);
+  expect(error.message).toBe("Grok не завершил ответ: Internal error (HTTP 402): API error (status 402 Payment Required): Grok Build usage balance exhausted");
+  expect(error.cause).toMatchObject({ code: -32603, data: exhausted.data });
+  const grok = providerInfo("grok")!, limit = providerFailure(grok, error);
+  expect(limit).toBeInstanceOf(ProviderIncident);
+  expect(limit).toMatchObject({ status: 429, reason: "limits:grok", message: "Лимит подписки Grok исчерпан. Повторите позже или выберите другую модель." });
+  // The words alone are the same limit.
+  const worded = await mock({ turn: [], prompt: { code: -32603, message: "Internal error", data: "Grok Build usage balance exhausted" } }).engine.run("Радар").catch(e => e);
+  expect(providerFailure(grok, worded)).toMatchObject({ reason: "limits:grok" });
+  // Another failure keeps its own words and is not a limit.
+  const outage = await mock({ turn: [], prompt: { code: -32603, message: "Internal error", data: { message: "upstream connect error", http_status: 503 } } }).engine.run("Радар").catch(e => e);
+  expect(outage.message).toBe("Grok не завершил ответ: Internal error (HTTP 503): upstream connect error");
+  expect(providerFailure(grok, outage)).toBe(outage);
+});
+
+it("reports every turn's usage and, after a scheduled prompt, one reading of the subscription's allowance", async () => {
+  const usage = { inputTokens: 52_000, cachedReadTokens: 41_000, outputTokens: 900, totalTokens: 52_900, reasoningTokens: 600, modelCalls: 3, numTurns: 2,
+    costUsdTicks: 312_000_000, modelUsage: { "grok-4.7": { inputTokens: 52_000, cachedReadTokens: 41_000, outputTokens: 900, modelCalls: 3, costUsdTicks: 312_000_000 } } };
+  const billing = { config: { creditUsagePercent: 17.5, currentPeriod: { type: "USAGE_PERIOD_TYPE_WEEKLY", start: "2026-11-05T16:00:00Z", end: "2026-11-12T16:00:00Z" },
+    prepaidBalance: { val: 0 }, isUnifiedBillingUser: true }, on_demand_enabled: false, subscription_tier: "Super" };
+  const reported = (events: Array<{ type: string; payload: unknown }>) => events.filter(e => e.type === "turn.usage");
+  const owner = mock({ usage, billing }), seen: any[] = [];
+  await owner.engine.run("Привет", { byOwner: true, onEvent: e => seen.push(e) });
+  expect(reported(seen)).toEqual([{ type: "turn.usage", payload: { usage } }]);
+  expect(owner.calls("_x.ai/billing")).toEqual([]);
+  const scheduled = mock({ usage, billing }), events: any[] = [];
+  await scheduled.engine.run("Радар", { scheduled: true, onEvent: e => events.push(e) });
+  expect(reported(events)).toEqual([{ type: "turn.usage", payload: { usage, billing } }]);
+  expect(scheduled.messages().flatMap(m => m.method ? [m.method] : []).slice(-2)).toEqual(["session/prompt", "_x.ai/billing"]);
+  // A failed reading is noted and never fails the run.
+  const refused = mock({ usage, billingError: { code: -32000, message: "Authentication required", data: "Authentication required to fetch billing data" } }), noted: any[] = [];
+  expect(await refused.engine.run("Радар", { scheduled: true, onEvent: e => noted.push(e) })).toMatchObject({ response: "ok" });
+  expect(reported(noted)).toEqual([{ type: "turn.usage", payload: { usage, billing: { error: "Authentication required: Authentication required to fetch billing data" } } }]);
+  // A turn that ends badly still reports what it spent.
+  const cancelled = mock({ usage, cancelOnReject: true, turn: [{ permission: { toolCall: { toolCallId: "e1", kind: "edit", title: "Write /etc/hosts", rawInput: {}, locations: [{ path: "/etc/hosts" }] } } }] }), spent: any[] = [];
+  await expect(cancelled.engine.run("Радар", { ...unattended, scheduled: true, onEvent: e => spent.push(e) })).rejects.toThrow("не разрешено");
+  expect(reported(spent)).toEqual([{ type: "turn.usage", payload: { usage, billing: {} } }]);
+});
+
+it("starts only the employee tools and the workspace's own services for a scheduled turn", async () => {
+  // The owner shares his services with every chat; a schedule needs none of them, and each one starts with every run.
+  const group = "group-" + "a".repeat(64);
+  for (const dir of ["personal", group]) mkdirSync(join(root, ".data/extensions", dir), { recursive: true });
+  writeFileSync(join(root, ".data/extensions/all-chats.json"), '{"enabled":true}\n');
+  writeFileSync(join(root, ".data/extensions/personal/config.toml"), `[mcp_servers.company]\nurl = "https://company.invalid/mcp"\nhttp_headers = { Authorization = "Bearer c" }\n`);
+  writeFileSync(join(root, ".data/extensions", group, "config.toml"), `[mcp_servers.wai-news-sources]\nurl = "https://sources.invalid/mcp"\nhttp_headers = { Authorization = "Bearer s" }\n`);
+  const g = mock(), tools = { definitions: [], call: vi.fn() };
+  await g.engine.forContext(group).run("Что нового?", { tools, byOwner: true });
+  await g.engine.forContext(group).run("Радар", { tools, scheduled: true });
+  expect(g.calls("session/new").map(c => c.mcpServers.map((s: { name: string }) => s.name))).toEqual([["openstrudel", "company", "wai-news-sources"], ["openstrudel", "wai-news-sources"]]);
 });
 
 it("asks Grok's questions in OpenStrudel and serves the employee tools", async () => {

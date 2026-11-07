@@ -366,6 +366,24 @@ describe("Grok subscription", () => {
     expect(store.getSetting("codex.threadOwner." + chat.id)).toBe("provider-xai");
     await messages.close();
   });
+  it("takes Grok's spent allowance as the subscription limit: one incident, a backoff and no other provider", async () => {
+    const { store, pool } = fixture(); signedIn(store);
+    // The device has a reserve; an employee with its own model never uses it.
+    store.setSetting("providers.xai.key", "xai-key");
+    store.setSetting("models.fallbacks", JSON.stringify([{ provider: "xai", model: "grok-4.7", serviceTier: "default" }]));
+    const news = store.createProfile({ name: "News" });
+    saveModelSelection(store, { provider: "grok", model: "grok-4.7", serviceTier: "default" }, news.id);
+    // As the Grok engine reports a 402 from Grok Build 1.0.52.
+    engines.run.mockRejectedValue(new Error("Grok не завершил ответ: Internal error (HTTP 402): API error (status 402 Payment Required): Grok Build usage balance exhausted"));
+    const route = pool.forAgent(news.id, "personal"), limit = { status: 429, reason: "limits:grok", message: "Лимит подписки Grok исчерпан. Повторите позже или выберите другую модель." };
+    await expect(route.run("Радар", { scheduled: true })).rejects.toMatchObject(limit);
+    // Within the backoff the next run fails at once, without starting Grok or another provider.
+    await expect(route.run("Радар", { scheduled: true })).rejects.toMatchObject(limit);
+    expect(engines.run.mock.calls.map(call => call[0])).toEqual(["acp-grok"]);
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 61_000);
+    await expect(route.run("Радар", { scheduled: true })).rejects.toMatchObject(limit);
+    expect(engines.run.mock.calls.map(call => call[0])).toEqual(["acp-grok", "acp-grok"]);
+  });
   it("reads the agent's catalog once when none is stored, so a failed read at sign-in does not hide Grok's models", async () => {
     const { store, pool } = fixture();
     store.setSetting("providers.grok.signedIn", "2026-10-15T10:00:00.000Z");
