@@ -76,3 +76,42 @@ Private source IDs, test prompts, receipts and coverage measurements are retaine
 Judge improvements by real recall and action tasks: a later correction wins; an older decision beyond the last 50 messages is found; an original page can be checked; a resumed thread sees new notes; a private source stays inaccessible from work; a retry does not create a second action. Track source coverage separately from vector coverage and end-to-end answer quality.
 
 Add a graph only when relationship questions demonstrably fail after entity-scoped hybrid retrieval. Add a reranker only when a fixed set of real questions shows a ranking improvement worth its latency. Add another memory service only if it solves cross-runtime sharing that the existing canonical document tools cannot. Keep source IDs, revisions and access metadata in the interfaces so the index or model can be replaced without migrating the truth into a vendor's opaque memory.
+
+## Librarian and memory lifecycle
+
+The librarian is a responsibility of the existing Codex runtime, using native file tools and scoped canonical document tools. It maintains the map of useful knowledge and reads the underlying evidence when needed. The source stores and indexing workers handle volume independently of the model's context window.
+
+Within each permitted personal or work space, use this logical hierarchy. Reuse existing locations and canonical IDs; do not move originals or create a duplicate filesystem estate to match a diagram.
+
+```
+SOUL                 stable role and voice, explicit changes only
+MEMORY.md            short current preferences, constraints, corrections and pointers
+library/README.md    topic/entity index when the compact memory needs deeper navigation
+library/<topic>.md   durable sourced notes; links to canonical documents and originals
+canonical documents  shared, versioned records with scope and source references
+originals            complete messages, files, recordings and transcripts
+search index         rebuildable lexical and vector passages, never the only copy
+```
+
+A note needs an owner/scope, canonical subject, statement, source pointer, speaker and source date. Include when the statement applies if that differs from when it was recorded. Mark inference and unresolved disagreement explicitly. A correction supersedes the relevant earlier statement; it does not overwrite unrelated knowledge. Keep the prior version available for historical questions. Entity aliases help retrieval; they never merge two people's identities or their access rights automatically.
+
+The operating verbs are:
+
+| Operation | Verified outcome |
+| --- | --- |
+| Remember | Merge into the appropriate existing canonical record or scoped note, with evidence; read back the saved revision. |
+| Recall | Resolve scope and entity; consult the compact index, exact and semantic search; reopen original evidence before relying on it. |
+| Correct | Save the new statement with its source and superseded statement; remove the old version from current guidance and invalidate its derived index. |
+| Archive | Remove obsolete guidance from active memory and ordinary recall while retaining explicitly marked history. The existing canonical document archive operation removes its search source in the same transaction. |
+| Forget/delete | For an explicit erasure request, enumerate originals, canonical notes/revisions, vector passages, queued jobs, provider files and backups within the requested scope. Verify each supported deletion. State retained copies or unsupported deletion honestly; a missing search hit alone is insufficient. |
+| Review | Check duplicate facts, conflicting corrections, broken source links, missing extraction, pending index work, access drift and prompt size. Consolidate only the changed/relevant topics. |
+
+“Stop using that” retires guidance. “Delete the original and all copies” requests erasure. Unclear scope needs clarification before irreversible deletion. Time-based expiry can mark a temporary fact as stale or remove it from active context; it never silently destroys original evidence. Reimport must respect deletion markers, otherwise the next sync can resurrect deliberately forgotten material. Changes to standing identity remain explicit SOUL changes, separate from knowledge curation.
+
+For scale, process source deltas and content hashes rather than rereading the entire archive each day. Keep source receipt, extraction, embedding and usable recall as separate coverage measures. Text messages are searchable immediately through the existing exact search; OpenAI Batch supplies semantic updates within its asynchronous completion window. A transcript or PDF not yet extracted is reported as pending or unavailable, never counted as understood because its filename was embedded.
+
+The initial archive migration uses full `text-embedding-3-large` passages in PostgreSQL, with durable Batch receipts and revision checks. Existing central large-model vectors can be reused at their current dimension; query vectors must match each index. Changes in model, dimensions or chunking require an explicit index version and retrieval evaluation before switching. Preserve the prior working index until the replacement passes. Grow storage before consuming database operating reserves; never prune unique documents or private exports to fit vectors.
+
+The quality set must include: exact names and dates; a paraphrased question; Alisa's correction; an old decision outside the recent-message window; contradictory speakers; archived guidance; an edit during embedding; deleted-source reimport; denied personal-to-work access; a long extracted document; interrupted import; and an answer requiring the original page. Judge cited answer correctness, correction freshness and access isolation alongside retrieval recall, latency, coverage and cost. Add reranking or relationship graphs only when those questions show a specific deficiency.
+
+The current primary-source review adds [OpenAI's memory/compaction example](https://developers.openai.com/cookbook/examples/agents_sdk/building_reliable_agents_memory_compaction), which separates reusable lessons from reviewable factual artifacts, and [Letta's memory documentation](https://docs.letta.com/configuration/memory), which makes persistent file memory inspectable and auditable. These support the division above; they do not establish that any vendor's benchmark proves this deployment reliable.
