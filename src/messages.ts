@@ -1,5 +1,5 @@
 import { ownerTimezone } from "./timezone.js";
-import { fastChat, resolveModelSelection } from "./model-settings.js";
+import { fastChat, readConversationModelSelection, resolveModelSelection } from "./model-settings.js";
 import type { CodexEngine, Message, MessageInput, MessageResult } from "./types.js";
 import { Store } from "./store.js";
 import { Interactions } from "./interactions.js";
@@ -216,7 +216,9 @@ export class MessageService {
         }
         // The owner's pipelines (WAI News urgent batches) post "operations:" requests into their group: unattended owner work, sandboxed like a schedule.
         const scheduled = input.scheduled === true || input.channel === "api" && input.byOwner === true && Boolean(input.externalId?.startsWith("operations:"));
-        const selection = resolveModelSelection(this.store, currentProfile?.id ?? "main", undefined, current.id);
+        // A native app may ask its own chat to think at a lighter level; a model the owner chose for that chat wins.
+        const appEffort = input.reasoningEffort && !readConversationModelSelection(this.store, current.id).model ? { reasoningEffort: input.reasoningEffort } : {};
+        const selection = { ...resolveModelSelection(this.store, currentProfile?.id ?? "main", undefined, current.id), ...appEffort };
         const nativeSources = selection.provider === "chatgpt" || providerInfo(selection.provider ?? "")?.engine === "codex";
         projectRun = await this.projects.begin(currentProfile?.id ?? "main", { conversationId:current.id,messageId:inbound.id,channel:input.channel,scope:context,scheduled,byOwner:input.byOwner,telegramSenderId:input.telegramSenderId,access }, nativeSources);
         const tools = employeeTools(this.store, engine, this.interactions, { profile: currentProfile, conversationId: current.id, messageId: inbound.id, channel: input.channel, scheduler: this.scheduler, projects:this.projects, scheduled,scheduleTelegramChatId:input.scheduleTelegramChatId,files:this.files,scope:context,telegram:this.telegram,byOwner:input.byOwner,telegramSenderId:input.telegramSenderId,access,
