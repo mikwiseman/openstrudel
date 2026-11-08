@@ -27,7 +27,7 @@ import Testing
     }
 
     @Test func oneHomeKeepsItsOwnNumbersAndNamesItsChats() throws {
-        let slices = StatisticsSummary.slices([(id: "personal", name: "WaiClaw", statistics: try home(1, cost: 0.5))], period: .day)
+        let slices = StatisticsSummary.slices([(id: "personal", name: "Личный", statistics: try home(1, cost: 0.5))], period: .day)
         #expect(slices.map(\.start) == ["2026-11-07", "2026-11-08"])
         let today = try #require(slices.last)
         #expect(today.requests == 3 && today.costUsd == 0.5 && today.previousToDate?.requests == 1)
@@ -40,20 +40,20 @@ import Testing
 
     @Test func homesMeetOnTheirLocalDatesAndAddUpWithoutInventingCost() throws {
         let slices = StatisticsSummary.slices([
-            (id: "personal", name: "WaiClaw", statistics: try home(1, cost: 0.5)),
-            (id: "work", name: "Wolf Wolf", statistics: try home(10, cost: nil, chat: "group", kind: "group")),
+            (id: "personal", name: "Личный", statistics: try home(1, cost: 0.5)),
+            (id: "work", name: "Работа", statistics: try home(10, cost: nil, chat: "group", kind: "group")),
         ], period: .day)
         let today = try #require(slices.last)
         #expect(today.requests == 33)
-        // Wolf had no price: the total is WaiClaw's known cost, not a guess for Wolf.
+        // Работа had no price: the total is Личный's known cost, not a guess for Работа.
         #expect(today.costUsd == 0.5)
         #expect(today.previousToDate?.requests == 11)
-        #expect(today.homes.map(\.name) == ["Wolf Wolf", "WaiClaw"] && today.homes.map(\.requests) == [30, 3])
-        #expect(today.chats.map(\.detail) == [L("Группа в Telegram") + " · Wolf Wolf", "WaiClaw"])
+        #expect(today.homes.map(\.name) == ["Работа", "Личный"] && today.homes.map(\.requests) == [30, 3])
+        #expect(today.chats.map(\.detail) == [L("Группа в Telegram") + " · Работа", "Личный"])
         // One model across both Homes is one row.
         #expect(today.models.count == 1 && today.models.first?.requests == 33 && today.models.first?.costUsd == 0.5)
         #expect(today.sources.app == 31 && today.sources.schedule == 2 && today.outcomes.quiet == 2)
-        let weeks = StatisticsSummary.slices([(id: "personal", name: "WaiClaw", statistics: try home(1, cost: nil))], period: .week)
+        let weeks = StatisticsSummary.slices([(id: "personal", name: "Личный", statistics: try home(1, cost: nil))], period: .week)
         #expect(weeks.map(\.start) == ["2026-11-02"] && weeks.first?.costUsd == nil)
     }
 

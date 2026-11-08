@@ -11,6 +11,8 @@ import { join, resolve } from "node:path";
 import { OpenStrudelRuntime } from "../../src/runtime.js";
 import type { CodexEngine } from "../../src/types.js";
 import { recordTurnUsage, TICKS_PER_USD } from "../../src/usage.js";
+import { normalizeModels } from "../../src/model-settings.js";
+import { providerInfo, providerModels } from "../../src/providers.js";
 
 const output = resolve(process.argv[2]!);
 const specs = process.argv.slice(3).map(arg => { const [name, path] = arg.split("="); return { name: name!, path: path ? resolve(path) : undefined }; });
@@ -18,7 +20,15 @@ if (!specs.length) throw new Error("Name at least one Home");
 delete process.env.TELEGRAM_BOT_TOKEN;
 delete process.env.OPENSTRUDEL_SETUP_CODE;
 
-const engine: CodexEngine = { async run(input, options) { return { threadId: options?.threadId ?? "statistics-thread", response: "Принято: " + input.slice(-60), events: [] }; } };
+/** The catalog ChatGPT reports, so the Settings models pane renders as it does on a real Home. */
+const catalog = normalizeModels([
+  { model: "gpt-6-astra", displayName: "GPT-6-Astra", isDefault: true, defaultReasoningEffort: "xhigh", supportedReasoningEfforts: [{ reasoningEffort: "medium" }, { reasoningEffort: "high" }, { reasoningEffort: "xhigh" }], serviceTiers: [{ id: "priority", name: "Fast" }] },
+  { model: "gpt-6-sol", displayName: "GPT-6-Sol", defaultReasoningEffort: "high", supportedReasoningEfforts: [{ reasoningEffort: "medium" }, { reasoningEffort: "high" }], serviceTiers: [{ id: "priority", name: "Fast" }] },
+], null);
+const engine: CodexEngine = {
+  async models() { return [...catalog, ...providerModels(providerInfo("anthropic")!)]; },
+  async run(input, options) { return { threadId: options?.threadId ?? "statistics-thread", response: "Принято: " + input.slice(-60), events: [] }; },
+};
 const day = 86_400_000;
 
 /** Thirty days of a believable Home: the owner in the app, a Telegram group, two schedules, mail events, with spend recorded for the last week. */
@@ -28,7 +38,7 @@ function seed(runtime: OpenStrudelRuntime, index: number) {
   const main = store.primaryConversation().id;
   const editor = store.createProfile({ name: index ? "Юрист" : "News", instructions: "", purpose: "" });
   const editorChat = store.profileConversation(editor.id).id;
-  store.linkTelegramChat({ chatId: "-10" + index, title: index ? "Wai Core Team" : "Familia", allowedSenders: ["42"] });
+  store.linkTelegramChat({ chatId: "-10" + index, title: index ? "Команда" : "Семья", allowedSenders: ["42"] });
   store.connectTelegramGroup("-10" + index);
   const group = store.telegramChats().find(chat => chat.chatId === "-10" + index)!.conversationId!;
   const radar = runtime.scheduler.save({ conversationId: editorChat, name: index ? "Договоры и сроки" : "Радар новостей", prompt: "Проверить", cron: "5 * * * *", timezone: "Europe/Moscow", enabled: true });

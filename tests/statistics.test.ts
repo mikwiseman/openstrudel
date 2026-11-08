@@ -71,7 +71,7 @@ it("counts executed requests by the owner's local day and week, with their sourc
   const now = new Date("2026-11-08T12:00:00.000Z"); // 15:00 in Moscow, a Sunday
   store.db.prepare("INSERT INTO employee_profiles(id,name,instructions,created_at) VALUES('news','News','', '2026-11-01T00:00:00.000Z')").run();
   const news = store.profileConversation("news").id;
-  const group = store.getOrCreateConversation({ channel: "telegram", externalId: "-100123", title: "Wolf Wolf" }).id;
+  const group = store.getOrCreateConversation({ channel: "telegram", externalId: "-100123", title: "Рабочая группа" }).id;
   store.db.prepare("INSERT INTO schedules(id,conversation_id,name,prompt,cron,timezone,next_run_at) VALUES('radar',?,'Радар','Check','5 * * * *','Europe/Moscow','2026-11-08T13:05:00.000Z')").run(news);
   const run = (id: string, status: string, time: string, usage?: Parameters<typeof request>[3]["usage"]) => {
     store.db.prepare("INSERT INTO schedule_runs(id,schedule_id,conversation_id,scheduled_for,status,created_at) VALUES(?,'radar',?,?,?,?)").run(id, news, time, status, time);
@@ -99,7 +99,7 @@ it("counts executed requests by the owner's local day and week, with their sourc
   // A private chat named only by its id takes its person's name.
   const direct = store.getOrCreateConversation({ channel: "telegram", externalId: "139287108", title: "Telegram 139287108" }).id;
   const greeting = request(store, direct, "2026-11-08T09:30:00.000Z", { channel: "telegram", reply: "Привет" });
-  store.db.prepare("UPDATE messages SET author='Mik Wiseman' WHERE id=?").run(greeting.id);
+  store.db.prepare("UPDATE messages SET author='Анна Петрова' WHERE id=?").run(greeting.id);
 
   const statistics = readStatistics(store, true, now);
   const today = day(statistics, "2026-11-08");
@@ -109,7 +109,7 @@ it("counts executed requests by the owner's local day and week, with their sourc
     previousToDate: { requests: 1, tokens: 0, costUsd: null },
   });
   expect(today.chats.map(c => [statistics.chats[c.id]!.kind, statistics.chats[c.id]!.title, c.requests, c.failed, c.costUsd])).toEqual([
-    ["main", "Главный чат", 4, 0, 0.7], ["employee", "News", 3, 1, null], ["group", "Wolf Wolf", 1, 0, 0.1], ["telegram", "Mik Wiseman", 1, 0, null],
+    ["main", "Главный чат", 4, 0, 0.7], ["employee", "News", 3, 1, null], ["group", "Рабочая группа", 1, 0, 0.1], ["telegram", "Анна Петрова", 1, 0, null],
   ]);
   expect(statistics.chats[news]).toEqual({ title: "News", employee: "News", kind: "employee" });
   expect(today.models).toEqual([

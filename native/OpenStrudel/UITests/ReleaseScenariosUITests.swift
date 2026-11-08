@@ -269,6 +269,9 @@ final class ReleaseScenariosUITests: XCTestCase {
         capture("empty-conversation", app)
 
         app.buttons["Настройки"].tap()
+        // Settings open on every device's default model; the device list is its own section.
+        XCTAssertTrue(app.buttons["modelChoice"].waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["settingsSection"].tap(); app.buttons["Устройства"].tap()
         XCTAssertTrue(app.buttons["addDevice"].waitForExistence(timeout: 10))
         capture("settings-account-telegram", app)
         // Approval mode belongs to this device, not an individual chat.

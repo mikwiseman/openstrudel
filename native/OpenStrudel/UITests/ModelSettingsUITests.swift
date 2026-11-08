@@ -86,7 +86,7 @@ import XCTest
         let chats = app.buttons["openChats"]
         XCTAssertTrue(chats.waitForExistence(timeout: 15)); chats.tap()
         app.buttons["teamSettings"].tap()
-        app.buttons["settingsSection"].tap(); app.buttons["Приложение"].tap()
+        app.buttons["settingsSection"].tap(); app.buttons["Модели"].tap()
         let model = app.buttons["modelChoice"], speed = app.buttons["modelSpeed"]
         XCTAssertTrue(model.waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["Рекомендует OpenAI"].exists, app.debugDescription)
@@ -136,7 +136,7 @@ import XCTest
         let (app, fixture) = try await pairedApplication()
         _ = try await read(fixture + "/claude")
         app.buttons["teamSettings"].tap()
-        app.buttons["settingsSection"].tap(); app.buttons["Приложение"].tap()
+        app.buttons["settingsSection"].tap(); app.buttons["Модели"].tap()
         let model = app.buttons["modelChoice"]
         XCTAssertTrue(model.waitForExistence(timeout: 15))
         XCTAssertFalse(app.buttons["modelSpeed"].exists, app.debugDescription)

@@ -88,15 +88,16 @@ struct SavedConnectionUnlockButton: View {
 /// Every pane is a grouped Form made of the same rows on both platforms.
 struct SettingsView: View {
     enum Section: String, CaseIterable {
-        case devices, accounts, connections, backups, application
+        case models, devices, accounts, connections, backups, application
         /// The iOS section menu keeps these names.
         var title: String {
-            switch self { case .devices: L("Устройства"); case .accounts: L("Аккаунты"); case .connections: L("Подключения"); case .backups: L("Копии"); case .application: L("Приложение") }
+            switch self { case .models: L("Модели"); case .devices: L("Устройства"); case .accounts: L("Аккаунты"); case .connections: L("Подключения"); case .backups: L("Копии"); case .application: L("Приложение") }
         }
         /// Mac tab names; the window title follows the selected tab.
         var tabTitle: String { self == .application ? L("Основные") : title }
         var symbol: String {
             switch self {
+            case .models: "cpu"
             case .devices: "laptopcomputer.and.iphone"
             case .accounts: "person.crop.circle"
             case .connections: "link"
@@ -111,7 +112,7 @@ struct SettingsView: View {
     @EnvironmentObject private var library: DeviceLibrary
     @EnvironmentObject private var client: HomeClient
     @Environment(\.dismiss) private var dismiss
-    @AppStorage(SettingsView.tabKey) private var tab: Section = .devices
+    @AppStorage(SettingsView.tabKey) private var tab: Section = .models
     @State private var section: Section
     @State private var selectedID = ""
     private let initialSection: Section?
@@ -121,7 +122,7 @@ struct SettingsView: View {
     init(initialSection: Section? = nil, standalone: Bool = false) {
         self.initialSection = initialSection
         self.standalone = standalone
-        _section = State(initialValue: initialSection ?? .devices)
+        _section = State(initialValue: initialSection ?? .models)
     }
 
     var body: some View {
@@ -180,6 +181,8 @@ struct SettingsView: View {
 
     @ViewBuilder private func pane(_ section: Section) -> some View {
         switch section {
+        case .models:
+            ModelsPane()
         case .devices:
             DevicesPane()
         case .accounts:
@@ -492,9 +495,6 @@ private struct GeneralPane: View {
             #endif
         }
         DevicePickerSection(title: L("Сотрудники на устройстве"), selection: $selectedID)
-        Section(L("Модель и скорость")) {
-            ModelSettingsView().environmentObject(selected)
-        }.id("models-" + selected.id)
         ApprovalSettingsView().environmentObject(selected).id("approvals-" + selected.id)
         if selected.health?.speechVersion == 1 {
             Section(L("Голос")) {
@@ -518,6 +518,34 @@ private struct GeneralPane: View {
             Text(L("Удалить местных сотрудников, переписку и настройки и начать заново."))
         }
         #endif
+    }
+}
+
+/// Every connected device's own default model side by side: its reasoning, speed, Fast in direct chats and reserves.
+/// Each device keeps its choice; nothing here moves a chat or an employee to another device.
+private struct ModelsPane: View {
+    @EnvironmentObject private var library: DeviceLibrary
+
+    var body: some View {
+        ForEach(library.visibleClients) { DeviceModels(home: $0).id("models-" + $0.id) }
+    }
+}
+
+/// One device's section; it follows that device's own connection.
+private struct DeviceModels: View {
+    @ObservedObject var home: HomeClient
+
+    var body: some View {
+        Section {
+            if home.health == nil {
+                if home.isConnecting { ProgressView().controlSize(.small) }
+                else { Text(L("«\(home.displayName)» не на связи.")).foregroundStyle(AppTheme.secondaryText) }
+            } else {
+                ModelSettingsView().environmentObject(home)
+            }
+        } header: {
+            Text(home.displayName)
+        }
     }
 }
 
