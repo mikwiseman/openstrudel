@@ -4,6 +4,7 @@ import { providerInfo, providerInfos, subscriptionModels } from "./providers.js"
 import type { Store } from "./store.js";
 import { ownerTimezone } from "./timezone.js";
 import { TICKS_PER_USD } from "./usage.js";
+import type { Schedule, Scheduler } from "./scheduler.js";
 
 /** Where a request came from: the app, a Telegram chat, a schedule, or an event a connected source delivered
  * (correspondence, the owner's pipelines). The app names its requests with a UUID; automatic ones carry a `word:` prefix. */
@@ -99,6 +100,24 @@ export function modelName(store: Store, provider: string | null, model: string |
   return /^gpt-/i.test(model) ? "GPT-" + model.slice(4).split("-").map(part => part.charAt(0).toUpperCase() + part.slice(1)).join("-") : model;
 }
 
+type ChatInfo = Statistics["chats"][string];
+/** How the app names a chat: the main chat, an employee's own, a Telegram group or a private Telegram chat. */
+function chatInfo(store: Store, ids: Iterable<string>): Record<string, ChatInfo> {
+  const chats: Record<string, ChatInfo> = {};
+  const query = store.db.prepare(`SELECT c.id,c.channel,c.external_id,c.title,p.name AS employee FROM conversations c LEFT JOIN employee_profiles p ON p.id=c.profile_id WHERE c.id=?`);
+  // A private Telegram chat is titled by its id until it has a name; the person's own messages carry theirs.
+  const author = store.db.prepare(`SELECT author FROM messages WHERE conversation_id=? AND direction='inbound' AND author IS NOT NULL AND trim(author)<>'' ORDER BY rowid DESC LIMIT 1`);
+  for (const id of ids) {
+    const row = query.get(id) as Row | undefined;
+    const external = String(row?.external_id ?? ""), chat = external.split("::")[0]!;
+    const kind = row?.channel === "telegram" ? Number(chat) < 0 ? "group" : "telegram" : external === "home" ? "main" : row?.employee != null ? "employee" : "chat";
+    let title = String(row?.title ?? row?.employee ?? "Чат");
+    if (kind === "telegram" && /^Telegram \d+$/.test(title)) title = String((author.get(id) as Row | undefined)?.author ?? title);
+    chats[id] = { title, employee: row?.employee == null ? null : String(row.employee), kind };
+  }
+  return chats;
+}
+
 /** Usage of this Home by day and by week in the owner's zone, read from retained requests and the usage each turn reported.
  * Read-only: it creates no table and changes no setting. Requests are executed turns; a steer joins its running turn and
  * imported or context-only messages never ran. */
@@ -189,20 +208,7 @@ export function readStatistics(store: Store, owner: boolean, now = new Date()): 
     ...previous ? { previousToDate: { requests: previous.requests, tokens: previous.tokens, costUsd: price(previous.costTicks, previous.priced) } } : {},
   });
 
-  const chats: Statistics["chats"] = {};
-  if (chatIds.size) {
-    const query = store.db.prepare(`SELECT c.id,c.channel,c.external_id,c.title,p.name AS employee FROM conversations c LEFT JOIN employee_profiles p ON p.id=c.profile_id WHERE c.id=?`);
-    // A private Telegram chat is titled by its id until it has a name; the person's own messages carry theirs.
-    const author = store.db.prepare(`SELECT author FROM messages WHERE conversation_id=? AND direction='inbound' AND author IS NOT NULL AND trim(author)<>'' ORDER BY rowid DESC LIMIT 1`);
-    for (const id of chatIds) {
-      const row = query.get(id) as Row | undefined;
-      const external = String(row?.external_id ?? ""), chat = external.split("::")[0]!;
-      const kind = row?.channel === "telegram" ? Number(chat) < 0 ? "group" : "telegram" : external === "home" ? "main" : row?.employee != null ? "employee" : "chat";
-      let title = String(row?.title ?? row?.employee ?? "Чат");
-      if (kind === "telegram" && /^Telegram \d+$/.test(title)) title = String((author.get(id) as Row | undefined)?.author ?? title);
-      chats[id] = { title, employee: row?.employee == null ? null : String(row.employee), kind };
-    }
-  }
+  const chats = chatInfo(store, chatIds);
   const schedules: Statistics["schedules"] = {};
   if (scheduleIds.size) {
     const query = store.db.prepare("SELECT id,name,conversation_id,enabled FROM schedules WHERE id=?");
@@ -220,4 +226,22 @@ export function readStatistics(store: Store, owner: boolean, now = new Date()): 
     weeks: weekKeys.map(key => period(key, weeks.get(key)!, key === thisWeek ? toDate.week : undefined)),
     chats, schedules,
   };
+}
+
+export interface ScheduleOverview {
+  checkedAt: string;
+  /** Every recurring schedule on this Home with its chat and what it ran and spent this week (from Monday). One-time reminders are left out. */
+  schedules: Array<Schedule & { chat: ChatInfo; week: { runs: number; quiet: number; failed: number; tokens: number; costUsd: number | null } }>;
+}
+
+/** The owner's switchboard: each recurring schedule, its chat and this week's runs and cost. Switching one uses the chat's own schedule save. */
+export function readScheduleOverview(store: Store, scheduler: Pick<Scheduler, "list"> | undefined, owner: boolean, now = new Date()): ScheduleOverview {
+  if (owner !== true) throw new HomeError("Расписания устройства видит владелец.", 403);
+  const list = (scheduler?.list() ?? []).filter(schedule => !schedule.cron.startsWith("@once "));
+  const week = new Map((readStatistics(store, true, now).weeks.at(-1)?.schedules ?? []).map(run => [run.id, run]));
+  const chats = chatInfo(store, new Set(list.map(schedule => schedule.conversationId)));
+  return { checkedAt: now.toISOString(), schedules: list.map(schedule => {
+    const spent = week.get(schedule.id);
+    return { ...schedule, chat: chats[schedule.conversationId]!, week: { runs: spent?.runs ?? 0, quiet: spent?.quiet ?? 0, failed: spent?.failed ?? 0, tokens: spent?.tokens ?? 0, costUsd: spent?.costUsd ?? null } };
+  }) };
 }

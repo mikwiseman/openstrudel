@@ -153,6 +153,8 @@ struct ChatSchedule: Codable, Identifiable {
     let telegramChatId: String?
     var delivery: String? = nil
     var lastRunStatus: String? = nil
+    /// The schedule this one stands in for when the main one did not run that day.
+    var backupOf: String? = nil
     var isOneTime: Bool { cron.hasPrefix("@once ") }
     var oneTimeResult: String? {
         guard isOneTime, !enabled, let lastRunStatus else { return nil }
@@ -168,6 +170,10 @@ struct ChatSchedule: Codable, Identifiable {
     }
     var timing: String {
         if isOneTime { return L("Разово · ") + nextTime }
+        return rhythm ?? L("Следующий выпуск · ") + nextTime
+    }
+    /// A daily or weekly rhythm in words; other crons are known only by their next run.
+    var rhythm: String? {
         let fields = cron.split(separator: " ")
         if fields.count == 5, let minute = Int(fields[0]), let hour = Int(fields[1]), fields[2...] == ["*", "*", "*"] {
             return String(format: L("Ежедневно в %02d:%02d"), hour, minute) + " · " + timeZoneLabel
@@ -176,7 +182,7 @@ struct ChatSchedule: Codable, Identifiable {
             let names = [L("По воскресеньям"), L("По понедельникам"), L("По вторникам"), L("По средам"), L("По четвергам"), L("По пятницам"), L("По субботам"), L("По воскресеньям")]
             return names[day] + String(format: L(" в %02d:%02d"), hour, minute) + " · " + timeZoneLabel
         }
-        return L("Следующий выпуск · ") + nextTime
+        return nil
     }
     private var nextTime: String {
         guard let date = try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(nextRunAt) else { return L("по расписанию") }
@@ -193,6 +199,22 @@ struct ScheduleRun: Decodable, Identifiable {
 }
 struct SchedulesEnvelope: Decodable { let schedules: [ChatSchedule]; let runs: [ScheduleRun] }
 struct ScheduleResponse: Decodable { let schedule: ChatSchedule }
+/// One recurring schedule of a Home with its chat and what it ran and spent this week (`GET /v1/schedules`).
+struct HomeSchedule: Decodable, Identifiable {
+    struct Week: Decodable, Equatable { let runs: Int; let quiet: Int; let failed: Int; let tokens: Int; let costUsd: Double? }
+    let schedule: ChatSchedule
+    let chat: HomeStatistics.Chat
+    let week: Week
+    var id: String { schedule.id }
+    private enum Keys: String, CodingKey { case chat, week }
+    init(from decoder: Decoder) throws {
+        schedule = try ChatSchedule(from: decoder)
+        let container = try decoder.container(keyedBy: Keys.self)
+        chat = try container.decode(HomeStatistics.Chat.self, forKey: .chat)
+        week = try container.decode(Week.self, forKey: .week)
+    }
+}
+struct ScheduleOverview: Decodable { let checkedAt: String; let schedules: [HomeSchedule] }
 
 struct TelegramEnvelope: Decodable {
     let telegram: TelegramStatus

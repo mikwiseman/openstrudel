@@ -88,16 +88,17 @@ struct SavedConnectionUnlockButton: View {
 /// Every pane is a grouped Form made of the same rows on both platforms.
 struct SettingsView: View {
     enum Section: String, CaseIterable {
-        case models, devices, accounts, connections, backups, application
+        case models, schedules, devices, accounts, connections, backups, application
         /// The iOS section menu keeps these names.
         var title: String {
-            switch self { case .models: L("Модели"); case .devices: L("Устройства"); case .accounts: L("Аккаунты"); case .connections: L("Подключения"); case .backups: L("Копии"); case .application: L("Приложение") }
+            switch self { case .models: L("Модели"); case .schedules: L("Расписания"); case .devices: L("Устройства"); case .accounts: L("Аккаунты"); case .connections: L("Подключения"); case .backups: L("Копии"); case .application: L("Приложение") }
         }
         /// Mac tab names; the window title follows the selected tab.
         var tabTitle: String { self == .application ? L("Основные") : title }
         var symbol: String {
             switch self {
             case .models: "cpu"
+            case .schedules: "calendar.badge.clock"
             case .devices: "laptopcomputer.and.iphone"
             case .accounts: "person.crop.circle"
             case .connections: "link"
@@ -183,6 +184,8 @@ struct SettingsView: View {
         switch section {
         case .models:
             ModelsPane()
+        case .schedules:
+            SchedulesPane()
         case .devices:
             DevicesPane()
         case .accounts:
@@ -546,6 +549,91 @@ private struct DeviceModels: View {
         } header: {
             Text(home.displayName)
         }
+    }
+}
+
+/// Every connected device's recurring schedules as switches, with what each ran and cost this week, so an expensive
+/// automation can be paused here. A switch saves through the schedule's own chat and applies from its next run.
+private struct SchedulesPane: View {
+    @EnvironmentObject private var library: DeviceLibrary
+
+    var body: some View {
+        ForEach(library.visibleClients) { DeviceSchedules(home: $0).id("schedules-" + $0.id) }
+    }
+}
+
+private struct DeviceSchedules: View {
+    @ObservedObject var home: HomeClient
+    @State private var overview: ScheduleOverview?
+    @State private var problem: String?
+    @State private var saving: Set<String> = []
+
+    /// The costliest this week on top, then the busiest, then by name. A switch never moves its own row.
+    private var ordered: [HomeSchedule] {
+        (overview?.schedules ?? []).sorted { a, b in
+            if (a.week.costUsd ?? 0) != (b.week.costUsd ?? 0) { return (a.week.costUsd ?? 0) > (b.week.costUsd ?? 0) }
+            if a.week.runs != b.week.runs { return a.week.runs > b.week.runs }
+            return a.schedule.name.localizedStandardCompare(b.schedule.name) == .orderedAscending
+        }
+    }
+
+    var body: some View {
+        Section {
+            if home.health == nil {
+                if home.isConnecting { ProgressView().controlSize(.small) }
+                else { Text(L("«\(home.displayName)» не на связи.")).foregroundStyle(AppTheme.secondaryText) }
+            } else if let overview {
+                if overview.schedules.isEmpty { Text(L("На этом устройстве нет расписаний.")).foregroundStyle(AppTheme.secondaryText) }
+                ForEach(ordered) { item in
+                    Toggle(isOn: Binding(get: { item.schedule.enabled }, set: { value in Task { await toggle(item, on: value) } })) {
+                        Text(item.schedule.name)
+                        Text(detail(item))
+                    }
+                    .settingsSwitch()
+                    .disabled(saving.contains(item.id))
+                    .accessibilityIdentifier("schedule-" + item.id)
+                }
+            } else if problem == nil {
+                ProgressView().controlSize(.small)
+            }
+            if let problem {
+                HStack(spacing: 12) {
+                    Text(problem).foregroundStyle(AppTheme.warning).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button(L("Повторить")) { Task { await load() } }
+                }
+            }
+        } header: {
+            Text(home.displayName)
+        }
+        .task(id: home.health?.homeId) { if home.health != nil { await load() } }
+    }
+
+    /// Where it runs, when, and what it did this week: words beside every number.
+    private func detail(_ item: HomeSchedule) -> String {
+        var parts = [StatisticsSummary.chatTitle(item.chat)]
+        // A switched-off schedule has no next run; a rhythm in words still says what it would do.
+        if let when = item.schedule.enabled ? item.schedule.timing : item.schedule.rhythm { parts.append(when) }
+        if item.schedule.backupOf != nil { parts.append(L("резерв")) }
+        var week = [L("Запусков за неделю: \(item.week.runs.formatted(.number.locale(L10n.locale)))")]
+        if let cost = item.week.costUsd { week.append("≈ " + StatisticsScreen.money(cost)) }
+        if item.week.failed > 0 { week.append(L("сбои \(item.week.failed.formatted(.number.locale(L10n.locale)))")) }
+        return parts.joined(separator: " · ") + "\n" + week.joined(separator: " · ")
+    }
+
+    private func load() async {
+        do { overview = try await home.readScheduleOverview(); problem = nil }
+        catch is CancellationError {}
+        catch StatisticsReadError.unsupported { problem = L("Обновите OpenStrudel на устройстве, чтобы управлять его расписаниями здесь.") }
+        catch StatisticsReadError.ownerOnly { problem = L("Расписания видит владелец устройства.") }
+        catch { problem = UserFacingError.text(error.localizedDescription) }
+    }
+
+    private func toggle(_ item: HomeSchedule, on: Bool) async {
+        saving.insert(item.id)
+        defer { saving.remove(item.id) }
+        do { _ = try await home.saveSchedule(item.schedule, enabled: on); await load() }
+        catch { problem = UserFacingError.text(error.localizedDescription) }
     }
 }
 

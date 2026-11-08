@@ -8,7 +8,7 @@ import { HomeError } from "../src/home.js";
 import { MessageService } from "../src/messages.js";
 import { OpenStrudelRuntime } from "../src/runtime.js";
 import { Scheduler } from "../src/scheduler.js";
-import { modelName, readStatistics, type Statistics } from "../src/statistics.js";
+import { modelName, readScheduleOverview, readStatistics, type Statistics } from "../src/statistics.js";
 import { Store } from "../src/store.js";
 import { ensureUsageTable, recordTurnUsage, TICKS_PER_USD } from "../src/usage.js";
 
@@ -125,6 +125,29 @@ it("counts executed requests by the owner's local day and week, with their sourc
   expect(statistics).toMatchObject({ firstDay: "2026-11-07", usageSince: "2026-11-07", timeZone: "Europe/Moscow" });
 });
 
+it("lists every recurring schedule with its chat and this week's runs and cost, for the owner only", () => {
+  const { store, main } = setup();
+  const messages = new MessageService(store, { async run() { return { threadId: "t", response: "Готово", events: [] }; } });
+  const scheduler = new Scheduler(store, messages);
+  const now = new Date("2026-11-08T12:00:00.000Z");
+  const radar = scheduler.save({ conversationId: main, name: "Радар", prompt: "Проверить", cron: "5 * * * *", timezone: "Europe/Moscow" }, now);
+  const morning = scheduler.save({ conversationId: main, name: "Утро", prompt: "Собрать", cron: "0 7 * * *", timezone: "Europe/Moscow", enabled: false }, now);
+  scheduler.save({ conversationId: main, name: "Напомнить", prompt: "Позвонить", cron: "@once 2026-11-09T09:00:00+03:00", timezone: "Europe/Moscow" }, now);
+  for (const [id, status, time, cost] of [["r1", "quiet", "2026-11-03T08:05:00.000Z", 0.4], ["r2", "failed", "2026-11-07T09:05:00.000Z", undefined], ["r0", "completed", "2026-10-30T09:05:00.000Z", 9]] as const) {
+    store.db.prepare("INSERT INTO schedule_runs(id,schedule_id,conversation_id,scheduled_for,status,created_at) VALUES(?,?,?,?,?,?)").run(id, radar.id, main, time, status, time);
+    request(store, main, time, { externalId: "schedule:" + id, reply: status === "quiet" ? "NO_REPLY" : "Готово", usage: cost === undefined ? undefined : { provider: "chatgpt", model: "gpt-6-astra", input: 1000, output: 10, cost } });
+  }
+  expect(() => readScheduleOverview(store, scheduler, false, now)).toThrow(HomeError);
+  const overview = readScheduleOverview(store, scheduler, true, now);
+  // One-time reminders are not automations; a switched-off schedule stays listed so it can be switched on again.
+  expect(overview.schedules.map(s => [s.name, s.enabled, s.chat.kind, s.week])).toEqual([
+    ["Радар", true, "main", { runs: 2, quiet: 1, failed: 1, tokens: 1010, costUsd: 0.4 }],
+    ["Утро", false, "main", { runs: 0, quiet: 0, failed: 0, tokens: 0, costUsd: null }],
+  ]);
+  expect(overview.schedules[1]).toMatchObject({ id: morning.id, prompt: "Собрать", cron: "0 7 * * *", conversationId: main });
+  expect(readScheduleOverview(store, undefined, true, now).schedules).toEqual([]);
+});
+
 it("keeps local days whole across a daylight saving change", () => {
   const { store, main } = setup("Europe/Berlin");
   // Summer time ends at 03:00 on Sunday 25 October 2026, so that day lasts 25 hours.
@@ -167,4 +190,33 @@ it("serves statistics to the owner and refuses a member over the Home API", asyn
   const member = await runtime.api.homeLink.execute({ id: randomUUID(), request: { method: "GET", path: "/v1/statistics", owner: false } });
   expect(member.status).toBe(403);
   expect((await fetch(base + "/v1/statistics")).status).toBe(401);
+}, 20_000);
+
+it("switches a schedule from the owner's overview without losing its poll, delivery or backup", async () => {
+  const root = mkdtempSync(join(tmpdir(), "openstrudel-schedules-")); roots.push(root);
+  const runtime = new OpenStrudelRuntime({ dbPath: join(root, "home.sqlite"), rootDirectory: root, startTelegram: false, engine: new MockCodexEngine(), apiToken: "test-owner", mobilePort: 0 }); runtimes.push(runtime);
+  const address = await runtime.api.listen("127.0.0.1", 0);
+  const base = `http://127.0.0.1:${address.port}`, owner = { authorization: "Bearer test-owner", "content-type": "application/json" };
+  runtime.store.linkTelegramChat({ chatId: "-100", title: "WAI HQ", allowedSenders: ["7"] });
+  const main = runtime.store.primaryConversation().id;
+  const poll = { question: "Сколько суеты сегодня?", options: ["1 · спокойно", "10 · сплошная суета"] };
+  const ritual = runtime.scheduler.save({ conversationId: main, name: "Суетолог · вечер", prompt: "", cron: "30 18 * * *", timezone: "Europe/Moscow", delivery: "telegram", telegramChatId: "-100", poll });
+  runtime.scheduler.save({ conversationId: main, name: "Суетолог · резерв", prompt: "Спросить ещё раз", cron: "0 20 * * *", timezone: "Europe/Moscow", backupOf: ritual.id });
+  const overview = async () => (await (await fetch(base + "/v1/schedules", { headers: owner })).json()).schedules as Array<Record<string, unknown>>;
+  // The app sends back its ChatSchedule fields only: no poll, and enabled switched.
+  const asApp = (schedule: Record<string, unknown>, enabled: boolean) => ({ ...Object.fromEntries(["id", "conversationId", "name", "prompt", "cron", "timezone", "nextRunAt", "telegramChatId", "delivery", "lastRunStatus", "backupOf"]
+    .filter(key => schedule[key] != null).map(key => [key, schedule[key]])), enabled });
+  for (const listed of await overview()) {
+    const saved = await fetch(`${base}/v1/conversations/${main}/schedules`, { method: "POST", headers: owner, body: JSON.stringify(asApp(listed, false)) });
+    expect(saved.status).toBe(201);
+  }
+  expect((await overview()).map(s => [s.name, s.enabled, s.poll, s.delivery, s.telegramChatId, s.backupOf])).toEqual([
+    ["Суетолог · вечер", false, poll, "telegram", "-100", null],
+    ["Суетолог · резерв", false, null, "app", null, ritual.id],
+  ]);
+  const [first] = await overview();
+  await fetch(`${base}/v1/conversations/${main}/schedules`, { method: "POST", headers: owner, body: JSON.stringify(asApp(first!, true)) });
+  expect((await overview())[0]).toMatchObject({ enabled: true, poll, nextRunAt: expect.any(String) });
+  const member = await runtime.api.homeLink.execute({ id: randomUUID(), request: { method: "GET", path: "/v1/schedules", owner: false } });
+  expect(member.status).toBe(403);
 }, 20_000);

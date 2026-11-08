@@ -11989,5 +11989,40 @@
     "es": "Chat principal",
     "he": "הצ׳אט הראשי",
     "ru": "Главный чат"
+  },
+  "На этом устройстве нет расписаний.": {
+    "en": "This device has no schedules.",
+    "fr": "Cet appareil n’a aucune programmation.",
+    "es": "Este dispositivo no tiene programaciones.",
+    "he": "אין במכשיר הזה לוחות זמנים.",
+    "ru": "На этом устройстве нет расписаний."
+  },
+  "Запусков за неделю: {0}": {
+    "en": "Runs this week: {0}",
+    "fr": "Exécutions cette semaine : {0}",
+    "es": "Ejecuciones esta semana: {0}",
+    "he": "הפעלות השבוע: {0}",
+    "ru": "Запусков за неделю: {0}"
+  },
+  "резерв": {
+    "en": "backup",
+    "fr": "secours",
+    "es": "respaldo",
+    "he": "גיבוי",
+    "ru": "резерв"
+  },
+  "Обновите OpenStrudel на устройстве, чтобы управлять его расписаниями здесь.": {
+    "en": "Update OpenStrudel on the device to manage its schedules here.",
+    "fr": "Mettez à jour OpenStrudel sur l’appareil pour gérer ses programmations ici.",
+    "es": "Actualiza OpenStrudel en el dispositivo para gestionar aquí sus programaciones.",
+    "he": "עדכנו את OpenStrudel במכשיר כדי לנהל כאן את לוחות הזמנים שלו.",
+    "ru": "Обновите OpenStrudel на устройстве, чтобы управлять его расписаниями здесь."
+  },
+  "Расписания видит владелец устройства.": {
+    "en": "Only the device’s owner sees its schedules.",
+    "fr": "Seul le propriétaire de l’appareil voit ses programmations.",
+    "es": "Solo el propietario del dispositivo ve sus programaciones.",
+    "he": "רק בעל המכשיר רואה את לוחות הזמנים שלו.",
+    "ru": "Расписания видит владелец устройства."
   }
 }

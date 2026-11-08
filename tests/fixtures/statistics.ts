@@ -43,7 +43,6 @@ function seed(runtime: OpenStrudelRuntime, index: number) {
   const group = store.telegramChats().find(chat => chat.chatId === "-10" + index)!.conversationId!;
   const radar = runtime.scheduler.save({ conversationId: editorChat, name: index ? "Договоры и сроки" : "Радар новостей", prompt: "Проверить", cron: "5 * * * *", timezone: "Europe/Moscow", enabled: true });
   const morning = runtime.scheduler.save({ conversationId: editorChat, name: index ? "Сводка CRM" : "Утренний выпуск", prompt: "Собрать", cron: "0 7 * * *", timezone: "Europe/Moscow", enabled: true });
-  store.db.prepare("UPDATE schedules SET next_run_at='2099-01-01T00:00:00.000Z'").run();
   let sequence = 0;
   const add = (conversationId: string, at: number, options: { channel?: "api" | "telegram"; externalId?: string; reply?: string; status?: string; usage?: [string, string, number, number, number | null] }) => {
     const input = store.addMessage({ conversationId, channel: options.channel ?? "api", direction: "inbound", text: "Запрос " + ++sequence, externalId: options.externalId });
@@ -82,8 +81,9 @@ for (const [index, spec] of specs.entries()) {
   runtime.api.home.rename(spec.name);
   Object.assign((runtime.api.mobile as any).options, { host: "127.0.0.1", hostname: "127.0.0.1" });
   runtime.account.read = async () => ({ connected: true, email: "preview@example.com", managed: true, planType: "plus" });
-  // A copy keeps its schedules in place, so the screen can name them, but none of them ever comes due here.
-  if (spec.path) runtime.store.db.prepare("UPDATE schedules SET next_run_at='2099-01-01T00:00:00.000Z'").run();
+  // The clock never starts here (no runtime.start()), so a copy's schedules keep their real times and never come due.
+  // A metadata copy carries no text; a placeholder request lets a schedule's switch save as it does on the Home itself.
+  if (spec.path) runtime.store.db.prepare("UPDATE schedules SET prompt='—' WHERE trim(prompt)=''").run();
   else seed(runtime, index);
   const control = createServer(async (req, res) => {
     res.setHeader("content-type", "application/json");

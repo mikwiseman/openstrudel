@@ -1,7 +1,7 @@
 import XCTest
 
 /// Runs against tests/fixtures/statistics.ts on a disposable simulator: every connected Home's usage by day and by week,
-/// one Home at a time and all together. Pass the Homes as `Name|control URL` pairs separated by commas in
+/// one Home at a time and all together, then each device's models and schedules in Settings. Pass the Homes as `Name|control URL` pairs separated by commas in
 /// TEST_RUNNER_OPENSTRUDEL_STATISTICS_HOMES; the first is paired first.
 final class StatisticsUITests: XCTestCase {
     @MainActor
@@ -70,6 +70,38 @@ final class StatisticsUITests: XCTestCase {
             for _ in 0..<4 where !section.exists { app.swipeUp() }
             XCTAssertTrue(section.waitForExistence(timeout: 5), app.debugDescription)
         }
+
+        // 6. «Расписания»: every device's schedules with this week's runs, each a switch that saves on its device.
+        let picker = app.buttons["settingsSection"]
+        for _ in 0..<6 where !picker.isHittable { app.swipeDown() }
+        openSection("Расписания", picker: picker, in: app)
+        let switches = app.switches.matching(NSPredicate(format: "identifier BEGINSWITH %@", "schedule-"))
+        XCTAssertTrue(switches.firstMatch.waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Запусков за неделю")).firstMatch.exists, app.debugDescription)
+        capture("settings-schedules", app)
+        let schedule = app.switches[switches.firstMatch.identifier]
+        let before = schedule.value as? String, flipped = before == "1" ? "0" : "1"
+        schedule.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        XCTAssertTrue(settles(schedule, at: flipped), app.debugDescription)
+        // Another pane and back reads the device again: the switch held there.
+        openSection("Модели", picker: picker, in: app)
+        openSection("Расписания", picker: picker, in: app)
+        XCTAssertTrue(settles(schedule, at: flipped), app.debugDescription)
+        capture("settings-schedules-switched", app)
+        schedule.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        XCTAssertTrue(settles(schedule, at: before ?? "1"), app.debugDescription)
+    }
+
+    @MainActor private func openSection(_ title: String, picker: XCUIElement, in app: XCUIApplication) {
+        XCTAssertTrue(picker.waitForExistence(timeout: 10), app.debugDescription); picker.tap()
+        let item = app.buttons[title].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 5), app.debugDescription); item.tap()
+    }
+
+    /// Waits for a switch to show a value after its save and the reload that follows.
+    @MainActor private func settles(_ element: XCUIElement, at value: String) -> Bool {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@ AND isEnabled == true", value), object: element)
+        return XCTWaiter().wait(for: [expectation], timeout: 15) == .completed
     }
 
     @MainActor private func pair(_ app: XCUIApplication, control: String, name: String) async throws {
