@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f5f3ed">
+  <meta name="theme-color" content="#f5f6f8">
   <meta name="color-scheme" content="light dark">
   <meta name="robots" content="noindex, nofollow">
   <title>Выдох · WAI HQ</title>
@@ -13,50 +13,38 @@
 </head>
 <body>
   <main class="shell" id="app">
-    <header class="masthead">
-      <a class="wordmark" href="./" aria-label="Выдох — главная">Выдох<span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span></a>
-      <span class="edition">WAI HQ</span>
-    </header>
-
+    <header class="masthead"><a class="wordmark" href="./">Выдох<span aria-hidden="true">✳</span></a><span class="edition">WAI HQ</span></header>
     <section id="gate" class="gate" aria-live="polite">
-      <div class="eyebrow" id="gate-eyebrow">МИНУТА ДЛЯ СЕБЯ</div>
-      <h1 id="gate-title">Меньше суеты.<br>Больше жизни.</h1>
-      <p id="gate-copy">Открываем твой день…</p>
-      <div class="gate-metrics" aria-hidden="true"><span class="calm">Спокойствие</span><span class="focus">Фокус</span><span class="energy">Энергия</span><span class="mood">Настроение</span></div>
-      <div class="gate-actions">
-        <a id="open-telegram" class="primary" href="https://t.me/waiwai_is_bot" hidden>Открыть в Telegram <span aria-hidden="true">↗</span></a>
-        <button id="retry" class="primary" type="button" hidden>Попробовать ещё раз <span aria-hidden="true">↻</span></button>
-      </div>
-      <p class="gate-note" id="gate-note">Твои оценки видны только участникам WAI HQ.</p>
+      <h1 id="gate-title">Загружаем оценки</h1>
+      <p id="gate-copy">Это займёт несколько секунд.</p>
+      <a id="open-telegram" class="primary" href="https://t.me/waiwai_is_bot?startapp=checkin" hidden>Открыть в Telegram ↗</a>
+      <button id="retry" class="primary" type="button" hidden>Повторить</button>
     </section>
-
     <div id="dashboard" hidden>
       <nav id="people" class="people" aria-label="Чьи оценки"></nav>
-      <section class="today-section" aria-labelledby="today-title">
-        <div class="section-kicker"><time id="today-date"></time><span id="today-state" class="state-label"></span></div>
-        <div class="hero"><h1 id="today-title">Как ты<br>сегодня?</h1><span class="hero-orbit" aria-hidden="true"><i></i><i></i><i></i><i></i></span></div>
-        <p class="intro" id="today-intro">От 1 до 10. Больше — лучше.</p>
-        <form id="check-in-form">
-          <div id="metrics" class="metrics"></div>
-          <div id="save-area" class="save-area">
-            <button class="primary" id="save" type="submit" disabled><span id="save-label">Отметь все четыре</span><span class="save-arrow" aria-hidden="true">↗</span></button>
-            <p id="save-status" class="save-status" role="status" aria-live="polite">Оценки можно изменить в течение дня.</p>
-          </div>
-        </form>
-        <p id="other-note" class="other-note" hidden></p>
+      <section class="overview" aria-labelledby="week-title">
+        <div class="week-nav"><button id="previous-week" class="icon-button" type="button" aria-label="Предыдущая неделя">←</button><div><h1 id="week-title"></h1><p id="week-state"></p></div><button id="next-week" class="icon-button" type="button" aria-label="Следующая неделя">→</button></div>
+        <div class="overview-caption"><span>Средние за неделю · из 10</span><button id="current-week" type="button" hidden>К текущей</button></div>
+        <div id="metric-cards" class="metric-cards" role="group" aria-label="Показатели и выбор графика"></div>
+        <section class="chart-panel" aria-labelledby="trend-title">
+          <div class="chart-heading"><h2 id="trend-title"></h2><span id="chart-count"></span></div>
+          <div class="chart-wrap"><svg id="chart" viewBox="0 0 360 190" role="img" aria-labelledby="chart-title chart-description"><title id="chart-title">Оценки по дням</title><desc id="chart-description"></desc></svg><p id="chart-empty" class="chart-empty" hidden>Пока нет оценок</p></div>
+          <div class="chart-footer"><span>Пропуск — нет ответа</span><span>Суббота — выходной</span></div>
+        </section>
       </section>
-
-      <section class="history" aria-labelledby="history-title">
-        <div class="history-heading"><h2 id="history-title">Свой ритм</h2><div class="periods" role="group" aria-label="Период"><button type="button" data-period="7" aria-pressed="true">7 дней</button><button type="button" data-period="30" aria-pressed="false">30 дней</button></div></div>
-        <div id="metric-tabs" class="metric-tabs" role="group" aria-label="Метрика на графике"></div>
-        <div class="trend-heading"><div class="trend-value"><span id="average">—</span><span class="out-of">/10</span><p id="average-caption">Среднее за неделю</p></div><div class="trend-note"><strong id="streak">—</strong><span id="streak-caption">дней с ответом подряд</span></div></div>
-        <div class="chart-wrap"><svg id="chart" viewBox="0 0 600 230" role="img" aria-labelledby="chart-title chart-description"><title id="chart-title">Оценки по дням</title><desc id="chart-description"></desc></svg><p id="chart-empty" class="chart-empty" hidden>Здесь появится твой ритм.<br>Начни с одной оценки.</p></div>
-        <p class="chart-footnote" id="chart-footnote">Пробел на графике — день без оценки.</p>
-        <details class="history-details"><summary>Оценки по дням <span aria-hidden="true">+</span></summary><div class="table-scroll"><table><caption class="sr-only">Все четыре оценки за выбранный период</caption><thead><tr><th scope="col">День</th><th scope="col" class="calm"><abbr title="Спокойствие">Спок.</abbr></th><th scope="col" class="focus">Фокус</th><th scope="col" class="energy">Энергия</th><th scope="col" class="mood"><abbr title="Настроение">Настр.</abbr></th></tr></thead><tbody id="history-rows"></tbody></table></div></details>
-      </section>
-      <footer class="footer"><span>Маленькая пауза. Каждый день.</span><span id="version"></span></footer>
+      <details id="entry" class="entry">
+        <summary><span id="entry-label">Отметить сегодня</span><span aria-hidden="true">+</span></summary>
+        <div class="entry-body"><div class="entry-heading"><time id="today-date"></time><span id="today-state"></span></div><p class="hint" id="today-intro">1–10 · больше — лучше</p>
+          <form id="check-in-form"><div id="metrics" class="metrics"></div><div id="save-area"><button class="primary" id="save" type="submit" disabled><span id="save-label">Отметь все четыре</span></button><p id="save-status" class="save-status" role="status" aria-live="polite"></p></div></form>
+          <p id="other-note" class="hint" hidden></p>
+        </div>
+      </details>
+      <div class="streak-line"><span id="streak"></span><button id="refresh" type="button">Обновить</button></div>
+      <p id="refresh-status" class="hint" role="status" hidden></p>
+      <details class="history-details"><summary>История недели<span aria-hidden="true">+</span></summary><div class="table-scroll"><table><caption class="sr-only">Оценки за выбранную неделю</caption><thead><tr><th scope="col">Дата</th><th scope="col"><abbr title="Спокойствие">Спок.</abbr></th><th scope="col">Фокус</th><th scope="col">Энергия</th><th scope="col"><abbr title="Настроение">Настр.</abbr></th></tr></thead><tbody id="history-rows"></tbody></table></div></details>
+      <details class="method"><summary>Как считаем<span aria-hidden="true">+</span></summary><div class="method-body"><p>Каждый показатель отдельно. Среднее — только по ответам, пропуски не считаем нулями. Рядом — изменение к предыдущей неделе и число ответов. Мало ответов — сравнение менее надёжно.</p><p>Неделя: понедельник–воскресенье, без субботы. Текущая неделя ещё не завершена. Серия — дни с оценкой спокойствия подряд; сегодня без ответа её не обрывает.</p><p>В старой истории спокойствие = 10 − суета. Исторический ноль сохраняем; новые оценки — от 1 до 10.</p><p id="timezone-note"></p></div></details>
     </div>
-    <noscript><p class="intro">Для Выдоха нужен JavaScript. Открой приложение в Telegram.</p></noscript>
+    <noscript><p>Открой Выдох в Telegram с включённым JavaScript.</p></noscript>
   </main>
 </body>
 </html>

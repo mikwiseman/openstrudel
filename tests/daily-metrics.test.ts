@@ -72,7 +72,9 @@ describe("the metrics journal", () => {
     vote("new-later", "calm", "2026-11-04", "42", 9, "2026-11-04T18:00:00Z");
     vote("stranger", "focus", "2026-11-04", "99", 10, "2026-11-04T18:00:00Z");
     const data = readDailyMetrics(store, "42", now);
-    expect(data.days).toHaveLength(30);
+    expect(data.days).toHaveLength(34);
+    expect(data.days[0]!.date).toBe("2026-09-28");
+    expect(data.days.some(day => new Date(day.date + "T12:00:00Z").getUTCDay() === 6)).toBe(false);
     expect(data.days.find(day => day.date === "2026-11-01")!.values).toEqual({ "42": { calm: 0 } });
     expect(data.days.find(day => day.date === "2026-11-02")!.values).toEqual({});
     expect(data.days.find(day => day.date === "2026-11-03")!.values).toEqual({ "42": { calm: 2 } });
@@ -81,7 +83,7 @@ describe("the metrics journal", () => {
     expect(data.participants).toEqual([{ id: "42", name: "Мик" }, { id: "77", name: "Гриша" }]);
     const summary = dailyMetricsSummary(store, conversationId, now);
     expect(summary).toContain("2026-11-01: Мик: Спокойствие 0/10");
-    expect(summary).toContain("Мик: 2 consecutive calendar days");
+    expect(summary).toContain("Мик: 2 consecutive eligible days");
   });
   it("writes only today's own four values atomically, without modifying poll votes or scheduling sends", () => {
     const { store, vote, conversationId } = setup();
@@ -105,11 +107,30 @@ describe("the metrics journal", () => {
     store.setSetting("home.transfer", "true");
     expect(() => saveDailyMetrics(store, "42", input, now)).toThrow();
   });
+  it("keeps five calendar weeks and their complete comparison baseline across year boundaries", () => {
+    const { store } = setup();
+    for (const [date, start, count] of [["2027-01-03", "2026-11-23", 36], ["2027-01-04", "2026-11-30", 31], ["2027-01-09", "2026-11-30", 35]] as const) {
+      const data = readDailyMetrics(store, "42", new Date(`${date}T09:00:00Z`));
+      expect(data.days[0]!.date).toBe(start);
+      expect(data.days).toHaveLength(count);
+      expect(data.days.every(day => day.date <= date && new Date(day.date + "T12:00:00Z").getUTCDay() !== 6)).toBe(true);
+    }
+  });
   it("refuses a changed or foreign schedule mapping and uses Moscow's calendar date", () => {
     const { store, config } = setup();
     expect(readDailyMetrics(store, "42", new Date("2026-11-04T21:00:00Z")).today).toBe("2026-11-05");
     store.db.prepare("UPDATE schedules SET conversation_id=? WHERE id=?").run(store.primaryConversation().id, config.metrics.focus);
     expect(() => readDailyMetrics(store, "42", now)).toThrow();
+  });
+  it("excludes Saturday votes without deleting them and refuses app writes on Saturdays", () => {
+    const { store, vote, conversationId } = setup();
+    vote("friday", "calm", "2026-11-06", "42", 4, "2026-11-06T16:00:00Z");
+    vote("saturday", "calm", "2026-11-07", "42", 9, "2026-11-07T16:00:00Z");
+    const sunday = new Date("2026-11-08T09:00:00Z");
+    expect(readDailyMetrics(store, "42", sunday).days.some(day => day.date === "2026-11-07")).toBe(false);
+    expect(store.db.prepare("SELECT option_index FROM schedule_poll_answers WHERE poll_id='saturday'").get()!.option_index).toBe(8);
+    expect(dailyMetricsSummary(store, conversationId, sunday)).toContain("Мик: 1 consecutive eligible days of calm marks ending 2026-11-06");
+    expect(() => saveDailyMetrics(store, "42", { date: "2026-11-07", scores: { calm: 8, focus: 7, energy: 6, mood: 5 } }, new Date("2026-11-07T09:00:00Z"))).toThrow("субботам");
   });
   it("keeps native averages and calendar streaks correct when app and Telegram both record a day", () => {
     const { store, vote, config, conversationId } = setup();
@@ -138,6 +159,10 @@ it("serves the separate signed API without creating a Home session or exposing H
     expect(read.headers.get("set-cookie")).toBeNull();
     expect(read.headers.get("cache-control")).toBe("no-store");
     expect(await read.json()).toMatchObject({ viewerId: "42", today: "2026-11-05", version: "1.1.1" });
+    const second = await fetch(base + "/check-in/api", { headers: { authorization: signed(77) } });
+    expect(second.status).toBe(200);
+    expect(await second.json()).toMatchObject({ viewerId: "77" });
+    expect((await fetch(base + "/check-in/api", { headers: { authorization: signed(99) } })).status).toBe(403);
     expect((await fetch(base + "/v1/activity", { headers })).status).toBe(401);
     expect((await fetch(base + "/check-in/api", { headers: { ...headers, origin: "https://evil.example" } })).status).toBe(403);
     expect((await fetch(base + "/check-in/api", { method: "POST", headers, body: JSON.stringify({ date: "2026-11-05", scores: { calm: 8, focus: 7, energy: 9, mood: 10 } }) })).status).toBe(200);
