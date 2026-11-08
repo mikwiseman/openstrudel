@@ -1,10 +1,21 @@
 # Выдох · Telegram Mini App
 
-Four daily scores: calm, focus, energy and mood. New entries use 1–10; higher means better. The app shows each participant's day, a 7/30-day trend and a dated table. A gap means no answer. The archived bustle series is projected once as `calm = 10 − bustle`; historical zero stays zero. Other metrics are never invented for earlier dates.
+Four daily scores: calm, focus, energy and mood. New entries use 1–10; higher means better. The main screen shows four separate weekly averages, answer counts and changes from the previous week. Select a participant, then a metric card to see its dated chart. Navigate five Monday–Sunday weeks; the current week is explicitly unfinished. The API returns these weeks plus a complete comparison week, aligned to Monday, rather than a truncated rolling window. Each comparison shows both weeks' answer counts and uses only actual answers. A gap means no answer. The archived bustle series is projected once as `calm = 10 − bustle`; historical zero stays zero. Other metrics are never invented for earlier dates.
+
+The collapsible **Мой день** form always belongs to the signed-in viewer, including while viewing somebody else's history. The day table and calculation notes are disclosures; no combined index is calculated. Refresh reloads the signed API, retains unsaved inputs and labels retained data when a request fails. A changed local date resets the draft. Theme and all four safe-area edges follow Telegram events. No participant IDs, scores or initialization data are persisted in browser storage or bundled into the assets.
 
 Telegram signs the identity. Only people in the owner-installed `dailyMetrics.config` can read the shared journal, and each person can save only their own four scores for today in the configured timezone. The app does not grant Home administration or access to other conversations. Telegram initialization data expires after 24 hours and is never stored by the app.
 
-Scores from the app use closed, non-delivered poll records in the existing journal. Actual Telegram votes are retained. The newest answer for a person, date and metric wins. Version 1.1.1 renders the selected morning schedule directly from this normalized journal: a seven-day map of all four metrics for each participant, emphasized latest scores, streaks and an app button. The date columns always represent seven calendar days, including absent dates. Missing answers remain gaps; calm is never inverted again. Monday images retain per-metric weekly averages, changes from the previous week and the calmest day. The caption contains only the date and AI attribution. Rendering uses no model call and delivery uses the existing durable Telegram receipt.
+The WAI daily-metrics calendar excludes Saturdays. The API projection and chart omit them;
+original votes remain in the journal, but new app writes on a Saturday are rejected.
+The Mini App and the text summary count calm marks on eligible dates only: Friday to
+Sunday is consecutive, historical zero counts, and a missing ordinary date breaks the
+series. Today without an answer does not break it. A series reaching the API's oldest
+date is marked as a lower bound with `+`. This policy is specific to daily metrics; the generic check-in API for other
+poll schedules keeps its existing calendar behavior. The rendered morning-card layout
+and its independent streak calculation are not changed by this patch.
+
+Scores from the app use closed, non-delivered poll records in the existing journal. Actual Telegram votes are retained. The newest answer for a person, date and metric wins. The separate morning image uses this normalized journal through its existing renderer and schedule. Its layout, streak algorithm, caption and delivery configuration are outside this UI change.
 
 ## Deployment
 
@@ -45,4 +56,30 @@ Before replacing the Home image: wait for active work to finish, preserve a cons
 
 ## Verification
 
-`npm test -- tests/daily-metrics.test.ts tests/check-ins.test.ts tests/web-routes.test.ts` covers signed identity, expiry, tampering, access boundaries, original votes, legacy zero, missing dates, duplicate dates, atomic own-day writes, and scoped HTTP routes. `tests/daily-metrics-card.test.ts` also checks exact report dates, missing answers, weekly math and one captioned photo with a launch button through scheduler recovery. Render the app at narrow phone and desktop widths; exercise save/reopen, both people, all metrics, periods, dark mode, and errors. Use disposable fixture data for writes, never synthetic production scores.
+`npm test -- tests/daily-metrics.test.ts tests/check-ins.test.ts tests/web-routes.test.ts tests/daily-metrics-card.test.ts` covers signed identity, expiry, tampering, access boundaries, original votes, legacy zero, missing dates, duplicate dates, atomic own-day writes, complete calendar windows, scoped HTTP routes and the unchanged morning-card delivery. Run `npm run typecheck` as well.
+
+`node --test tests/daily-metrics-calendar.node.mjs` on Node 24 runs the dependency-free
+Saturday regressions against the real browser functions and server calendar helper.
+It also covers week boundaries, per-metric sample sizes and means, and the comparison-window limit.
+
+For browser integration tests:
+
+```bash
+npm ci --ignore-scripts
+npx playwright install chromium          # install browser dependencies if the host lacks them
+npm run test:metrics-ui                  # builds the runtime, then runs Chromium
+```
+
+The Playwright fixture starts an isolated in-memory `Store` and the real `HttpApi` on
+loopback for each test. Its fake Telegram SDK supplies correctly signed fixture identities;
+requests use the real HMAC, allowlist and journal. It checks both participants, own writes while
+viewing another participant, save/reload, network retry, draft retention, unauthenticated/expired/
+forged/foreign access, Saturdays, historical zero, week navigation, 320/390/1024px layouts,
+Telegram theme/safe-area events and browser errors. Screenshots of **fictional** participants
+are saved under `.data/metrics-ui-results/`; no real journal is accessed. Loading/retry faults
+are deliberately injected in the browser; successful GET/POST requests are not mocked.
+
+These local checks do not verify a production deployment or a real Telegram webview. After the
+normal release, check the actual HTTPS route and both configured identities inside Telegram.
+The renderer of the separate morning image and the generic check-in API retain their existing
+calendar calculations; this UI change does not claim to update those surfaces.
