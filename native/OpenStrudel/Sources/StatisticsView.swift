@@ -5,6 +5,8 @@ import SwiftUI
 struct StatisticsScreen: View {
     @EnvironmentObject private var library: DeviceLibrary
     @Environment(\.dynamicTypeSize) private var typeSize
+    /// 64 on the Mac; on iOS it grows with the reader's text size and shrinks to keep one line.
+    @ScaledMetric(relativeTo: .largeTitle) private var heroSize: CGFloat = 64
     @StateObject private var model = StatisticsModel()
     @AppStorage("openstrudel.statistics.period") private var period = UsagePeriod.day
     /// "all", or one connection's id.
@@ -104,14 +106,15 @@ struct StatisticsScreen: View {
             }
             .pickerStyle(.inline)
         } label: {
-            HStack(spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(scope == "all" ? L("Все устройства") : clients.first { $0.id == scope }?.displayName ?? L("Все устройства"))
+                    .multilineTextAlignment(.leading)
                 Image(systemName: "chevron.up.chevron.down").font(AppTypography.meta.weight(.semibold)).accessibilityHidden(true)
             }
             .font(AppTypography.interface.weight(.medium)).foregroundStyle(AppTheme.accentText)
             .frame(minHeight: controlTarget).contentShape(Rectangle())
         }
-        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize(horizontal: false, vertical: true)
         .padding(.bottom, 8)
         .accessibilityIdentifier("statisticsScope")
     }
@@ -122,7 +125,8 @@ struct StatisticsScreen: View {
                 .font(AppTypography.meta.weight(.semibold)).foregroundStyle(AppTheme.secondaryText)
                 .accessibilityAddTraits(.isHeader)
             Text(slice.requests.formatted(.number.locale(L10n.locale)))
-                .font(.system(size: typeSize.isAccessibilitySize ? 44 : 64, weight: .semibold))
+                .font(.system(size: heroSize, weight: .semibold))
+                .lineLimit(1).minimumScaleFactor(0.4)
                 .contentTransition(.numericText(value: Double(slice.requests)))
                 .accessibilityLabel(L("Запросы: \(slice.requests.formatted(.number.locale(L10n.locale)))"))
                 .accessibilityIdentifier("statisticsRequests")
@@ -144,12 +148,7 @@ struct StatisticsScreen: View {
             ForEach(slice.homes) { home in
                 Button { scope = home.id } label: {
                     VStack(alignment: .leading, spacing: 6) {
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(home.name).font(AppTypography.interface.weight(.medium)).foregroundStyle(.primary)
-                            Spacer(minLength: 12)
-                            if let cost = home.costUsd { Text(Self.money(cost)).font(AppTypography.meta).foregroundStyle(AppTheme.secondaryText) }
-                            Text(home.requests.formatted(.number.locale(L10n.locale))).font(AppTypography.interface).monospacedDigit().foregroundStyle(.primary)
-                        }
+                        figures(home.name, requests: home.requests, cost: home.costUsd).foregroundStyle(.primary)
                         GeometryReader { proxy in
                             Capsule().fill(AppTheme.separator)
                                 .overlay(alignment: .leading) {
@@ -179,16 +178,12 @@ struct StatisticsScreen: View {
                 Hairline()
                 ForEach(visible) { item in
                     VStack(alignment: .leading, spacing: 4) {
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
-                            Text(item.title).font(AppTypography.interface.weight(.medium)).lineLimit(2)
-                            Spacer(minLength: 12)
-                            if let cost = item.costUsd { Text(Self.money(cost)).font(AppTypography.meta).foregroundStyle(AppTheme.secondaryText).monospacedDigit() }
-                            Text(item.requests.formatted(.number.locale(L10n.locale))).font(AppTypography.interface).monospacedDigit()
-                        }
+                        figures(item.title, requests: item.requests, cost: item.costUsd)
                         let detail = rowDetail(item, schedule: schedule, model: model)
                         if !detail.isEmpty { Text(detail).font(AppTypography.meta).foregroundStyle(AppTheme.secondaryText).lineLimit(2) }
                     }
                     .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .overlay(alignment: .bottom) { Hairline() }
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("statisticsRow-" + key)
@@ -203,6 +198,24 @@ struct StatisticsScreen: View {
                 }
             }
             .padding(.top, 48)
+        }
+    }
+
+    /// A name with its requests and cost: on one line, or the numbers under the name at accessibility sizes.
+    @ViewBuilder private func figures(_ title: String, requests: Int, cost: Double?) -> some View {
+        let count = requests.formatted(.number.locale(L10n.locale))
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(AppTypography.interface.weight(.medium))
+                Text(([count] + (cost.map { [Self.money($0)] } ?? [])).joined(separator: " · ")).font(AppTypography.interface).monospacedDigit()
+            }
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(title).font(AppTypography.interface.weight(.medium)).lineLimit(2)
+                Spacer(minLength: 12)
+                if let cost { Text(Self.money(cost)).font(AppTypography.meta).foregroundStyle(AppTheme.secondaryText).monospacedDigit() }
+                Text(count).font(AppTypography.interface).monospacedDigit()
+            }
         }
     }
 

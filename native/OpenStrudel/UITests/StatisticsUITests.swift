@@ -55,6 +55,21 @@ final class StatisticsUITests: XCTestCase {
         app.swipeUp(); app.swipeUp()
         XCTAssertTrue(app.descendants(matching: .any)["statisticsOrigin"].waitForExistence(timeout: 5), app.debugDescription)
         capture("statistics-week-home-rows", app)
+
+        // 5. Settings open on every device's default model, side by side.
+        // Scrolling minimised the tab bar; a relaunch opens on the chat with a full one.
+        app.terminate(); app.launch()
+        let gear = app.buttons["Настройки"].firstMatch
+        XCTAssertTrue(gear.waitForExistence(timeout: 30), app.debugDescription); gear.tap()
+        let models = app.buttons.matching(identifier: "modelChoice")
+        XCTAssertTrue(models.firstMatch.waitForExistence(timeout: 20), app.debugDescription)
+        capture("settings-models", app)
+        // The form loads rows as they scroll in; each device has its own section with its own model.
+        for home in homes {
+            let section = app.staticTexts.matching(NSPredicate(format: "label == %@", home[0])).firstMatch
+            for _ in 0..<4 where !section.exists { app.swipeUp() }
+            XCTAssertTrue(section.waitForExistence(timeout: 5), app.debugDescription)
+        }
     }
 
     @MainActor private func pair(_ app: XCUIApplication, control: String, name: String) async throws {
