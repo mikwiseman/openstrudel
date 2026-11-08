@@ -1290,17 +1290,6 @@ final class HomeClient: ObservableObject, Identifiable {
         defaults.removeObject(forKey: "openstrudel.profileID")
     }
 
-    /// The owner's business clients from the company service connected to this Home's main chat.
-    func fetchClients(refresh: Bool = false) async throws -> ClientsEnvelope { try await request("/v1/clients" + (refresh ? "?refresh=true" : "")) }
-
-    /// One client's files, read under the source it was listed from and for its id, never by name alone.
-    func fetchClientFiles(_ client: BusinessClient, source: ClientSource, offset: Int = 0) async throws -> ClientFilesEnvelope {
-        var components = URLComponents()
-        components.queryItems = [URLQueryItem(name: "connector", value: source.connector), URLQueryItem(name: "endpoint", value: source.endpoint),
-                                 URLQueryItem(name: "fingerprint", value: source.fingerprint), URLQueryItem(name: "offset", value: String(offset))]
-        return try await request("/v1/clients/" + (client.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? client.id) + "/files" + (components.string ?? ""))
-    }
-
     func loadConnections(refresh: Bool = false, for scope: String? = nil) async throws {
         let generation = connectionGeneration
         let chat = conversationID

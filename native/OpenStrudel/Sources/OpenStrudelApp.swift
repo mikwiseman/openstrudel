@@ -142,9 +142,6 @@ private struct PlaceCommands: View {
         Button(L("Статистика")) { selectTab?(.statistics) }
             .keyboardShortcut("2", modifiers: .command)
             .disabled(selectTab == nil)
-        Button(L("Клиенты")) { selectTab?(.clients) }
-            .keyboardShortcut("3", modifiers: .command)
-            .disabled(selectTab == nil)
     }
 }
 

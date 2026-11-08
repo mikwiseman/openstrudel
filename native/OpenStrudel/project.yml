@@ -193,7 +193,6 @@ targets:
       - path: Sources/ConnectionDiagnostics.swift
       - path: Sources/DeviceLibrary.swift
       - path: Sources/ConversationReader.swift
-      - path: Sources/ClientsModel.swift
       - path: Sources/ActivityModel.swift
       - path: Sources/StatisticsModel.swift
       - path: Sources/ProjectSettingsModel.swift

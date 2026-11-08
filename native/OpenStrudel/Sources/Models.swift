@@ -818,69 +818,16 @@ struct ReaderRoute: Hashable, Identifiable {
     var usesTimeline: Bool { if case .conversation = kind { false } else { true } }
 }
 
-/// Where a client was read from, as the Home reports it: the connector, its address and a fingerprint of the
-/// full address and credential. It goes back unchanged when the owner discusses the client, so the Home can
-/// refuse a client from a replaced or re-signed connector instead of resolving it elsewhere.
+/// Where a client attached to an older message was read from, as the Home reported it. The app no longer lists
+/// clients; earlier messages keep the context they were sent with.
 struct ClientSource: Codable, Hashable {
     let connector: String
     let endpoint: String
     let fingerprint: String
 }
 
-struct BusinessClient: Codable, Identifiable, Hashable {
-    let id: String
-    let slug: String
-    let name: String
-    var company: String? = nil
-    var aliases: [String] = []
-    var stage: String? = nil
-    var brand: String? = nil
-    var archived = false
-    var archiveReason: String? = nil
-    var fileCount = 0
-    var readableFileCount = 0
-
-    /// The company when it differs from the name, then the stage and the brand, as one quiet line.
-    var detail: String {
-        [company.flatMap { $0 == name ? nil : $0 }, stage, brand].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-    }
-}
-
-struct ClientsEnvelope: Decodable { let source: ClientSource; let clients: [BusinessClient] }
-
-struct ClientFile: Codable, Identifiable, Hashable {
-    let id: String
-    let name: String
-    var category: String? = nil
-    var sizeBytes: Int? = nil
-    let createdAt: String
-    /// read, ask or none, as the service grades what it can open.
-    let access: String
-    var note: String? = nil
-
-    var accessLabel: String {
-        switch access {
-        case "read": L("Чтение")
-        case "ask": L("Вопрос")
-        default: L("Нет доступа")
-        }
-    }
-    var sizeLabel: String? { sizeBytes.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) } }
-}
-
-struct ClientFilesEnvelope: Decodable {
-    struct Client: Decodable { let id: String; let slug: String; let name: String; let archived: Bool }
-    let source: ClientSource
-    let client: Client
-    let total: Int
-    let offset: Int
-    let hasMore: Bool
-    let nextOffset: Int?
-    let files: [ClientFile]
-}
-
-/// What the owner attached to a main-chat message from the app: a business client, or a message or News story read
-/// in a reader. The Home verifies a client against its source and resolves this Home's own quotes itself; another
+/// What the owner attached to a main-chat message from the app: a message or News story read in a reader, or, on
+/// messages sent before Clients left the app, a business client. The Home verifies a client against its source and resolves this Home's own quotes itself; another
 /// Home's quote travels only as bounded text with that Home's identity. Nothing here grants a tool.
 struct ChatContext: Codable, Hashable {
     enum Kind: String, Codable { case client, message, story }
@@ -905,9 +852,6 @@ struct ChatContext: Codable, Hashable {
     var date: String? = nil
     var quote: String? = nil
 
-    static func client(_ client: BusinessClient, source: ClientSource) -> ChatContext {
-        ChatContext(type: .client, source: source, clientId: client.id, slug: client.slug, name: client.name, company: client.company, stage: client.stage, brand: client.brand, archived: client.archived)
-    }
     /// A message read in a reader. On this Home the record is read again by the Home; elsewhere the text travels as a bounded quote.
     static func message(_ message: HomeMessage, title: String, home: Home?) -> ChatContext {
         ChatContext(type: .message, home: home, conversationId: message.conversationId, messageId: message.id, title: title, author: message.author, date: message.createdAt,
