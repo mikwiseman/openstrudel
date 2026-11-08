@@ -96,20 +96,24 @@ it("counts executed requests by the owner's local day and week, with their sourc
   const imported = request(store, main, "2026-11-08T07:00:00.000Z"); store.db.prepare("UPDATE messages SET imported=1 WHERE id=?").run(imported.id);
   const context = request(store, group, "2026-11-08T07:30:00.000Z", { channel: "telegram" }); store.db.prepare("UPDATE messages SET context_only=1 WHERE id=?").run(context.id);
   request(store, main, "2026-11-08T11:58:00.000Z", { status: "queued" });
+  // A private chat named only by its id takes its person's name.
+  const direct = store.getOrCreateConversation({ channel: "telegram", externalId: "139287108", title: "Telegram 139287108" }).id;
+  const greeting = request(store, direct, "2026-11-08T09:30:00.000Z", { channel: "telegram", reply: "Привет" });
+  store.db.prepare("UPDATE messages SET author='Mik Wiseman' WHERE id=?").run(greeting.id);
 
   const statistics = readStatistics(store, true, now);
   const today = day(statistics, "2026-11-08");
   expect(today).toMatchObject({
-    requests: 8, sources: { app: 3, telegram: 1, schedule: 2, events: 2 }, outcomes: { answered: 3, quiet: 3, failed: 1 },
+    requests: 9, sources: { app: 3, telegram: 2, schedule: 2, events: 2 }, outcomes: { answered: 4, quiet: 3, failed: 1 },
     measured: 3, tokens: { input: 1_600, cached: 200, output: 65, reasoning: 0 }, costUsd: 0.8, unpriced: 1,
     previousToDate: { requests: 1, tokens: 0, costUsd: null },
   });
   expect(today.chats.map(c => [statistics.chats[c.id]!.kind, statistics.chats[c.id]!.title, c.requests, c.failed, c.costUsd])).toEqual([
-    ["main", "Главный чат", 4, 0, 0.7], ["employee", "News", 3, 1, null], ["group", "Wolf Wolf", 1, 0, 0.1],
+    ["main", "Главный чат", 4, 0, 0.7], ["employee", "News", 3, 1, null], ["group", "Wolf Wolf", 1, 0, 0.1], ["telegram", "Mik Wiseman", 1, 0, null],
   ]);
   expect(statistics.chats[news]).toEqual({ title: "News", employee: "News", kind: "employee" });
   expect(today.models).toEqual([
-    { provider: null, model: null, name: "Автоматически", requests: 5, tokens: 0, costUsd: null },
+    { provider: null, model: null, name: "Автоматически", requests: 6, tokens: 0, costUsd: null },
     { provider: "chatgpt", model: "gpt-6-astra", name: "GPT-6-Astra", requests: 2, tokens: 1_555, costUsd: 0.8 },
     { provider: "grok", model: "grok-4.7", name: "Grok 4.7", requests: 1, tokens: 110, costUsd: null },
   ]);
@@ -117,7 +121,7 @@ it("counts executed requests by the owner's local day and week, with their sourc
   expect(statistics.schedules).toEqual({ radar: { name: "Радар", chatId: news, enabled: true } });
   expect(day(statistics, "2026-11-07")).toMatchObject({ requests: 2, outcomes: { answered: 2, quiet: 0, failed: 0 }, costUsd: 0.5 });
   // Both days sit in the week from Monday 2 November.
-  expect(statistics.weeks.at(-1)).toMatchObject({ start: "2026-11-02", requests: 10, costUsd: 1.3, previousToDate: { requests: 0 } });
+  expect(statistics.weeks.at(-1)).toMatchObject({ start: "2026-11-02", requests: 11, costUsd: 1.3, previousToDate: { requests: 0 } });
   expect(statistics).toMatchObject({ firstDay: "2026-11-07", usageSince: "2026-11-07", timeZone: "Europe/Moscow" });
 });
 

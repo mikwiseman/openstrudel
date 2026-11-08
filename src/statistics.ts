@@ -192,11 +192,15 @@ export function readStatistics(store: Store, owner: boolean, now = new Date()): 
   const chats: Statistics["chats"] = {};
   if (chatIds.size) {
     const query = store.db.prepare(`SELECT c.id,c.channel,c.external_id,c.title,p.name AS employee FROM conversations c LEFT JOIN employee_profiles p ON p.id=c.profile_id WHERE c.id=?`);
+    // A private Telegram chat is titled by its id until it has a name; the person's own messages carry theirs.
+    const author = store.db.prepare(`SELECT author FROM messages WHERE conversation_id=? AND direction='inbound' AND author IS NOT NULL AND trim(author)<>'' ORDER BY rowid DESC LIMIT 1`);
     for (const id of chatIds) {
       const row = query.get(id) as Row | undefined;
       const external = String(row?.external_id ?? ""), chat = external.split("::")[0]!;
       const kind = row?.channel === "telegram" ? Number(chat) < 0 ? "group" : "telegram" : external === "home" ? "main" : row?.employee != null ? "employee" : "chat";
-      chats[id] = { title: String(row?.title ?? row?.employee ?? "Чат"), employee: row?.employee == null ? null : String(row.employee), kind };
+      let title = String(row?.title ?? row?.employee ?? "Чат");
+      if (kind === "telegram" && /^Telegram \d+$/.test(title)) title = String((author.get(id) as Row | undefined)?.author ?? title);
+      chats[id] = { title, employee: row?.employee == null ? null : String(row.employee), kind };
     }
   }
   const schedules: Statistics["schedules"] = {};
