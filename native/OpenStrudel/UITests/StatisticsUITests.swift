@@ -65,9 +65,10 @@ final class StatisticsUITests: XCTestCase {
         XCTAssertTrue(models.firstMatch.waitForExistence(timeout: 20), app.debugDescription)
         capture("settings-models", app)
         // The form loads rows as they scroll in; each device has its own section with its own model.
+        // Slow swipes move less than a screen, so no header scrolls past between two looks (the pane is seven screens at XXXL).
         for home in homes {
             let section = app.staticTexts.matching(NSPredicate(format: "label == %@", home[0])).firstMatch
-            for _ in 0..<4 where !section.exists { app.swipeUp() }
+            for _ in 0..<16 where !section.exists { app.swipeUp(velocity: .slow) }
             XCTAssertTrue(section.waitForExistence(timeout: 5), app.debugDescription)
         }
 
