@@ -1254,6 +1254,19 @@ final class HomeClient: ObservableObject, Identifiable {
         }
     }
 
+    /// Usage by day and week. An older Home answers 404 and a member 403; neither may look like a Home with no usage.
+    func readStatistics() async throws -> HomeStatistics {
+        var refusal: Int?
+        do {
+            let data = try await requestData("/v1/statistics", refused: { refusal = $0 })
+            return try JSONDecoder().decode(HomeStatistics.self, from: data)
+        } catch {
+            if refusal == 404 { throw StatisticsReadError.unsupported }
+            if refusal == 403 { throw StatisticsReadError.ownerOnly }
+            throw error
+        }
+    }
+
     /// Project access is owner-only; clear private paths on an access refusal, including a non-JSON proxy answer.
     func projectSettings<T: Decodable>(_ path: String, method: String = "GET", payload: [String: Any]? = nil) async throws -> T {
         var refusal: Int?

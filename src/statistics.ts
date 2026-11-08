@@ -5,8 +5,9 @@ import type { Store } from "./store.js";
 import { ownerTimezone } from "./timezone.js";
 import { TICKS_PER_USD } from "./usage.js";
 
-/** Where a request came from: the owner in the app, a Telegram chat, a schedule, or an owner pipeline (`operations:`). */
-export type RequestSource = "app" | "telegram" | "schedule" | "pipeline";
+/** Where a request came from: the app, a Telegram chat, a schedule, or an event a connected source delivered
+ * (correspondence, the owner's pipelines). The app names its requests with a UUID; automatic ones carry a `word:` prefix. */
+export type RequestSource = "app" | "telegram" | "schedule" | "events";
 type Tokens = { input: number; cached: number; output: number; reasoning: number };
 export interface Spend { requests: number; tokens: number; costUsd: number | null }
 
@@ -79,7 +80,7 @@ function localCalendar(timeZone: string) {
 
 class Bucket {
   requests = 0; measured = 0; costTicks = 0; priced = 0; unpriced = 0;
-  sources: Record<RequestSource, number> = { app: 0, telegram: 0, schedule: 0, pipeline: 0 };
+  sources: Record<RequestSource, number> = { app: 0, telegram: 0, schedule: 0, events: 0 };
   outcomes = { answered: 0, quiet: 0, failed: 0 };
   tokens: Tokens = { input: 0, cached: 0, output: 0, reasoning: 0 };
   chats = new Map<string, { requests: number; failed: number; tokens: number; costTicks: number; priced: number }>();
@@ -138,7 +139,7 @@ export function readStatistics(store: Store, owner: boolean, now = new Date()): 
     if (!Number.isFinite(instant)) continue;
     const date = calendar.date(instant), week = monday(date);
     const external = row.external_id == null ? "" : String(row.external_id);
-    const source: RequestSource = external.startsWith("schedule:") ? "schedule" : external.startsWith("operations:") ? "pipeline" : row.channel === "telegram" ? "telegram" : "app";
+    const source: RequestSource = row.channel === "telegram" ? "telegram" : external.startsWith("schedule:") ? "schedule" : /^[a-z][a-z-]*:/.test(external) ? "events" : "app";
     const runStatus = row.run_status == null ? null : String(row.run_status);
     const outcome = row.status === "failed" || runStatus === "failed" || row.reply_id && row.failed_reply === 1 ? "failed"
       : runStatus === "quiet" || row.reply_id && row.quiet === 1 ? "quiet" : row.status === "completed" ? "answered" : null;

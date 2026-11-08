@@ -108,6 +108,15 @@ Liquid Glass, radius 24, minimum height 48, growing to 8 lines and then scrollin
 
 The character, one sentence, at most one action. Empty conversation: character 96 at 40 % of the height, the name in display, the role in at most two lines of 13 secondary within 360; the composer is the action. On the Mac the keyboard stays on the chosen sidebar row, so arrows and Delete keep working; Tab reaches the composer after the search field. A new employee's draft focuses its composer. Welcome and onboarding: character 96, display title, body leading-aligned when it runs past two lines, one prominent capsule button in ink (canvas-coloured label); secondary actions are plain text buttons. Optically centred at 40 % from the top.
 
+## Statistics
+
+How the connected Homes were used, by day (thirty days) or by week (twelve, from Monday), in one column 640 wide (`StatisticsView.swift`). It reads every connected Home at once, not only the chat's, and «Все устройства» or one Home narrows it.
+
+- **One number.** The chosen day's or week's requests in SF Semibold 64 (44 at accessibility sizes), proportional figures, `numericText` transition. Above it a meta kicker in capitals («Запросы сегодня»); below it the fair comparison in secondary: the unfinished day or week against the previous one up to the same moment («Вчера к этому часу: 253»), a finished one against the whole previous one. Then cost and tokens in primary when engines reported them («≈ $11,24 по ценам API · токены 4,1 млн»). The only size beyond the four of the chat; approved with this screen like the News serif.
+- **Bars.** One per period from the first request on, growing from one hairline baseline: at most 24 wide, 2 apart, 4 rounded at the top only, 148 high on the Mac and 132 on iOS. The shown bar is ink; the rest `SecondaryText` at 30 % (55 % under the pointer); a period with no requests is a 2-high `SeparatorColor` stub. One reference value top right on a faint hairline. Every bar is a button with its date and value; hovering on the Mac previews the number, a click or tap chooses the period for everything below. First and last date under the bars in meta.
+- **Below**, 48 apart: each Home's share as a 4-high ink capsule on a `SeparatorColor` track (a row narrows the report to that Home); then «Где работали», «Расписания» and «Модели» as rows under capitalised meta headers with hairlines, the top five and «Показать все · N»; then where requests came from and how they ended as two meta lines of words beside numbers; then notes in meta (since when tokens are counted, a Home to update or offline in `WarningText`, the time checked).
+- No colour carries meaning: Homes are named, never coloured. A state without numbers is a symbol, a display title, one line and at most one action (`statisticsState-<code>`): no devices, loading, needs an update, owner only, offline.
+
 ## News reader
 
 The one deliberate exception to the chat's type and colour rules, approved by Mik on 30 October 2026 with the News prototype. An employee with stories opens on tabs **Утренний выпуск · Радар · Чат** (`NewsViews.swift`).

@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum PrimaryTab: String, CaseIterable {
-    case chat, clients
+    case chat, statistics, clients
     #if os(iOS)
     case insights, progress
     #endif
@@ -158,6 +158,8 @@ struct OpenStrudelRootView: View {
                 List(selection: Binding<PrimaryTab?>(get: { tab }, set: { if let selection = $0 { tab = selection } })) {
                     Label(L("Чат"), systemImage: "bubble.left.and.text.bubble.right")
                         .tag(PrimaryTab.chat).accessibilityIdentifier("primaryTab-chat")
+                    Label(L("Статистика"), systemImage: "chart.bar")
+                        .tag(PrimaryTab.statistics).accessibilityIdentifier("primaryTab-statistics")
                     Label(L("Клиенты"), systemImage: "person.2")
                         .tag(PrimaryTab.clients).accessibilityIdentifier("primaryTab-clients")
                 }
@@ -166,6 +168,7 @@ struct OpenStrudelRootView: View {
             } detail: {
                 switch tab {
                 case .chat: chatStack
+                case .statistics: statisticsStack
                 case .clients: clientsStack
                 }
             }
@@ -174,6 +177,7 @@ struct OpenStrudelRootView: View {
                 Tab(L("Чат"), systemImage: "bubble.left.and.text.bubble.right", value: PrimaryTab.chat) { chatStack }
                 Tab(L("Insights"), systemImage: "sparkle", value: PrimaryTab.insights) { insightsStack }
                 Tab(L("Progress"), systemImage: "checkmark.circle", value: PrimaryTab.progress) { progressStack }
+                Tab(L("Статистика"), systemImage: "chart.bar", value: PrimaryTab.statistics) { statisticsStack }
             }
             .tabViewStyle(.sidebarAdaptable)
             .tabBarMinimizeBehavior(.onScrollDown)
@@ -195,6 +199,11 @@ struct OpenStrudelRootView: View {
                 }
         }
         .id(client.id)
+    }
+
+    /// Every connected Home's usage; it does not follow the chat's Home.
+    private var statisticsStack: some View {
+        NavigationStack { StatisticsScreen() }
     }
 
     private var clientsStack: some View {

@@ -11646,5 +11646,348 @@
     "es": "Última respuesta {0}",
     "he": "התשובה האחרונה {0}",
     "ru": "Последний ответ {0}"
+  },
+  "Статистика": {
+    "en": "Statistics",
+    "fr": "Statistiques",
+    "es": "Estadísticas",
+    "he": "סטטיסטיקה",
+    "ru": "Статистика"
+  },
+  "Период": {
+    "en": "Period",
+    "fr": "Période",
+    "es": "Periodo",
+    "he": "תקופה",
+    "ru": "Период"
+  },
+  "По дням": {
+    "en": "By day",
+    "fr": "Par jour",
+    "es": "Por día",
+    "he": "לפי יום",
+    "ru": "По дням"
+  },
+  "По неделям": {
+    "en": "By week",
+    "fr": "Par semaine",
+    "es": "Por semana",
+    "he": "לפי שבוע",
+    "ru": "По неделям"
+  },
+  "Где работали": {
+    "en": "Where requests ran",
+    "fr": "Où les requêtes ont eu lieu",
+    "es": "Dónde se atendieron",
+    "he": "איפה טופלו הבקשות",
+    "ru": "Где работали"
+  },
+  "Расписания": {
+    "en": "Schedules",
+    "fr": "Programmations",
+    "es": "Programaciones",
+    "he": "לוחות זמנים",
+    "ru": "Расписания"
+  },
+  "Модели": {
+    "en": "Models",
+    "fr": "Modèles",
+    "es": "Modelos",
+    "he": "מודלים",
+    "ru": "Модели"
+  },
+  "Все устройства": {
+    "en": "All devices",
+    "fr": "Tous les appareils",
+    "es": "Todos los dispositivos",
+    "he": "כל המכשירים",
+    "ru": "Все устройства"
+  },
+  "Запросы: {0}": {
+    "en": "Requests: {0}",
+    "fr": "Requêtes : {0}",
+    "es": "Solicitudes: {0}",
+    "he": "בקשות: {0}",
+    "ru": "Запросы: {0}"
+  },
+  "Показать только это устройство": {
+    "en": "Show only this device",
+    "fr": "Afficher uniquement cet appareil",
+    "es": "Mostrar solo este dispositivo",
+    "he": "להציג רק את המכשיר הזה",
+    "ru": "Показать только это устройство"
+  },
+  "Свернуть": {
+    "en": "Show less",
+    "fr": "Réduire",
+    "es": "Mostrar menos",
+    "he": "להציג פחות",
+    "ru": "Свернуть"
+  },
+  "Показать все · {0}": {
+    "en": "Show all · {0}",
+    "fr": "Tout afficher · {0}",
+    "es": "Mostrar todo · {0}",
+    "he": "להציג הכול · {0}",
+    "ru": "Показать все · {0}"
+  },
+  "без новостей {0}": {
+    "en": "nothing new {0}",
+    "fr": "rien de neuf {0}",
+    "es": "sin novedades {0}",
+    "he": "בלי חדש {0}",
+    "ru": "без новостей {0}"
+  },
+  "сбои {0}": {
+    "en": "failed {0}",
+    "fr": "échecs {0}",
+    "es": "fallos {0}",
+    "he": "כשלים {0}",
+    "ru": "сбои {0}"
+  },
+  "токены {0}": {
+    "en": "tokens {0}",
+    "fr": "jetons {0}",
+    "es": "tokens {0}",
+    "he": "טוקנים {0}",
+    "ru": "токены {0}"
+  },
+  "События": {
+    "en": "Events",
+    "fr": "Événements",
+    "es": "Eventos",
+    "he": "אירועים",
+    "ru": "События"
+  },
+  "Ответы": {
+    "en": "Answered",
+    "fr": "Réponses",
+    "es": "Respuestas",
+    "he": "תשובות",
+    "ru": "Ответы"
+  },
+  "Без новостей": {
+    "en": "Nothing new",
+    "fr": "Rien de neuf",
+    "es": "Sin novedades",
+    "he": "בלי חדש",
+    "ru": "Без новостей"
+  },
+  "Сбои": {
+    "en": "Failed",
+    "fr": "Échecs",
+    "es": "Fallos",
+    "he": "כשלים",
+    "ru": "Сбои"
+  },
+  "Токены и стоимость считаются с {0}.": {
+    "en": "Tokens and cost are counted from {0}.",
+    "fr": "Les jetons et le coût sont comptés depuis le {0}.",
+    "es": "Los tokens y el coste se cuentan desde el {0}.",
+    "he": "טוקנים ועלות נספרים החל מ־{0}.",
+    "ru": "Токены и стоимость считаются с {0}."
+  },
+  "Токены и стоимость начнут считаться с первых ответов после обновления устройства.": {
+    "en": "Tokens and cost are counted from the first answers after the device is updated.",
+    "fr": "Les jetons et le coût seront comptés dès les premières réponses après la mise à jour de l’appareil.",
+    "es": "Los tokens y el coste se contarán desde las primeras respuestas tras actualizar el dispositivo.",
+    "he": "טוקנים ועלות ייספרו מהתשובות הראשונות אחרי עדכון המכשיר.",
+    "ru": "Токены и стоимость начнут считаться с первых ответов после обновления устройства."
+  },
+  "У части моделей нет опубликованной цены, их стоимость не учтена.": {
+    "en": "Some models have no published price, so their cost is not included.",
+    "fr": "Certains modèles n’ont pas de prix publié : leur coût n’est pas inclus.",
+    "es": "Algunos modelos no tienen precio publicado, así que su coste no se incluye.",
+    "he": "לחלק מהמודלים אין מחיר מפורסם, ולכן העלות שלהם לא נכללת.",
+    "ru": "У части моделей нет опубликованной цены, их стоимость не учтена."
+  },
+  "Обновлено {0}": {
+    "en": "Updated {0}",
+    "fr": "Mis à jour à {0}",
+    "es": "Actualizado a las {0}",
+    "he": "עודכן ב־{0}",
+    "ru": "Обновлено {0}"
+  },
+  "«{0}»: обновите OpenStrudel на устройстве, чтобы увидеть его статистику.": {
+    "en": "“{0}”: update OpenStrudel on the device to see its statistics.",
+    "fr": "« {0} » : mettez à jour OpenStrudel sur l’appareil pour voir ses statistiques.",
+    "es": "«{0}»: actualiza OpenStrudel en el dispositivo para ver sus estadísticas.",
+    "he": "״{0}״: יש לעדכן את OpenStrudel במכשיר כדי לראות את הסטטיסטיקה שלו.",
+    "ru": "«{0}»: обновите OpenStrudel на устройстве, чтобы увидеть его статистику."
+  },
+  "«{0}»: статистику видит владелец устройства.": {
+    "en": "“{0}”: only the device’s owner can see its statistics.",
+    "fr": "« {0} » : seul le propriétaire de l’appareil voit ses statistiques.",
+    "es": "«{0}»: solo el propietario del dispositivo ve sus estadísticas.",
+    "he": "״{0}״: רק בעל המכשיר רואה את הסטטיסטיקה שלו.",
+    "ru": "«{0}»: статистику видит владелец устройства."
+  },
+  "«{0}» не на связи.": {
+    "en": "“{0}” is offline.",
+    "fr": "« {0} » est hors ligne.",
+    "es": "«{0}» está sin conexión.",
+    "he": "״{0}״ לא מחובר.",
+    "ru": "«{0}» не на связи."
+  },
+  "«{0}» не на связи, показаны последние данные.": {
+    "en": "“{0}” is offline; showing the last data it sent.",
+    "fr": "« {0} » est hors ligne ; voici ses dernières données.",
+    "es": "«{0}» está sin conexión; se muestran sus últimos datos.",
+    "he": "״{0}״ לא מחובר; מוצגים הנתונים האחרונים שלו.",
+    "ru": "«{0}» не на связи, показаны последние данные."
+  },
+  "Запросы сегодня": {
+    "en": "Requests today",
+    "fr": "Requêtes aujourd’hui",
+    "es": "Solicitudes de hoy",
+    "he": "בקשות היום",
+    "ru": "Запросы сегодня"
+  },
+  "Запросы · {0}": {
+    "en": "Requests · {0}",
+    "fr": "Requêtes · {0}",
+    "es": "Solicitudes · {0}",
+    "he": "בקשות · {0}",
+    "ru": "Запросы · {0}"
+  },
+  "Запросы за эту неделю": {
+    "en": "Requests this week",
+    "fr": "Requêtes cette semaine",
+    "es": "Solicitudes de esta semana",
+    "he": "בקשות השבוע",
+    "ru": "Запросы за эту неделю"
+  },
+  "Вчера к этому часу: {0}": {
+    "en": "Yesterday by this time: {0}",
+    "fr": "Hier à la même heure : {0}",
+    "es": "Ayer a esta hora: {0}",
+    "he": "אתמול עד השעה הזו: {0}",
+    "ru": "Вчера к этому часу: {0}"
+  },
+  "Неделю назад к этому часу: {0}": {
+    "en": "A week ago by this time: {0}",
+    "fr": "Il y a une semaine à la même heure : {0}",
+    "es": "Hace una semana a esta hora: {0}",
+    "he": "לפני שבוע עד השעה הזו: {0}",
+    "ru": "Неделю назад к этому часу: {0}"
+  },
+  "Днём раньше: {0}": {
+    "en": "The day before: {0}",
+    "fr": "La veille : {0}",
+    "es": "El día anterior: {0}",
+    "he": "יום קודם: {0}",
+    "ru": "Днём раньше: {0}"
+  },
+  "Неделей раньше: {0}": {
+    "en": "The week before: {0}",
+    "fr": "La semaine précédente : {0}",
+    "es": "La semana anterior: {0}",
+    "he": "שבוע קודם: {0}",
+    "ru": "Неделей раньше: {0}"
+  },
+  "≈ {0} по ценам API": {
+    "en": "≈ {0} at API prices",
+    "fr": "≈ {0} aux tarifs de l’API",
+    "es": "≈ {0} a precios de la API",
+    "he": "≈ {0} לפי מחירי API",
+    "ru": "≈ {0} по ценам API"
+  },
+  "Нет подключённых устройств": {
+    "en": "No connected devices",
+    "fr": "Aucun appareil connecté",
+    "es": "No hay dispositivos conectados",
+    "he": "אין מכשירים מחוברים",
+    "ru": "Нет подключённых устройств"
+  },
+  "Подключите Mac или сервер, и здесь появится его статистика.": {
+    "en": "Connect a Mac or a server and its statistics will appear here.",
+    "fr": "Connectez un Mac ou un serveur et ses statistiques apparaîtront ici.",
+    "es": "Conecta un Mac o un servidor y sus estadísticas aparecerán aquí.",
+    "he": "חברו Mac או שרת, והסטטיסטיקה שלו תופיע כאן.",
+    "ru": "Подключите Mac или сервер, и здесь появится его статистика."
+  },
+  "Устройства не на связи": {
+    "en": "Devices are offline",
+    "fr": "Les appareils sont hors ligne",
+    "es": "Los dispositivos están sin conexión",
+    "he": "המכשירים לא מחוברים",
+    "ru": "Устройства не на связи"
+  },
+  "Статистика появится, когда устройство подключится.": {
+    "en": "Statistics will appear when the device connects.",
+    "fr": "Les statistiques apparaîtront quand l’appareil se connectera.",
+    "es": "Las estadísticas aparecerán cuando el dispositivo se conecte.",
+    "he": "הסטטיסטיקה תופיע כשהמכשיר יתחבר.",
+    "ru": "Статистика появится, когда устройство подключится."
+  },
+  "Статистика появится после обновления": {
+    "en": "Statistics arrive with an update",
+    "fr": "Les statistiques arrivent avec une mise à jour",
+    "es": "Las estadísticas llegan con una actualización",
+    "he": "הסטטיסטיקה תגיע עם עדכון",
+    "ru": "Статистика появится после обновления"
+  },
+  "Обновите OpenStrudel на устройстве. Чат работает как прежде.": {
+    "en": "Update OpenStrudel on the device. The chat works as before.",
+    "fr": "Mettez à jour OpenStrudel sur l’appareil. La discussion fonctionne comme avant.",
+    "es": "Actualiza OpenStrudel en el dispositivo. El chat funciona como siempre.",
+    "he": "עדכנו את OpenStrudel במכשיר. הצ׳אט עובד כמו קודם.",
+    "ru": "Обновите OpenStrudel на устройстве. Чат работает как прежде."
+  },
+  "Статистику видит владелец устройства": {
+    "en": "Only the device’s owner sees statistics",
+    "fr": "Seul le propriétaire de l’appareil voit les statistiques",
+    "es": "Solo el propietario del dispositivo ve las estadísticas",
+    "he": "רק בעל המכשיר רואה את הסטטיסטיקה",
+    "ru": "Статистику видит владелец устройства"
+  },
+  "Подключитесь как владелец, чтобы видеть статистику.": {
+    "en": "Connect as the owner to see statistics.",
+    "fr": "Connectez-vous en tant que propriétaire pour voir les statistiques.",
+    "es": "Conéctate como propietario para ver las estadísticas.",
+    "he": "התחברו כבעלים כדי לראות סטטיסטיקה.",
+    "ru": "Подключитесь как владелец, чтобы видеть статистику."
+  },
+  "Запросы по дням": {
+    "en": "Requests by day",
+    "fr": "Requêtes par jour",
+    "es": "Solicitudes por día",
+    "he": "בקשות לפי יום",
+    "ru": "Запросы по дням"
+  },
+  "Запросы по неделям": {
+    "en": "Requests by week",
+    "fr": "Requêtes par semaine",
+    "es": "Solicitudes por semana",
+    "he": "בקשות לפי שבוע",
+    "ru": "Запросы по неделям"
+  },
+  "Эта неделя": {
+    "en": "This week",
+    "fr": "Cette semaine",
+    "es": "Esta semana",
+    "he": "השבוע",
+    "ru": "Эта неделя"
+  },
+  "выключено": {
+    "en": "off",
+    "fr": "désactivé",
+    "es": "desactivado",
+    "he": "כבוי",
+    "ru": "выключено"
+  },
+  "Модель не записана": {
+    "en": "Model not recorded",
+    "fr": "Modèle non enregistré",
+    "es": "Modelo no registrado",
+    "he": "המודל לא נרשם",
+    "ru": "Модель не записана"
+  },
+  "Главный чат": {
+    "en": "Main chat",
+    "fr": "Discussion principale",
+    "es": "Chat principal",
+    "he": "הצ׳אט הראשי",
+    "ru": "Главный чат"
   }
 }
