@@ -32,8 +32,17 @@ it("answers, resumes the same session with a changed SOUL and sends a bearer tok
   const first = await engine.run("Привет", { profile: "Имя: Ада", onEvent: event => started.push(event) });
   expect(first.response).toBe("Ответ 1");
   expect(first.threadId).toMatch(/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/);
-  expect(started).toEqual([{ type: "thread.started", payload: { threadId: first.threadId } },{type:"turn.progress",payload:{}}]);
-  const second = await engine.run("Как тебя зовут?", { threadId: first.threadId, profile: "Имя: Бета" });
+  expect(started.filter((e: any) => e.type !== "turn.usage")).toEqual([{ type: "thread.started", payload: { threadId: first.threadId } },{type:"turn.progress",payload:{}}]);
+  // The CLI's totals for a resumed session include its earlier turns; the saved totals leave just this turn.
+  const spent = (events: unknown[]) => (events as Array<{ type: string; payload: any }>).filter(e => e.type === "turn.usage").map(e => e.payload);
+  const [firstUsage] = spent(started);
+  expect(firstUsage).toMatchObject({ model: "kimi-k3", engine: { thread: first.threadId, totals: { modelUsage: { "kimi-k3": { inputTokens: 10, outputTokens: 5 } } } },
+    usage: { inputTokens: 10, outputTokens: 5 } });
+  // Kimi has no list price in the CLI, so no cost is claimed.
+  expect(firstUsage.usage.costUsdTicks).toBeUndefined();
+  const later: unknown[] = [];
+  const second = await engine.run("Как тебя зовут?", { threadId: first.threadId, profile: "Имя: Бета", usageBaseline: firstUsage.engine.totals, onEvent: event => later.push(event) });
+  expect(spent(later)).toMatchObject([{ usage: { inputTokens: 10, outputTokens: 5 }, engine: { totals: { modelUsage: { "kimi-k3": { inputTokens: 20, outputTokens: 10 } } } } }]);
   expect(second).toEqual({ threadId: first.threadId, response: "Ответ 2", events: [] });
   const last = mock.requests.at(-1)!;
   expect(JSON.stringify(last.body.messages)).toContain("Ответ 1");

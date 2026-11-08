@@ -31,8 +31,9 @@ function excerpt(value: unknown, length: number): string {
 }
 // Match the whitespace accepted by String.trim()/quietReply without returning whole transcripts to JS.
 const whitespace = "char(9,10,11,12,13,32,160,5760,8192,8193,8194,8195,8196,8197,8198,8199,8200,8201,8202,8232,8233,8239,8287,12288,65279)";
-const trimmed = (alias: string) => `trim(${alias}.text,${whitespace})`;
-function quiet(alias: string): string {
+export const trimmed = (alias: string) => `trim(${alias}.text,${whitespace})`;
+/** SQL: the message is a quiet answer (NO_REPLY on its own last line). */
+export function quiet(alias: string): string {
   const body = trimmed(alias), before = `rtrim(substr(${body},1,length(${body})-8),char(9,32))`;
   return `(substr(${body},-8)='NO_REPLY' AND (${before}='' OR substr(${before},-1)=char(10)))`;
 }

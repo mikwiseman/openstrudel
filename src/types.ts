@@ -131,6 +131,8 @@ export interface CodexEngine {
       telegramActor?: { userId: string; chatId: string; messageId: string };
       tools?: { definitions: DynamicTool[]; call: (name: string, args: Record<string, unknown>) => Promise<unknown> };
       onRequest?: (method: string, params: Record<string, any>) => Promise<unknown>;
+      /** The running counters the engine reported for this thread after its previous recorded turn (`turn.usage` `engine.totals`). */
+      usageBaseline?: unknown;
     },
   ): Promise<CodexRunResult>;
   close?(): void;

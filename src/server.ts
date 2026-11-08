@@ -32,6 +32,7 @@ import { sharedWithAllChats, shareWithAllChats, ownerOnlyServers } from "./exten
 import { privateSourceSchedule, unipileSettings } from "./private-sources.js";
 import { UnipileAdapter, unipileReadSchema } from "./unipile.js";
 import { readActivity } from "./activity.js";
+import { readStatistics } from "./statistics.js";
 import { parsePoll } from "./check-ins.js";
 import type { ServiceSignIn } from "./types.js";
 import { MAX_SPEECH_BYTES, isSpeechFile, saveSpeechSettings, speechSettings, transcribeRecording } from "./speech.js";
@@ -376,6 +377,9 @@ export class HttpApi {
       }
       if (path === "/v1/activity" && request.method === "GET") {
         this.send(response, 200, readActivity(this.store, canManageAccount)); return;
+      }
+      if (path === "/v1/statistics" && request.method === "GET") {
+        this.send(response, 200, readStatistics(this.store, canManageAccount)); return;
       }
       if (path === "/v1/settings/unipile" && ["GET", "POST"].includes(request.method ?? "")) {
         this.send(response, 200, unipileSettings(this.store, canManageAccount, request.method === "POST" ? await this.body(request) : undefined)); return;

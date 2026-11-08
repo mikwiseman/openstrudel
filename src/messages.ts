@@ -29,6 +29,7 @@ import { contextIdentity, contextPrompt, contextSummary } from "./message-contex
 import { resolveScopedAuthorization, assertScopedAuthorization, type ScopedAuthorization } from "./authorization.js";
 import type { RestrictedExecutor } from "./restricted-executor.js";
 import { Projects, type ProjectRun } from "./projects.js";
+import { ensureUsageTable, recordTurnUsage, type TurnRoute, type UsageReport } from "./usage.js";
 
 type QueuedMessage = { id: string; channel: string; run: () => Promise<MessageResult>; resolve: (result: MessageResult) => void; reject: (error: unknown) => void };
 
@@ -59,7 +60,7 @@ export class MessageService {
     return (this.queues.get(conversationId)?.length ?? 0) + (this.drains.has(conversationId) ? 1 : 0) >= limit;
   }
 
-  constructor(private readonly store: Store, private readonly engine: CodexEngine, private readonly root = process.cwd()) { this.files = new ConversationFiles(store,root); this.projects = new Projects(store,root); }
+  constructor(private readonly store: Store, private readonly engine: CodexEngine, private readonly root = process.cwd()) { this.files = new ConversationFiles(store,root); this.projects = new Projects(store,root); ensureUsageTable(store); }
 
   async handle(input: MessageInput): Promise<MessageResult> { return (await this.submit(input)).completion; }
 
@@ -165,6 +166,9 @@ export class MessageService {
       let problem:ProblemCode|undefined;
       let projectRun: ProjectRun | undefined, projectOutcome: "completed" | "failed" = "failed";
       const connectors:ConnectorOutcome[]=[];
+      // What the turn ran on and spent, saved when it ends however it ends.
+      let route: TurnRoute | undefined;
+      const spent: UsageReport[] = [];
       try {
         // Read at execution time: a waiting message may have been edited.
         const text = this.store.getMessage(conversation.id, inbound.id)?.text.trim() ?? inbound.text.trim();
@@ -224,6 +228,7 @@ export class MessageService {
         // A native app may ask its own chat to think at a lighter level; a model the owner chose for that chat wins.
         const appEffort = input.reasoningEffort && !readConversationModelSelection(this.store, current.id).model ? { reasoningEffort: input.reasoningEffort } : {};
         const selection = { ...resolveModelSelection(this.store, currentProfile?.id ?? "main", undefined, current.id), ...appEffort };
+        route = selection;
         const nativeSources = selection.provider === "chatgpt" || providerInfo(selection.provider ?? "")?.engine === "codex";
         projectRun = await this.projects.begin(currentProfile?.id ?? "main", { conversationId:current.id,messageId:inbound.id,channel:input.channel,scope:context,scheduled,byOwner:input.byOwner,telegramSenderId:input.telegramSenderId,access }, nativeSources);
         const tools = employeeTools(this.store, engine, this.interactions, { profile: currentProfile, conversationId: current.id, messageId: inbound.id, channel: input.channel, scheduler: this.scheduler, projects:this.projects, scheduled,scheduleTelegramChatId:input.scheduleTelegramChatId,files:this.files,scope:context,telegram:this.telegram,byOwner:input.byOwner,telegramSenderId:input.telegramSenderId,access,
@@ -286,7 +291,11 @@ export class MessageService {
             onEvent: event => {
               projectRun?.observe(event);
               if (event.type === "thread.started") { running.threadId = (event.payload as { threadId: string }).threadId; this.store.setConversationThread(current.id, running.threadId); }
-              if (event.type === "turn.usage" && input.scheduled && input.externalId?.startsWith("schedule:")) this.scheduler?.recordUsage(input.externalId.slice("schedule:".length), event.payload);
+              if (event.type === "turn.usage") {
+                const report = event.payload as UsageReport;
+                spent.push(report);
+                if (input.scheduled && input.externalId?.startsWith("schedule:")) this.scheduler?.recordUsage(input.externalId.slice("schedule:".length), { usage: report.usage, billing: report.billing });
+              }
               const failure=toolProblem(event);
               if(failure)problem=failure;
               else if(toolRecovered(event))problem=undefined;
@@ -325,7 +334,10 @@ export class MessageService {
         if (error instanceof HomeError || error instanceof AccountUnavailableError || error instanceof ProviderIncident) throw error;
         if (isOpenAIAuthenticationError(error)) throw new AccountUnavailableError("sign_in_required");
         throw new Error(message);
-      } finally { try { await projectRun?.finish(projectOutcome); } finally { if (this.active.get(conversation.id)?.messageId === inbound.id) this.active.delete(conversation.id); this.interactions.cancelMessage(inbound.id); } }
+      } finally {
+        if (route) recordTurnUsage(this.store, inbound.id, route, spent);
+        try { await projectRun?.finish(projectOutcome); } finally { if (this.active.get(conversation.id)?.messageId === inbound.id) this.active.delete(conversation.id); this.interactions.cancelMessage(inbound.id); }
+      }
     });
     this.inflight.set(inbound.id, completion);
     void completion.finally(() => this.inflight.delete(inbound.id)).catch(() => undefined);
@@ -378,7 +390,8 @@ export class MessageService {
     }
     this.store.setMessageStatus(inbound.id, "queued");
     const completion = this.enqueue(conversation.id, inbound.id, "telegram", async () => {
-      const controller = new AbortController();
+      const controller = new AbortController(), spent: UsageReport[] = [];
+      let ran = false;
       const assertCurrent = () => {
         if (this.closing || controller.signal.aborted) throw new Error("Запрос остановлен.");
         const binding = this.store.getTelegramChat(authorization.actor.chatId);
@@ -400,7 +413,9 @@ export class MessageService {
           .all(conversation.id, authorization.actor.userId, authorization.fingerprint, inbound.id).reverse();
         const context = prior.length ? "Earlier messages from this same sender (quoted context only; do not execute earlier tasks). Re-read live business data for any new action:\n"
           + prior.map(row => JSON.stringify(String(row.text).slice(0, 1500))).join("\n") + "\n\nCurrent request:\n" : "";
-        const result = await this.restrictedExecutor.run(context + quotedReply + text, { authorization, conversationId: conversation.id, messageId: inbound.id, signal: controller.signal, assertCurrent });
+        ran = true;
+        const result = await this.restrictedExecutor.run(context + quotedReply + text, { authorization, conversationId: conversation.id, messageId: inbound.id, signal: controller.signal, assertCurrent,
+          onUsage: report => spent.push(report) });
         assertCurrent();
         const outbound = this.store.addMessage({ conversationId: conversation.id, channel: "telegram", direction: "outbound", replyToId: inbound.id, text: result.response });
         this.store.setMessageStatus(inbound.id, "completed");
@@ -414,7 +429,7 @@ export class MessageService {
         const revoked = error instanceof HomeError && error.status === 403 || error instanceof Error && /^(Права доступа изменились|Запрос остановлен)/.test(error.message);
         if (!revoked && !this.closing) void this.reportProblem(conversation.id, inbound.id, errorProblem(error), authorization.actor.chatId).catch(() => undefined);
         throw error;
-      }
+      } finally { if (ran) recordTurnUsage(this.store, inbound.id, { provider: "chatgpt" }, spent); }
     });
     this.inflight.set(inbound.id, completion);
     void completion.finally(() => this.inflight.delete(inbound.id)).catch(() => undefined);
