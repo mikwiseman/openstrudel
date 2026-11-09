@@ -11,6 +11,9 @@ import { privateSourceSchedule } from "./private-sources.js";
 import { checkInSummary, ensureCheckInTables, localDate, markPollClosed, openPolls, parsePoll, recordPoll, type SchedulePoll } from "./check-ins.js";
 import { dailyMetricsSummary, dailyMetricsReportConfig, dailyMetricsLaunchButton, readDailyMetrics } from "./daily-metrics.js";
 import { dailyMetricsCard } from "./daily-metrics-card.js";
+import { readStatistics } from "./statistics.js";
+import { homeName, statisticsCard } from "./statistics-card.js";
+import { accessOwners } from "./telegram-tools.js";
 
 export interface ScheduleInput {
   id?: string; conversationId: string; name: string; prompt: string; cron: string; timezone: string;
@@ -171,6 +174,16 @@ export class Scheduler {
       if (!this.active.has(row.schedule_id)) this.track(row.schedule_id,this.finish(row.id,row.conversation_id,row.message_id,row.telegram_chat_id,row.delivery));
     }
   }
+  /** A card the clock draws itself, no model turn: saved as the run's answer with its picture, then delivered like an edition. */
+  private async postCard(schedule: Schedule, runId: string, card: { png: Buffer; caption: string }, file: string, title: string): Promise<void> {
+    const attachment = this.messages.files.put(schedule.conversationId, this.messages.contextFor(schedule.conversationId), {
+      name: file, mimeType: "image/png", contentBase64: card.png.toString("base64"),
+    });
+    const request = this.store.addMessage({ conversationId: schedule.conversationId, channel: "api", direction: "inbound", externalId: `schedule:${runId}`, text: title });
+    const reply = this.store.addMessage({ conversationId: schedule.conversationId, channel: "api", direction: "outbound", replyToId: request.id, text: card.caption, attachments: [attachment] });
+    this.store.db.prepare("UPDATE schedule_runs SET status='ready',message_id=? WHERE id=?").run(reply.id, runId);
+    await this.finish(runId, schedule.conversationId, reply.id, schedule.telegramChatId, schedule.delivery);
+  }
   private track(id: string, run: Promise<void>): void { this.active.set(id,run); void run.finally(() => this.active.delete(id)).catch(() => undefined); }
   private async execute(schedule: Schedule, runId: string, scheduledFor: string): Promise<void> {
     try {
@@ -188,18 +201,19 @@ export class Scheduler {
       const assertPrivateSources = this.privateSourceDeliveryGuard(runId, schedule.conversationId);
       assertPrivateSources?.();
       const destination = this.destination(schedule.conversationId, schedule.telegramChatId, schedule.delivery);
+      if (this.store.getSetting("statistics.cardScheduleId") === schedule.id) {
+        // Every chat's usage and cost: only a paired owner's own private chat, or the app, receives the card.
+        if (destination && !accessOwners(this.store).includes(destination)) throw new Error("Карточка статистики приходит только в личный чат владельца.");
+        const card = statisticsCard(readStatistics(this.store, true, new Date(scheduledFor)), homeName(this.store));
+        await this.postCard(schedule, runId, card, `statistics-${card.date}.png`, `Статистика · ${card.date}`);
+        return;
+      }
       const metrics = dailyMetricsReportConfig(this.store, schedule.conversationId, schedule.id);
       if (metrics) {
         if (destination !== metrics.chatId) throw new Error("Чат сводки Выдоха изменился. Проверьте расписание.");
         dailyMetricsLaunchButton(this.store);
         const card = dailyMetricsCard(readDailyMetrics(this.store, metrics.participants[0]!.id, new Date(scheduledFor)));
-        const attachment = this.messages.files.put(schedule.conversationId, this.messages.contextFor(schedule.conversationId), {
-          name: `vydoh-${card.date}.png`, mimeType: "image/png", contentBase64: card.png.toString("base64"),
-        });
-        const request = this.store.addMessage({ conversationId: schedule.conversationId, channel: "api", direction: "inbound", externalId: `schedule:${runId}`, text: `Выдох · ${card.date}` });
-        const reply = this.store.addMessage({ conversationId: schedule.conversationId, channel: "api", direction: "outbound", replyToId: request.id, text: card.caption, attachments: [attachment] });
-        this.store.db.prepare("UPDATE schedule_runs SET status='ready',message_id=? WHERE id=?").run(reply.id, runId);
-        await this.finish(runId, schedule.conversationId, reply.id, schedule.telegramChatId, schedule.delivery);
+        await this.postCard(schedule, runId, card, `vydoh-${card.date}.png`, `Выдох · ${card.date}`);
         return;
       }
       const checkIns = dailyMetricsSummary(this.store, schedule.conversationId, new Date(scheduledFor)) ?? checkInSummary(this.store, schedule.conversationId, new Date(scheduledFor));
