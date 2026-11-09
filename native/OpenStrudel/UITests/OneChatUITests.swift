@@ -200,6 +200,10 @@ final class OneChatUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts[try XCTUnwrap(state["projectPath"] as? String)].exists)
         XCTAssertFalse(app.buttons["registerEmployeeProject"].exists)
         capture("project-owner-access-removed", app)
+        // On the iPhone the sheet's Done sits on its first page.
+        let back = app.navigationBars.buttons["Сотрудник"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5), app.debugDescription); back.tap()
+        XCTAssertTrue(app.buttons["saveEmployeeChanges"].waitForExistence(timeout: 5), app.debugDescription)
         app.buttons["saveEmployeeChanges"].tap()
         app.tabBars.buttons["Инсайты"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["activityState-ownerOnly"].waitForExistence(timeout: 15), app.debugDescription)
