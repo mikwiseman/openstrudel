@@ -121,6 +121,15 @@ it("counts a Codex turn once per model call, ignores repeated readings, and pric
     expect(unseeded[0]!.usage).toMatchObject({ inputTokens: 600, outputTokens: 30 });
     // A turn that made no model call reports nothing.
     expect(await turn(engine, [], { threadId: "main-thread" })).toEqual([]);
+    // A delegated employee may report before its parent turn names it; nothing it spent is lost.
+    const early = await turn(engine, [
+      reading("early-helper", breakdown(300, 0, 30), breakdown(300, 0, 30)),
+      reading("early-helper", breakdown(700, 0, 50), breakdown(400, 0, 20)),
+      { method: "item/completed", params: { threadId: "main-thread", item: { type: "collabAgentToolCall", model: "gpt-6-luna", receiverThreadIds: ["early-helper"] } } },
+      reading("main-thread", breakdown(5_700, 2_500, 240), breakdown(100, 0, 10)),
+    ], { threadId: "main-thread", usageBaseline: unseeded[0]!.engine!.totals });
+    expect(early[0]!.usage.modelUsage!["gpt-6-luna"]).toMatchObject({ inputTokens: 700, outputTokens: 50 });
+    expect(early[0]!.usage.modelUsage!["gpt-6-astra"]).toMatchObject({ inputTokens: 100, outputTokens: 10 });
   } finally { engine.close(); }
 });
 
@@ -161,6 +170,17 @@ it("records each turn's route and spend, keeps a failed turn's spend, and measur
   // A request removed while it ran is not recorded.
   recordTurnUsage(home, "missing-message", { provider: "chatgpt" }, []);
   expect(home.db.prepare("SELECT count(*) AS n FROM turn_usage WHERE message_id='missing-message'").get()).toEqual({ n: 0 });
+});
+
+it("keeps each engine's running totals when a turn moves to a reserve, so neither counts the turn again", () => {
+  const home = store(); ensureUsageTable(home);
+  const id = home.addMessage({ conversationId: home.primaryConversation().id, channel: "api", direction: "inbound", text: "Сводка" }).id;
+  recordTurnUsage(home, id, { provider: "chatgpt" }, [
+    { usage: counts(50_000, 0, 500), provider: "chatgpt", engine: { thread: "codex-thread", totals: { total: { totalTokens: 90_500 } } } },
+    { usage: counts(4_000, 0, 300), provider: "anthropic", engine: { thread: "claude-session", totals: { modelUsage: { "claude-opus-5-5": { inputTokens: 4_000, outputTokens: 300 } } } } }]);
+  expect(engineBaseline(home, "codex-thread")).toEqual({ total: { totalTokens: 90_500 } });
+  expect(engineBaseline(home, "claude-session")).toEqual({ modelUsage: { "claude-opus-5-5": { inputTokens: 4_000, outputTokens: 300 } } });
+  expect(home.db.prepare("SELECT input_tokens,engine_thread FROM turn_usage WHERE message_id=?").get(id)).toEqual({ input_tokens: 54_000, engine_thread: "claude-session" });
 });
 
 it("takes over the usage Grok's scheduled runs reported before the table existed, once", () => {

@@ -58,6 +58,19 @@ it("answers, resumes the same session with a changed SOUL and sends a bearer tok
   expect(readdirSync(config, { recursive: true }).map(String).filter(f => f.endsWith(".jsonl"))).toEqual([expect.stringContaining(first.threadId + ".jsonl")]);
 }, 90_000);
 
+it("counts a resumed session's turn alone after another session ran in the same workspace", async () => {
+  mock = await mockAnthropic(() => ({ text: "Ок" }));
+  const engine = claude("kimi", "sk-kimi-secret");
+  const usage = (events: unknown[]) => (events as Array<{ type: string; payload: any }>).find(e => e.type === "turn.usage")?.payload;
+  const a1: unknown[] = [], b1: unknown[] = [], a2: unknown[] = [];
+  const a = await engine.run("Первый", { onEvent: event => a1.push(event) });
+  await engine.run("Второй", { onEvent: event => b1.push(event) });
+  await engine.run("Снова первый", { threadId: a.threadId, usageBaseline: usage(a1).engine.totals, onEvent: event => a2.push(event) });
+  // The CLI restores each resumed session's own running totals, not only the workspace's latest session.
+  expect(usage(a2).engine.totals).toMatchObject({ modelUsage: { "kimi-k3": { inputTokens: 20, outputTokens: 10 } } });
+  expect(usage(a2).usage).toMatchObject({ inputTokens: 10, outputTokens: 5 });
+});
+
 it("calls an OpenStrudel tool with an Anthropic key and returns its result to the model", async () => {
   mock = await mockAnthropic(request => {
     const result = toolResult(request);

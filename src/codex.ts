@@ -83,6 +83,8 @@ export class CodexEngineAdapter implements CodexEngine {
   private readonly loadedConfig = new Map<string,string>();
   private readonly active = new Map<string, ActiveTurn>();
   private readonly parents = new Map<string, string>();
+  /** Readings of a delegated employee's thread that arrived before its parent turn named it. */
+  private readonly unclaimed = new Map<string, { start: TokenTotals; end: TokenTotals }>();
   private codexHome?: string;
   private connectionCache?: { at: number; value: Connection[] };
   private connectionLoading?: Promise<Connection[]>;
@@ -120,7 +122,7 @@ export class CodexEngineAdapter implements CodexEngine {
   setCodexHome(home?: string): void { this.close(); this.codexHome = home; }
   /** After close: every app-server this engine started has exited and stopped writing its home. */
   async settled(): Promise<void> { await Promise.all(this.processes); }
-  close(): void { for (const cancel of this.signingIn.values()) cancel(); this.signingIn.clear(); this.rpc?.close(); this.rpc = undefined; this.initializing = undefined; this.loaded.clear(); this.loadedConfig.clear(); this.parents.clear(); this.connectionCache = undefined; this.connectionLoading = undefined; this.appCatalog = undefined; this.modelCache = undefined; this.modelReading = undefined; }
+  close(): void { for (const cancel of this.signingIn.values()) cancel(); this.signingIn.clear(); this.rpc?.close(); this.rpc = undefined; this.initializing = undefined; this.loaded.clear(); this.loadedConfig.clear(); this.parents.clear(); this.unclaimed.clear(); this.connectionCache = undefined; this.connectionLoading = undefined; this.appCatalog = undefined; this.modelCache = undefined; this.modelReading = undefined; }
 
   private async client(): Promise<CodexRpc> {
     if (this.rpc && !this.rpc.closed) return this.rpc;
@@ -128,7 +130,7 @@ export class CodexEngineAdapter implements CodexEngine {
       if(!this.options.restricted && this.options.scoped && this.codexHome && this.options.workingDirectory)await this.extensions().prepare();
       const rpc = new CodexRpc(this.codexHome, m => this.notification(m), (m, p) => this.serverRequest(m, p), error => {
         for (const turn of this.active.values()) turn.reject(error);
-        this.active.clear(); this.loaded.clear(); this.loadedConfig.clear(); this.parents.clear(); this.rpc = undefined; this.initializing = undefined;
+        this.active.clear(); this.loaded.clear(); this.loadedConfig.clear(); this.parents.clear(); this.unclaimed.clear(); this.rpc = undefined; this.initializing = undefined;
       }, this.options.scoped && !this.options.restricted ? this.options.workingDirectory : undefined, {}, this.options.restricted ? this.options.workingDirectory : undefined);
       const exited = rpc.exited; this.processes.add(exited); void exited.then(() => this.processes.delete(exited));
       try {
@@ -309,21 +311,33 @@ export class CodexEngineAdapter implements CodexEngine {
   /** Codex reports each thread's running totals after every model call, and repeats the last reading when only the rate
    * limits change. So a turn's share is its latest reading less where the thread stood before the turn: the totals saved
    * after the thread's previous recorded turn, else the first reading less the call it reports. Delegated employees run
-   * in child threads of the turn. */
+   * in child threads of the turn. Neither a thread read nor a resume returns the totals, so a thread's first recorded turn
+   * can include the previous turn's last call once, when Codex repeats that reading before the turn's first call. */
   private countTokens(p: any): void {
     const thread = p?.threadId, total = tokenTotals(p?.tokenUsage?.total), last = tokenTotals(p?.tokenUsage?.last);
     if (typeof thread !== "string" || !total || !last) return;
     const parent = this.parents.get(thread);
-    const owner = this.active.get(thread) ?? (parent ? this.active.get(parent) : undefined) ?? [...this.active.values()].find(turn => turn.children.has(thread));
-    if (!owner) return;
-    const counted = owner.tokens.get(thread);
-    if (counted) { if (total.totalTokens >= counted.end.totalTokens) counted.end = total; return; }
-    const saved = owner.thread === thread ? tokenTotals((owner.options.usageBaseline as { total?: unknown } | undefined)?.total) : undefined;
-    owner.tokens.set(thread, { start: saved && saved.totalTokens <= total.totalTokens ? saved : tokenDifference(total, last), end: total });
+    const owner = this.active.get(thread) ?? (parent ? this.active.get(parent) : undefined)
+      ?? [...this.active.values()].find(turn => turn.children.has(thread) || turn.childModels.has(thread));
+    const counted = owner?.tokens.get(thread) ?? this.unclaimed.get(thread);
+    if (counted) { if (total.totalTokens >= counted.end.totalTokens) counted.end = total; }
+    else {
+      const saved = owner?.thread === thread ? tokenTotals((owner.options.usageBaseline as { total?: unknown } | undefined)?.total) : undefined;
+      const reading = { start: saved && saved.totalTokens <= total.totalTokens ? saved : tokenDifference(total, last), end: total };
+      // A delegated employee can report before its parent turn names it; its readings wait for that turn.
+      if (!owner) { this.unclaimed.set(thread, reading); for (const old of this.unclaimed.keys()) { if (this.unclaimed.size <= 64) break; this.unclaimed.delete(old); } return; }
+      owner.tokens.set(thread, reading);
+    }
+    if (owner && this.unclaimed.delete(thread)) owner.tokens.set(thread, counted!);
   }
 
   /** One `turn.usage` for the whole turn, each model with its API price where OpenAI publishes one. */
   private reportUsage(active: ActiveTurn, model: string, serviceTier: string | undefined, reasoningEffort: string | undefined): void {
+    for (const child of [...active.children, ...active.childModels.keys()]) {
+      const early = this.unclaimed.get(child);
+      if (early && !active.tokens.has(child)) active.tokens.set(child, early);
+      this.unclaimed.delete(child);
+    }
     if (!active.tokens.size) return;
     const priced = !this.options.provider || this.options.provider.info.id === "openai";
     const modelUsage: Record<string, UsageCounts> = {};

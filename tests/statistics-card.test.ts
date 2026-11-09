@@ -58,6 +58,15 @@ it("adds the seven days that ended yesterday on Sunday, says since when tokens a
   expect(turn.svg).not.toContain("Ответил 0");
 });
 
+it("never counts its own runs: a day when only the card ran is a quiet day", () => {
+  const own = { requests: 1, sources: { app: 0, telegram: 0, schedule: 1, events: 0 }, outcomes: { answered: 1, quiet: 0, failed: 0 },
+    chats: [{ id: "dm", requests: 1, tokens: 0, costUsd: null, failed: 0 }], schedules: [{ id: "card", runs: 1, quiet: 0, failed: 0, tokens: 0, costUsd: null }] };
+  const card = statisticsCard(statistics("2026-11-10", { "2026-11-08": own, "2026-11-09": own }), "Грант", "card");
+  expect(plain(card.caption)).toBe("**Грант · вчера, 9 ноября**\n0 запросов, столько же, сколько днём раньше\nТихий день: ни одного запроса.");
+  expect(card.svg).toContain('data-day="2026-11-09" data-requests="0"');
+  expect(card.svg).not.toContain("Расписания 1");
+});
+
 it("sends the owner's own chat the card at nine through Telegram without a model turn, and never a group", async () => {
   const root = mkdtempSync(join(tmpdir(), "statistics-card-"));
   vi.stubEnv("TELEGRAM_BOT_TOKEN", "test-token");
@@ -99,6 +108,15 @@ it("sends the owner's own chat the card at nine through Telegram without a model
     await scheduler.tick(new Date("2026-11-09T06:00:00Z")); await scheduler.idle();
     expect(sent.filter(call => call.url.endsWith("/sendPhoto"))).toHaveLength(1);
     expect(scheduler.runs(group)[0]).toMatchObject({ status: "failed", error: expect.stringContaining("только в личный чат владельца") });
+    // Kept in the group's own chat instead, it would reach the group through its history: that fails too, and nothing is written there.
+    scheduler.save({ ...elsewhere, enabled: false }, saved);
+    const kept = scheduler.save({ conversationId: group, name: "Статистика в приложении", prompt: "Карточка статистики", cron: "0 9 * * *", timezone: "Europe/Moscow", delivery: "app" }, saved);
+    store.setSetting("statistics.cardScheduleId", kept.id);
+    const before = store.db.prepare("SELECT count(*) AS n FROM messages WHERE conversation_id=?").get(group) as { n: number };
+    await scheduler.tick(new Date("2026-11-10T06:00:00Z")); await scheduler.idle();
+    expect(scheduler.runs(group)[0]).toMatchObject({ status: "failed", error: expect.stringContaining("только в личный чат владельца") });
+    expect(store.db.prepare("SELECT count(*) AS n FROM messages WHERE conversation_id=? AND (text LIKE 'Статистика%' OR text LIKE '%вчера,%')").get(group)).toEqual({ n: 0 });
+    expect((store.db.prepare("SELECT count(*) AS n FROM messages WHERE conversation_id=?").get(group) as { n: number }).n).toBeGreaterThanOrEqual(before.n);
     expect(model).not.toHaveBeenCalled();
   } finally { await runtime.stop(); rmSync(root, { recursive: true, force: true }); }
 }, 20_000);

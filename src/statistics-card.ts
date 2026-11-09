@@ -1,13 +1,13 @@
 import { Resvg } from "@resvg/resvg-js";
 import type { RequestSource, Statistics, StatisticsPeriod } from "./statistics.js";
 import type { Store } from "./store.js";
+import { xml } from "./daily-metrics-card.js";
 
 /** The owner's morning card: yesterday on this Home and, on Sunday, the seven days that ended with it. The app's light
  * palette, one large number, words beside every figure. The clock draws it from `readStatistics`; no model writes it. */
 
 const canvas = "#f7f3ec", ink = "#1c1b1a", muted = "#615b57", hairline = "#dcd5cb", warning = "#865021";
 const width = 1080, left = 72, right = width - 72;
-const xml = (text: string | number) => String(text).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[c]!);
 const number = (n: number) => new Intl.NumberFormat("ru").format(n);
 const compact = (n: number) => new Intl.NumberFormat("ru", { notation: "compact", maximumFractionDigits: 1 }).format(n);
 const money = (usd: number) => "≈ " + new Intl.NumberFormat("ru", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(usd);
@@ -21,20 +21,23 @@ const short = (text: string, max: number) => text.length > max ? text.slice(0, m
 const versus = (now: number, before: number, unit: string) => now === before ? `столько же, сколько ${unit} раньше`
   : `на ${number(Math.abs(now - before))} ${now > before ? "больше" : "меньше"}, чем ${unit} раньше`;
 
-/** Several days as one: requests, outcomes, spend, and what ran where. */
-function total(days: StatisticsPeriod[]) {
+/** Several days as one: requests, outcomes, spend, and what ran where, without the card's own runs. */
+function total(days: StatisticsPeriod[], own?: { id: string; chat?: string }) {
   const sum = { requests: 0, answered: 0, quiet: 0, failed: 0, measured: 0, tokens: 0, cost: 0, priced: false,
     sources: { app: 0, telegram: 0, schedule: 0, events: 0 } as Record<RequestSource, number>,
     chats: new Map<string, { requests: number; failed: number }>(), models: new Map<string, number>(), schedules: new Map<string, number>() };
   for (const day of days) {
-    sum.requests += day.requests; sum.measured += day.measured;
-    sum.answered += day.outcomes.answered; sum.quiet += day.outcomes.quiet; sum.failed += day.outcomes.failed;
+    const self = own ? day.schedules.find(schedule => schedule.id === own.id) : undefined;
+    const runs = self?.runs ?? 0, quiet = self?.quiet ?? 0, failed = self?.failed ?? 0;
+    sum.requests += day.requests - runs; sum.measured += day.measured;
+    sum.answered += day.outcomes.answered - (runs - quiet - failed); sum.quiet += day.outcomes.quiet - quiet; sum.failed += day.outcomes.failed - failed;
+    sum.sources.schedule -= runs;
     sum.tokens += day.tokens.input + day.tokens.output;
     if (day.costUsd !== null) { sum.cost += day.costUsd; sum.priced = true; }
     for (const source of Object.keys(sum.sources) as RequestSource[]) sum.sources[source] += day.sources[source];
     for (const chat of day.chats) {
-      const seen = sum.chats.get(chat.id) ?? { requests: 0, failed: 0 };
-      sum.chats.set(chat.id, { requests: seen.requests + chat.requests, failed: seen.failed + chat.failed });
+      const seen = sum.chats.get(chat.id) ?? { requests: 0, failed: 0 }, mine = chat.id === own?.chat;
+      sum.chats.set(chat.id, { requests: seen.requests + chat.requests - (mine ? runs : 0), failed: seen.failed + chat.failed - (mine ? failed : 0) });
     }
     for (const model of day.models) if (model.model) sum.models.set(model.name, (sum.models.get(model.name) ?? 0) + model.requests);
     for (const schedule of day.schedules) if (schedule.costUsd) sum.schedules.set(schedule.id, (sum.schedules.get(schedule.id) ?? 0) + schedule.costUsd);
@@ -62,12 +65,15 @@ export function homeName(store: Store): string {
   try { return String(JSON.parse(store.getSetting("home.state") ?? "{}").name || "OpenStrudel"); } catch { return "OpenStrudel"; }
 }
 
-export function statisticsCard(statistics: Statistics, home: string) {
+/** `own` is the card's schedule: its runs are drawings, not requests, and stay out of what it reports. */
+export function statisticsCard(statistics: Statistics, home: string, own?: string) {
   const days = statistics.days, today = days.at(-1)!, yesterday = days.at(-2)!;
   const week = days.slice(-8, -1), previousWeek = days.slice(-15, -8);
   const sunday = new Date(today.start + "T12:00:00Z").getUTCDay() === 0;
   const title = (id: string) => statistics.chats[id]?.title ?? "Чат";
-  const day = total([yesterday]), before = total([days.at(-3)!]), seven = total(week), earlier = total(previousWeek);
+  const self = own ? { id: own, chat: statistics.schedules[own]?.chatId } : undefined;
+  const day = total([yesterday], self), before = total([days.at(-3)!], self), seven = total(week, self), earlier = total(previousWeek, self);
+  const requests = (period: StatisticsPeriod) => period.requests - (period.schedules.find(schedule => schedule.id === own)?.runs ?? 0);
 
   const parts: string[] = [];
   const text = (x: number, y: number, value: string | number, size: number, fill = ink, weight = 400, extra = "") =>
@@ -91,10 +97,10 @@ export function statisticsCard(statistics: Statistics, home: string) {
   text(left, y += 58, `${requestsWord(day.requests)} · ${versus(day.requests, before.requests, "днём")}`, 32, muted);
 
   // Seven days ending yesterday, one bar each; only yesterday carries its number.
-  const top = y + 50, height = 180, gap = 24, bar = (right - left - gap * 6) / 7, most = Math.max(1, ...week.map(d => d.requests));
+  const top = y + 50, height = 180, gap = 24, bar = (right - left - gap * 6) / 7, most = Math.max(1, ...week.map(requests));
   week.forEach((period, i) => {
-    const x = left + i * (bar + gap), h = Math.max(6, Math.round(period.requests / most * height)), latest = i === 6;
-    parts.push(`<g data-day="${period.start}" data-requests="${period.requests}"><rect x="${x}" y="${top + height - h}" width="${bar}" height="${h}" rx="10" fill="${latest ? ink : hairline}"/></g>`);
+    const x = left + i * (bar + gap), h = Math.max(6, Math.round(requests(period) / most * height)), latest = i === 6;
+    parts.push(`<g data-day="${period.start}" data-requests="${requests(period)}"><rect x="${x}" y="${top + height - h}" width="${bar}" height="${h}" rx="10" fill="${latest ? ink : hairline}"/></g>`);
     text(x + bar / 2, top + height + 42, label(period.start, { weekday: "short" }), 26, latest ? ink : muted, latest ? 700 : 400, 'text-anchor="middle"');
   });
   y = top + height + 88;
@@ -110,7 +116,7 @@ export function statisticsCard(statistics: Statistics, home: string) {
   if (day.failedChats[0]) lines.push(`Сбои чаще всего — «${short(title(day.failedChats[0][0]), 26)}»: ${number(day.failedChats[0][1].failed)}`);
   if (day.topModel) lines.push(`Модель — ${day.topModel}`);
   for (const line of lines) text(left, y += 58, line, 32, ink);
-  const said = remark(day, week.map(d => d.requests), title);
+  const said = remark(day, week.map(requests), title);
   text(left, y += 82, said, 38, ink, 700);
 
   let weekly = "";

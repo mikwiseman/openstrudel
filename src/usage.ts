@@ -107,16 +107,17 @@ export function claudeUsage(totals: Record<string, ClaudeModelUsage>, turn: Clau
   return { ...(parts.length ? parts.reduce(addUsage) : zero()), modelUsage };
 }
 
-/** One row per executed turn, keyed by the request it answered; the request itself keeps its chat, channel and outcome. */
+/** One row per executed turn, keyed by the request it answered; the request itself keeps its chat, channel and outcome.
+ * Each engine thread's running totals after its latest turn live beside it: a turn that moved to a reserve engine leaves both. */
 export function ensureUsageTable(store: Store): void {
+  store.db.exec("CREATE TABLE IF NOT EXISTS engine_totals(thread TEXT PRIMARY KEY, totals TEXT NOT NULL, updated_at TEXT NOT NULL)");
   const existed = store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='turn_usage'").get();
   if (existed) return;
   store.db.exec(`CREATE TABLE turn_usage(
       message_id TEXT PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
       provider TEXT, model TEXT, service_tier TEXT, reasoning_effort TEXT,
       input_tokens INTEGER, cached_tokens INTEGER, output_tokens INTEGER, reasoning_tokens INTEGER, cost_ticks INTEGER,
-      engine_thread TEXT, engine_totals TEXT);
-    CREATE INDEX turn_usage_thread_idx ON turn_usage(engine_thread) WHERE engine_thread IS NOT NULL;`);
+      engine_thread TEXT)`);
   // Grok's scheduled runs have reported their usage since 7 November 2026, before this table existed.
   if (store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schedule_runs'").get()
     && (store.db.prepare("PRAGMA table_info(schedule_runs)").all() as Array<{ name: string }>).some(c => c.name === "usage_json")) {
@@ -134,8 +135,8 @@ export function ensureUsageTable(store: Store): void {
 export function engineBaseline(store: Store, thread: string | null | undefined): unknown {
   if (!thread) return undefined;
   try {
-    const row = store.db.prepare("SELECT engine_totals FROM turn_usage WHERE engine_thread=? AND engine_totals IS NOT NULL ORDER BY rowid DESC LIMIT 1").get(thread) as { engine_totals: string } | undefined;
-    return row ? JSON.parse(row.engine_totals) : undefined;
+    const row = store.db.prepare("SELECT totals FROM engine_totals WHERE thread=?").get(thread) as { totals: string } | undefined;
+    return row ? JSON.parse(row.totals) : undefined;
   } catch { return undefined; }
 }
 
@@ -147,12 +148,15 @@ export function recordTurnUsage(store: Store, messageId: string, route: TurnRout
   const counted = reports.map(report => usageCounts(report.usage)).filter((u): u is UsageCounts => u !== undefined);
   const total = counted.length ? counted.reduce(addUsage) : undefined;
   const last = reports.at(-1);
-  const engine = [...reports].reverse().find(report => report.engine?.thread)?.engine;
+  const engines = reports.map(report => report.engine).filter((engine): engine is NonNullable<UsageReport["engine"]> => Boolean(engine?.thread));
   try {
-    store.db.prepare(`INSERT OR REPLACE INTO turn_usage(message_id,provider,model,service_tier,reasoning_effort,input_tokens,cached_tokens,output_tokens,reasoning_tokens,cost_ticks,engine_thread,engine_totals)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(messageId, last?.provider ?? route.provider ?? null, last?.model ?? route.model ?? null,
+    store.db.prepare(`INSERT OR REPLACE INTO turn_usage(message_id,provider,model,service_tier,reasoning_effort,input_tokens,cached_tokens,output_tokens,reasoning_tokens,cost_ticks,engine_thread)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(messageId, last?.provider ?? route.provider ?? null, last?.model ?? route.model ?? null,
       last?.serviceTier ?? route.serviceTier ?? null, last?.reasoningEffort ?? route.reasoningEffort ?? null,
       total?.inputTokens ?? null, total?.cachedReadTokens ?? null, total?.outputTokens ?? null, total?.reasoningTokens ?? null, total?.costUsdTicks ?? null,
-      engine?.thread ?? null, engine ? JSON.stringify(engine.totals) : null);
+      engines.at(-1)?.thread ?? null);
+    // Every engine the turn ran on, a failed attempt before a reserve included, measures its next turn from here.
+    const saved = new Date().toISOString();
+    for (const engine of engines) store.db.prepare("INSERT OR REPLACE INTO engine_totals(thread,totals,updated_at) VALUES(?,?,?)").run(engine.thread, JSON.stringify(engine.totals), saved);
   } catch { /* The request was removed while it ran, or the database is read-only. */ }
 }

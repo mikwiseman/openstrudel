@@ -202,9 +202,11 @@ export class Scheduler {
       assertPrivateSources?.();
       const destination = this.destination(schedule.conversationId, schedule.telegramChatId, schedule.delivery);
       if (this.store.getSetting("statistics.cardScheduleId") === schedule.id) {
-        // Every chat's usage and cost: only a paired owner's own private chat, or the app, receives the card.
-        if (destination && !accessOwners(this.store).includes(destination)) throw new Error("Карточка статистики приходит только в личный чат владельца.");
-        const card = statisticsCard(readStatistics(this.store, true, new Date(scheduledFor)), homeName(this.store));
+        // Every chat's usage and cost: the card lives in a paired owner's own private chat and is delivered there, nowhere else.
+        const conversation = this.store.getConversation(schedule.conversationId);
+        const ownChat = conversation?.channel === "telegram" ? String(conversation.externalId ?? "").split("::")[0] : undefined;
+        if (!ownChat || destination !== ownChat || !accessOwners(this.store).includes(ownChat)) throw new Error("Карточка статистики приходит только в личный чат владельца.");
+        const card = statisticsCard(readStatistics(this.store, true, new Date(scheduledFor)), homeName(this.store), schedule.id);
         await this.postCard(schedule, runId, card, `statistics-${card.date}.png`, `Статистика · ${card.date}`);
         return;
       }

@@ -58,7 +58,11 @@ struct StatisticsScreen: View {
 
     private func refresh() async {
         if scope != "all", !clients.contains(where: { $0.id == scope }) { scope = "all" }
-        await model.load(clients.filter { $0.health != nil }.map { client in (client.id, { try await client.readStatistics() }) })
+        // An offline Home keeps its last statistics, marked as such, instead of dropping out of the totals.
+        await model.load(clients.map { client in (client.id, {
+            guard client.health != nil else { throw URLError(.notConnectedToInternet) }
+            return try await client.readStatistics()
+        }) })
     }
 
     // MARK: Report
