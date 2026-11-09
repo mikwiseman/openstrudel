@@ -116,9 +116,19 @@ it("counts a Codex turn once per model call, ignores repeated readings, and pric
       reading("main-thread", breakdown(5_000, 2_500, 200), breakdown(2_200, 1_600, 50)),
     ], { threadId: "main-thread", usageBaseline: report!.engine!.totals });
     expect(second[0]!.usage).toMatchObject({ inputTokens: 2_200, cachedReadTokens: 1_600, outputTokens: 50 });
-    // Without saved totals, the first reading is taken for this turn's own call.
-    const unseeded = await turn(engine, [reading("main-thread", breakdown(5_600, 2_500, 230), breakdown(600, 0, 30))], { threadId: "main-thread" });
+    // A resumed thread without saved totals: before the model answers, Codex re-sends the previous turn's last reading
+    // (seen in production rollouts). The turn starts at that total; only the call after the model started counts.
+    const unseeded = await turn(engine, [
+      reading("main-thread", breakdown(5_000, 2_500, 200), breakdown(2_200, 1_600, 50)),
+      { method: "item/started", params: { threadId: "main-thread", item: { type: "userMessage" } } },
+      reading("main-thread", breakdown(5_000, 2_500, 200), breakdown(2_200, 1_600, 50)),
+      { method: "item/started", params: { threadId: "main-thread", item: { type: "agentMessage" } } },
+      reading("main-thread", breakdown(5_600, 2_500, 230), breakdown(600, 0, 30)),
+    ], { threadId: "main-thread" });
     expect(unseeded[0]!.usage).toMatchObject({ inputTokens: 600, outputTokens: 30 });
+    // A new thread has nothing to repeat: its first call counts even when it only asks for a tool, before any item starts.
+    const fresh = await turn(engine, [reading("main-thread", breakdown(400, 0, 20), breakdown(400, 0, 20))], { threadId: undefined });
+    expect(fresh[0]!.usage).toMatchObject({ inputTokens: 400, outputTokens: 20 });
     // A turn that made no model call reports nothing.
     expect(await turn(engine, [], { threadId: "main-thread" })).toEqual([]);
     // A delegated employee may report before its parent turn names it; nothing it spent is lost.

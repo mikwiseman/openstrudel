@@ -63,7 +63,7 @@ const tokenTotals = (value: any): TokenTotals | undefined => value && typeof val
 const tokenDifference = (a: TokenTotals, b: TokenTotals): TokenTotals => Object.fromEntries(tokenFields.map(f => [f, Math.max(0, a[f] - b[f])])) as TokenTotals;
 /** A turn's share of each thread's counters: from where the thread stood before the turn to its latest reading. */
 type TurnTokens = Map<string, { start: TokenTotals; end: TokenTotals }>;
-type ActiveTurn = { thread: string; options: RunOptions; events: EngineEvent[]; response: string; startedAt: number; children: Set<string>; childModels: Map<string, string>; tokens: TurnTokens; turnId?: string; runtimeProblem?:ProblemCode; recoveryTimer?:ReturnType<typeof setTimeout>; toolCalls?:number; resolve: (r: CodexRunResult) => void; reject: (e: Error) => void };
+type ActiveTurn = { thread: string; options: RunOptions; events: EngineEvent[]; response: string; startedAt: number; children: Set<string>; childModels: Map<string, string>; tokens: TurnTokens; answering?: boolean; turnId?: string; runtimeProblem?:ProblemCode; recoveryTimer?:ReturnType<typeof setTimeout>; toolCalls?:number; resolve: (r: CodexRunResult) => void; reject: (e: Error) => void };
 export interface CodexEngineOptions { model?: string; workingDirectory?: string; codexHome?: string; sharedExtensionsPath?: string; mode?: "codex" | "mock"; scoped?: boolean; config?: Record<string, unknown>; telegramServers?: TelegramMcpServers; reservedServers?: string[]; inheritedApps?: string[]; catalogPath?: string; authTokens?: (refresh?: boolean) => Promise<CodexAuthTokens>;
   /** Only RestrictedExecutor supplies this, with a fresh empty home/workspace. */
   restricted?: boolean;
@@ -314,8 +314,8 @@ export class CodexEngineAdapter implements CodexEngine {
   /** Codex reports each thread's running totals after every model call, and repeats the last reading when only the rate
    * limits change. So a turn's share is its latest reading less where the thread stood before the turn: the totals saved
    * after the thread's previous recorded turn, else the first reading less the call it reports. Delegated employees run
-   * in child threads of the turn. Neither a thread read nor a resume returns the totals, so a thread's first recorded turn
-   * can include the previous turn's last call once, when Codex repeats that reading before the turn's first call. */
+   * in child threads of the turn. Neither a thread read nor a resume returns the totals; a resumed thread without saved
+   * totals starts at the reading Codex repeats before the model's first output. */
   private countTokens(p: any): void {
     const thread = p?.threadId, total = tokenTotals(p?.tokenUsage?.total), last = tokenTotals(p?.tokenUsage?.last);
     if (typeof thread !== "string" || !total || !last) return;
@@ -325,8 +325,12 @@ export class CodexEngineAdapter implements CodexEngine {
     const counted = owner?.tokens.get(thread) ?? this.unclaimed.get(thread);
     if (counted) { if (total.totalTokens >= counted.end.totalTokens) counted.end = total; }
     else {
-      const saved = owner?.thread === thread ? tokenTotals((owner.options.usageBaseline as { total?: unknown } | undefined)?.total) : undefined;
-      const reading = { start: saved && saved.totalTokens <= total.totalTokens ? saved : tokenDifference(total, last), end: total };
+      const own = owner?.thread === thread;
+      const saved = own ? tokenTotals((owner!.options.usageBaseline as { total?: unknown } | undefined)?.total) : undefined;
+      // A resumed thread's reading before the model starts answering is Codex re-sending the previous turn's last reading
+      // as the call's rate limits arrive: the turn starts at that total. A new thread has nothing to repeat.
+      const repeat = own && Boolean(owner!.options.threadId) && !owner!.answering;
+      const reading = { start: saved && saved.totalTokens <= total.totalTokens ? saved : repeat ? total : tokenDifference(total, last), end: total };
       // A delegated employee can report before its parent turn names it; its readings wait for that turn.
       if (!owner) { this.unclaimed.set(thread, reading); for (const old of this.unclaimed.keys()) { if (this.unclaimed.size <= 64) break; this.unclaimed.delete(old); } return; }
       owner.tokens.set(thread, reading);
@@ -363,6 +367,7 @@ export class CodexEngineAdapter implements CodexEngine {
     if (message.method === "thread/tokenUsage/updated") this.countTokens(p);
     const active = p?.threadId ? this.active.get(p.threadId) : undefined;
     if (!active) return;
+    if (message.method === "item/started" && p.item?.type && p.item.type !== "userMessage") active.answering = true;
     const event = { type: message.method ?? "unknown", payload: p };
     active.runtimeProblem=toolProblem(event) ?? (toolRecovered(event) ? undefined : active.runtimeProblem);
     this.watch(active,p.threadId);
