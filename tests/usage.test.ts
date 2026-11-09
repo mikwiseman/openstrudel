@@ -116,8 +116,8 @@ it("counts a Codex turn once per model call, ignores repeated readings, and pric
       reading("main-thread", breakdown(5_000, 2_500, 200), breakdown(2_200, 1_600, 50)),
     ], { threadId: "main-thread", usageBaseline: report!.engine!.totals });
     expect(second[0]!.usage).toMatchObject({ inputTokens: 2_200, cachedReadTokens: 1_600, outputTokens: 50 });
-    // A resumed thread without saved totals: before the model answers, Codex re-sends the previous turn's last reading
-    // (seen in production rollouts). The turn starts at that total; only the call after the model started counts.
+    // A resumed thread without saved totals: Codex re-sends the thread's last reading when it resumes the thread, before
+    // the model answers. The turn starts at that total; only the call after the model started counts.
     const unseeded = await turn(engine, [
       reading("main-thread", breakdown(5_000, 2_500, 200), breakdown(2_200, 1_600, 50)),
       { method: "item/started", params: { threadId: "main-thread", item: { type: "userMessage" } } },
@@ -126,6 +126,19 @@ it("counts a Codex turn once per model call, ignores repeated readings, and pric
       reading("main-thread", breakdown(5_600, 2_500, 230), breakdown(600, 0, 30)),
     ], { threadId: "main-thread" });
     expect(unseeded[0]!.usage).toMatchObject({ inputTokens: 600, outputTokens: 30 });
+    // On a Home each owner turn changes the thread's tools, so the thread is resumed, and the repeated reading can arrive
+    // while it resumes, before the turn has registered. The turn still starts there, with or without saved totals.
+    const original = wire.request.getMockImplementation()!;
+    wire.request.mockImplementation(async (method: string, params: any) => {
+      if (method === "thread/resume") wire.notify?.(reading("main-thread", breakdown(5_600, 2_500, 230), breakdown(600, 0, 30)));
+      return original(method, params);
+    });
+    // Here a changed reasoning level changes the thread's settings.
+    for (const [reasoningEffort, usageBaseline] of [["xhigh", undefined], [undefined, { total: breakdown(5_600, 2_500, 230) }]] as const) {
+      const raced = await turn(engine, [reading("main-thread", breakdown(6_300, 2_500, 270), breakdown(700, 0, 40))], { threadId: "main-thread", reasoningEffort, usageBaseline });
+      expect(raced[0]!.usage).toMatchObject({ inputTokens: 700, outputTokens: 40 });
+    }
+    wire.request.mockImplementation(original);
     // A new thread has nothing to repeat: its first call counts even when it only asks for a tool, before any item starts.
     const fresh = await turn(engine, [reading("main-thread", breakdown(400, 0, 20), breakdown(400, 0, 20))], { threadId: undefined });
     expect(fresh[0]!.usage).toMatchObject({ inputTokens: 400, outputTokens: 20 });

@@ -99,7 +99,8 @@ it("records what each turn spent through the real Codex app-server, measuring a 
     for (const text of ["Say pong", "Again", "Once more"]) {
       // The last turn resumes a thread whose saved totals are gone, as on a Home's first turn after an upgrade.
       if (text === "Once more") runtime.store.db.exec("DELETE FROM engine_totals");
-      expect((await runtime.messages.handle({ channel: "api", text, externalChatId: "home" })).text).toBe("pong from grok");
+      // The owner's turns bring a new tool bridge each, so Codex resumes the thread and repeats its last reading first.
+      expect((await runtime.messages.handle({ channel: "api", text, externalChatId: "home", byOwner: true })).text).toBe("pong from grok");
     }
     const calls = provider.requests.filter(request => request.url.startsWith("/v1/responses")).length;
     const rows = runtime.store.db.prepare(`SELECT i.text,u.provider,u.model,u.input_tokens,u.cached_tokens,u.output_tokens,u.cost_ticks,u.engine_thread
