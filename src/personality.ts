@@ -10,6 +10,7 @@ import { MAX_SPEECH_TEXT, generateSpeech, isSpeechFile, speechSettings, transcri
 import { editionTool, publishEdition, publishStory, readNews, storyTool } from "./news.js";
 import { contextSummary } from "./message-context.js";
 import { documentSigningTools } from "./document-signing.js";
+import { githubTools } from "./github.js";
 import type { Projects } from "./projects.js";
 import { privateSourceTools } from "./private-sources.js";
 import { parsePoll, readCheckIns } from "./check-ins.js";
@@ -26,6 +27,7 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
   const attachments:Attachment[]=[];
   const telegram = telegramTools(store, context);
   const signing = documentSigningTools(store, context);
+  const github = githubTools(store, context);
   const management = homeManagementTools(store, engine, context);
   const projects = context.projects?.tools(context);
   const privateSources = context.files ? privateSourceTools(store, context.files.root, context) : undefined;
@@ -33,6 +35,7 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
   const definitions = [
     ...telegram.definitions,
     ...signing.definitions,
+    ...github.definitions,
     ...(projects?.definitions ?? []),
     ...(privateSources?.definitions ?? []),
     ...managementTurn(store,context) ? management.definitions : [],
@@ -60,6 +63,7 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
     if (name === "correspondence_checkpoint") return correspondenceCheckpoint(store, context);
     if (telegram.definitions.some(t => t.name === name)) return telegram.call(name,args);
     if (signing.definitions.some(t => t.name === name)) return signing.call(args);
+    if (github.definitions.some(t => t.name === name)) return github.call(name,args);
     if (projects?.definitions.some(t => t.name === name)) return projects.call(name,args);
     if (privateSources?.definitions.some(t => t.name === name)) return privateSources.call(name,args);
     if (management.definitions.some(t => t.name === name)) return management.call(name,args);

@@ -14,8 +14,8 @@ import { join } from "node:path";
 import { CodexEngineAdapter } from "../src/codex.js";
 afterEach(() => {wire.request.mockReset();vi.useRealTimers();});
 
-it.each(["read_model_settings", "correspondence_checkpoint", "unipile_accounts", "unipile_read"])("offers current %s to an existing native thread and closes it after the turn", async (toolName) => {
-  let endpoint: { url: string; http_headers: Record<string,string>; default_tools_approval_mode?: string } | undefined;
+it.each(["read_model_settings", "correspondence_checkpoint", "unipile_accounts", "unipile_read", "github_checkout"])("offers current %s to an existing native thread and closes it after the turn", async (toolName) => {
+  let endpoint: { url: string; http_headers: Record<string,string>; default_tools_approval_mode?: string; tool_timeout_sec?: number } | undefined;
   const call = vi.fn(async () => ({ saved: true }));
   wire.request.mockImplementation(async (method: string, params: any) => {
     if (method === "configRequirements/read") return { requirements: null };
@@ -26,6 +26,8 @@ it.each(["read_model_settings", "correspondence_checkpoint", "unipile_accounts",
       expect(endpoint?.url).toMatch(/^http:\/\/127\.0\.0\.1:/);
       // Codex would otherwise refuse the Home's own tools under approval_policy "never" (seen on Wolf, 3 November 2026).
       expect(endpoint?.default_tools_approval_mode).toBe("approve");
+      // Cloning a large repository takes longer than Codex's default 60 seconds per MCP call.
+      expect(endpoint?.tool_timeout_sec).toBe(1800);
       const post = (method: string, params = {}) => fetch(endpoint!.url,{method:"POST",headers:{...endpoint!.http_headers,"content-type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method,params})}).then(r=>r.json());
       expect((await post("tools/list")).result.tools[0].name).toBe(toolName);
       expect((await post("tools/call",{name:toolName,arguments:{scope:"home",id:null}})).result.isError).toBeUndefined();

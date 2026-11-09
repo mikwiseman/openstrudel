@@ -158,8 +158,8 @@ export class CodexEngineAdapter implements CodexEngine {
     try {
       // Native dynamicTools are fixed at thread/start. Existing chats get the current
       // management and private-source schemas through the per-turn MCP bridge.
-      if (!this.options.restricted && options.tools?.definitions.some(t=>["read_model_settings", "correspondence_checkpoint", "unipile_accounts", "unipile_read"].includes(t.name))) {
-        const names = new Set(["list_employees","create_employee","update_employee","list_schedules","save_schedule","pause_schedule","list_telegram_chats","read_model_settings","save_model_settings","configure_telegram_chat","list_projects","bind_employee_project","read_project_result","correspondence_checkpoint","unipile_accounts","unipile_read"]);
+      if (!this.options.restricted && options.tools?.definitions.some(t=>["read_model_settings", "correspondence_checkpoint", "unipile_accounts", "unipile_read", "github_checkout"].includes(t.name))) {
+        const names = new Set(["list_employees","create_employee","update_employee","list_schedules","save_schedule","pause_schedule","list_telegram_chats","read_model_settings","save_model_settings","configure_telegram_chat","list_projects","bind_employee_project","read_project_result","correspondence_checkpoint","unipile_accounts","unipile_read","github_repositories","github_checkout","github_open_pull_request"]);
         const { toolBridge } = await import("./acp-mcp.js");
         bridge = await toolBridge({ definitions:options.tools.definitions.filter(t=>names.has(t.name)), call:options.tools.call });
       }
@@ -239,7 +239,7 @@ export class CodexEngineAdapter implements CodexEngine {
     // The Home's own tools verify their caller themselves, like the native dynamicTools, so Codex never
     // asks about them: its default "prompt" refuses every call once approval_policy is "never".
     const homeTools = this.options.restricted ? {} : { "mcp_servers.openstrudel_runtime": bridge
-      ? { url:bridge.url,http_headers:{Authorization:"Bearer " + bridge.token},enabled:true,required:true,default_tools_approval_mode:"approve" }
+      ? { url:bridge.url,http_headers:{Authorization:"Bearer " + bridge.token},enabled:true,required:true,default_tools_approval_mode:"approve",tool_timeout_sec:1800 }
       : { url:"http://127.0.0.1:1",enabled:false } };
     const config = { ...overrides, ...guest, ...roles, ...(effort ? {model_reasoning_effort:effort} : {}), ...custom, ...sourceAccess, ...projectAccess, ...nativeApprovalConfig(mode,settings,this.extensionManager?.pluginServers()), ...homeTools, approval_policy: policy.approvalPolicy, approvals_reviewer: policy.approvalsReviewer, ...(this.options.restricted ? restrictedCodexConfig(cwd) : {}) };
     const configKey = createHash("sha256").update(JSON.stringify([config, employees, cwd, options.project])).digest("hex");
