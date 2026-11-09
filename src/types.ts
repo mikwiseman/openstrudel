@@ -127,6 +127,12 @@ export interface CodexEngine {
       project?: import("./projects.js").ProjectTurn;
       /** A schedule started this turn. */
       scheduled?: boolean;
+      /** Trusted, set only by MessageService: a new session that is never resumed. No saved thread is read or written
+       * back on any provider. Codex also stores no rollout of it, so it never becomes a native memory. */
+      ephemeral?: boolean;
+      /** Trusted, set only by MessageService: false keeps the turn on its chosen model, without the device's reserves,
+       * as a chat or employee with its own model already is. */
+      reserves?: boolean;
       /** Verified channel identity, supplied only by the Telegram adapter. */
       telegramActor?: { userId: string; chatId: string; messageId: string };
       tools?: { definitions: DynamicTool[]; call: (name: string, args: Record<string, unknown>) => Promise<unknown> };

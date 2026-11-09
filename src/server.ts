@@ -41,7 +41,7 @@ import { runtimeIssues } from "./operations.js";
 import { newsFeed, newsStamp } from "./news.js";
 import { ClientsAdapter, ClientsError, clientSourceSchema, clientsRefusal, type ClientRef } from "./clients.js";
 import { resolveMessageContext } from "./message-context.js";
-import { Correspondence, configureCorrespondence, correspondenceWebhook } from "./correspondence.js";
+import { Correspondence, choosesCorrespondenceModel, configureCorrespondence, correspondenceWebhook } from "./correspondence.js";
 import { GmailPush } from "./gmail-push.js";
 
 const MAX_BODY_BYTES = 1_048_576;
@@ -370,7 +370,9 @@ export class HttpApi {
       url = new URL(request.url ?? "/", "http://localhost"); path = url.pathname;
       if (path === "/v1/correspondence" && ["GET", "POST"].includes(request.method ?? "")) {
         if (request.method === "POST") {
-          const result = configureCorrespondence(this.store, canManageAccount, await this.body(request, 32_768));
+          const body = await this.body(request, 32_768);
+          const models = canManageAccount && choosesCorrespondenceModel(body) ? await (this.engine?.forAgent?.("main", "personal") ?? this.engine?.forContext?.("personal") ?? this.engine)?.models?.() ?? [] : [];
+          const result = configureCorrespondence(this.store, canManageAccount, body, models);
           this.correspondence.wake(); this.send(response, 200, result);
         } else this.send(response, 200, { ...this.correspondence.status(canManageAccount), ...(this.gmailPush ? { gmailPush: this.gmailPush.status() } : {}) });
         return;

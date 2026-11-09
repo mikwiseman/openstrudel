@@ -200,6 +200,9 @@ export function disconnectProvider(store: Store, id: string): number {
     saveConversationModelSelection(store,conversation.id,{provider:null,model:null,serviceTier:null}); reset++;
   }
   for (const agent of [undefined, "main"]) if (readModelSelection(store, agent).provider === id) { saveModelSelection(store, { provider: null, model: null, serviceTier: agent ? null : "default" }, agent); reset++; }
+  // Correspondence event runs on that provider return to the main chat's model (see correspondenceModel).
+  const eventModel = (() => { try { return JSON.parse(store.getSetting("correspondence.model") ?? "null"); } catch { return null; } })();
+  if (eventModel?.provider === id) { store.deleteSetting("correspondence.model"); reset++; }
   for (const name of ["key", "connectedAt", "signedIn", "models"]) store.deleteSetting(`providers.${id}.${name}`);
   const reserves = JSON.parse(store.getSetting("models.fallbacks") ?? "[]");
   if (reserves.some((m: {provider:string})=>m.provider===id)) store.setSetting("models.fallbacks",JSON.stringify(reserves.filter((m: {provider:string})=>m.provider!==id)));

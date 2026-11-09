@@ -253,7 +253,8 @@ export class AccountEngines implements CodexEngine {
         // A sender without access gets a thread of their own, which never had the listed people's services or memories.
         const route = options?.access === false ? id + ".guest" : id;
         // A schedule on a subscription's agent starts a new session: the chat's thread, seed and checkpoint stay the owner's.
-        const fresh = freshSession(provider, options?.scheduled), chat = fresh ? undefined : options?.conversationId;
+        // So does an ephemeral turn, on every provider.
+        const fresh = options?.ephemeral === true || freshSession(provider, options?.scheduled), chat = fresh ? undefined : options?.conversationId;
         const threadKey = chat ? `codex.thread.${route}.${chat}` : undefined;
         const saved = threadKey ? this.accounts.store.getSetting(threadKey) : undefined;
         this.accounts.active.set(id, (this.accounts.active.get(id) ?? 0) + 1);
@@ -261,7 +262,7 @@ export class AccountEngines implements CodexEngine {
         try {
           const ownerKey = chat ? "codex.threadOwner." + chat : undefined;
           const owner = ownerKey ? this.accounts.store.getSetting(ownerKey) : null;
-          const threadId = saved ?? (route === "default" && (!owner || owner === route) ? options?.threadId : undefined);
+          const threadId = fresh ? undefined : saved ?? (route === "default" && (!owner || owner === route) ? options?.threadId : undefined);
           // A new thread is seeded with the chat. A thread resumed after another route answered gets the turns made since its last one.
           const checkpointKey = chat ? `codex.threadCheckpoint.${route}.${chat}` : undefined;
           const resumedElsewhere = threadId && owner && owner !== route;
@@ -306,7 +307,7 @@ export class AccountEngines implements CodexEngine {
       const store = this.accounts.store, chat = options.conversationId ?? conversationId;
       const preferred = options.provider ? { provider:options.provider,model:options.model ?? null,serviceTier:options.serviceTier ?? null,reasoningEffort:options.reasoningEffort }
         : resolveModelSelection(store,agent,undefined,chat);
-      const candidates = [preferred, ...followsDeviceModel(store,agent,chat) ? readModelFallbacks(store) : []];
+      const candidates = [preferred, ...options.reserves !== false && followsDeviceModel(store,agent,chat) ? readModelFallbacks(store) : []];
       const tried = new Set<string>();
       let last: unknown = new AccountUnavailableError("limits");
       for (const [index, candidate] of candidates.entries()) {
