@@ -18,6 +18,15 @@ const plural = (n: number, one: string, few: string, many: string) => {
 const requestsWord = (n: number) => plural(n, "запрос", "запроса", "запросов");
 const label = (date: string, options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("ru", { ...options, timeZone: "UTC" }).format(new Date(date + "T12:00:00Z"));
 const short = (text: string, max: number) => text.length > max ? text.slice(0, max - 1).trimEnd() + "…" : text;
+/** Words broken into lines that fit the card: about half an em a letter, a little more in bold (Liberation Sans on the Homes). */
+const wrap = (value: string, size: number, weight = 400) => {
+  const fit = Math.floor((right - left) / (size * (weight >= 600 ? 0.6 : 0.52))), lines: string[] = [];
+  let line = "";
+  for (const word of value.split(" ")) {
+    if (line && (line + " " + word).length > fit) { lines.push(line); line = word; } else line = line ? line + " " + word : word;
+  }
+  return line ? [...lines, line] : lines;
+};
 const versus = (now: number, before: number, unit: string) => now === before ? `столько же, сколько ${unit} раньше`
   : `на ${number(Math.abs(now - before))} ${now > before ? "больше" : "меньше"}, чем ${unit} раньше`;
 
@@ -115,9 +124,9 @@ export function statisticsCard(statistics: Statistics, home: string, own?: strin
   if (day.topChats[0]) lines.push(`Больше всего — «${short(title(day.topChats[0][0]), 30)}»: ${number(day.topChats[0][1].requests)}`);
   if (day.failedChats[0]) lines.push(`Сбои чаще всего — «${short(title(day.failedChats[0][0]), 26)}»: ${number(day.failedChats[0][1].failed)}`);
   if (day.topModel) lines.push(`Модель — ${day.topModel}`);
-  for (const line of lines) text(left, y += 58, line, 32, ink);
+  for (const line of lines) wrap(line, 32).forEach((part, i) => text(left, y += i ? 42 : 58, part, 32, ink));
   const said = remark(day, week.map(requests), title);
-  text(left, y += 82, said, 38, ink, 700);
+  wrap(said, 38, 700).forEach((part, i) => text(left, y += i ? 50 : 82, part, 38, ink, 700));
 
   let weekly = "";
   if (sunday) {
@@ -134,14 +143,15 @@ export function statisticsCard(statistics: Statistics, home: string, own?: strin
       text(left, y += 58, short(title(id), 40), 32, ink);
       text(right, y, number(value.requests), 32, ink, 600, 'text-anchor="end"');
     }
-    if (seven.costliest) text(left, y += 70, `Дороже всего — «${short(statistics.schedules[seven.costliest[0]]?.name ?? "расписание", 30)}»: ${money(seven.costliest[1])}`, 30, muted);
+    if (seven.costliest) wrap(`Дороже всего — «${short(statistics.schedules[seven.costliest[0]]?.name ?? "расписание", 30)}»: ${money(seven.costliest[1])}`, 30)
+      .forEach((part, i) => text(left, y += i ? 40 : 70, part, 30, muted));
     weekly = `\n**Неделя · ${range}:** ${number(seven.requests)} ${requestsWord(seven.requests)}, ${versus(seven.requests, earlier.requests, "неделей")}`
       + (seven.costUsd === null ? "" : ` · ${money(seven.costUsd)}`);
   }
 
   // Tokens and cost exist from the first day a turn reported them; a span that began earlier says so.
   const since = statistics.usageSince, shown = sunday ? week[0]!.start : yesterday.start;
-  if (since && since >= shown) text(left, y += 76, `Токены и стоимость — с ${label(since, { day: "numeric", month: "long" })}.`, 26, muted);
+  if (since && since >= shown) wrap(`Токены и стоимость — с ${label(since, { day: "numeric", month: "long" })}.`, 26).forEach((part, i) => text(left, y += i ? 34 : 76, part, 26, muted));
   const end = y + 72;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${end}" viewBox="0 0 ${width} ${end}" font-family="Arial, Liberation Sans, sans-serif">`
     + `<rect width="${width}" height="${end}" fill="${canvas}"/>${parts.join("")}</svg>`;

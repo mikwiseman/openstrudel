@@ -58,6 +58,15 @@ it("adds the seven days that ended yesterday on Sunday, says since when tokens a
   expect(turn.svg).not.toContain("Ответил 0");
 });
 
+it("breaks a long line to fit the card instead of running past its edge", () => {
+  const filled: Record<string, Partial<StatisticsPeriod>> = {};
+  for (let i = 0; i < 7; i++) filled[shift("2026-11-04", i)] = { requests: 50, sources: { app: 0, telegram: 50, schedule: 0, events: 0 }, outcomes: { answered: 13, quiet: 36, failed: 1 },
+    chats: [{ id: "main", requests: 20, tokens: 0, costUsd: null, failed: 1 }, { id: "rd", requests: 20, tokens: 0, costUsd: null, failed: 0 }, { id: "other", requests: 10, tokens: 0, costUsd: null, failed: 0 }] };
+  const card = statisticsCard(statistics("2026-11-11", filled), "Личный");
+  expect(card.caption).toContain("Больше слушал, чем говорил: 36 тихих проверок.");
+  expect([...card.svg.matchAll(/<text[^>]*font-size="38"[^>]*>([^<]*)</g)].map(m => m[1])).toEqual(["Больше слушал, чем говорил: 36 тихих", "проверок."]);
+});
+
 it("never counts its own runs: a day when only the card ran is a quiet day", () => {
   const own = { requests: 1, sources: { app: 0, telegram: 0, schedule: 1, events: 0 }, outcomes: { answered: 1, quiet: 0, failed: 0 },
     chats: [{ id: "dm", requests: 1, tokens: 0, costUsd: null, failed: 0 }], schedules: [{ id: "card", runs: 1, quiet: 0, failed: 0, tokens: 0, costUsd: null }] };
