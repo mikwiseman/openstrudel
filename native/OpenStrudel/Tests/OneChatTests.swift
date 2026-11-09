@@ -21,11 +21,14 @@ import Testing
         #expect(library.savedDrafts(on: library.active).map(\.profile) == ["emp-1"])
         // What "Обсудить" attaches stays with the main draft, across a relaunch.
         let mainKey = HomeDrafts.key(home: harness.home, profile: nil, chat: nil)
-        let context = ChatContext.client(BusinessClient(id: "c-acme", slug: "acme", name: "Acme", company: "Acme Robotics"), source: ClientSource(connector: "company", endpoint: "https://x/mcp", fingerprint: "0123456789abcdef"))
+        let context = ChatContext.message(HomeMessage.sample(id: "m0", text: "Акт подписан"), title: "Редактор", home: nil)
         library.attach(context)
         #expect(library.draftContext(for: mainKey) == context)
         #expect(harness.library().draftContext(for: mainKey) == context)
-        #expect(context.label == L("Клиент") + " · Acme")
+        #expect(context.label == L("Из переписки") + " · Редактор")
+        // A message sent before Clients left the app keeps its client context and its line.
+        let older = try JSONDecoder().decode(ChatContext.self, from: Data(#"{"type":"client","clientId":"c-acme","slug":"acme","name":"Acme","source":{"connector":"company","endpoint":"https://x/mcp","fingerprint":"0123456789abcdef"}}"#.utf8))
+        #expect(older.label == L("Клиент") + " · Acme" && older.source?.connector == "company")
         let quote = ChatContext.message(HomeMessage.sample(id: "m1", text: "Привет"), title: "Редактор", home: ChatContext.Home(id: "conn-wolf", homeId: "home-wolf", nodeId: "node-w", name: "Wolf"))
         let decoded = try JSONDecoder().decode(ChatContext.self, from: JSONEncoder().encode(quote))
         #expect(decoded == quote)
@@ -59,7 +62,7 @@ import Testing
         #expect(library.primaryChangeBlocker == L("Сначала отправьте или уберите черновик."))
         #expect(library.select(other) == false)
         library.saveDraft("", for: mainKey)
-        library.attach(ChatContext.client(BusinessClient(id: "c", slug: "c", name: "C"), source: ClientSource(connector: "company", endpoint: "https://x/mcp", fingerprint: "0123456789abcdef")))
+        library.attach(ChatContext.message(HomeMessage.sample(id: "m-c", text: "Контекст"), title: "C", home: nil))
         #expect(library.primaryChangeBlocker != nil)
         library.saveDraftContext(nil, for: mainKey)
         #expect(library.primaryChangeBlocker == nil)
@@ -186,14 +189,6 @@ import Testing
         #expect(plain.count == 2)
         #expect(plain[1].body?["context"] == nil)
         #expect(client.pendingMessages.isEmpty)
-    }
-
-    @Test func clientStatesComeFromTheHomesOwnRefusal() {
-        #expect(ClientsModel.state(for: HomeClientError.refused(code: "service_auth", message: "Подключение к базе клиентов нужно обновить.", detail: "company")) == .refused(ClientsModel.Refusal(code: "service_auth", message: "Подключение к базе клиентов нужно обновить.", detail: "company")))
-        #expect(ClientsModel.state(for: HomeClientError.refused(code: "owner_only", message: "Клиентов видит владелец устройства.", detail: nil)) == .refused(ClientsModel.Refusal(code: "owner_only", message: "Клиентов видит владелец устройства.", detail: nil)))
-        #expect(ClientsModel.state(for: URLError(.notConnectedToInternet)) == .offline)
-        #expect(ClientsModel.state(for: HomeClientError.authenticationExpired) == .offline)
-        if case .refused(let refusal) = ClientsModel.state(for: HomeClientError.server("Сервис не ответил.")) { #expect(refusal.code == "service_unavailable") } else { Issue.record("a plain failure is the service being unavailable") }
     }
 }
 

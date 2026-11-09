@@ -1,14 +1,13 @@
 import SwiftUI
 
 enum PrimaryTab: String, CaseIterable {
-    case chat, clients
+    case chat, statistics
     #if os(iOS)
     case insights, progress
     #endif
 }
 
-/// One chat owns the composer. Mobile adds sourced insights and recorded progress;
-/// the Mac keeps its native Chat / Clients sidebar.
+/// One chat owns the composer. Statistics reads every connected Home; mobile adds sourced insights and recorded progress.
 struct OpenStrudelRootView: View {
     @EnvironmentObject private var library: DeviceLibrary
     @Environment(\.scenePhase) private var scenePhase
@@ -27,8 +26,6 @@ struct OpenStrudelRootView: View {
     @State private var tab = PrimaryTab.chat
     /// The readers opened over the chat, newest last. Back returns to the chat as it was.
     @State private var readers: [ReaderRoute] = []
-    /// iOS tabs keep their paths; Mac sidebar sections return to their roots.
-    @State private var clientRoutes: [ClientRoute] = []
     @State private var showHistory = false
     @AppStorage("openstrudel.aiConsent.v1") private var aiConsent = false
 
@@ -43,7 +40,7 @@ struct OpenStrudelRootView: View {
 
     var body: some View {
         screens
-        .onChange(of: client.id) { _, _ in readers.removeAll(); clientRoutes.removeAll() }
+        .onChange(of: client.id) { _, _ in readers.removeAll() }
         #if os(iOS)
         .onChange(of: activityScope) { _, _ in
             insightRoutes = NavigationPath(); progressRoutes = NavigationPath(); activity.clear(); limits.clear()
@@ -158,15 +155,15 @@ struct OpenStrudelRootView: View {
                 List(selection: Binding<PrimaryTab?>(get: { tab }, set: { if let selection = $0 { tab = selection } })) {
                     Label(L("Чат"), systemImage: "bubble.left.and.text.bubble.right")
                         .tag(PrimaryTab.chat).accessibilityIdentifier("primaryTab-chat")
-                    Label(L("Клиенты"), systemImage: "person.2")
-                        .tag(PrimaryTab.clients).accessibilityIdentifier("primaryTab-clients")
+                    Label(L("Статистика"), systemImage: "chart.bar")
+                        .tag(PrimaryTab.statistics).accessibilityIdentifier("primaryTab-statistics")
                 }
                 .listStyle(.sidebar)
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220)
             } detail: {
                 switch tab {
                 case .chat: chatStack
-                case .clients: clientsStack
+                case .statistics: statisticsStack
                 }
             }
             #else
@@ -174,6 +171,7 @@ struct OpenStrudelRootView: View {
                 Tab(L("Чат"), systemImage: "bubble.left.and.text.bubble.right", value: PrimaryTab.chat) { chatStack }
                 Tab(L("Insights"), systemImage: "sparkle", value: PrimaryTab.insights) { insightsStack }
                 Tab(L("Progress"), systemImage: "checkmark.circle", value: PrimaryTab.progress) { progressStack }
+                Tab(L("Статистика"), systemImage: "chart.bar", value: PrimaryTab.statistics) { statisticsStack }
             }
             .tabViewStyle(.sidebarAdaptable)
             .tabBarMinimizeBehavior(.onScrollDown)
@@ -197,14 +195,9 @@ struct OpenStrudelRootView: View {
         .id(client.id)
     }
 
-    private var clientsStack: some View {
-        NavigationStack(path: $clientRoutes) {
-            ClientsTab()
-                .navigationDestination(for: ClientRoute.self) { route in
-                    ClientDetail(client: route.client, source: route.source, discuss: discuss)
-                }
-        }
-        .id(client.id)
+    /// Every connected Home's usage; it does not follow the chat's Home.
+    private var statisticsStack: some View {
+        NavigationStack { StatisticsScreen() }
     }
 
     #if os(iOS)
@@ -220,8 +213,6 @@ struct OpenStrudelRootView: View {
     private var progressStack: some View {
         NavigationStack(path: $progressRoutes) {
             ProgressTab(model: activity, limits: limits, scope: activityScope, refresh: { await refreshActivity(includeLimits: true, force: true) }, openChat: { tab = .chat })
-                .navigationDestination(for: ProgressDestination.self) { _ in ClientsTab() }
-                .navigationDestination(for: ClientRoute.self) { route in ClientDetail(client: route.client, source: route.source, discuss: discuss) }
                 .navigationDestination(for: ReaderRoute.self) { route in ReaderScreen(route: route, discuss: discuss) }
         }
         .id(client.id)
@@ -237,8 +228,6 @@ struct OpenStrudelRootView: View {
 
     private func discuss(_ context: ChatContext) {
         library.attach(context)
-        // Discuss leaves this destination on either platform.
-        clientRoutes.removeAll()
         // Back to the one composer, not to a reader left open over it.
         readers.removeAll()
         #if os(iOS)

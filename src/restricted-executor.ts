@@ -10,6 +10,7 @@ import { recordDiagnostic, type DiagnosticReason, type RestrictedStage } from ".
 import { recommendedModel, restrictedModelSelection } from "./model-settings.js";
 import type { DynamicTool } from "./types.js";
 import { ownerTimezone } from "./timezone.js";
+import type { UsageReport } from "./usage.js";
 
 const supportedCodexVersion = "0.156.1";
 /** The reason and status are diagnostics for the owner's journal, never shown to participants. */
@@ -91,6 +92,8 @@ export interface RestrictedRunOptions {
   messageId: string;
   signal?: AbortSignal;
   assertCurrent: () => void;
+  /** What the turn spent, as its engine reported it (`turn.usage`). */
+  onUsage?: (report: UsageReport) => void;
 }
 
 /** No shared Codex state, stored history, native Home tools or model-visible
@@ -163,7 +166,10 @@ export class RestrictedExecutor {
       current();
       const result = await engine.run(text, { ...selection, conversationId: options.conversationId, messageId: options.messageId,
         signal, employees: [], approvalMode: "approve_all", tools: { definitions, call: (name, args) => proxy.call(name, args) },
-        onEvent: event => { if (event.type === "thread.started") stage = "turn"; } });
+        onEvent: event => {
+          if (event.type === "thread.started") stage = "turn";
+          if (event.type === "turn.usage") options.onUsage?.({ ...event.payload as UsageReport, provider: "chatgpt" });
+        } });
       current();
       return { response: result.response };
     } catch (error) {

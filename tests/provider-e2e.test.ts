@@ -87,3 +87,27 @@ it("keeps a group sender without access on a thread without the owner's services
     for (let attempt = 0; attempt < 20 && existsSync(root); attempt++) { rmSync(root, { recursive: true, force: true, maxRetries: 5 }); await new Promise(done => setTimeout(done, 300)); }
   }
 }, 180_000);
+
+it("records what each turn spent through the real Codex app-server, measuring a resumed thread from its saved totals", async () => {
+  const provider = await mockResponses("pong from grok");
+  const root = mkdtempSync(join(tmpdir(), "openstrudel-provider-e2e-"));
+  vi.stubEnv("OPENSTRUDEL_CODEX_MODE", "");
+  vi.stubEnv("OPENSTRUDEL_PROVIDER_XAI_BASE_URL", provider.url);
+  const runtime = new OpenStrudelRuntime({ rootDirectory: root, dbPath: join(root, ".data/openstrudel.sqlite"), startTelegram: false, apiToken: "e2e" });
+  try {
+    runtime.store.setSetting("providers.xai.key", "xai-e2e-key");
+    for (const text of ["Say pong", "Again", "Once more"]) expect((await runtime.messages.handle({ channel: "api", text, externalChatId: "home" })).text).toBe("pong from grok");
+    const calls = provider.requests.filter(request => request.url.startsWith("/v1/responses")).length;
+    const rows = runtime.store.db.prepare(`SELECT i.text,u.provider,u.model,u.input_tokens,u.cached_tokens,u.output_tokens,u.cost_ticks,u.engine_thread
+      FROM turn_usage u JOIN messages i ON i.id=u.message_id ORDER BY i.rowid`).all() as Array<Record<string, unknown>>;
+    // The mock answers every model call with 10 input and 5 output tokens; xAI has no OpenAI price.
+    expect(rows.map(row => [row.text, row.provider, row.model, row.cost_ticks])).toEqual([["Say pong", "xai", "grok-4.7", null], ["Again", "xai", "grok-4.7", null], ["Once more", "xai", "grok-4.7", null]]);
+    // One model call per turn: each turn is its own 10 and 5, never the thread's running total.
+    expect(calls).toBe(3);
+    expect(rows.map(row => [row.input_tokens, row.cached_tokens, row.output_tokens])).toEqual([[10, 0, 5], [10, 0, 5], [10, 0, 5]]);
+    expect(new Set(rows.map(row => row.engine_thread)).size).toBe(1);
+  } finally {
+    await runtime.stop(); await provider.close(); vi.unstubAllEnvs();
+    for (let attempt = 0; attempt < 20 && existsSync(root); attempt++) { rmSync(root, { recursive: true, force: true, maxRetries: 5 }); await new Promise(done => setTimeout(done, 300)); }
+  }
+}, 120_000);

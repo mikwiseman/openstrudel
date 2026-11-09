@@ -62,6 +62,7 @@ The default follows the account's recommended model and reasoning effort from Co
 - `GET /v1/conversation` loads the main chat.
 - `GET /v1/agents/<id>/conversation` loads an employee chat.
 - `GET /health` and `GET /v1/integrations` provide connection status.
+- `GET /v1/statistics` and `GET /v1/schedules` (owner only) serve [usage statistics](docs/statistics.md) by day and week, and every schedule with this week's runs and cost.
 
 “New employee” opens a chat immediately. Tell it its name, role and permanent rules in conversation, or edit those rules in its profile. A real Codex tool saves the character and displays a receipt.
 

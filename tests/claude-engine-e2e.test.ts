@@ -32,8 +32,17 @@ it("answers, resumes the same session with a changed SOUL and sends a bearer tok
   const first = await engine.run("Привет", { profile: "Имя: Ада", onEvent: event => started.push(event) });
   expect(first.response).toBe("Ответ 1");
   expect(first.threadId).toMatch(/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/);
-  expect(started).toEqual([{ type: "thread.started", payload: { threadId: first.threadId } },{type:"turn.progress",payload:{}}]);
-  const second = await engine.run("Как тебя зовут?", { threadId: first.threadId, profile: "Имя: Бета" });
+  expect(started.filter((e: any) => e.type !== "turn.usage")).toEqual([{ type: "thread.started", payload: { threadId: first.threadId } },{type:"turn.progress",payload:{}}]);
+  // The CLI's totals for a resumed session include its earlier turns; the saved totals leave just this turn.
+  const spent = (events: unknown[]) => (events as Array<{ type: string; payload: any }>).filter(e => e.type === "turn.usage").map(e => e.payload);
+  const [firstUsage] = spent(started);
+  expect(firstUsage).toMatchObject({ model: "kimi-k3", engine: { thread: first.threadId, totals: { modelUsage: { "kimi-k3": { inputTokens: 10, outputTokens: 5 } } } },
+    usage: { inputTokens: 10, outputTokens: 5 } });
+  // Kimi has no list price in the CLI, so no cost is claimed.
+  expect(firstUsage.usage.costUsdTicks).toBeUndefined();
+  const later: unknown[] = [];
+  const second = await engine.run("Как тебя зовут?", { threadId: first.threadId, profile: "Имя: Бета", usageBaseline: firstUsage.engine.totals, onEvent: event => later.push(event) });
+  expect(spent(later)).toMatchObject([{ usage: { inputTokens: 10, outputTokens: 5 }, engine: { totals: { modelUsage: { "kimi-k3": { inputTokens: 20, outputTokens: 10 } } } } }]);
   expect(second).toEqual({ threadId: first.threadId, response: "Ответ 2", events: [] });
   const last = mock.requests.at(-1)!;
   expect(JSON.stringify(last.body.messages)).toContain("Ответ 1");
@@ -48,6 +57,19 @@ it("answers, resumes the same session with a changed SOUL and sends a bearer tok
   const config = join(root, ".data/providers/kimi/claude/personal");
   expect(readdirSync(config, { recursive: true }).map(String).filter(f => f.endsWith(".jsonl"))).toEqual([expect.stringContaining(first.threadId + ".jsonl")]);
 }, 90_000);
+
+it("counts a resumed session's turn alone after another session ran in the same workspace", async () => {
+  mock = await mockAnthropic(() => ({ text: "Ок" }));
+  const engine = claude("kimi", "sk-kimi-secret");
+  const usage = (events: unknown[]) => (events as Array<{ type: string; payload: any }>).find(e => e.type === "turn.usage")?.payload;
+  const a1: unknown[] = [], b1: unknown[] = [], a2: unknown[] = [];
+  const a = await engine.run("Первый", { onEvent: event => a1.push(event) });
+  await engine.run("Второй", { onEvent: event => b1.push(event) });
+  await engine.run("Снова первый", { threadId: a.threadId, usageBaseline: usage(a1).engine.totals, onEvent: event => a2.push(event) });
+  // The CLI restores each resumed session's own running totals, not only the workspace's latest session.
+  expect(usage(a2).engine.totals).toMatchObject({ modelUsage: { "kimi-k3": { inputTokens: 20, outputTokens: 10 } } });
+  expect(usage(a2).usage).toMatchObject({ inputTokens: 10, outputTokens: 5 });
+});
 
 it("calls an OpenStrudel tool with an Anthropic key and returns its result to the model", async () => {
   mock = await mockAnthropic(request => {

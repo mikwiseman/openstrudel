@@ -1254,6 +1254,40 @@ final class HomeClient: ObservableObject, Identifiable {
         }
     }
 
+    /// Usage by day and week. An older Home answers 404 and a member 403; neither may look like a Home with no usage.
+    func readStatistics() async throws -> HomeStatistics {
+        var refusal: Int?
+        do {
+            let data = try await requestData("/v1/statistics", refused: { refusal = $0 })
+            return try JSONDecoder().decode(HomeStatistics.self, from: data)
+        } catch {
+            if refusal == 404 { throw StatisticsReadError.unsupported }
+            if refusal == 403 { throw StatisticsReadError.ownerOnly }
+            throw error
+        }
+    }
+
+    /// Every recurring schedule of this Home with this week's runs and cost; owner only, absent on an older Home.
+    func readScheduleOverview() async throws -> ScheduleOverview {
+        var refusal: Int?
+        do {
+            let data = try await requestData("/v1/schedules", refused: { refusal = $0 })
+            return try JSONDecoder().decode(ScheduleOverview.self, from: data)
+        } catch {
+            if refusal == 404 { throw StatisticsReadError.unsupported }
+            if refusal == 403 { throw StatisticsReadError.ownerOnly }
+            throw error
+        }
+    }
+
+    /// Switches a schedule on or off through its chat's own save, which keeps its delivery, backup and poll.
+    func saveSchedule(_ schedule: ChatSchedule, enabled: Bool) async throws -> ChatSchedule {
+        var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(schedule)) as! [String: Any]
+        object["enabled"] = enabled
+        let result: ScheduleResponse = try await request("/v1/conversations/" + schedule.conversationId + "/schedules", method: "POST", body: try JSONSerialization.data(withJSONObject: object))
+        return result.schedule
+    }
+
     /// Project access is owner-only; clear private paths on an access refusal, including a non-JSON proxy answer.
     func projectSettings<T: Decodable>(_ path: String, method: String = "GET", payload: [String: Any]? = nil) async throws -> T {
         var refusal: Int?
@@ -1275,17 +1309,6 @@ final class HomeClient: ObservableObject, Identifiable {
         selectedProfileID = nil; selectedChatID = nil; conversationID = nil
         messages = []; interactions = []; schedules = []
         defaults.removeObject(forKey: "openstrudel.profileID")
-    }
-
-    /// The owner's business clients from the company service connected to this Home's main chat.
-    func fetchClients(refresh: Bool = false) async throws -> ClientsEnvelope { try await request("/v1/clients" + (refresh ? "?refresh=true" : "")) }
-
-    /// One client's files, read under the source it was listed from and for its id, never by name alone.
-    func fetchClientFiles(_ client: BusinessClient, source: ClientSource, offset: Int = 0) async throws -> ClientFilesEnvelope {
-        var components = URLComponents()
-        components.queryItems = [URLQueryItem(name: "connector", value: source.connector), URLQueryItem(name: "endpoint", value: source.endpoint),
-                                 URLQueryItem(name: "fingerprint", value: source.fingerprint), URLQueryItem(name: "offset", value: String(offset))]
-        return try await request("/v1/clients/" + (client.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? client.id) + "/files" + (components.string ?? ""))
     }
 
     func loadConnections(refresh: Bool = false, for scope: String? = nil) async throws {
@@ -1383,10 +1406,7 @@ final class HomeClient: ObservableObject, Identifiable {
 
     func setSchedule(_ schedule: ChatSchedule, enabled: Bool) async {
         do {
-            var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(schedule)) as! [String: Any]
-            object["enabled"] = enabled
-            let body = try JSONSerialization.data(withJSONObject: object)
-            let _: ScheduleResponse = try await request("/v1/conversations/" + schedule.conversationId + "/schedules", method: "POST", body: body)
+            _ = try await saveSchedule(schedule, enabled: enabled)
             await loadChatSettings()
         } catch { errorMessage = error.localizedDescription }
     }

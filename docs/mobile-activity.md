@@ -1,6 +1,6 @@
 # Mobile Chat, Insights and Progress
 
-The iPhone and iPad use three native tabs. Chat remains the only composer and continues to route requests through the selected Home's main assistant. Insights is a reader for scheduled results and unresolved incidents. Progress shows retained request and automation facts, account limits, and a direct Clients entry in its toolbar. The Mac retains the accepted build 67 Chat / Clients split view.
+The iPhone and iPad use four native tabs. Chat remains the only composer and continues to route requests through the selected Home's main assistant. Insights is a reader for scheduled results and unresolved incidents. Progress shows retained request and automation facts and account limits. Statistics reads every connected Home's usage by day and week (`docs/design-system.md`); the Mac sidebar has Chat and Statistics. Clients left the app on 8 November 2026.
 
 The visual reference is the current [Stoli design contract](https://github.com/mikwiseman/stoli/blob/92f32348921d313635432b96bd7f629204b8f072/Development/contract/DESIGN.md) and [daily state implementation](https://github.com/mikwiseman/stoli/blob/92f32348921d313635432b96bd7f629204b8f072/Development/server/daily.mjs), inspected at that immutable revision. The adaptation uses calm hierarchy, three places, and a character reacting to useful work. It uses native type, semantic colors, lists, stacks, SF Symbols and the existing Strudel artwork. Stoli's discovery questionnaire, placeholder voice button, coins and gifts are not part of this change.
 

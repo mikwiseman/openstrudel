@@ -11,6 +11,7 @@ import { ProviderIncident, freshSession, providerConnected, providerFailure, pro
 import { ClaudeEngine } from "./claude.js";
 import { AcpEngine, AcpSessionLost, ProviderSignInError } from "./acp.js";
 import { GrokLogin } from "./acp-login.js";
+import { engineBaseline } from "./usage.js";
 
 export class Accounts {
   private services = new Map<string, CodexAccountService>();
@@ -276,9 +277,12 @@ export class AccountEngines implements CodexEngine {
             approvalMode: keyed && options?.approvalMode === "auto" ? "ask" : options?.approvalMode,
             // A native role runs on its parent's provider, so only employees on this route are offered.
             employees: options?.employees?.filter(employee => (employee.provider ?? "chatgpt") === provider),
+            usageBaseline: engineBaseline(this.accounts.store, threadId),
             onEvent: event => {
               if (threadKey && event.type === "thread.started") this.accounts.store.setSetting(threadKey, (event.payload as any).threadId);
               if (ownerKey && event.type === "thread.started") this.accounts.store.setSetting(ownerKey, route);
+              // The route knows which provider served the turn, a reserve model included.
+              if (event.type === "turn.usage") event = { ...event, payload: { ...event.payload as object, provider } };
               if (!fresh || event.type !== "thread.started") options?.onEvent?.(event);
             } });
           if (threadKey) this.accounts.store.setSetting(threadKey, result.threadId);

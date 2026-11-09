@@ -3,7 +3,7 @@ import { METRICS, type DailyMetrics, type Metric } from "./daily-metrics.js";
 
 const names: Record<Metric, string> = { calm: "Спокойствие", focus: "Фокус", energy: "Энергия", mood: "Настроение" };
 const colors = ["#9cddbe", "#b9bcff", "#f1c17d", "#efa7bd"];
-const xml = (text: string | number) => String(text).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[c]!);
+export const xml = (text: string | number) => String(text).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[c]!);
 const shift = (date: string, days: number) => new Date(Date.parse(date + "T12:00:00Z") - days * 86400000).toISOString().slice(0, 10);
 const dateLabel = (date: string, long = false) => new Intl.DateTimeFormat("ru", { day: "numeric", month: long ? "long" : "numeric", timeZone: "UTC" }).format(new Date(date + "T12:00:00Z"));
 const daysWord = (n: number) => n % 100 >= 11 && n % 100 <= 14 ? "дней" : n % 10 === 1 ? "день" : n % 10 >= 2 && n % 10 <= 4 ? "дня" : "дней";

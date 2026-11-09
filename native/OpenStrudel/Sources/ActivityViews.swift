@@ -1,8 +1,6 @@
 import SwiftUI
 
 #if os(iOS)
-enum ProgressDestination: Hashable { case clients }
-
 private extension HomeActivity.Insight {
     var displayTitle: String { needsAttention ? L("Needs attention") : title }
     var displayText: String { needsAttention ? L10n.serviceText(text) : text }
@@ -179,10 +177,6 @@ struct ProgressTab: View {
         .listStyle(.insetGrouped)
         .navigationTitle(L("Progress"))
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                NavigationLink(value: ProgressDestination.clients) { Label(L("Клиенты"), systemImage: "person.2") }
-                    .accessibilityIdentifier("openClients")
-            }
             ToolbarItem(placement: .topBarTrailing) { ActivityRefresh(refreshing: model.refreshing || limits.refreshing, refresh: refresh) }
         }
         .refreshable { await refresh() }

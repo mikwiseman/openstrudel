@@ -11,6 +11,7 @@ import { modelReasoning, reasoningChoices, type ModelChoice } from "./model-sett
 import { contextPattern } from "./scopes.js";
 import { telegramMcpConfig } from "./telegram-mcp.js";
 import type { CodexEngine, CodexRunResult } from "./types.js";
+import { claudeUsage, type UsageReport } from "./usage.js";
 
 export interface ClaudeEngineOptions {
   /** Home root; private state lives under `<root>/.data`. */
@@ -156,6 +157,7 @@ export class ClaudeEngine implements CodexEngine {
     const abort = new AbortController();
     this.running.add(abort);
     let threadId = "", response: string | undefined, rejected = false, stopped = false, failure: string | undefined, limit: ProviderIncident | undefined, stop = () => {};
+    let totals: Parameters<typeof claudeUsage>[0] | undefined, turnTokens: Parameters<typeof claudeUsage>[1];
     try {
       const turn = (this.options.query ?? sdkQuery)({ prompt: (async function* () { yield message; })(), options: {
         cwd, env, model, ...(effort ? {effort} : {}), abortController: abort, resume: options.threadId ?? undefined, permissionMode: "default", canUseTool, mcpServers: sdkServers, extraArgs: { "mcp-config": mcpConfig },
@@ -187,6 +189,7 @@ export class ClaudeEngine implements CodexEngine {
         else if (m.type === "system" && m.subtype === "api_retry" && (m.error_status === 401 || m.error_status === 403)
           || m.type === "assistant" && m.error === "authentication_failed" && !exhaustedPlan(JSON.stringify(m.message.content))) { rejected = true; stop(); }
         if (m.type === "result") {
+          totals = m.modelUsage; turnTokens = m.usage;
           // A structured answer is the SDK's validated object, not the prose around it.
           if (m.subtype === "success" && !m.is_error) response = options.outputSchema && m.structured_output !== undefined ? JSON.stringify(m.structured_output) : m.result;
           else if (m.subtype === "success" && (m.api_error_status === 401 || m.api_error_status === 403) && !exhaustedPlan(m.result)) rejected = true;
@@ -195,6 +198,11 @@ export class ClaudeEngine implements CodexEngine {
       }
     } catch (error) { if (!stopped && !abort.signal.aborted) failure = error instanceof Error ? error.message : String(error); }
     finally { options.signal?.removeEventListener("abort", stop); this.running.delete(abort); rmSync(mcpConfig, { force: true }); }
+    if (totals) {
+      const report: UsageReport = { usage: claudeUsage(totals, turnTokens, options.usageBaseline, Boolean(options.threadId), model), model, ...(effort ? { reasoningEffort: effort } : {}),
+        ...(threadId ? { engine: { thread: threadId, totals: { modelUsage: totals } } } : {}) };
+      try { options.onEvent?.({ type: "turn.usage", payload: report }); } catch { /* Statistics never change a turn's outcome. */ }
+    }
     if (limit) throw limit;
     if (rejected) throw new ProviderKeyError(provider);
     if (response === undefined && (stopped || abort.signal.aborted)) throw new Error("Ответ остановлен");

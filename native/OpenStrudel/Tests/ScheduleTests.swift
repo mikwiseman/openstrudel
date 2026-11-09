@@ -19,6 +19,21 @@ struct ScheduleTests {
         #expect(value.timing.hasPrefix(L("Разово · ")))
     }
 
+    @Test func onlyDailyAndWeeklySchedulesHaveARhythmInWords() throws {
+        let recurring: (String) throws -> ChatSchedule = { cron in
+            try JSONDecoder().decode(ChatSchedule.self, from: Data("""
+            {"id":"r","conversationId":"c","name":"Radar","prompt":"Check","cron":"\(cron)","timezone":"Europe/Moscow",
+             "enabled":false,"nextRunAt":"2026-10-26T09:00:00.000Z"}
+            """.utf8))
+        }
+        #expect(try recurring("0 12 * * *").rhythm == String(format: L("Ежедневно в %02d:%02d"), 12, 0) + " · " + L("Москва"))
+        #expect(try recurring("30 18 * * 6").rhythm?.hasPrefix(L("По субботам")) == true)
+        // Any other cron is known only by its next run, which a switched-off schedule no longer has.
+        let quarterly = try recurring("*/15 * * * *")
+        #expect(quarterly.rhythm == nil)
+        #expect(quarterly.timing.hasPrefix(L("Следующий выпуск · ")))
+    }
+
     @Test func uncertainDeliveryStaysUncertainAndARealPauseHasNoCompletionClaim() throws {
         #expect(try schedule(",\"lastRunStatus\":\"uncertain\"").oneTimeResult == L("Проверьте результат"))
         #expect(try schedule().oneTimeResult == nil)

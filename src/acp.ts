@@ -240,7 +240,8 @@ export class AcpEngine implements CodexEngine {
     }
     // Grok's own count of the turn: tokens, model calls and, when its bill is complete, the cost (1e10 ticks = $1).
     const spent = defined({ usage, billing });
-    if (Object.keys(spent).length) options.onEvent?.({ type: "turn.usage", payload: spent });
+    if (Object.keys(spent).length) options.onEvent?.({ type: "turn.usage", payload: { ...spent, ...defined({ model: options.model ?? (usage as { primaryModelId?: string } | undefined)?.primaryModelId,
+      reasoningEffort: options.reasoningEffort ?? undefined }) } });
     if (failure instanceof AcpSessionLost) throw failure;
     if (signedOut(failure)) throw new ProviderSignInError(provider);
     if (result?.stopReason === "end_turn") return { threadId: sessionId + signed, response: response || "Готово.", events: [] };
