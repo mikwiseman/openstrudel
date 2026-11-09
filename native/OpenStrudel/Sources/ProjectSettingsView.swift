@@ -73,7 +73,7 @@ struct ProjectSettingsView: View {
                     if model.saved { Text(L("Project saved. It applies to the next private request.")).foregroundStyle(.secondary).accessibilityIdentifier("projectSaved") }
                 }
                 Section {
-                    DisclosureGroup(L("Add project"), isExpanded: $adding) {
+                    DisclosureGroup(isExpanded: $adding) {
                         TextField(L("Project name"), text: $name).focused($field, equals: .name)
                             .submitLabel(.next).onSubmit { field = .path }.accessibilityIdentifier("projectName")
                         TextField(L("Checkout path on this device"), text: $path)
@@ -102,8 +102,10 @@ struct ProjectSettingsView: View {
                         }
                         .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || name.count > 80 || !path.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/"))
                         .accessibilityIdentifier("registerEmployeeProject")
+                    } label: {
+                        // Named on its label: an identifier on the group would reach every field inside it.
+                        Text(L("Add project")).accessibilityIdentifier("addProject")
                     }
-                    .accessibilityIdentifier("addProject")
                     if let fileError { Text(fileError).foregroundStyle(AppTheme.warning) }
                 }
             }
