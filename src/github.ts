@@ -247,15 +247,17 @@ export function githubTools(store: Store, context: TelegramToolContext, options:
         throw new Error("Publish from a branch named wolf/<short-topic>. Home never pushes the default branch or other branches.");
       const path = copyFor(repository), gitDirectory = join(path, ".git");
       return hold(path, async () => {
-        // The copy is the model's sandbox: Home reads it only through upload-pack, which Git keeps safe for untrusted repositories.
-        for (const part of [gitDirectory, join(gitDirectory, "objects"), join(gitDirectory, "refs")]) {
-          const stat = lstat(part);
-          if (!stat?.isDirectory() || stat.isSymbolicLink()) throw new Error("There is no local copy of this repository here. Use github_checkout first.");
-        }
-        if (["commondir", "objects/info/alternates", "objects/info/http-alternates"].some(part => existsSync(join(gitDirectory, part)))) throw new Error("This copy borrows another Git store. Make a fresh copy with github_checkout and commit there.");
         const temp = mkdtempSync(join(work(), "publish-"));
         try {
           await git(["init", "--quiet", "--bare", temp]);
+          // The copy is the model's sandbox: checked again right before Home reads it, only through upload-pack,
+          // which Git keeps safe for untrusted repositories.
+          copyFor(repository);
+          for (const part of [gitDirectory, join(gitDirectory, "objects"), join(gitDirectory, "refs")]) {
+            const stat = lstat(part);
+            if (!stat?.isDirectory() || stat.isSymbolicLink()) throw new Error("There is no local copy of this repository here. Use github_checkout first.");
+          }
+          if (["commondir", "objects/info/alternates", "objects/info/http-alternates"].some(part => existsSync(join(gitDirectory, part)))) throw new Error("This copy borrows another Git store. Make a fresh copy with github_checkout and commit there.");
           try { await git(["-C", temp, "fetch", "--quiet", "--no-tags", "--no-recurse-submodules", "--update-shallow", gitDirectory, `refs/heads/${branch}:refs/heads/${branch}`], { timeout: 10 * 60_000, hide: [temp] }); }
           catch (error) { throw new Error(`Branch ${branch} was not found in the copy at ${path}. Commit the work on it first. (${(error as Error).message})`); }
           const commit = await git(["-C", temp, "rev-parse", `refs/heads/${branch}`]);
