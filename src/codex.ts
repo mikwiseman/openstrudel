@@ -311,24 +311,28 @@ export class CodexEngineAdapter implements CodexEngine {
     }
   }
 
-  /** Codex reports each thread's running totals after every model call, and repeats the last reading when only the rate
-   * limits change. So a turn's share is its latest reading less where the thread stood before the turn: the totals saved
-   * after the thread's previous recorded turn, else the first reading less the call it reports. Delegated employees run
-   * in child threads of the turn. Neither a thread read nor a resume returns the totals; a resumed thread without saved
-   * totals starts at the reading Codex repeats before the model's first output. */
+  /** Codex reports each thread's running totals after every model call, and repeats the last reading when it resumes the
+   * thread, which on a Home happens before most owner turns: each brings a new tool bridge. So a turn's share is its latest
+   * reading less where the thread stood before the turn: that repeated reading or the totals saved after the thread's
+   * previous recorded turn, else, on a new thread, the first reading less the call it reports. Delegated employees run in
+   * child threads of the turn. */
   private countTokens(p: any): void {
     const thread = p?.threadId, total = tokenTotals(p?.tokenUsage?.total), last = tokenTotals(p?.tokenUsage?.last);
     if (typeof thread !== "string" || !total || !last) return;
     const parent = this.parents.get(thread);
     const owner = this.active.get(thread) ?? (parent ? this.active.get(parent) : undefined)
       ?? [...this.active.values()].find(turn => turn.children.has(thread) || turn.childModels.has(thread));
+    const own = owner?.thread === thread;
+    // Codex re-sends a thread's last reading when it resumes the thread, at times before the turn has registered here.
+    // No model call runs before the turn starts, so that reading is where the turn starts.
+    const resumed = own && !owner!.tokens.has(thread) ? this.unclaimed.get(thread) : undefined;
+    if (resumed) { this.unclaimed.delete(thread); owner!.tokens.set(thread, { start: resumed.end, end: resumed.end }); }
     const counted = owner?.tokens.get(thread) ?? this.unclaimed.get(thread);
     if (counted) { if (total.totalTokens >= counted.end.totalTokens) counted.end = total; }
     else {
-      const own = owner?.thread === thread;
       const saved = own ? tokenTotals((owner!.options.usageBaseline as { total?: unknown } | undefined)?.total) : undefined;
-      // A resumed thread's reading before the model starts answering is Codex re-sending the previous turn's last reading
-      // as the call's rate limits arrive: the turn starts at that total. A new thread has nothing to repeat.
+      // Before the model starts answering, a resumed thread's reading can only be that repeat: the turn starts at its total.
+      // A new thread has nothing to repeat.
       const repeat = own && Boolean(owner!.options.threadId) && !owner!.answering;
       const reading = { start: saved && saved.totalTokens <= total.totalTokens ? saved : repeat ? total : tokenDifference(total, last), end: total };
       // A delegated employee can report before its parent turn names it; its readings wait for that turn.
