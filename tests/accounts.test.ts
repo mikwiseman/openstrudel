@@ -315,6 +315,25 @@ describe("Grok subscription", () => {
     expect(engines.run).toHaveBeenCalledTimes(1);
     await messages.close();
   });
+  it("starts an ephemeral ChatGPT turn in a new session that it never seeds or saves", async () => {
+    const { store, pool } = fixture(), chat = store.primaryConversation();
+    store.addMessage({ channel: "api", conversationId: chat.id, direction: "outbound", text: "The owner's earlier answer" });
+    for (const [key, value] of [["codex.thread.default.", "owner-thread"], ["codex.threadOwner.", "default"], ["codex.threadCheckpoint.default.", "owner-checkpoint"]]) store.setSetting(key + chat.id, value);
+    const saved = () => ["codex.thread.default.", "codex.threadOwner.", "codex.threadCheckpoint.default."].map(key => store.getSetting(key + chat.id));
+    engines.run.mockImplementation(async (_route, _context, _input, options) => {
+      if (!options.threadId) options.onEvent?.({ type: "thread.started", payload: { threadId: "event-session" } });
+      return { threadId: options.threadId ?? "event-session", response: "NO_REPLY", events: [] };
+    });
+    const events: unknown[] = [];
+    const result = await pool.run("Process this changed conversation", { conversationId: chat.id, threadId: "owner-thread", messageId: "event-message", scheduled: true, ephemeral: true, onEvent: event => events.push(event) });
+    expect(engines.run.mock.calls[0]).toEqual(["default", "personal", "Process this changed conversation", expect.objectContaining({ threadId: undefined, ephemeral: true })]);
+    expect(result.threadId).toBe("");
+    expect(events).toEqual([]);
+    expect(saved()).toEqual(["owner-thread", "default", "owner-checkpoint"]);
+    // The owner's own turn still resumes his thread.
+    await pool.run("Hello", { conversationId: chat.id, threadId: "owner-thread", messageId: "owner-message" });
+    expect(engines.run.mock.calls[1]?.[3]).toMatchObject({ threadId: "owner-thread" });
+  });
   it("starts every scheduled turn in a new session that it never saves, and the owner's next turn resumes his own", async () => {
     // A resumed session made every News check carry the whole chat again: 0.5 to 1.4 million input tokens a turn.
     const { store, pool } = fixture(); signedIn(store);
@@ -517,6 +536,16 @@ describe("model priority", () => {
     engines.run.mockResolvedValue({ threadId: "recovered", response: "OK", events: [] });
     await pool.run("Recovered");
     expect(engines.run.mock.calls.map(c => c[0])).toEqual(["default"]);
+  });
+  it("keeps a turn on its own chosen model without the device's reserves", async () => {
+    const { pool } = setup();
+    engines.run.mockRejectedValue(new Error("429 Too Many Requests"));
+    // Both subscription accounts are tried; the reserve is not.
+    await expect(pool.run("Event", { provider: "chatgpt", model: "chat-model", serviceTier: "default", reserves: false })).rejects.toThrow(/Лимит/);
+    expect(engines.run.mock.calls.map(c => c[0])).toEqual(["default", expect.any(String)]);
+    engines.run.mockClear();
+    await expect(pool.run("Owner")).rejects.toThrow();
+    expect(engines.run.mock.calls.map(c => c[0])).toContain("provider-xai");
   });
   it.each(["item/started", "turn.progress", "tool", "approval"])("never replays a partially executed turn (%s)", async activity => {
     const { pool, accounts } = setup();

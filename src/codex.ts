@@ -270,14 +270,15 @@ export class CodexEngineAdapter implements CodexEngine {
       const common = { model, ...(provider ? { modelProvider:codexProviderId(provider.id) } : {}), ...tier, cwd, ...policy, ...(this.options.scoped || this.options.restricted || options.project ? {} : { sandbox: "workspace-write" }), developerInstructions: instructions, config };
       const result = threadId
         ? await rpc.request("thread/resume", { ...common, threadId, excludeTurns: true })
-        : await rpc.request("thread/start", { ...common, ...(employees.length ? { multiAgentMode: "proactive" } : {}), dynamicTools: options.tools?.definitions ?? [], serviceName: "openstrudel" });
+        // An ephemeral thread writes no rollout, so it is never resumed and never feeds native memories.
+        : await rpc.request("thread/start", { ...common, ...(employees.length ? { multiAgentMode: "proactive" } : {}), dynamicTools: options.tools?.definitions ?? [], serviceName: "openstrudel", ...(options.ephemeral ? { ephemeral: true } : {}) });
       threadId = result.thread.id;
       // resume preserves the model's earlier developer history. Use Codex's
       // native history update to apply a changed SOUL without losing the chat.
       if (resuming && identityChanged) await rpc.request("thread/inject_items", { threadId, items: [{ type: "message", role: "developer", content: [{ type: "input_text", text: "The owner has updated this employee. The following replaces earlier OpenStrudel identity and app instructions; keep the conversation history.\n\n" + instructions }] }] });
       this.loaded.set(threadId, instructions);
       this.loadedConfig.set(threadId,configKey);
-      if (identityChanged) this.rememberIdentity(threadId, instructions);
+      if (identityChanged && !options.ephemeral) this.rememberIdentity(threadId, instructions);
     }
     if (this.active.has(threadId)) throw new Error("В этом чате ещё идёт ответ. Сообщение нужно поставить в очередь.");
     options.onEvent?.({ type: "thread.started", payload: { threadId } });
@@ -304,7 +305,9 @@ export class CodexEngineAdapter implements CodexEngine {
       for (const [child, parent] of this.parents) if (parent === threadId) this.parents.delete(child);
       // Release native subscriptions after the result is collected. Codex owns
       // helper execution and unloads idle threads; their history remains intact.
-      await Promise.allSettled([...active.children].map(child => rpc.request("thread/unsubscribe", { threadId: child }, 2_000)));
+      // An ephemeral thread is released with them: nothing will resume it.
+      if (options.ephemeral) { this.loaded.delete(threadId); this.loadedConfig.delete(threadId); }
+      await Promise.allSettled([...active.children, ...options.ephemeral ? [threadId] : []].map(child => rpc.request("thread/unsubscribe", { threadId: child }, 2_000)));
     }
   }
 

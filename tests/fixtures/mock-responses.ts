@@ -1,7 +1,8 @@
-/** A local OpenAI Responses endpoint: every request is recorded and answered with one streamed text reply. */
+/** A local OpenAI Responses endpoint: every request is recorded and answered with one streamed text reply,
+ * the same one or the one chosen for its request body. */
 import { createServer, type IncomingHttpHeaders } from "node:http";
 
-export async function mockResponses(reply: string) {
+export async function mockResponses(answer: string | ((body: any) => string)) {
   const requests: Array<{ method: string; url: string; headers: IncomingHttpHeaders; body: any }> = [];
   const server = createServer((request, response) => {
     let text = "";
@@ -10,7 +11,7 @@ export async function mockResponses(reply: string) {
       const body = text ? JSON.parse(text) : null;
       requests.push({ method: request.method!, url: request.url!, headers: request.headers, body });
       if (request.method !== "POST" || !/\/responses(\?|$)/.test(request.url!)) { response.writeHead(404, { "content-type": "application/json" }).end('{"error":{"message":"not found"}}'); return; }
-      const id = "resp_" + requests.length, model = body?.model;
+      const id = "resp_" + requests.length, model = body?.model, reply = typeof answer === "string" ? answer : answer(body);
       const item = { type: "message", id: "msg_" + requests.length, role: "assistant", status: "completed", content: [{ type: "output_text", text: reply, annotations: [] }] };
       response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
       for (const [type, data] of [

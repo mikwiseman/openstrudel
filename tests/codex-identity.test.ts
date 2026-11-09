@@ -8,7 +8,7 @@ vi.mock("../src/rpc.js", () => ({ CodexRpc: class {
   request = wire.request;
   close() { this.closed = true; }
 } }));
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CodexEngineAdapter } from "../src/codex.js";
@@ -408,4 +408,31 @@ it("runs a direct chat at Fast only where its model offers it and never lowers a
       await engine.run("Hi",options);
     expect(wire.request.mock.calls.filter(([m])=>m==="turn/start").map(([,p])=>p.serviceTier)).toEqual(["priority","priority","default","ultra","default"]);
   }finally{engine.close();}
+});
+
+it("starts an ephemeral turn on its own unsaved thread, records no identity for it, and releases it after the turn",async()=>{
+  let threads=0;
+  wire.request.mockImplementation(async (method: string, params: any) => {
+    if (method === "thread/start") return {thread:{id:`thread-${++threads}`}};
+    if (method === "thread/unsubscribe") return {};
+    if (method === "turn/start") { queueMicrotask(() => wire.notify?.({method:"turn/completed",params:{threadId:params.threadId,turn:{status:"completed"}}})); return {turn:{id:"turn"}}; }
+    if (method === "configRequirements/read") return {requirements:null};
+    if (method === "model/list") return {data:[]};
+    throw new Error(method);
+  });
+  const home=mkdtempSync(join(tmpdir(),"codex-ephemeral-"));
+  const engine=new CodexEngineAdapter({codexHome:home});
+  const calls=(name:string)=>wire.request.mock.calls.filter(([method])=>method===name).map(([,params])=>params);
+  const identities=()=>{try{return JSON.parse(readFileSync(join(home,"openstrudel-identities.json"),"utf8"));}catch{return {};}};
+  try {
+    const event=await engine.run("Process this changed conversation",{profile:"SOUL",ephemeral:true});
+    expect(calls("thread/start")[0]).toMatchObject({ephemeral:true});
+    expect(calls("thread/unsubscribe")).toEqual([{threadId:event.threadId}]);
+    expect(identities()[event.threadId]).toBeUndefined();
+    // The owner's own turn is stored, and its identity remembered, as before.
+    const owner=await engine.run("Привет",{profile:"SOUL"});
+    expect(calls("thread/start")[1]?.ephemeral).toBeUndefined();
+    expect(calls("thread/unsubscribe")).toHaveLength(1);
+    expect(identities()[owner.threadId]).toBeTruthy();
+  } finally { engine.close(); rmSync(home,{recursive:true,force:true}); }
 });

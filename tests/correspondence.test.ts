@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { Store } from "../src/store.js";
-import { Correspondence, configureCorrespondence, correspondenceCheckpoint, correspondenceSource } from "../src/correspondence.js";
+import { Correspondence, configureCorrespondence, correspondenceCheckpoint, correspondenceModel, correspondenceSource } from "../src/correspondence.js";
+import { disconnectProvider } from "../src/providers.js";
 import { privateSourceAudience } from "../src/private-sources.js";
 import type { MessageInput, MessageResult } from "../src/types.js";
 
@@ -120,4 +121,78 @@ it("binds source events to configured identities and limits each batch to its co
   expect(f.calls[0]!.text).toContain("company"); expect(f.calls[0]!.text).toContain("personal");
   expect(f.calls[0]!.text).toContain("60"); expect(f.calls[0]!.text).toContain("Do not send");
   await f.finishRun(); expect(f.calls).toHaveLength(2);
+});
+
+it("starts no model run for a deletion alone, and a later deletion leaves a running write current", async () => {
+  const f = fixture();
+  f.worker.receive(f.source(), { ...f.event("gone"), type: "message.deleted" });
+  await vi.advanceTimersByTimeAsync(24 * 3_600_000);
+  expect(f.calls).toHaveLength(0);
+  expect(f.worker.status(true).counts).toEqual({ skipped: 1 });
+  f.worker.receive(f.source(), f.event("asked"));
+  await vi.advanceTimersByTimeAsync(45_000); expect(f.calls).toHaveLength(1);
+  expect(f.calls[0]!.text).toContain('"id":"asked"'); expect(f.calls[0]!.text).not.toContain('"id":"gone"');
+  const m = f.store.findMessageByExternal("api", f.calls[0]!.externalId!)!;
+  const context = { conversationId: f.conversation.id, messageId: m.id, channel: "api" as const, scope: "personal", scheduled: true };
+  // A deletion meanwhile starts no newer run, so it never stops this run's writes, which nothing would redo;
+  // the run's live re-read before writing sees a deleted message itself.
+  f.worker.receive(f.source(), { ...f.event("gone-again"), type: "message.deleted" });
+  f.worker.receive(f.source(), { ...f.event("asked"), id: "asked-deleted", type: "message.deleted" });
+  expect(correspondenceCheckpoint(f.store, context).current).toBe(true);
+  f.worker.receive(f.source(), { ...f.event("edited"), type: "message.updated" });
+  expect(correspondenceCheckpoint(f.store, context).current).toBe(false);
+  await f.finishRun(); await vi.advanceTimersByTimeAsync(45_000);
+  // The edit and the deletions beside it run together.
+  expect(f.calls).toHaveLength(2); expect(f.calls[1]!.text).toContain('"id":"gone-again"'); expect(f.calls[1]!.text).toContain('"id":"asked-deleted"');
+});
+
+it("reads a Telegram group after ten quiet minutes and at least every half hour, a private chat after 45 seconds", async () => {
+  const f = fixture();
+  f.worker.receive(f.source(), f.event("group-0", "-1001234567890")); f.worker.receive(f.source(), f.event("private", "123"));
+  await vi.advanceTimersByTimeAsync(45_000);
+  expect(f.calls).toHaveLength(1); expect(f.calls[0]!.text).toContain('"threadId":"123"');
+  await f.finishRun();
+  // A group that keeps talking every five minutes never goes quiet for ten, so it is read at 30 minutes.
+  for (let i = 1; i <= 5; i++) { await vi.advanceTimersByTimeAsync(i === 1 ? 255_000 : 300_000); f.worker.receive(f.source(), f.event("group-" + i, "-1001234567890")); }
+  await vi.advanceTimersByTimeAsync(299_999); expect(f.calls).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(1); expect(f.calls).toHaveLength(2);
+  for (let i = 0; i <= 5; i++) expect(f.calls[1]!.text).toContain(`"id":"group-${i}"`);
+  await f.finishRun();
+  f.worker.receive(f.source(), f.event("group-later", "-1001234567890"));
+  await vi.advanceTimersByTimeAsync(599_999); expect(f.calls).toHaveLength(2);
+  await vi.advanceTimersByTimeAsync(1); expect(f.calls).toHaveLength(3);
+});
+
+it("lets the owner choose a model this device offers for event runs without revoking accepted work", async () => {
+  const f = fixture(); f.worker.receive(f.source(), f.event());
+  const effort = (id: string) => ({ id, name: id, description: "" });
+  const catalog = [{ id: "gpt-6-sol", name: "GPT-6 Sol", description: "", isDefault: false, defaultReasoningEffort: "medium", reasoningEfforts: [effort("low"), effort("medium")],
+    speeds: [{ id: "default", name: "Обычная", description: "" }], provider: "chatgpt" }];
+  configureCorrespondence(f.store, true, { ...f.input, model: { provider: "chatgpt", model: "gpt-6-sol", reasoningEffort: "medium" } }, catalog);
+  expect(correspondenceModel(f.store)).toEqual({ provider: "chatgpt", model: "gpt-6-sol", serviceTier: "default", reasoningEffort: "medium" });
+  await vi.advanceTimersByTimeAsync(45_000); expect(f.calls).toHaveLength(1);
+  expect(f.worker.status(true)).toMatchObject({ authorized: true, model: { model: "gpt-6-sol" } });
+  // Omitted keeps the choice; a model, level or shape the device does not offer changes nothing; null returns to the main chat's model.
+  configureCorrespondence(f.store, true, f.input); expect(correspondenceModel(f.store)?.model).toBe("gpt-6-sol");
+  expect(() => configureCorrespondence(f.store, true, { ...f.input, model: { model: "gpt-6-luna" } }, catalog)).toThrow(/недоступна/);
+  expect(() => configureCorrespondence(f.store, true, { ...f.input, model: { model: "gpt-6-sol", reasoningEffort: "xhigh" } }, catalog)).toThrow();
+  expect(() => configureCorrespondence(f.store, true, { ...f.input, model: { model: "" } }, catalog)).toThrow();
+  expect(() => configureCorrespondence(f.store, true, { ...f.input, model: "gpt-6-sol" }, catalog)).toThrow();
+  expect(correspondenceModel(f.store)?.model).toBe("gpt-6-sol");
+  configureCorrespondence(f.store, true, { ...f.input, model: null }); expect(correspondenceModel(f.store)).toBeNull();
+  // A choice on a provider the owner disconnects returns event runs to the main chat's model.
+  f.store.setSetting("providers.xai.key", "xai-key");
+  configureCorrespondence(f.store, true, { ...f.input, model: { provider: "xai", model: "grok-4.7" } }, [{ ...catalog[0]!, id: "grok-4.7", provider: "xai" }]);
+  expect(correspondenceModel(f.store)?.provider).toBe("xai");
+  disconnectProvider(f.store, "xai"); expect(correspondenceModel(f.store)).toBeNull();
+  expect(() => configureCorrespondence(f.store, false, { ...f.input, model: { model: "gpt-6-sol" } }, catalog)).toThrow(/owner/i);
+  expect(correspondenceModel(f.store)).toBeNull();
+});
+
+it("asks each run to triage the change before it reads more", async () => {
+  const f = fixture(); f.worker.receive(f.source(), f.event()); await vi.advanceTimersByTimeAsync(45_000);
+  const text = f.calls[0]!.text;
+  expect(text.indexOf("Triage first")).toBeLessThan(text.indexOf("cross-channel-intelligence skill"));
+  expect(text).toContain("return NO_REPLY now, without searching the brains");
+  expect(text).toContain("correspondence_checkpoint");
 });

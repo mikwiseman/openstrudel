@@ -452,9 +452,11 @@ export class Store {
     const checkpoint = pendingOnly ? this.getSetting("context.checkpoint." + conversationId) : null;
     // A thread holds its own turns, not what a notification key delivered into the chat meanwhile (a report draft):
     // that comes once as context too, or the next question about it is answered about something else.
+    // So does a shown result of a correspondence run, which ran in a session of its own.
     const rows = this.db.prepare(`SELECT * FROM messages WHERE conversation_id=?
       AND hidden=0 AND imported=0 AND (status='completed' OR (context_only=1 AND status='failed')) AND kind<>'notice'
-      ${pendingOnly ? "AND (context_only=1 OR (direction='outbound' AND external_id LIKE 'notification:%'))" : ""}
+      ${pendingOnly ? `AND (context_only=1 OR (direction='outbound' AND (external_id LIKE 'notification:%'
+        OR EXISTS (SELECT 1 FROM messages run WHERE run.id=messages.reply_to_id AND run.external_id LIKE 'correspondence:%'))))` : ""}
       AND rowid < (SELECT rowid FROM messages WHERE id=? AND conversation_id=?)
       AND rowid > COALESCE((SELECT rowid FROM messages WHERE id=? AND conversation_id=?),0)
       ORDER BY rowid DESC LIMIT 51`).all(conversationId, beforeId, conversationId, checkpoint, conversationId) as Row[];
