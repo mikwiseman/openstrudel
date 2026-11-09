@@ -97,7 +97,7 @@ it("counts executed requests by the owner's local day and week, with their sourc
   const context = request(store, group, "2026-11-08T07:30:00.000Z", { channel: "telegram" }); store.db.prepare("UPDATE messages SET context_only=1 WHERE id=?").run(context.id);
   request(store, main, "2026-11-08T11:58:00.000Z", { status: "queued" });
   // A private chat named only by its id takes its person's name.
-  const direct = store.getOrCreateConversation({ channel: "telegram", externalId: "139287108", title: "Telegram 139287108" }).id;
+  const direct = store.getOrCreateConversation({ channel: "telegram", externalId: "4242", title: "Telegram 4242" }).id;
   const greeting = request(store, direct, "2026-11-08T09:30:00.000Z", { channel: "telegram", reply: "Привет" });
   store.db.prepare("UPDATE messages SET author='Анна Петрова' WHERE id=?").run(greeting.id);
 
