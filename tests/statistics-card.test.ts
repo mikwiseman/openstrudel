@@ -55,7 +55,7 @@ it("adds the seven days that ended yesterday on Sunday, says since when tokens a
   const turn = statisticsCard(statistics("2026-10-04", {}), "Работа");
   expect(turn.svg).toContain("НЕДЕЛЯ · 27 СЕНТЯБРЯ – 3 ОКТЯБРЯ");
   expect(turn.caption).toContain("Тихий день: ни одного запроса.");
-  expect(turn.svg).not.toContain("Ответил 0");
+  expect(plain(turn.svg)).not.toContain("Ответил 0");
 });
 
 it("breaks a long line to fit the card instead of running past its edge", () => {
@@ -65,6 +65,10 @@ it("breaks a long line to fit the card instead of running past its edge", () => 
   const card = statisticsCard(statistics("2026-11-11", filled), "Личный");
   expect(card.caption).toContain("Больше слушал, чем говорил: 36 тихих проверок.");
   expect([...card.svg.matchAll(/<text[^>]*font-size="38"[^>]*>([^<]*)</g)].map(m => m[1])).toEqual(["Больше слушал, чем говорил: 36 тихих", "проверок."]);
+  // Four sources run past one line: it breaks after a separator, never between a word and its number.
+  const busy = statisticsCard(statistics("2026-11-11", { "2026-11-10": { requests: 602, sources: { app: 1, telegram: 12, schedule: 103, events: 486 }, outcomes: { answered: 60, quiet: 409, failed: 133 } } }), "Работа");
+  const body = [...busy.svg.matchAll(/<text[^>]*font-size="32"[^>]*>([^<]*)</g)].map(m => plain(m[1]));
+  expect(body.slice(2, 4)).toEqual(["События 486 · расписания 103 · Telegram 12 ·", "приложение 1"]);
 });
 
 it("never counts its own runs: a day when only the card ran is a quiet day", () => {
@@ -73,7 +77,7 @@ it("never counts its own runs: a day when only the card ran is a quiet day", () 
   const card = statisticsCard(statistics("2026-11-10", { "2026-11-08": own, "2026-11-09": own }), "Грант", "card");
   expect(plain(card.caption)).toBe("**Грант · вчера, 9 ноября**\n0 запросов, столько же, сколько днём раньше\nТихий день: ни одного запроса.");
   expect(card.svg).toContain('data-day="2026-11-09" data-requests="0"');
-  expect(card.svg).not.toContain("Расписания 1");
+  expect(plain(card.svg)).not.toContain("Расписания 1");
 });
 
 it("sends the owner's own chat the card at nine through Telegram without a model turn, and never a group", async () => {

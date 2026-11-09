@@ -118,9 +118,10 @@ export function statisticsCard(statistics: Statistics, home: string, own?: strin
   rule(y += 108);
 
   const sources = ([["Telegram", day.sources.telegram], ["расписания", day.sources.schedule], ["приложение", day.sources.app], ["события", day.sources.events]] as const)
-    .filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).map(([name, n]) => `${name} ${number(n)}`);
-  const lines = day.requests ? [`Ответил ${number(day.answered)} · промолчал ${number(day.quiet)}`] : [];
-  if (sources.length) { const joined = sources.join(" · "); lines.push(joined.charAt(0).toUpperCase() + joined.slice(1)); }
+    .filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).map(([name, n]) => `${name}\u00a0${number(n)}`);
+  // No-break spaces keep each word with its number, so a long line breaks only after a separator.
+  const lines = day.requests ? [`Ответил\u00a0${number(day.answered)}\u00a0· промолчал\u00a0${number(day.quiet)}`] : [];
+  if (sources.length) { const joined = sources.join("\u00a0· "); lines.push(joined.charAt(0).toUpperCase() + joined.slice(1)); }
   if (day.topChats[0]) lines.push(`Больше всего — «${short(title(day.topChats[0][0]), 30)}»: ${number(day.topChats[0][1].requests)}`);
   if (day.failedChats[0]) lines.push(`Сбои чаще всего — «${short(title(day.failedChats[0][0]), 26)}»: ${number(day.failedChats[0][1].failed)}`);
   if (day.topModel) lines.push(`Модель — ${day.topModel}`);
