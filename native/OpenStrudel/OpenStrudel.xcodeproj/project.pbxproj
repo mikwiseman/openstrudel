@@ -33,6 +33,7 @@
 		141A8FF96B26F636B9AFAFD3 /* HostingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B99FD977A6DF945EF17152E /* HostingStore.swift */; };
 		1498952ECAE98762C8E4F535 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 66E25656765AEF473FAFF0F1 /* InfoPlist.strings */; };
 		1533FF57D3D7F9CBC66B3C06 /* NewsDesk.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF7E1A954A1F760E7CD0A27A /* NewsDesk.swift */; };
+		17A00D7C3F4B815398DE6FDA /* server-setup.sh in Resources */ = {isa = PBXBuildFile; fileRef = 5BE37727D4CCAAEB3CB964C7 /* server-setup.sh */; };
 		194D5A8D402E4BD534D12C18 /* SharedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 259B4B7848AABEF05B624619 /* SharedViews.swift */; };
 		19BB73C6174838CCE33D3D0D /* HomeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D671F62812BA20E0AF9CB2FA /* HomeClient.swift */; };
 		1B7D1573EF6D0D4B9743DC03 /* MobileConnectionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41969DD182FE17F98BBEEE17 /* MobileConnectionViews.swift */; };
@@ -43,6 +44,7 @@
 		1CD8FA58518B17B5FB17FCB0 /* MessagePages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11DF3BC1500A7B883ABFF774 /* MessagePages.swift */; };
 		1E9CB288451297DAB7481C66 /* DictationAssets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66CDD484876EBAD4367D26A0 /* DictationAssets.swift */; };
 		1EB1AE21EA4C3C7C5DF63CD6 /* LocalDataReset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B1CA4A01722F775952B9530 /* LocalDataReset.swift */; };
+		1EF48E1F908745B4C0345F95 /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = 256C3CDFB9DC73980B7EE182 /* cloud-init.sh */; };
 		2061E90D9AC95D39DAAA06E8 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38873CBA5B37136CDD8FF91 /* AppTheme.swift */; };
 		22AF0D09AFFD99D6B6F8F8A5 /* ProjectSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FE664057377167D60926971 /* ProjectSettingsView.swift */; };
 		25CE0B6159318A64EDD2D1F2 /* PrimaryHomeSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58DAA420A0BE0C62176A43DB /* PrimaryHomeSettings.swift */; };
@@ -54,12 +56,12 @@
 		29266C725949B6930C224FC9 /* MessagePages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11DF3BC1500A7B883ABFF774 /* MessagePages.swift */; };
 		299F9B17F8DAFA03B5331695 /* AgentMetalCloud.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8E46F909140D82CDAC3536 /* AgentMetalCloud.swift */; };
 		2A2EDFB745D490042D3AAE58 /* Transcript.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83AF568810BAD713BF382ED0 /* Transcript.swift */; };
-		2BA1E4117DA2AF6D5109C1D0 /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = 3ABFF59F07363B700D97A676 /* cloud-init.sh */; };
+		2D088FE8F00173FF8A49605C /* agentmetal-firewall.sh in Resources */ = {isa = PBXBuildFile; fileRef = 41628888199BE0D7BD89F8D6 /* agentmetal-firewall.sh */; };
 		2D09788DED8F1C5EDE458BE2 /* iPhoneSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1132C0F7932A6440305D150A /* iPhoneSmokeTests.swift */; };
 		2F7A1F01537586579154FC86 /* HomeAccountRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59124750DE089CC23DCB20B9 /* HomeAccountRecoveryTests.swift */; };
 		2F84019800922A922C82B1CE /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38873CBA5B37136CDD8FF91 /* AppTheme.swift */; };
-		2FDE08011A089DA50875DA49 /* server-setup.sh in Resources */ = {isa = PBXBuildFile; fileRef = 0777DC1FC5F61EF7577B3256 /* server-setup.sh */; };
 		30AD0816C1C29A5E333197CB /* EmployeeMove.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8625D9EDF41016BA302F31B9 /* EmployeeMove.swift */; };
+		31E21BC35A4D5CB4847FC213 /* localizations.json in Resources */ = {isa = PBXBuildFile; fileRef = 76139EABEF737EE10F6742EA /* localizations.json */; };
 		3268AA2AB3826F10872E997D /* NewsDesk.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF7E1A954A1F760E7CD0A27A /* NewsDesk.swift */; };
 		329833A765F0D4B7300A8494 /* ServerSetup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72F0551049667E879C9F2AB4 /* ServerSetup.swift */; };
 		33E5289AE4FCC51707985917 /* AgentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97A6C72C5E00D5723795E8B1 /* AgentTransfer.swift */; };
@@ -95,10 +97,9 @@
 		4CA6BC98BDE36811CD8C7DB9 /* ConversationModelControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB44D63A2188D5AD8094E069 /* ConversationModelControl.swift */; };
 		4DB4F5AB41099807895716B3 /* MobileConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15270A8B1FADC16CBEE2AB86 /* MobileConnection.swift */; };
 		4E6B82BD6C972AB6EE32CAFE /* MessageContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9FCFCC5FBCE6D6D6D612458 /* MessageContent.swift */; };
-		4F2589DC34BFEE24FDE2C396 /* localizations.json in Resources */ = {isa = PBXBuildFile; fileRef = 10B44F2D1C1A6585DF284D18 /* localizations.json */; };
 		4F5D2CDAD2973965FA44EB09 /* OneChatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3901670502D16D8A69D61086 /* OneChatTests.swift */; };
 		4FB9729E59C1C87A7C17E8E4 /* DictationAssets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66CDD484876EBAD4367D26A0 /* DictationAssets.swift */; };
-		51FC48EDEFD463C749460654 /* localizations.json in Resources */ = {isa = PBXBuildFile; fileRef = 10B44F2D1C1A6585DF284D18 /* localizations.json */; };
+		52337739685914375718D273 /* server-setup.sh in Resources */ = {isa = PBXBuildFile; fileRef = 5BE37727D4CCAAEB3CB964C7 /* server-setup.sh */; };
 		523AFBBC3F4EB9C2769483F3 /* AppUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25538EEFA0F0470CDF4958CC /* AppUpdater.swift */; };
 		528728D21AA6033C7D7F276D /* MobileConnectionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41969DD182FE17F98BBEEE17 /* MobileConnectionViews.swift */; };
 		55158A4F99653D3B77C66B0B /* VoiceCaptureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3632EDAD60D7F3E6FD727338 /* VoiceCaptureTests.swift */; };
@@ -123,17 +124,16 @@
 		64365D840FC1C3F656F9447B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = E29C1F0D3A0FE125E35B565D /* PrivacyInfo.xcprivacy */; };
 		65B4211FF5BCED8897D1019F /* AgentMetalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB6A073363637CAE0C3852B9 /* AgentMetalTests.swift */; };
 		6C0D4F5404C5FF814C7D5F9B /* ScheduleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C48647F1E5DECF8C42A91685 /* ScheduleTests.swift */; };
-		6D1E540AD5B143E84FEC5EBA /* localizations.json in Resources */ = {isa = PBXBuildFile; fileRef = 10B44F2D1C1A6585DF284D18 /* localizations.json */; };
 		6EBA29F09BC6522B0D1E8BC6 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31C465091E283CD04778E7DC /* RootView.swift */; };
 		6FE221DABABB34CD632FF08D /* ComposerTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = F35580B8698D54DD1416DD25 /* ComposerTextField.swift */; };
 		6FF00C4E04D58F8861DAE141 /* SpeechSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62C64488686837DBAC256242 /* SpeechSettingsView.swift */; };
 		710C9EA301B072949AB43AF4 /* UserFacingErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16302AC88D0BE5545DFBFC7F /* UserFacingErrorTests.swift */; };
 		714657174DCE32C3AD9148AE /* HomeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D671F62812BA20E0AF9CB2FA /* HomeClient.swift */; };
+		72E9164901BA84976E91444C /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = 256C3CDFB9DC73980B7EE182 /* cloud-init.sh */; };
 		734CD945714BD8EAD826E70C /* EmployeeVisibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEFEA4F5B39F397C767F97E /* EmployeeVisibility.swift */; };
 		73A81366D0B0ECDA222A33B2 /* CheckInUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB44488FE2045546CBCCDA70 /* CheckInUITests.swift */; };
 		73B03D8CFAA468155892B8CE /* Onboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = D876C3A741AA6365F9AD6CA9 /* Onboarding.swift */; };
 		743B679CE71BB0F2E77EB325 /* NewsDesk.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF7E1A954A1F760E7CD0A27A /* NewsDesk.swift */; };
-		754AE79C416991F143291665 /* agentmetal-firewall.sh in Resources */ = {isa = PBXBuildFile; fileRef = 47C70F35F9A1B6956AA986C0 /* agentmetal-firewall.sh */; };
 		76A9DEA63806F5B706E1F523 /* AgentAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A54DEED2D78EBBD77B24825 /* AgentAppearance.swift */; };
 		76BF370363AC2C6470E67CBE /* LocalHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96054101E4801A6BCC170C1 /* LocalHome.swift */; };
 		7731DA55E2CDCA3C6C0735AE /* AgentTransferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A087F040F8395EFA9DA4306 /* AgentTransferTests.swift */; };
@@ -162,7 +162,6 @@
 		8B0DD4E8C65EC9C02924DE59 /* DigitalOceanCloud.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CF338D2C3249DC58392487E /* DigitalOceanCloud.swift */; };
 		8C0B60605D75DD5E9713446C /* TranscriptStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEB733894E124793EDA9ACA3 /* TranscriptStack.swift */; };
 		8EE74CA0CFA2212038F8BF02 /* Dictation-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = 4EF87FDADAA5AF4E3E9730EE /* Dictation-LICENSE.txt */; };
-		8FE2336156AF5A6A403F0CB7 /* server-setup.sh in Resources */ = {isa = PBXBuildFile; fileRef = 0777DC1FC5F61EF7577B3256 /* server-setup.sh */; };
 		900440E9B87F1AA8E3BBA988 /* WaiVDSContract.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61A4BCF298A1E1126E8D3482 /* WaiVDSContract.swift */; };
 		90908463E5E449B8A6864497 /* ChatMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3D241925EF81E938247C15 /* ChatMedia.swift */; };
 		929A1EC7F6CC34C5382DBE52 /* PrimaryHomeSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58DAA420A0BE0C62176A43DB /* PrimaryHomeSettings.swift */; };
@@ -176,10 +175,10 @@
 		99944D193416881E7D8D727B /* DigitalOceanWebLoginTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC5BA14427968F91FEFE9F2F /* DigitalOceanWebLoginTests.swift */; };
 		99EF347F5B7D0D16B6C8A928 /* ActivityModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF9FA517692F5220E88DAC6 /* ActivityModel.swift */; };
 		99F3C8183EE6FE6B2B2A9746 /* LocalHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96054101E4801A6BCC170C1 /* LocalHome.swift */; };
-		9A332001AD179C9408AC105A /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = 3ABFF59F07363B700D97A676 /* cloud-init.sh */; };
 		9AEBA79A4E9D40E1EE309371 /* MessageContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9FCFCC5FBCE6D6D6D612458 /* MessageContent.swift */; };
 		9D7259F2647C48CA7B56F2EC /* NewsDeskTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33F4A11C8874A324287C32D4 /* NewsDeskTests.swift */; };
 		9E26129063311A8AF124A802 /* TelegramLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31C40E4BEA4DD9523E6ADCA1 /* TelegramLink.swift */; };
+		9E48C89B78A64DA40DD5562D /* localizations.json in Resources */ = {isa = PBXBuildFile; fileRef = 76139EABEF737EE10F6742EA /* localizations.json */; };
 		9F136C240D84291F1106617F /* AgentMetalSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20DE458DAEF5AEAD07827EFE /* AgentMetalSetupView.swift */; };
 		9FCA9041DFF175F58F5DDB19 /* SharedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 259B4B7848AABEF05B624619 /* SharedViews.swift */; };
 		A082498E04119206CD4EEF84 /* AgentMetalSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20DE458DAEF5AEAD07827EFE /* AgentMetalSetupView.swift */; };
@@ -196,6 +195,7 @@
 		A7D9C7172B945D6D1FDB2B68 /* VoiceCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E2B037D5BBDE8A17342F544 /* VoiceCapture.swift */; };
 		A9E99DD5DF279B319C5FCE1A /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9234E96C15CA694F0A31099 /* Models.swift */; };
 		AAE26D83AD3BF442576953F8 /* DeviceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72EEEC73D033EF5BC24DC309 /* DeviceSettingsView.swift */; };
+		AD01E5324FF5F2F338308E33 /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = 256C3CDFB9DC73980B7EE182 /* cloud-init.sh */; };
 		AEBC06A730AF2BB81D4BA10A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 709BE1A9B19D0468720417CF /* Assets.xcassets */; };
 		AF175297574377B16061325E /* MobileConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15270A8B1FADC16CBEE2AB86 /* MobileConnection.swift */; };
 		B2A6F826B19F4653EC0ABDFE /* AgentMetalSetup.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA3D8F3B979779C8A522577C /* AgentMetalSetup.swift */; };
@@ -207,7 +207,6 @@
 		BA4C2329101E4E5D8C2EABD1 /* AppUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25538EEFA0F0470CDF4958CC /* AppUpdater.swift */; };
 		BAA05B51563EDE06A0E0A742 /* SpeechSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62C64488686837DBAC256242 /* SpeechSettingsView.swift */; };
 		BAA6793710D76BE9A03E94AB /* ParakeetTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 303DDF0A98D7DC63FE0AC082 /* ParakeetTranscriber.swift */; };
-		BAE07942F8DED405111E3D0E /* cloud-init.sh in Resources */ = {isa = PBXBuildFile; fileRef = 3ABFF59F07363B700D97A676 /* cloud-init.sh */; };
 		BC3249EED26D788AF1370420 /* ProjectSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FE664057377167D60926971 /* ProjectSettingsView.swift */; };
 		BD17762CF52EB077E6C09EC9 /* AppIconAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B9B3467FCD3522515AD8F38 /* AppIconAppearance.swift */; };
 		BD536195DB95EA60861EF9AD /* DeviceLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89E66060821227C1F39AD78 /* DeviceLibrary.swift */; };
@@ -215,7 +214,6 @@
 		BEE18A55BEC8FE37CAA7DBA9 /* ComputerUseSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D5BFE0BC5B186652ED8336B /* ComputerUseSettingsView.swift */; };
 		C102F54BE7E45348825A830D /* EmployeeMove.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8625D9EDF41016BA302F31B9 /* EmployeeMove.swift */; };
 		C1D22A6A95D61EF3973CECE1 /* Sparkle-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = 37B4BD216FB2EDE09E4E16E4 /* Sparkle-LICENSE.txt */; };
-		C2F38E875CF52BF678F72593 /* agentmetal-firewall.sh in Resources */ = {isa = PBXBuildFile; fileRef = 47C70F35F9A1B6956AA986C0 /* agentmetal-firewall.sh */; };
 		C40940673F96131612347CEA /* ComposerTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = F35580B8698D54DD1416DD25 /* ComposerTextField.swift */; };
 		C40947979D06484F613B149D /* EmployeeMoveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0BDA6283C715CDC4EFF5683 /* EmployeeMoveTests.swift */; };
 		C44ADEF9A93155D3D5D5B1B5 /* LocalDataResetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B5A8A2A8A51E792A7C05A7F /* LocalDataResetView.swift */; };
@@ -241,6 +239,7 @@
 		DEEDEAD2AB25008C3CCAF7D7 /* SetupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A635A0DA48A1D907252A7BCB /* SetupViews.swift */; };
 		E08B021D58405023A2FBCCD9 /* Dictation-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = 4EF87FDADAA5AF4E3E9730EE /* Dictation-LICENSE.txt */; };
 		E09E082D82D45A7D09421AB8 /* DigitalOceanBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A041EB646E3F285D182418 /* DigitalOceanBootstrap.swift */; };
+		E15E61770103473F74094C87 /* localizations.json in Resources */ = {isa = PBXBuildFile; fileRef = 76139EABEF737EE10F6742EA /* localizations.json */; };
 		E1E587A43E36DF9D9F8A726C /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 66E25656765AEF473FAFF0F1 /* InfoPlist.strings */; };
 		E2424B8968C738543D868431 /* ModelSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F3AE0C3B67D921B66FE0DC6 /* ModelSettingsView.swift */; };
 		E2A034E6888624798FB1CC40 /* ReaderViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB5A498CE63F565808D4C17D /* ReaderViews.swift */; };
@@ -250,6 +249,7 @@
 		E57438BBC88134F35C3EA734 /* DeviceLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89E66060821227C1F39AD78 /* DeviceLibrary.swift */; };
 		E666DB6B98B0F9FDC670BCC0 /* MobileConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15270A8B1FADC16CBEE2AB86 /* MobileConnection.swift */; };
 		E881BC2893184397D1A9AFE9 /* DigitalOceanBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A041EB646E3F285D182418 /* DigitalOceanBootstrap.swift */; };
+		E8F93D4913B18B24EC519DB7 /* agentmetal-firewall.sh in Resources */ = {isa = PBXBuildFile; fileRef = 41628888199BE0D7BD89F8D6 /* agentmetal-firewall.sh */; };
 		E93FD94C1680760240FD6AB2 /* ConnectionDiagnosticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 464DD760213D1036379893CF /* ConnectionDiagnosticsTests.swift */; };
 		E9D7759F34F51DFEA6D561F6 /* EmployeeMoveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19246CE6D9E8144D7D244FF /* EmployeeMoveView.swift */; };
 		EB3510AA3FF791EFDE6F447F /* Transcript.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83AF568810BAD713BF382ED0 /* Transcript.swift */; };
@@ -283,14 +283,12 @@
 
 /* Begin PBXFileReference section */
 		06FEF9F7FF45A0D9EF5FFC46 /* DigitalOceanCloudTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DigitalOceanCloudTests.swift; sourceTree = "<group>"; };
-		0777DC1FC5F61EF7577B3256 /* server-setup.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "server-setup.sh"; sourceTree = "<group>"; };
 		08357FA8D528392355101259 /* OfflineDictationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineDictationTests.swift; sourceTree = "<group>"; };
 		08E6A923D429082A0E616493 /* DictationAssetsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationAssetsTests.swift; sourceTree = "<group>"; };
 		0D5BFE0BC5B186652ED8336B /* ComputerUseSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputerUseSettingsView.swift; sourceTree = "<group>"; };
 		0EEF17D3888F1085AFAB5C06 /* OneChatUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OneChatUITests.swift; sourceTree = "<group>"; };
 		0F4C8D0A80AE9D97821FA98C /* WaiVDSClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiVDSClientTests.swift; sourceTree = "<group>"; };
 		0FE664057377167D60926971 /* ProjectSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectSettingsView.swift; sourceTree = "<group>"; };
-		10B44F2D1C1A6585DF284D18 /* localizations.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = localizations.json; sourceTree = "<group>"; };
 		1132C0F7932A6440305D150A /* iPhoneSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iPhoneSmokeTests.swift; sourceTree = "<group>"; };
 		11DF3BC1500A7B883ABFF774 /* MessagePages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagePages.swift; sourceTree = "<group>"; };
 		122EBA3D26D5C005EA2A8FD7 /* ActivityViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityViews.swift; sourceTree = "<group>"; };
@@ -299,6 +297,7 @@
 		1F7D53298A142CDF1B276ABC /* LocalDataResetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalDataResetTests.swift; sourceTree = "<group>"; };
 		20DE458DAEF5AEAD07827EFE /* AgentMetalSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMetalSetupView.swift; sourceTree = "<group>"; };
 		25538EEFA0F0470CDF4958CC /* AppUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdater.swift; sourceTree = "<group>"; };
+		256C3CDFB9DC73980B7EE182 /* cloud-init.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "cloud-init.sh"; sourceTree = "<group>"; };
 		259B4B7848AABEF05B624619 /* SharedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedViews.swift; sourceTree = "<group>"; };
 		25AA5210AFF239878F982285 /* Composer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Composer.swift; sourceTree = "<group>"; };
 		269C829F112500B5E34127F7 /* ReleaseScenariosUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseScenariosUITests.swift; sourceTree = "<group>"; };
@@ -317,15 +316,14 @@
 		36B92676161A3FD9E3889C48 /* TelegramSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelegramSetupView.swift; sourceTree = "<group>"; };
 		37B4BD216FB2EDE09E4E16E4 /* Sparkle-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Sparkle-LICENSE.txt"; sourceTree = "<group>"; };
 		3901670502D16D8A69D61086 /* OneChatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OneChatTests.swift; sourceTree = "<group>"; };
-		3ABFF59F07363B700D97A676 /* cloud-init.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "cloud-init.sh"; sourceTree = "<group>"; };
 		3B1CA4A01722F775952B9530 /* LocalDataReset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalDataReset.swift; sourceTree = "<group>"; };
 		3D8AC19EC197C2FC60EBEB3D /* MobilePairingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePairingTests.swift; sourceTree = "<group>"; };
+		41628888199BE0D7BD89F8D6 /* agentmetal-firewall.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "agentmetal-firewall.sh"; sourceTree = "<group>"; };
 		41969DD182FE17F98BBEEE17 /* MobileConnectionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileConnectionViews.swift; sourceTree = "<group>"; };
 		42350752D1D111BAD14FC2E7 /* SSHConnectionReadiness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHConnectionReadiness.swift; sourceTree = "<group>"; };
 		44AC6C4633049EC913C5B5FF /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = es; path = es.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		452D1C62E5C23CB46B6FD978 /* AccountRecoveryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountRecoveryUITests.swift; sourceTree = "<group>"; };
 		464DD760213D1036379893CF /* ConnectionDiagnosticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionDiagnosticsTests.swift; sourceTree = "<group>"; };
-		47C70F35F9A1B6956AA986C0 /* agentmetal-firewall.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "agentmetal-firewall.sh"; sourceTree = "<group>"; };
 		490F28C3935B297096905E55 /* ActivityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityTests.swift; sourceTree = "<group>"; };
 		4AF0B9DD514B9520C3BB378E /* wai-vds-v2.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "wai-vds-v2.json"; sourceTree = "<group>"; };
 		4B9B3467FCD3522515AD8F38 /* AppIconAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconAppearance.swift; sourceTree = "<group>"; };
@@ -343,6 +341,7 @@
 		58DAA420A0BE0C62176A43DB /* PrimaryHomeSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryHomeSettings.swift; sourceTree = "<group>"; };
 		59124750DE089CC23DCB20B9 /* HomeAccountRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeAccountRecoveryTests.swift; sourceTree = "<group>"; };
 		5A087F040F8395EFA9DA4306 /* AgentTransferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTransferTests.swift; sourceTree = "<group>"; };
+		5BE37727D4CCAAEB3CB964C7 /* server-setup.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "server-setup.sh"; sourceTree = "<group>"; };
 		5CF338D2C3249DC58392487E /* DigitalOceanCloud.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DigitalOceanCloud.swift; sourceTree = "<group>"; };
 		61A4BCF298A1E1126E8D3482 /* WaiVDSContract.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiVDSContract.swift; sourceTree = "<group>"; };
 		62C64488686837DBAC256242 /* SpeechSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechSettingsView.swift; sourceTree = "<group>"; };
@@ -359,6 +358,7 @@
 		72EEEC73D033EF5BC24DC309 /* DeviceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceSettingsView.swift; sourceTree = "<group>"; };
 		72F0551049667E879C9F2AB4 /* ServerSetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSetup.swift; sourceTree = "<group>"; };
 		75DCFF9D5E311EA2C0891A41 /* ExtensionSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionSetupView.swift; sourceTree = "<group>"; };
+		76139EABEF737EE10F6742EA /* localizations.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = localizations.json; sourceTree = "<group>"; };
 		7C3D241925EF81E938247C15 /* ChatMedia.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMedia.swift; sourceTree = "<group>"; };
 		7ECDE7BFB212A84C42AEC2A3 /* DeviceLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceLibraryTests.swift; sourceTree = "<group>"; };
 		83AF568810BAD713BF382ED0 /* Transcript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transcript.swift; sourceTree = "<group>"; };
@@ -468,14 +468,6 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		105224B0BC82D6DAD621CB6A /* public */ = {
-			isa = PBXGroup;
-			children = (
-				10B44F2D1C1A6585DF284D18 /* localizations.json */,
-			);
-			path = public;
-			sourceTree = "<group>";
-		};
 		29E00286E47652BF27B34BFC /* Resources */ = {
 			isa = PBXGroup;
 			children = (
@@ -568,16 +560,6 @@
 			path = Sources;
 			sourceTree = "<group>";
 		};
-		37D3282CF6E0CCE366FF3713 /* scripts */ = {
-			isa = PBXGroup;
-			children = (
-				47C70F35F9A1B6956AA986C0 /* agentmetal-firewall.sh */,
-				3ABFF59F07363B700D97A676 /* cloud-init.sh */,
-				0777DC1FC5F61EF7577B3256 /* server-setup.sh */,
-			);
-			path = scripts;
-			sourceTree = "<group>";
-		};
 		546851BDDD0611547A254A69 /* UITests */ = {
 			isa = PBXGroup;
 			children = (
@@ -608,14 +590,12 @@
 			path = Localizations;
 			sourceTree = "<group>";
 		};
-		8530D4499AEABB22DC076188 /* openstrudel-suetolog */ = {
+		819CD38F3FB6AD94E7F624F4 /* public */ = {
 			isa = PBXGroup;
 			children = (
-				105224B0BC82D6DAD621CB6A /* public */,
-				37D3282CF6E0CCE366FF3713 /* scripts */,
+				76139EABEF737EE10F6742EA /* localizations.json */,
 			);
-			name = "openstrudel-suetolog";
-			path = ../..;
+			path = public;
 			sourceTree = "<group>";
 		};
 		9332B7FCD8BAD85E05291826 /* Tests */ = {
@@ -668,6 +648,16 @@
 			name = Packages;
 			sourceTree = "<group>";
 		};
+		A66243CBEE66349D04ABC2DC /* scripts */ = {
+			isa = PBXGroup;
+			children = (
+				41628888199BE0D7BD89F8D6 /* agentmetal-firewall.sh */,
+				256C3CDFB9DC73980B7EE182 /* cloud-init.sh */,
+				5BE37727D4CCAAEB3CB964C7 /* server-setup.sh */,
+			);
+			path = scripts;
+			sourceTree = "<group>";
+		};
 		A6CAB181CBBF978C846EC21E /* Fixtures */ = {
 			isa = PBXGroup;
 			children = (
@@ -682,7 +672,7 @@
 			children = (
 				709BE1A9B19D0468720417CF /* Assets.xcassets */,
 				62741FF889AD0029DE205821 /* Localizations */,
-				8530D4499AEABB22DC076188 /* openstrudel-suetolog */,
+				E9AD103F9150B4ECF6C61BC9 /* openstrudel-build-68 */,
 				93BC6D189D822FEB74C8E41A /* Packages */,
 				29E00286E47652BF27B34BFC /* Resources */,
 				2C1B064E52E9C728955B5E56 /* Sources */,
@@ -690,6 +680,16 @@
 				546851BDDD0611547A254A69 /* UITests */,
 				02AB75132E50BEA37746ADF2 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		E9AD103F9150B4ECF6C61BC9 /* openstrudel-build-68 */ = {
+			isa = PBXGroup;
+			children = (
+				819CD38F3FB6AD94E7F624F4 /* public */,
+				A66243CBEE66349D04ABC2DC /* scripts */,
+			);
+			name = "openstrudel-build-68";
+			path = ../..;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -840,10 +840,10 @@
 				E1E587A43E36DF9D9F8A726C /* InfoPlist.strings in Resources */,
 				8948A7997B267280DC592F77 /* PrivacyInfo.xcprivacy in Resources */,
 				C1D22A6A95D61EF3973CECE1 /* Sparkle-LICENSE.txt in Resources */,
-				754AE79C416991F143291665 /* agentmetal-firewall.sh in Resources */,
-				2BA1E4117DA2AF6D5109C1D0 /* cloud-init.sh in Resources */,
-				6D1E540AD5B143E84FEC5EBA /* localizations.json in Resources */,
-				8FE2336156AF5A6A403F0CB7 /* server-setup.sh in Resources */,
+				2D088FE8F00173FF8A49605C /* agentmetal-firewall.sh in Resources */,
+				AD01E5324FF5F2F338308E33 /* cloud-init.sh in Resources */,
+				9E48C89B78A64DA40DD5562D /* localizations.json in Resources */,
+				52337739685914375718D273 /* server-setup.sh in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -852,11 +852,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				8EE74CA0CFA2212038F8BF02 /* Dictation-LICENSE.txt in Resources */,
-				C2F38E875CF52BF678F72593 /* agentmetal-firewall.sh in Resources */,
-				BAE07942F8DED405111E3D0E /* cloud-init.sh in Resources */,
+				E8F93D4913B18B24EC519DB7 /* agentmetal-firewall.sh in Resources */,
+				1EF48E1F908745B4C0345F95 /* cloud-init.sh in Resources */,
 				B5946DFBDF9D76520B6AFCB8 /* home-certificate.json in Resources */,
-				51FC48EDEFD463C749460654 /* localizations.json in Resources */,
-				2FDE08011A089DA50875DA49 /* server-setup.sh in Resources */,
+				31E21BC35A4D5CB4847FC213 /* localizations.json in Resources */,
+				17A00D7C3F4B815398DE6FDA /* server-setup.sh in Resources */,
 				A3A89F6317E0E47EE5AF44AB /* wai-vds-v2.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -869,8 +869,8 @@
 				1309268D09526B8EE74E3EF8 /* Dictation-LICENSE.txt in Resources */,
 				1498952ECAE98762C8E4F535 /* InfoPlist.strings in Resources */,
 				64365D840FC1C3F656F9447B /* PrivacyInfo.xcprivacy in Resources */,
-				9A332001AD179C9408AC105A /* cloud-init.sh in Resources */,
-				4F2589DC34BFEE24FDE2C396 /* localizations.json in Resources */,
+				72E9164901BA84976E91444C /* cloud-init.sh in Resources */,
+				E15E61770103473F74094C87 /* localizations.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1314,7 +1314,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 67;
+				CURRENT_PROJECT_VERSION = 68;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -1412,7 +1412,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 67;
+				CURRENT_PROJECT_VERSION = 68;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
