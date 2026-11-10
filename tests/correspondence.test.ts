@@ -196,3 +196,15 @@ it("asks each run to triage the change before it reads more", async () => {
   expect(text).toContain("return NO_REPLY now, without searching the brains");
   expect(text).toContain("correspondence_checkpoint");
 });
+
+it("puts the reply where the owner answers and never reports unread media as a result", async () => {
+  const f = fixture(); f.worker.receive(f.source(), f.event()); await vi.advanceTimersByTimeAsync(45_000);
+  const text = f.calls[0]!.text;
+  // On 5–9 November no Telegram draft was ever saved: the run kept every proposal in the app because Telegram has no atomic write.
+  expect(text).toContain("a native Telegram draft in that chat");
+  expect(text).toContain("do not keep a Telegram proposal in the app for that reason");
+  expect(text).toContain("Never overwrite a human or unknown draft");
+  // 95 of 209 shown results only said that a voice message or file was not readable yet.
+  expect(text).toMatch(/not readable yet[^.]*\.[^.]*NO_REPLY/);
+  expect(text).toContain("the sources it rests on");
+});
