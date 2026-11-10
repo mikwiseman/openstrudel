@@ -155,11 +155,12 @@ function storyMessages(store: Store, conversationId: string, days: number): Mess
   return rows.flatMap(r => store.getMessage(conversationId, r.id) ?? []);
 }
 
-/** Stories and their threads of the last two weeks, oldest first. Curation never deletes stored history. */
-export function newsFeed(store: Store, conversationId: string, days = 14): { messages: Message[]; stamp: string | null; status?: NewsStatus } {
+/** Stories and their threads of the last two weeks, oldest first, with the name the desk gave its latest edition when it gave one.
+ * Curation never deletes stored history. */
+export function newsFeed(store: Store, conversationId: string, days = 14): { messages: Message[]; stamp: string | null; status?: NewsStatus; edition?: { date: string; title: string } } {
   const selection = savedEdition(store, conversationId), status = newsStatus(store, conversationId);
   const messages = storyMessages(store, conversationId, days).filter(m => !selection || !m.story || m.story.edition !== selection.edition || selection.storyIds.includes(m.story.id));
-  return { messages, stamp: newsStamp(store, conversationId), ...status ? { status } : {} };
+  return { messages, stamp: newsStamp(store, conversationId), ...status ? { status } : {}, ...selection?.title ? { edition: { date: selection.edition, title: selection.title } } : {} };
 }
 
 /** Grok keeps the first 20,000 bytes of an MCP result, and a Russian letter takes two. */
