@@ -1,6 +1,6 @@
 Утренний выпуск News по навыку wai-news: всё важное за сутки одним сообщением.
 
-1. Прочитай wai-news/feedback.md, read_news без storyId, queue --edition, queue --since <время из строки «Previous successful run in this chat:» выше> за ночь и reference --hours 24. Строку «+N more stories» выполни один раз для каждого вывода.
+1. Прочитай wai-news/feedback.md, read_news без storyId, queue --edition, queue --since <время из строки «Previous successful run in this chat:» выше> за ночь, reference --hours 24 и x --hours 24. Строку «+N more stories» выполни один раз для каждого вывода.
 2. В выпуск входит каждый сюжет из reference со ★2 и больше и каждая история про инструменты команды. Новые выпуски интервью из reference (Lex Fridman, Dwarkesh Patel) идут в раздел «Интервью». Сверяй по смыслу; все ссылки сюжета даёт queue --detail KEY.
 3. Закрой слепые зоны: до четырёх поисков по тому, чего в очереди мало, — модели и API, инструменты и агенты, медиа и голос, роботы, вычисления, сделки и правила, Китай и другие регионы. Пересказ не новый факт.
 4. Новые истории сохрани через publish_story с edition=null, rank=null, telegram=null, image=null: их несёт выпуск. Вышедшие не переписывай, бери их storyId из read_news.
