@@ -224,6 +224,10 @@ it("asks each run to triage the change before it reads more", async () => {
   expect(text.indexOf("Triage first")).toBeLessThan(text.indexOf("cross-channel-intelligence skill"));
   expect(text).toContain("return NO_REPLY now, without searching the brains");
   expect(text).toContain("correspondence_checkpoint");
+  // Each opened source is one more model request that resends the whole run, so a search result is used as it is.
+  expect(text).toContain("work from the passages the search returns");
+  expect(text).toContain("open a source only for a detail or an exact quote");
+  expect(text).not.toContain("then read the actual sources");
 });
 
 it("puts the reply where the owner answers and never reports unread media as a result", async () => {
