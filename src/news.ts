@@ -8,7 +8,7 @@ const strict = (properties: Record<string, unknown>) => ({ type: "object", prope
 
 /** One event across its developments: the reader groups versions by storyId, and every version is a message in the employee's chat. */
 export const storyTool: DynamicTool = { type: "function", name: "publish_story",
-  description: "Publish one verified news story to your reader: the OpenStrudel app and, when telegram is set, your desk's Telegram chat. The application writes and sends the Telegram post itself from these fields, once: a bold title, summary, view after an arrow, the first three sources as links labelled with their titles, and a preview of the first source. telegram: \"card\" posts silently, \"alert\" with sound for what the reader must know now (the application allows two a day, in the daytime), null keeps the story for the app and the edition. Reuse the same storyId when the same event develops (price, availability, deal status, a correction) and say in change what changed: with telegram set, change goes out as a reply under the story's first post. A new storyId is a new event. The result's telegram field says what was sent; never send the story yourself with send_telegram_message. title states the news in one line; summary is the post's text: two to four short paragraphs of plain text, no Markdown; view is the post's last line, your own conclusion or advice. section and status are short labels in the reader's language (for Russian: Вышло, Анонс, Обновление, Слух). edition and rank stay null: publish_edition makes the edition. body is the full account for the app, check what is still worth verifying, verification what you actually read and what you did not test. Every source is a page you read; its title is a short link label (the publisher or what the page is), role says what it adds (Первоисточник, Документация, Обсуждение, Перепечатка). A retry with identical content returns the same version and sends nothing again.",
+  description: "Publish one verified news story to your reader: the OpenStrudel app and, when telegram is set, your desk's Telegram chat. The application writes and sends the Telegram post itself from these fields, once: a bold title, summary, view after an arrow, the first three sources as links labelled with their titles, and a preview of the first source. telegram: \"card\" posts silently, \"alert\" with sound for what the reader must know now (the application allows two a day, in the daytime), null keeps the story for the app and the edition. Reuse the same storyId when the same event develops (price, availability, deal status, a correction) and say in change what changed: with telegram set, change goes out as a reply under the story's first post. A new storyId is a new event. image is the direct https link of one picture that proves the story (the chart, the table, a screenshot in a source you read), shown on top of the post, or null: never a logo or a stock picture. The result's telegram field says what was sent; never send the story yourself with send_telegram_message. title states the news in one line; summary is the post's text: two to four short paragraphs of plain text, no Markdown; view is the post's last line, your own conclusion or advice. section and status are short labels in the reader's language (for Russian: Вышло, Анонс, Обновление, Слух). edition and rank stay null: publish_edition makes the edition. body is the full account for the app, check what is still worth verifying, verification what you actually read and what you did not test. Every source is a page you read; its title is a short link label (the publisher or what the page is), role says what it adds (Первоисточник, Документация, Обсуждение, Перепечатка). A retry with identical content returns the same version and sends nothing again.",
   inputSchema: strict({
     storyId: { type: "string", pattern: "^[a-z0-9][a-z0-9._-]{0,119}$" },
     edition: { type: ["string", "null"], pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
@@ -17,6 +17,7 @@ export const storyTool: DynamicTool = { type: "function", name: "publish_story",
     view: maybe(1500), check: maybe(1500), verification: text(800), eventAt: maybe(40), change: maybe(600),
     sources: { type: "array", minItems: 1, maxItems: 12, items: strict({ title: text(160), url: text(2000), role: text(40), publishedAt: maybe(40) }) },
     telegram: { type: ["string", "null"], enum: ["alert", "card", null] },
+    image: maybe(2000),
   }),
 };
 
@@ -44,6 +45,15 @@ const delivery = (value: unknown): NewsStory["telegram"] => {
   return value;
 };
 
+const picture = (value: unknown): string | null => {
+  const link = field(value, "картинку", 2000, false);
+  if (!link) return null;
+  let url: URL;
+  try { url = new URL(link); } catch { throw new Error("image — прямая ссылка на картинку или null."); }
+  if (url.protocol !== "https:") throw new Error("image — ссылка https на картинку или null.");
+  return url.toString();
+};
+
 export function parseStory(args: Record<string, unknown>): NewsStory {
   const id = field(args.storyId, "storyId", 120)!;
   if (!/^[a-z0-9][a-z0-9._-]*$/.test(id)) throw new Error("storyId — короткий латинский ключ события, например granola-voice-typing.");
@@ -61,7 +71,7 @@ export function parseStory(args: Record<string, unknown>): NewsStory {
   return { id, edition, rank, section: field(args.section, "рубрику", 60)!, status: field(args.status, "статус", 40)!, title: field(args.title, "заголовок", 200)!,
     summary: field(args.summary, "краткое содержание", 1000)!, body: field(args.body, "что произошло", 4000)!, view: field(args.view, "вывод", 1500, false),
     check: field(args.check, "что проверить", 1500, false), verification: field(args.verification, "что проверено", 800)!, eventAt: instant(args.eventAt, "время события"),
-    change: field(args.change, "изменение", 600, false), sources, telegram: delivery(args.telegram) };
+    change: field(args.change, "изменение", 600, false), sources, telegram: delivery(args.telegram), image: picture(args.image) };
 }
 
 /** The same story as Markdown, for the chat, older clients and the model's own context. */
@@ -97,7 +107,7 @@ export function publishEdition(store: Store, conversationId: string, args: Recor
   const selected = ids.map(id => { const story = available.get(id); if (!story) throw new Error(`История ${id} не найдена в недавних новостях этого чата.`); return story; });
   store.db.exec("BEGIN IMMEDIATE");
   try {
-    for (const [index, story] of selected.entries()) publishStory(store, conversationId, { ...story, storyId: story.id, edition, rank: index + 1, change: null, telegram: null });
+    for (const [index, story] of selected.entries()) publishStory(store, conversationId, { ...story, storyId: story.id, edition, rank: index + 1, change: null, telegram: null, image: story.image ?? null });
     store.setSetting(editionKey(conversationId), JSON.stringify({ edition, storyIds: ids, ...title ? { title } : {}, ...intro ? { intro } : {}, ...top ? { top } : {} }));
     store.db.exec("COMMIT");
   } catch (error) { store.db.exec("ROLLBACK"); throw error; }

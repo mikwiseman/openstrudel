@@ -47,6 +47,8 @@ export interface NewsStory {
   sources: Array<{ title: string; url: string; role: string; publishedAt: string | null }>;
   /** How this version reaches the desk's Telegram chat: "alert" with sound, "card" silently; null or absent stays in the app and the edition. */
   telegram?: "alert" | "card" | null;
+  /** A picture that proves the story, shown on top of its Telegram post: a chart, a table, a screenshot from a source. */
+  image?: string | null;
 }
 
 export interface Attachment { id: string; conversationId: string; name: string; mimeType: string; size: number; }

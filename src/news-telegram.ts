@@ -53,6 +53,16 @@ export function storyCard(story: NewsStory, zone: string | null): string {
     .filter(Boolean).join("\n\n");
 }
 
+/** The same post with the story's picture on top, as a rich message: Telegram fetches the picture itself, and refuses the whole
+ * message when it cannot, in which case the post goes out as text with a preview of its first source. */
+export function pictureCard(story: NewsStory, zone: string | null): string | null {
+  if (!story.image) return null;
+  const day = eventDay(story, zone);
+  return [`<img src="${attribute(story.image)}"/>`, `<p><b>${html(oneLine(story.title))}</b></p>`,
+    ...paragraphs(story.summary).map(paragraph => `<p>${html(paragraph)}</p>`), story.view ? `<p>→ ${html(oneLine(story.view))}</p>` : "",
+    `<p>${[...links(story).map(source => `<a href="${attribute(source.url)}">${html(label(source))}</a>`), ...day ? [html(day)] : []].join(" · ")}</p>`].join("");
+}
+
 /** A development, sent as a reply under the story's first post: the reply already shows the story, so this says what kind of news it is and what changed. */
 export function storyUpdate(story: NewsStory, zone: string | null): string {
   return [`↻ **${plain(oneLine(story.status))}**`, ...paragraphs(story.change ?? story.summary).map(plain), footer(story, zone)].join("\n\n");
@@ -160,7 +170,7 @@ export async function deliverStory(desk: NewsDesk, messageId: string, now = new 
       if (same) return { sent: false, sameSourceAs: same, reason: `Story ${same} with the same first source went out this week. Publish a development under that storyId, with change, instead.` };
       const alert = story.telegram === "alert" && loud(desk, chatId, zone, now);
       return outcome(await desk.telegram!.sendToChat({ chatId, text: storyCard(story, zone), files: [], externalId: storyPost(chatId, desk.conversationId, story.id),
-        silent: !alert, preview: story.sources[0]!.url }), alert ? "alert" : "card");
+        silent: !alert, preview: story.sources[0]!.url, ...story.image ? { rich: pictureCard(story, zone)! } : {} }), alert ? "alert" : "card");
     }
     const parts = desk.store.db.prepare("SELECT status, message_id AS id FROM telegram_outbox WHERE key>=? AND key<? ORDER BY key")
       .all(`${chatId}:reply:${first.id}:`, `${chatId}:reply:${first.id}:￿`) as Array<{ status: string; id: string | null }>;
