@@ -143,18 +143,41 @@ export function saveDailyMetrics(store: Store, viewerId: string, input: unknown,
   const scores = body.scores as Row;
   if (!scores || typeof scores !== "object" || Array.isArray(scores) || Object.keys(scores).length !== 4 || METRICS.some(metric => !Number.isInteger(scores[metric]) || scores[metric] < 1 || scores[metric] > 10))
     throw new HomeError("Choose four ratings from 1 to 10.", 400);
+  writeScores(store, config, person, today, scores as Record<Metric, number>, now);
+  return readDailyMetrics(store, viewerId, now);
+}
+
+function writeScores(store: Store, config: DailyMetricsConfig, person: Person, date: string, scores: Record<Metric, number>, now: Date): void {
   const at = now.toISOString(), options = Array.from({ length: 10 }, (_, i) => String(i + 1));
   store.db.exec("BEGIN IMMEDIATE");
   try {
     for (const metric of METRICS) {
-      const pollId = `daily-metrics:${config.metrics[metric]}:${today}`;
-      recordPoll(store, { pollId, scheduleId: config.metrics[metric], conversationId: config.conversationId, chatId: config.chatId, messageId: null, localDate: today, question: labels[metric], options, createdAt: at });
+      const pollId = `daily-metrics:${config.metrics[metric]}:${date}`;
+      recordPoll(store, { pollId, scheduleId: config.metrics[metric], conversationId: config.conversationId, chatId: config.chatId, messageId: null, localDate: date, question: labels[metric], options, createdAt: at });
       store.db.prepare("UPDATE schedule_polls SET closed=1 WHERE poll_id=?").run(pollId);
       recordAnswer(store, { pollId, userId: person.id, userName: person.name, optionIds: [scores[metric] - 1], at });
     }
     store.db.exec("COMMIT");
   } catch (error) { store.db.exec("ROLLBACK"); throw error; }
-  return readDailyMetrics(store, viewerId, now);
+}
+
+/** A Home administrator records the four scores a participant gave in chat, for today or an earlier day the journal shows. */
+export function recordDailyMetrics(store: Store, input: unknown, now = new Date()) {
+  const config = dailyMetricsConfig(store), body = input as Row;
+  const named = typeof body?.participant === "string" ? body.participant.trim().toLocaleLowerCase() : "";
+  const person = config.participants.find(person => [person.id, person.name, metricsDisplayName(person.name)].some(name => name.toLocaleLowerCase() === named));
+  if (!person) throw new HomeError(`Name the participant: ${config.participants.map(person => `${person.id} (${metricsDisplayName(person.name)})`).join(", ")}.`, 400);
+  const today = localDate(now, config.timezone), date = body.date;
+  if (!Array.from({ length: 30 }, (_, days) => shiftDate(today, days)).includes(date))
+    throw new HomeError(`Give the date as YYYY-MM-DD, from ${shiftDate(today, 29)} to ${today}.`, 400);
+  const scores = body.scores as Row;
+  if (!scores || typeof scores !== "object" || Array.isArray(scores) || Object.keys(scores).length !== 4 || METRICS.some(metric => !Number.isInteger(scores[metric]) || scores[metric] < 1 || scores[metric] > 10))
+    throw new HomeError("Give four ratings from 1 to 10: calm, focus, energy and mood.", 400);
+  if (store.getSetting("home.transfer")) throw new HomeError("Wait for the update to finish and try again.", 409);
+  assertAgentWritable(store, store.getConversation(config.conversationId)?.profileId ?? "main");
+  writeScores(store, config, person, date, scores as Record<Metric, number>, now);
+  const saved = readDailyMetrics(store, person.id, now).days.find(day => day.date === date)?.values[person.id];
+  return { saved: true, participant: metricsDisplayName(person.name), date, scores: saved };
 }
 
 /** The morning message uses the exact same normalized facts as the Mini App. */

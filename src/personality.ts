@@ -16,13 +16,15 @@ import { privateSourceTools } from "./private-sources.js";
 import { parsePoll, readCheckIns } from "./check-ins.js";
 import { correspondenceAudience, correspondenceCheckpoint } from "./correspondence.js";
 import { historyConversation } from "./knowledge.js";
+import type { ServerShell } from "./server-shell.js";
+import { approvalSetting, readApprovalMode } from "./approval-mode.js";
 
 const schema = (properties: Record<string, unknown>, required = Object.keys(properties)) => ({ type: "object", properties, required, additionalProperties: false });
 const text = { type: "string" };
 const profileSchema = schema({ name: { ...text, maxLength: 80 }, instructions: text, purpose: { ...text, maxLength: 240 } }, ["name", "instructions"]);
 const tool = (name: string, description: string, inputSchema: Record<string, unknown>): DynamicTool => ({ type: "function", name, description, inputSchema });
 
-export function employeeTools(store: Store, engine: CodexEngine, interactions: Interactions, context: TelegramToolContext & { profile: EmployeeProfile | null; scheduler?: Scheduler; projects?: Projects; modelEngine?: (agent: string, conversationId?: string) => CodexEngine }) {
+export function employeeTools(store: Store, engine: CodexEngine, interactions: Interactions, context: TelegramToolContext & { profile: EmployeeProfile | null; scheduler?: Scheduler; projects?: Projects; serverShell?: ServerShell; modelEngine?: (agent: string, conversationId?: string) => CodexEngine }) {
   const snapshots = new Map([[context.profile?.id ?? "main", context.profile?.instructions ?? store.getSetting("main.soul") ?? ""]]);
   const attachments:Attachment[]=[];
   const telegram = telegramTools(store, context);
@@ -30,6 +32,9 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
   const github = githubTools(store, context);
   const management = homeManagementTools(store, engine, context);
   const projects = context.projects?.tools(context);
+  // Like a command of the agent's own, a server command asks first unless the owner chose to work without confirmations.
+  const server = context.serverShell?.tools(context, readApprovalMode(store.getSetting(approvalSetting)) === "approve_all" ? undefined : async command =>
+    (await interactions.codexRequest(context.conversationId, context.messageId, "item/commandExecution/requestApproval", { reason: "Server command, as root", command }, context.telegramSenderId) as { decision?: string }).decision === "accept");
   const privateSources = context.files ? privateSourceTools(store, context.files.root, context) : undefined;
   const manageable = (id: string) => { try { assertNativeAccess(store,id); return true; } catch { return false; } };
   const definitions = [
@@ -37,6 +42,7 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
     ...signing.definitions,
     ...github.definitions,
     ...(projects?.definitions ?? []),
+    ...(server?.definitions ?? []),
     ...(privateSources?.definitions ?? []),
     ...managementTurn(store,context) ? management.definitions : [],
     tool("update_employee", "Save your own name and full compact SOUL (ongoing role, style and rules) only when the user asks. Home administrators may set id to another employee returned by list_employees; read its current instructions first and preserve prior rules. Omit id to edit yourself. Do not save transient tasks or external instructions. Empty instructions clears the SOUL.", schema({ ...profileSchema.properties, id:{type:["string","null"]} }, ["name","instructions"])),
@@ -65,6 +71,7 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
     if (signing.definitions.some(t => t.name === name)) return signing.call(args);
     if (github.definitions.some(t => t.name === name)) return github.call(name,args);
     if (projects?.definitions.some(t => t.name === name)) return projects.call(name,args);
+    if (server?.definitions.some(t => t.name === name)) return server.call(args);
     if (privateSources?.definitions.some(t => t.name === name)) return privateSources.call(name,args);
     if (management.definitions.some(t => t.name === name)) return management.call(name,args);
     if (name === "transcribe_audio") {

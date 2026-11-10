@@ -29,6 +29,7 @@ import { contextIdentity, contextPrompt, contextSummary } from "./message-contex
 import { resolveScopedAuthorization, assertScopedAuthorization, type ScopedAuthorization } from "./authorization.js";
 import type { RestrictedExecutor } from "./restricted-executor.js";
 import { Projects, type ProjectRun } from "./projects.js";
+import { ServerShell } from "./server-shell.js";
 import { ensureUsageTable, recordTurnUsage, type TurnRoute, type UsageReport } from "./usage.js";
 
 type QueuedMessage = { id: string; channel: string; run: () => Promise<MessageResult>; resolve: (result: MessageResult) => void; reject: (error: unknown) => void };
@@ -52,6 +53,7 @@ export class MessageService {
   onAuthenticationError?: () => void;
   readonly files: ConversationFiles;
   readonly projects: Projects;
+  readonly serverShell: ServerShell;
   get hasActiveRuns(): boolean { return this.inflight.size > 0; }
   /** A queued or running turn in this conversation. */
   isRunning(conversationId: string): boolean { return this.drains.has(conversationId); }
@@ -60,7 +62,11 @@ export class MessageService {
     return (this.queues.get(conversationId)?.length ?? 0) + (this.drains.has(conversationId) ? 1 : 0) >= limit;
   }
 
-  constructor(private readonly store: Store, private readonly engine: CodexEngine, private readonly root = process.cwd()) { this.files = new ConversationFiles(store,root); this.projects = new Projects(store,root); ensureUsageTable(store); }
+  constructor(private readonly store: Store, private readonly engine: CodexEngine, private readonly root = process.cwd()) {
+    this.files = new ConversationFiles(store,root); this.projects = new Projects(store,root); ensureUsageTable(store);
+    // A server command's late result goes to the private chat that asked for it, through the durable outbox.
+    this.serverShell = new ServerShell(store, root, async (notice, chat) => { if (chat) await this.telegram?.sendMessage(chat, notice.text, "operation:" + notice.id); });
+  }
 
   async handle(input: MessageInput): Promise<MessageResult> { return (await this.submit(input)).completion; }
 
@@ -235,7 +241,7 @@ export class MessageService {
         route = selection;
         const nativeSources = selection.provider === "chatgpt" || providerInfo(selection.provider ?? "")?.engine === "codex";
         projectRun = await this.projects.begin(currentProfile?.id ?? "main", { conversationId:current.id,messageId:inbound.id,channel:input.channel,scope:context,scheduled,byOwner:input.byOwner,telegramSenderId:input.telegramSenderId,access }, nativeSources);
-        const tools = employeeTools(this.store, engine, this.interactions, { profile: currentProfile, conversationId: current.id, messageId: inbound.id, channel: input.channel, scheduler: this.scheduler, projects:this.projects, scheduled,scheduleTelegramChatId:input.scheduleTelegramChatId,files:this.files,scope:context,telegram:this.telegram,byOwner:input.byOwner,telegramSenderId:input.telegramSenderId,access,
+        const tools = employeeTools(this.store, engine, this.interactions, { profile: currentProfile, conversationId: current.id, messageId: inbound.id, channel: input.channel, scheduler: this.scheduler, projects:this.projects, serverShell:this.serverShell, scheduled,scheduleTelegramChatId:input.scheduleTelegramChatId,files:this.files,scope:context,telegram:this.telegram,byOwner:input.byOwner,telegramSenderId:input.telegramSenderId,access,
           modelEngine: (agent, conversationId) => { const scope = conversationId ? this.contextFor(conversationId) : this.store.getSetting("employee.context." + agent) ?? this.store.getProfile(agent)?.domain ?? "personal"; return this.engine.forAgent?.(agent,scope,conversationId) ?? this.engine.forContext?.(scope) ?? this.engine; } });
         const fast = !scheduled && fastChat(this.store, currentProfile?.id ?? "main", current.id, groupContext);
         const issues = !currentProfile && input.byOwner && !groupContext ? runtimeIssues(this.store) : [];
