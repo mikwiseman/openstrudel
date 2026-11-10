@@ -106,6 +106,7 @@
 		55158A4F99653D3B77C66B0B /* VoiceCaptureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3632EDAD60D7F3E6FD727338 /* VoiceCaptureTests.swift */; };
 		55328E9EFB5894286615ECEE /* EmployeeDetailsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33F18D9D3F39EB73C2B9EA58 /* EmployeeDetailsView.swift */; };
 		560FF57ABD82465699F6A934 /* ComputerUseSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D5BFE0BC5B186652ED8336B /* ComputerUseSettingsView.swift */; };
+		574222C8A01713C29FFFD5F2 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B31FEA6F71B379758F886BB /* HomeView.swift */; };
 		5785006166AD53761DA29454 /* ChatMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3D241925EF81E938247C15 /* ChatMedia.swift */; };
 		588CD75B3C1F9C3EE35BC4F4 /* AgentAppearanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACD91A75580ED25308693AB1 /* AgentAppearanceTests.swift */; };
 		59DBFFCCB9930F45EC2895BB /* SpeechSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62C64488686837DBAC256242 /* SpeechSettingsView.swift */; };
@@ -120,6 +121,7 @@
 		605C0ED95C9C79FCD1EACED1 /* AgentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97A6C72C5E00D5723795E8B1 /* AgentTransfer.swift */; };
 		6233DE5478EEF12B4815FD6E /* LocalHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96054101E4801A6BCC170C1 /* LocalHome.swift */; };
 		625160DEF13AE979881A7D90 /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7931B52BD35166C87C0FF19 /* Localization.swift */; };
+		6297FD417FE0977DCE621F4A /* Tiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9D548BC0AB8840AA2B515F5 /* Tiles.swift */; };
 		631BE06D25300A0E399F2E28 /* AppIconAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B9B3467FCD3522515AD8F38 /* AppIconAppearance.swift */; };
 		63497E44A5FAA3B8E94C0FF6 /* StorePreviewUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63F40AD948917E9AE1685058 /* StorePreviewUITests.swift */; };
 		64365D840FC1C3F656F9447B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = E29C1F0D3A0FE125E35B565D /* PrivacyInfo.xcprivacy */; };
@@ -135,6 +137,7 @@
 		73A81366D0B0ECDA222A33B2 /* CheckInUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB44488FE2045546CBCCDA70 /* CheckInUITests.swift */; };
 		73B03D8CFAA468155892B8CE /* Onboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = D876C3A741AA6365F9AD6CA9 /* Onboarding.swift */; };
 		743B679CE71BB0F2E77EB325 /* NewsDesk.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF7E1A954A1F760E7CD0A27A /* NewsDesk.swift */; };
+		74DB8731E84D29FA70CEABB5 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B31FEA6F71B379758F886BB /* HomeView.swift */; };
 		75068D0AF3CF577A1234FC81 /* TeamTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ACBA4E54F49259DD6E720C9 /* TeamTests.swift */; };
 		76A9DEA63806F5B706E1F523 /* AgentAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A54DEED2D78EBBD77B24825 /* AgentAppearance.swift */; };
 		76BF370363AC2C6470E67CBE /* LocalHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96054101E4801A6BCC170C1 /* LocalHome.swift */; };
@@ -188,6 +191,7 @@
 		A082498E04119206CD4EEF84 /* AgentMetalSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20DE458DAEF5AEAD07827EFE /* AgentMetalSetupView.swift */; };
 		A164C5DB09FEADCF6861BF35 /* SetupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A635A0DA48A1D907252A7BCB /* SetupViews.swift */; };
 		A29435710511A8C352C77D66 /* HomeMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = B49A5A4FE8FCDBCA5997D859 /* HomeMenu.swift */; };
+		A2A76F3063FC43EB54D3D8FB /* Tiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9D548BC0AB8840AA2B515F5 /* Tiles.swift */; };
 		A2F6451B2ED5D4B7D2BCB49F /* AccountPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FF3B00343E901A071B57444 /* AccountPresentationTests.swift */; };
 		A3A89F6317E0E47EE5AF44AB /* wai-vds-v2.json in Resources */ = {isa = PBXBuildFile; fileRef = 4AF0B9DD514B9520C3BB378E /* wai-vds-v2.json */; };
 		A468660D4A41BD2C0F719FDB /* AgentTransferViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31C9D3DF0BCBDC8DE546D88B /* AgentTransferViews.swift */; };
@@ -357,6 +361,7 @@
 		63F40AD948917E9AE1685058 /* StorePreviewUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorePreviewUITests.swift; sourceTree = "<group>"; };
 		66CDD484876EBAD4367D26A0 /* DictationAssets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationAssets.swift; sourceTree = "<group>"; };
 		680E20C305BC52A853E797DD /* OpenStrudelApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenStrudelApp.swift; sourceTree = "<group>"; };
+		6B31FEA6F71B379758F886BB /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		6B5A8A2A8A51E792A7C05A7F /* LocalDataResetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalDataResetView.swift; sourceTree = "<group>"; };
 		6D1AB12278F64C5C7247C698 /* DesignAccessibilityUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignAccessibilityUITests.swift; sourceTree = "<group>"; };
 		6DA7A5FC9D1A46B7D5486153 /* ChatClockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatClockTests.swift; sourceTree = "<group>"; };
@@ -399,6 +404,7 @@
 		B6C96E0E732FE8B6FA28C254 /* SSHConnectionReadinessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHConnectionReadinessTests.swift; sourceTree = "<group>"; };
 		B7931B52BD35166C87C0FF19 /* Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Localization.swift; sourceTree = "<group>"; };
 		B7D5915CD8A5BE97A8F26A07 /* StatisticsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsModel.swift; sourceTree = "<group>"; };
+		B9D548BC0AB8840AA2B515F5 /* Tiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tiles.swift; sourceTree = "<group>"; };
 		BB5A498CE63F565808D4C17D /* ReaderViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderViews.swift; sourceTree = "<group>"; };
 		BD7DB4FB17EFAAD759697818 /* ConnectDeviceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectDeviceView.swift; sourceTree = "<group>"; };
 		BD837B6CE9DB1E11DBE9F5CB /* TeamUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamUITests.swift; sourceTree = "<group>"; };
@@ -529,6 +535,7 @@
 				75DCFF9D5E311EA2C0891A41 /* ExtensionSetupView.swift */,
 				D671F62812BA20E0AF9CB2FA /* HomeClient.swift */,
 				B49A5A4FE8FCDBCA5997D859 /* HomeMenu.swift */,
+				6B31FEA6F71B379758F886BB /* HomeView.swift */,
 				2B99FD977A6DF945EF17152E /* HostingStore.swift */,
 				FCBC21712E63C28B07D8B114 /* HostingStoreView.swift */,
 				3B1CA4A01722F775952B9530 /* LocalDataReset.swift */,
@@ -564,6 +571,7 @@
 				EA51F25003FC05690E6B7E44 /* TeamViews.swift */,
 				31C40E4BEA4DD9523E6ADCA1 /* TelegramLink.swift */,
 				36B92676161A3FD9E3889C48 /* TelegramSetupView.swift */,
+				B9D548BC0AB8840AA2B515F5 /* Tiles.swift */,
 				83AF568810BAD713BF382ED0 /* Transcript.swift */,
 				BEB733894E124793EDA9ACA3 /* TranscriptStack.swift */,
 				2E2B037D5BBDE8A17342F544 /* VoiceCapture.swift */,
@@ -1014,6 +1022,7 @@
 				85DCDAD404A8CAF5A70DE7D1 /* ExtensionSetupView.swift in Sources */,
 				8264AD8368237A515B1B219D /* HomeClient.swift in Sources */,
 				A29435710511A8C352C77D66 /* HomeMenu.swift in Sources */,
+				74DB8731E84D29FA70CEABB5 /* HomeView.swift in Sources */,
 				7CB4918D49632B6169D77921 /* HostingStore.swift in Sources */,
 				CD75994175CD842296C958F9 /* HostingStoreView.swift in Sources */,
 				1EB1AE21EA4C3C7C5DF63CD6 /* LocalDataReset.swift in Sources */,
@@ -1048,6 +1057,7 @@
 				E9BB8C45A2A21106C3B2D870 /* TeamViews.swift in Sources */,
 				A79B998AC283916B7DEAB006 /* TelegramLink.swift in Sources */,
 				5B5A34FD1B9C22C5A8BD6238 /* TelegramSetupView.swift in Sources */,
+				6297FD417FE0977DCE621F4A /* Tiles.swift in Sources */,
 				EB3510AA3FF791EFDE6F447F /* Transcript.swift in Sources */,
 				8C0B60605D75DD5E9713446C /* TranscriptStack.swift in Sources */,
 				0904BDBFA3C19E8CFB674BF5 /* VoiceCapture.swift in Sources */,
@@ -1098,6 +1108,7 @@
 				02C59B29F2AB08336EF37F25 /* ExtensionSetupView.swift in Sources */,
 				714657174DCE32C3AD9148AE /* HomeClient.swift in Sources */,
 				4069A7E903D63727808053A3 /* HomeMenu.swift in Sources */,
+				574222C8A01713C29FFFD5F2 /* HomeView.swift in Sources */,
 				141A8FF96B26F636B9AFAFD3 /* HostingStore.swift in Sources */,
 				12DD11251AE78C340E6B9E47 /* HostingStoreView.swift in Sources */,
 				DB980F43982F1C793D004B7F /* LocalDataReset.swift in Sources */,
@@ -1132,6 +1143,7 @@
 				C8ECA1EB842822AA9EE3421D /* TeamViews.swift in Sources */,
 				9E26129063311A8AF124A802 /* TelegramLink.swift in Sources */,
 				F1930037590FB223FEAA6DC3 /* TelegramSetupView.swift in Sources */,
+				A2A76F3063FC43EB54D3D8FB /* Tiles.swift in Sources */,
 				2A2EDFB745D490042D3AAE58 /* Transcript.swift in Sources */,
 				0A357D80F9C3C9AB33B86C93 /* TranscriptStack.swift in Sources */,
 				A7D9C7172B945D6D1FDB2B68 /* VoiceCapture.swift in Sources */,

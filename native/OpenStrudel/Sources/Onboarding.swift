@@ -35,7 +35,7 @@ enum OnboardingLayout {
         #if os(macOS)
         20
         #else
-        16
+        22
         #endif
     }
 }
@@ -158,10 +158,10 @@ struct WelcomeHeader: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            AgentAvatar(appearance: nil, size: AvatarSize.hero)
+            ToneAvatar(appearance: nil, size: AvatarSize.hero + 16)
             BalancedLines {
                 Text(title)
-                    .font(AppTypography.display)
+                    .font(AppTypography.display).displayTracking()
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
             }

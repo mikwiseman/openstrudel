@@ -47,6 +47,11 @@ enum Team {
         return ""
     }
 
+    /// A message as plain words for a preview of a few lines: every line that says something, without its Markdown.
+    static func plain(_ markdown: String) -> String {
+        markdown.split(whereSeparator: \.isNewline).map { line($0.description) }.filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
     static func date(_ iso: String?) -> Date? {
         guard let iso else { return nil }
         return (try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(iso)) ?? (try? Date.ISO8601FormatStyle().parse(iso))
@@ -70,6 +75,105 @@ enum Team {
             streaks.append((first.at, latest.at, reason?.isEmpty == false ? reason : nil))
         }
         return streaks.max { $0.latest < $1.latest }.map { ($0.since, $0.reason) }
+    }
+}
+
+/// A place the home opens: the chat, someone's page, or one of the pages behind a tile.
+enum HomePlace: Hashable {
+    case chat
+    /// An employee's page, a desk's reader, another Home's assistant, a Telegram chat or an archive.
+    case reader(ReaderRoute)
+    case insights, progress, statistics
+    /// One result or exception, opened from Insights.
+    case insight(HomeActivity.Insight)
+}
+
+/// One tile of the home's shelf. A tile exists only when a Home has something real to put on it.
+enum ShelfTile: Identifiable, Equatable {
+    /// A desk's lead story, with its picture when it has one.
+    case desk(route: ReaderRoute, name: String, appearance: AgentAppearance, title: String, image: String?, host: String?, unseen: Int)
+    /// What needs the owner, then what was done.
+    case important(open: [String], done: [String])
+    /// The nearest scheduled run.
+    case next(route: ReaderRoute, name: String, at: Date)
+    /// How much of a subscription's window is used, 0…1.
+    case limit(used: Double, weekly: Bool)
+    case progress(done: Int)
+    /// An employee's answer of the last day that came with a picture.
+    case result(route: ReaderRoute, name: String, appearance: AgentAppearance, text: String, file: ChatAttachment)
+
+    var id: String {
+        switch self {
+        case .desk(let route, _, _, _, _, _, _): "desk:" + route.id
+        case .important: "important"
+        case .next: "next"
+        case .limit: "limit"
+        case .progress: "progress"
+        case .result(let route, _, _, _, _): "result:" + route.id
+        }
+    }
+    var place: HomePlace {
+        switch self {
+        case .desk(let route, _, _, _, _, _, _), .next(let route, _, _), .result(let route, _, _, _, _): .reader(route)
+        case .important: .insights
+        case .limit: .statistics
+        case .progress: .progress
+        }
+    }
+}
+
+enum Shelf {
+    struct Desk { let route: ReaderRoute; let name: String; let appearance: AgentAppearance; let story: NewsStory?; let host: String?; let unseen: Int }
+
+    /// Today's work in the order the shelf shows it: each desk's lead, what matters, the next run, the limit, progress,
+    /// then the answers that came with a picture.
+    static func tiles(desks: [Desk], activity: HomeActivity?, next: (route: ReaderRoute, name: String, at: Date)?, accounts: [ManagedCodexAccount],
+                      results: [ShelfTile] = []) -> [ShelfTile] {
+        var tiles = desks.compactMap { desk in
+            desk.story.map { ShelfTile.desk(route: desk.route, name: desk.name, appearance: desk.appearance, title: $0.title, image: $0.image, host: desk.host, unseen: desk.unseen) }
+        }
+        if let activity {
+            // Who needs the owner, each once; the Home's own sentence about it is the same for all and waits on the page.
+            var seen = Set<String>()
+            let open = activity.attention.map(\.employeeName).filter { seen.insert($0).inserted }.prefix(3)
+            let done = activity.results.prefix(3 - open.count).map(\.title)
+            if !open.isEmpty || !done.isEmpty { tiles.append(.important(open: Array(open), done: Array(done))) }
+        }
+        if let next { tiles.append(.next(route: next.route, name: next.name, at: next.at)) }
+        if let limit = limit(accounts) { tiles.append(.limit(used: limit.used, weekly: limit.weekly)) }
+        if let progress = activity?.progress, progress.completedRequests + progress.completedRuns > 0 {
+            tiles.append(.progress(done: progress.completedRequests + progress.completedRuns))
+        }
+        return tiles + results
+    }
+
+    /// The employees whose latest answer is from the last day and came with a picture kept on their Home. A desk shows
+    /// its story instead.
+    static func results(_ team: [(route: ReaderRoute, profile: EmployeeProfile)], now: Date = .now) -> [ShelfTile] {
+        team.compactMap { row in
+            guard row.profile.news != true, let file = row.profile.previewImage, file.mimeType.hasPrefix("image/"), ChatAttachment.isHomeFileID(file.id),
+                  let at = Team.date(row.profile.previewAt), now.timeIntervalSince(at) < 86_400 else { return nil }
+            return .result(route: row.route, name: row.profile.name, appearance: row.profile.resolvedAppearance, text: row.profile.previewText, file: file)
+        }
+    }
+
+    /// The fullest window the subscriptions report: the week's when there is one, otherwise any.
+    static func limit(_ accounts: [ManagedCodexAccount]) -> (used: Double, weekly: Bool)? {
+        let windows = accounts.flatMap(\.usage.windows).compactMap { window in window.remainingPercent.map { (used: min(1, max(0, 1 - $0 / 100)), weekly: window.windowDurationMins == 10080) } }
+        let weekly = windows.filter(\.weekly)
+        return (weekly.isEmpty ? windows : weekly).max { $0.used < $1.used }
+    }
+
+    /// The nearest run among the employees in sight that have one ahead.
+    static func next(_ team: [(route: ReaderRoute, profile: EmployeeProfile)], now: Date = .now) -> (route: ReaderRoute, name: String, at: Date)? {
+        team.compactMap { row in Team.date(row.profile.nextRunAt).flatMap { $0 > now ? (route: row.route, name: row.profile.name, at: $0) : nil } }.min { $0.at < $1.at }
+    }
+
+    /// The shelf as columns: one row of tiles up to three, two rows beyond, the first half on top.
+    static func columns(_ tiles: [ShelfTile]) -> [[ShelfTile]] {
+        guard tiles.count > 3 else { return tiles.map { [$0] } }
+        let top = (tiles.count + 1) / 2
+        return (0..<top).map { index in [tiles[index]] + (top + index < tiles.count ? [tiles[top + index]] : []) }
     }
 }
 
@@ -99,8 +203,9 @@ struct TeamWords {
         if calendar.isDate(date, inSameDayAs: now) { return self("\(Int(seconds / 3600)) ч") }
         let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: now)).day ?? 0
         if days == 1 { return self("вчера") }
-        if days < 7 { return date.formatted(style.weekday(.abbreviated)) }
-        return date.formatted(calendar.isDate(date, equalTo: now, toGranularity: .year) ? style.day().month(.abbreviated) : style.day().month(.abbreviated).year())
+        // A row's corner is written small: «сб», «3 нояб.», as «вчера» is.
+        if days < 7 { return date.formatted(style.weekday(.abbreviated)).lowercased(with: language.locale) }
+        return date.formatted(calendar.isDate(date, equalTo: now, toGranularity: .year) ? style.day().month(.abbreviated) : style.day().month(.abbreviated).year()).lowercased(with: language.locale)
     }
 
     /// A moment as a person would say it: «сегодня в 18:30», «завтра в 06:45», «12 ноября в 07:15».
@@ -111,6 +216,13 @@ struct TeamWords {
         if days == -1 { return self("вчера в \(time(date))") }
         let day = date.formatted(calendar.isDate(date, equalTo: now, toGranularity: .year) ? style.day().month(.wide) : style.day().month(.wide).year())
         return self("\(day) в \(time(date))")
+    }
+
+    /// The day alone, for a tile's small line: «сегодня», «завтра», «14 нояб.»
+    func day(_ date: Date, now: Date = .now) -> String {
+        if calendar.isDate(date, inSameDayAs: now) { return self("сегодня") }
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: date)).day ?? 0
+        return days == 1 ? self("завтра") : date.formatted(style.day().month(.abbreviated)).lowercased(with: language.locale)
     }
 
     /// «Следующий запуск завтра в 06:45»: what a row answers when the pointer rests on it.

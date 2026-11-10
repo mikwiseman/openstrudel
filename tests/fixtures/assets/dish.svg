@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="900" viewBox="0 0 900 900">
+  <!-- An invented picture for the UI fixtures: a plate of pasta from above. -->
+  <defs>
+    <radialGradient id="table" cx="0.35" cy="0.3" r="0.9">
+      <stop offset="0" stop-color="#C8553D"/>
+      <stop offset="1" stop-color="#8E2F23"/>
+    </radialGradient>
+    <radialGradient id="plate" cx="0.42" cy="0.38" r="0.7">
+      <stop offset="0" stop-color="#FFFDF7"/>
+      <stop offset="1" stop-color="#E9E2D3"/>
+    </radialGradient>
+  </defs>
+  <rect width="900" height="900" fill="url(#table)"/>
+  <circle cx="470" cy="500" r="330" fill="#5E1E16" opacity="0.35"/>
+  <circle cx="450" cy="470" r="330" fill="url(#plate)"/>
+  <circle cx="450" cy="470" r="236" fill="none" stroke="#DDD4C2" stroke-width="6"/>
+  <g fill="none" stroke="#F0C766" stroke-width="26" stroke-linecap="round">
+    <path d="M300 470 C330 360 520 340 590 430 C640 500 560 610 450 600 C360 590 330 520 380 470 C420 430 500 440 520 490"/>
+    <path d="M330 530 C400 620 560 600 600 500"/>
+    <path d="M350 410 C420 350 540 370 570 450"/>
+  </g>
+  <circle cx="400" cy="440" r="34" fill="#D8442F"/>
+  <circle cx="520" cy="530" r="30" fill="#D8442F"/>
+  <circle cx="470" cy="400" r="24" fill="#E0573F"/>
+  <path d="M430 520 C450 480 500 480 505 520 C480 545 450 545 430 520 Z" fill="#3F8F4E"/>
+  <path d="M520 420 C545 395 580 410 575 440 C550 455 530 445 520 420 Z" fill="#4BA05A"/>
+</svg>

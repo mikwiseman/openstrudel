@@ -1,32 +1,64 @@
 import SwiftUI
 
 /// Semantic colors with light, dark and increased-contrast variants (docs/design-system.md).
-/// The canvas belongs to the main window; sheets, forms and popovers keep system backgrounds.
+/// The canvas is warm paper; sheets, forms and popovers keep system backgrounds.
 enum AppTheme {
     static let canvas = Color("CanvasColor")
-    /// Code blocks, file chips, cards, table headers and other people's messages.
+    /// A quiet fill on the paper: code blocks, file chips, source capsules, secondary buttons, other people's messages.
     static let surface = Color("SurfaceColor")
+    /// The face of a card or a data tile: white on the paper, a step above the canvas in dark.
+    static let tile = Color("TileColor")
+    /// The person's bubble is ink, light in dark; its words use `canvas`.
     static let userBubble = Color("UserBubbleColor")
     /// Hairlines and rules only, never an input border.
     static let separator = Color("SeparatorColor")
-    /// The warm graphite system accent: selection, focus, switches and checkboxes.
+    /// The neutral system accent: focus, switches and checkboxes.
     static let accent = Color("AccentColor")
-    /// Ink: links (underlined), the send button and primary fills, whose labels use the canvas colour.
+    /// Ink: text, links (underlined), the send button and primary fills, whose labels use the canvas colour.
     static let accentText = Color("AccentText")
     static let secondaryText = Color("SecondaryText")
+    /// Times and date lines that only place a thing in the day.
+    static let faint = Color("FaintText")
+    /// The one signal colour: something new, someone working, the arrow of a story's view.
+    static let signal = Color("SignalColor")
     static let warning = Color("WarningText")
     static let destructive = Color("DestructiveText")
+}
+
+extension AgentAppearance {
+    /// The paper tint of a character's tone: the circle behind it and its tiles. Nil is the main assistant's apricot.
+    static func tint(_ appearance: AgentAppearance?, dark: Bool) -> Color {
+        let angle = appearance.flatMap { $0.isValid ? angles[$0.tone] : nil } ?? 0
+        let hue = (30 + angle).truncatingRemainder(dividingBy: 360) / 360
+        return dark ? Color(hue: hue, saturation: 0.28, brightness: 0.27) : Color(hue: hue, saturation: 0.17, brightness: 0.975)
+    }
 }
 
 /// One superfamily: SF for the interface and reading, SF Rounded for display, SF Mono for code.
 /// Hebrew falls back to SF Hebrew and SF Hebrew Rounded by itself.
 enum AppTypography {
-    /// Welcome, onboarding and the empty conversation's name.
+    /// Page titles, welcome and onboarding: SF semibold, set tight with `displayTracking`.
     static var display: Font {
         #if os(macOS)
-        .system(size: 28, weight: .semibold, design: .rounded)
+        .system(size: 26, weight: .semibold)
         #else
-        .system(.title, design: .rounded, weight: .semibold)
+        .system(.title, weight: .semibold)
+        #endif
+    }
+    /// Editorial headlines and tile titles: New York medium.
+    static func serif(_ mac: CGFloat, _ style: Font.TextStyle, weight: Font.Weight = .medium) -> Font {
+        #if os(macOS)
+        .system(size: mac, weight: weight, design: .serif)
+        #else
+        .system(style, design: .serif, weight: weight)
+        #endif
+    }
+    /// The small sentence-case label over a tile or a section.
+    static var label: Font {
+        #if os(macOS)
+        .system(size: 12, weight: .semibold)
+        #else
+        .caption.weight(.semibold)
         #endif
     }
     /// Sheet and pane titles inside content.
@@ -95,17 +127,49 @@ enum Layout {
 enum Radius {
     static let control: CGFloat = 8
     static let card: CGFloat = 12
-    static let bubble: CGFloat = 20
-    static let composer: CGFloat = 24
+    static let bubble: CGFloat = 24
+    /// The corner of a bubble that points at its author.
+    static let bubbleTail: CGFloat = 8
+    static let composer: CGFloat = 26
+    /// Cards in the transcript: questions, approvals, files.
+    static let cardTile: CGFloat = 28
 }
 
 enum AvatarSize {
     static let toolbar: CGFloat = 24
-    /// A row of the Mac sidebar's team list.
-    static let sidebar: CGFloat = 32
+    /// The character in a title capsule.
+    static let capsule: CGFloat = 30
     static let row: CGFloat = 36
+    /// A row of the team list: 54 on a phone, 40 in the Mac sidebar.
+    static var team: CGFloat {
+        #if os(macOS)
+        40
+        #else
+        54
+        #endif
+    }
     static let header: CGFloat = 64
     static let hero: CGFloat = 96
+}
+
+extension View {
+    /// Display type is set tight; the larger the type, the tighter.
+    func displayTracking(_ amount: CGFloat = -0.6) -> some View { tracking(amount) }
+
+    /// The paper rising softly behind a floating control at the bottom, so what scrolls under it fades instead of
+    /// showing through. Glass stays glass; this is the page under it.
+    func dockFade() -> some View {
+        background {
+            LinearGradient(stops: [.init(color: AppTheme.canvas.opacity(0), location: 0), .init(color: AppTheme.canvas.opacity(0.9), location: 0.28), .init(color: AppTheme.canvas, location: 0.5)],
+                           startPoint: .top, endPoint: .bottom)
+                .padding(.top, -28).ignoresSafeArea(edges: .bottom).allowsHitTesting(false)
+        }
+    }
+
+    /// The soft two-layer shadow under a tile or a card; none where the reader asked for more contrast.
+    func tileShadow(_ strength: Double = 1) -> some View {
+        shadow(color: .black.opacity(0.10 * strength), radius: 13, y: 10).shadow(color: .black.opacity(0.05 * strength), radius: 2, y: 1)
+    }
 }
 
 extension View {

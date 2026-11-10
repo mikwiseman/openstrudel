@@ -3,25 +3,27 @@ import PhotosUI
 import UniformTypeIdentifiers
 
 /// The composer's grid. Controls hang in gutters on both sides, so all text inside the glass
-/// starts on one edge, and every shape inside is concentric with the 24-pt glass.
+/// starts on one edge, and every shape inside is concentric with the glass. One line of text makes a capsule.
 private enum ComposerMetrics {
     #if os(macOS)
-    /// 8 + 32 + 8 = 48: one line of text makes a capsule.
-    static let padding: CGFloat = 8
-    static let spacing: CGFloat = 8
-    static let glyph = Font.system(size: 16, weight: .medium)
+    /// 9 + 32 + 9 = 50.
+    static let padding: CGFloat = 9
+    static let spacing: CGFloat = 6
+    static let glyph = Font.system(size: 16, weight: .regular)
     static let rowGlyph = Font.system(size: 13, weight: .medium)
+    /// 25 − (9 + (32 − 28) / 2) = 14: the send circle is concentric with the glass.
+    static let send: CGFloat = 28
     #else
-    /// 2 + 44 + 2 = 48 with full-size touch targets.
-    static let padding: CGFloat = 2
-    static let spacing: CGFloat = 4
-    static let glyph = Font.system(size: 19, weight: .medium)
+    /// 5 + 44 + 5 = 54 with full-size touch targets.
+    static let padding: CGFloat = 5
+    static let spacing: CGFloat = 2
+    static let glyph = Font.system(size: 20, weight: .regular)
     static let rowGlyph = Font.system(size: 15, weight: .medium)
+    /// 27 − (5 + (44 − 32) / 2) = 16.
+    static let send: CGFloat = 32
     #endif
     /// Where typed, queued and placeholder text starts.
     static var textEdge: CGFloat { padding + controlTarget + spacing }
-    /// 24 − (padding + (target − 28) / 2) = 14 on both platforms, so the circle is concentric.
-    static let send: CGFloat = 28
     static let tile: CGFloat = 48
     /// 24 − 12 = 12, so attachment tiles are concentric with the glass.
     static let tileInset: CGFloat = Radius.composer - Radius.card
@@ -158,7 +160,8 @@ struct Composer: View {
                         .padding(.leading, ComposerMetrics.textEdge).padding(.trailing, ComposerMetrics.padding).padding(.top, 12)
                 }
                 inputRow.padding(ComposerMetrics.padding)
-                if client.health?.conversationModelsVersion == 1, !client.isEmployeeDraft, let conversationID = client.conversationID {
+                // The model's line appears with the keyboard or the first words; at rest the composer is one capsule.
+                if focused || hasContent, client.health?.conversationModelsVersion == 1, !client.isEmployeeDraft, let conversationID = client.conversationID {
                     HStack {
                         Spacer(minLength: 0)
                         ConversationModelControl(conversationID: conversationID)
@@ -166,9 +169,11 @@ struct Composer: View {
                     }
                     .padding(.horizontal, ComposerMetrics.textEdge)
                     .padding(.bottom, ComposerMetrics.padding)
+                    .transition(.opacity)
                 }
             }
         }
+        .animation(.smooth(duration: 0.2), value: focused || hasContent)
     }
 
     // MARK: Queue and attachments, inside the glass above the text
@@ -260,7 +265,7 @@ struct Composer: View {
         Menu {
             Button(L("Выбрать фото…"), systemImage: "photo") { showPhotos = true }
             Button(L("Прикрепить файл…"), systemImage: "paperclip") { showFiles = true }
-        } label: { controlGlyph("plus") }
+        } label: { ControlGlyph(name: "plus", font: ComposerMetrics.glyph, ink: true) }
             .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
             .accessibilityLabel(L("Прикрепить фото или файл"))
             .help(L("Прикрепить фото или файл до 25 МБ"))
@@ -302,6 +307,10 @@ struct Composer: View {
     }
 
     @ViewBuilder private var inputActions: some View {
+        actions.animation(.spring(response: 0.3, dampingFraction: 0.75), value: hasContent || canStop)
+    }
+
+    @ViewBuilder private var actions: some View {
         HStack(spacing: 0) {
             if showsSendMode {
                 Menu {
@@ -322,7 +331,8 @@ struct Composer: View {
                     Task { await startDictation() }
                 } label: { controlGlyph("mic") }
                     .buttonStyle(.borderless).accessibilityLabel(L("Голосовой ввод")).accessibilityIdentifier("voiceInput")
-                sendButton
+                // The ink circle arrives with something to send, or with an answer to stop.
+                if hasContent || canStop { sendButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
             }
         }
     }
@@ -335,7 +345,7 @@ struct Composer: View {
             else { send(sendMode) }
         } label: {
             Image(systemName: canStop ? "stop.fill" : "arrow.up")
-                .font(.system(size: canStop ? 11 : 13, weight: .bold))
+                .font(.system(size: canStop ? 11 : 14, weight: .bold))
         }
         .buttonStyle(SendButtonStyle())
         .disabled(!canSend || (!hasContent && !canStop))
@@ -445,15 +455,16 @@ private struct SendButtonStyle: ButtonStyle {
     }
 }
 
-/// A borderless control's glyph: SecondaryText, and the system's tertiary while disabled.
+/// A borderless control's glyph: SecondaryText (ink for the plus), and the system's tertiary while disabled.
 private struct ControlGlyph: View {
     @Environment(\.isEnabled) private var isEnabled
     let name: String
     let font: Font
+    var ink = false
 
     var body: some View {
         Image(systemName: name).font(font)
-            .foregroundStyle(isEnabled ? AnyShapeStyle(AppTheme.secondaryText) : AnyShapeStyle(.tertiary))
+            .foregroundStyle(isEnabled ? (ink ? AnyShapeStyle(.primary) : AnyShapeStyle(AppTheme.secondaryText)) : AnyShapeStyle(.tertiary))
             .frame(width: controlTarget, height: controlTarget).contentShape(Rectangle())
     }
 }

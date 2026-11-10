@@ -574,11 +574,14 @@ final class NewsFeed: ObservableObject, Identifiable {
 @MainActor
 final class Newsroom: ObservableObject {
     private var feeds: [String: NewsFeed] = [:]
+    private var changes: [String: AnyCancellable] = [:]
 
     func feed(_ route: ReaderRoute, on client: HomeClient) -> NewsFeed {
         if let feed = feeds[route.id], feed.client === client { return feed }
         let feed = NewsFeed(client: client, route: route)
         feeds[route.id] = feed
+        // The home's shelf shows every desk's lead, so a feed that changes tells whoever watches the newsroom.
+        changes[route.id] = feed.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         return feed
     }
 

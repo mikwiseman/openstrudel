@@ -159,6 +159,82 @@ import Testing
         #expect(words.editionTitle(page, named: NewsEditionTitle(date: "2026-11-08", title: "Стартапы за день"), now: Self.now) == "Выпуск за 8 ноября")
     }
 
+    // MARK: The home's shelf
+
+    private func route(_ profile: String, news: Bool = false) -> ReaderRoute {
+        ReaderRoute(connectionID: "home", kind: news ? .news(profile) : .employee(profile), title: profile)
+    }
+    private func account(_ windows: String) throws -> ManagedCodexAccount {
+        try JSONDecoder().decode(ManagedCodexAccount.self, from: Data("""
+        {"id":"main","name":"Main","activeRuns":0,"loginPending":false,"account":{"connected":true,"email":"reader@example.com","managed":true,"planType":"plus"},
+         "usage":{"checkedAt":"2026-11-10T11:00:00.000Z","ordinaryUsageAllowed":true,"unavailable":false,"windows":[\(windows)]}}
+        """.utf8))
+    }
+
+    @Test func theShelfShowsOnlyWhatIsRealInOneOrder() throws {
+        let story = try JSONDecoder().decode(NewsStory.self, from: Data(#"{"id":"s1","edition":null,"rank":null,"section":"Models","status":"Out","title":"Maple opens its weights","summary":"Three sizes.","body":"B","view":null,"check":null,"verification":"V","eventAt":null,"change":null,"sources":[],"image":"https://example.com/p.png"}"#.utf8))
+        let desk = Shelf.Desk(route: route("news", news: true), name: "News", appearance: AgentAppearance(kind: "coil", tone: 4), story: story, host: "example.com", unseen: 5)
+        let silent = Shelf.Desk(route: route("quiet", news: true), name: "Quiet", appearance: AgentAppearance(kind: "knot", tone: 3), story: nil, host: nil, unseen: 0)
+        let next = (route: route("coach"), name: "Coach", at: Self.instant("2026-11-11T03:45:00.000Z"))
+        let limits = [try account(#"{"name":"5h","remainingPercent":81,"windowDurationMins":300,"resetsAt":1},{"name":"weekly","remainingPercent":32,"windowDurationMins":10080,"resetsAt":1}"#)]
+        let picture = ShelfTile.result(route: route("cook"), name: "Cook", appearance: AgentAppearance(kind: "pillow", tone: 7), text: "Dinner", file: file)
+        // A desk without a story, a Home without activity and an account without limits put nothing on the shelf.
+        #expect(Shelf.tiles(desks: [silent], activity: nil, next: nil, accounts: []).isEmpty)
+        let tiles = Shelf.tiles(desks: [desk, silent], activity: nil, next: next, accounts: limits, results: [picture])
+        #expect(tiles.map(\.id) == ["desk:" + desk.route.id, "next", "limit", "result:" + route("cook").id])
+        #expect(tiles.map(\.place) == [.reader(desk.route), .reader(next.route), .statistics, .reader(route("cook"))])
+        // The fullest week decides the ring; without a weekly window, the fullest of the others.
+        #expect(Shelf.limit(limits)?.weekly == true)
+        #expect(abs((Shelf.limit(limits)?.used ?? 0) - 0.68) < 0.001)
+        let short = try #require(Shelf.limit([try account(#"{"name":"5h","remainingPercent":81,"windowDurationMins":300,"resetsAt":1}"#)]))
+        #expect(!short.weekly && abs(short.used - 0.19) < 0.001)
+        #expect(Shelf.limit([try account("")]) == nil)
+    }
+
+    @Test func upToThreeTilesStandInOneRowAndMoreMakeTwo() {
+        let tile = { (name: String) in ShelfTile.next(route: self.route(name), name: name, at: Self.now) }
+        let rows = { (count: Int) in Shelf.columns((0..<count).map { _ in ShelfTile.progress(done: 1) }).map(\.count) }
+        #expect(Shelf.columns([]).isEmpty)
+        #expect(rows(3) == [1, 1, 1])
+        #expect(rows(4) == [2, 2])
+        #expect(rows(7) == [2, 2, 2, 1])
+        // The first half is the top row, in order.
+        let five = [ShelfTile.important(open: ["A"], done: []), .limit(used: 0.5, weekly: true), .progress(done: 2), tile("x"), .limit(used: 0.1, weekly: false)]
+        #expect(Shelf.columns(five).map { $0.first?.id } == ["important", "limit", "progress"])
+    }
+
+    private var file: ChatAttachment { ChatAttachment(id: "0a0a0a0a-1111-4222-8333-444444444444", conversationId: "c", name: "plate.png", mimeType: "image/png", size: 10) }
+
+    @Test func anAnswerOfTheLastDayWithAPictureGetsATileAndADeskDoesNot() throws {
+        let picture = #","previewImage":{"id":"0a0a0a0a-1111-4222-8333-444444444444","conversationId":"c","name":"plate.png","mimeType":"image/png","size":10}"#
+        let fresh = try profile("cook", "Cook", #","preview":"**Dinner** is pasta","previewAt":"2026-11-10T08:00:00.000Z""# + picture)
+        let old = try profile("painter", "Painter", #","preview":"A poster","previewAt":"2026-11-08T08:00:00.000Z""# + picture)
+        let desk = try profile("news", "News", #","news":true,"preview":"A story","previewAt":"2026-11-10T08:00:00.000Z""# + picture)
+        let words = try profile("writer", "Writer", #","preview":"Only words","previewAt":"2026-11-10T08:00:00.000Z""#)
+        let notes = try profile("clerk", "Clerk", #","preview":"A report","previewAt":"2026-11-10T08:00:00.000Z","previewImage":{"id":"0a0a0a0a-1111-4222-8333-444444444444","conversationId":"c","name":"report.pdf","mimeType":"application/pdf","size":10}"#)
+        let team = [fresh, old, desk, words, notes].map { (route: route($0.id, news: $0.news == true), profile: $0) }
+        #expect(Shelf.results(team, now: Self.now) == [.result(route: route("cook"), name: "Cook", appearance: fresh.resolvedAppearance, text: "Dinner is pasta", file: file)])
+        // An older Home sends no picture at all.
+        #expect(try profile("p", "Plain").previewImage == nil)
+    }
+
+    @Test func theNearestRunAheadIsTheOneOnTheShelfAndItsDayIsAWord() throws {
+        let late = try profile("a", "Late", #","nextRunAt":"2026-11-11T15:30:00.000Z""#), soon = try profile("b", "Soon", #","nextRunAt":"2026-11-10T15:30:00.000Z""#)
+        let past = try profile("c", "Past", #","nextRunAt":"2026-11-10T09:00:00.000Z""#), none = try profile("d", "None")
+        let next = try #require(Shelf.next([late, soon, past, none].map { (route: route($0.id), profile: $0) }, now: Self.now))
+        #expect(next.name == "Soon" && next.route == route("b"))
+        #expect(Shelf.next([(route: route("c"), profile: past), (route: route("d"), profile: none)], now: Self.now) == nil)
+        #expect(russian.day(next.at, now: Self.now) == "сегодня")
+        #expect(russian.day(Self.instant("2026-11-11T03:45:00.000Z"), now: Self.now) == "завтра")
+        #expect(russian.day(Self.instant("2026-11-14T03:45:00.000Z"), now: Self.now) == "14 нояб.")
+        #expect(english.day(Self.instant("2026-11-11T03:45:00.000Z"), now: Self.now) == "tomorrow")
+    }
+
+    @Test func aPreviewOfSeveralLinesIsPlainWords() {
+        #expect(Team.plain("**Ten words** are ready.\n\n1. itinerary\n2. [layover](<https://example.com/a_(b)>)") == "Ten words are ready. itinerary layover")
+        #expect(Team.plain("") == "")
+    }
+
     // MARK: What this device has read
 
     @Test func anEmployeeStartsReadAndANewAnswerIsNewUntilItsPageIsOnScreen() throws {

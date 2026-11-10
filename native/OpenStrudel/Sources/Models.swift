@@ -451,6 +451,8 @@ struct EmployeeProfile: Codable, Identifiable, Hashable {
     var nextRunAt: String? = nil
     /// The latest finished run of one of its schedules failed.
     var failing: Bool? = nil
+    /// The first picture attached to the answer the preview is taken from.
+    var previewImage: ChatAttachment? = nil
     var domain: String? = nil
     var purpose: String? = nil
     var deviceId: String? = nil

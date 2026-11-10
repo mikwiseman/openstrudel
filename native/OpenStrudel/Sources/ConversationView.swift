@@ -17,6 +17,10 @@ struct ConversationView: View {
     #else
     @Binding var showSettings: Bool
     #endif
+    /// Counts the times the chat was opened to write; the composer takes the keyboard on each.
+    var writes = 0
+    /// The chat was opened from the composer capsule: the keyboard comes up with it.
+    var startsWriting = false
     /// Opens the conversations this chat can read.
     let openHistory: () -> Void
     @State private var draft = ""
@@ -37,23 +41,34 @@ struct ConversationView: View {
                 .safeAreaBar(edge: .top, spacing: 0) { topBar }
                 .safeAreaBar(edge: .bottom, spacing: 0) { bottomBar(proxy) }
             #else
-            VStack(spacing: 0) {
-                EmployeeMoveStatusButton()
-                if showsConnectionBanner {
-                    connectionBanner.padding(.horizontal, Layout.edge).padding(.vertical, 8)
+            // The transcript runs under the title capsule and the composer, as on the Mac; what must be said about
+            // the connection sits above it.
+            // Animate scrolling, not pending-row replacement: an implicit
+            // layout animation can loop while the iPad keyboard is visible.
+            transcript(proxy)
+                .safeAreaBar(edge: .top, spacing: 0) {
+                    VStack(spacing: 0) {
+                        EmployeeMoveStatusButton()
+                        if showsConnectionBanner {
+                            connectionBanner.padding(.horizontal, Layout.edge).padding(.vertical, 8)
+                        }
+                        if showsRecoveryNotice {
+                            OpenAIRecoveryNotice()
+                                .padding(.horizontal, Layout.edge).padding(.vertical, 8)
+                        }
+                    }
                 }
-                if showsRecoveryNotice {
-                    OpenAIRecoveryNotice()
-                        .padding(.horizontal, Layout.edge).padding(.vertical, 8)
-                }
-                // Animate scrolling, not pending-row replacement: an implicit
-                // layout animation can loop while the iPad keyboard is visible.
-                transcript(proxy)
-                    .safeAreaBar(edge: .bottom, spacing: 0) { bottomBar(proxy) }
-            }
+                .safeAreaBar(edge: .bottom, spacing: 0) { bottomBar(proxy) }
             #endif
         }
         .task { draft = library.draft(for: draftKey); pickedFiles = library.fileDrafts[draftKey] ?? []; context = library.draftContext(for: draftKey) }
+        .task {
+            guard startsWriting else { return }
+            // After the page has grown out of the capsule, so the keyboard does not fight the zoom.
+            try? await Task.sleep(for: .milliseconds(350))
+            focused = true
+        }
+        .onChange(of: writes) { _, _ in focused = true }
         .onChange(of: client.openAIAccount?.connected) { _, connected in
             if connected == false { focused = false }
         }
@@ -83,28 +98,24 @@ struct ConversationView: View {
             context = library.draftContext(for: new)
             focused = false
         }
-        #if os(macOS)
         .navigationTitle(client.activeAgentName)
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                ConversationTitle { openDetails() }
-            }
-            ToolbarItem(placement: .primaryAction) { historyButton }
-        }
+        #if os(macOS)
         .focusedSceneValue(\.showEmployeeDetails, { openDetails() })
         #else
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) { historyButton }
-            ToolbarItem(placement: .principal) {
-                ConversationTitle { focused = false; openDetails() }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { focused = false; showSettings = true } label: { Image(systemName: "gearshape") }
-                    .foregroundStyle(.primary).accessibilityLabel(L("Настройки"))
-            }
-        }
+        .containerBackground(AppTheme.canvas, for: .navigation)
         #endif
+        .toolbar {
+            // Whose chat this is, in a capsule; it opens the assistant's details.
+            ToolbarItem(placement: .principal) {
+                TitleCapsule(appearance: client.activeAppearance, name: client.activeAgentName, offline: client.isOffline(client.activeProfile)) { focused = false; openDetails() }
+                    .accessibilityLabel(L("Настройки сотрудника"))
+                    .accessibilityValue(client.activeAgentName)
+                    .accessibilityIdentifier("openEmployeeDetails")
+                    .help(L("Открыть сотрудника «\(client.activeAgentName)»"))
+            }
+            ToolbarItem(placement: .primaryAction) { more }
+        }
         .sheet(item: $details) { presentation in
             if let profile = presentation.profile {
                 BotDetailsView(profile: profile).environmentObject(client)
@@ -114,13 +125,21 @@ struct ConversationView: View {
         }
     }
 
-    /// Every other conversation of every Home, read from here.
-    private var historyButton: some View {
-        Button { focused = false; openHistory() } label: { Image(systemName: "clock.arrow.circlepath") }
-            .foregroundStyle(.primary)
-            .accessibilityLabel(L("Переписки"))
-            .accessibilityIdentifier("openChats")
-            .help(L("Переписки и ленты (⌘F)"))
+    /// What the chat's bar offers, behind one quiet button: every other conversation of every Home, the assistant's
+    /// details and, on a phone, the settings.
+    private var more: some View {
+        Menu {
+            Button(L("Переписки"), systemImage: "clock.arrow.circlepath") { focused = false; openHistory() }
+                .accessibilityIdentifier("chatHistory")
+            Button(L("Настройки сотрудника"), systemImage: "slider.horizontal.3") { focused = false; openDetails() }
+            #if os(iOS)
+            Button(L("Настройки"), systemImage: "gearshape") { focused = false; showSettings = true }
+                .accessibilityIdentifier("chatSettings")
+            #endif
+        } label: { Image(systemName: "ellipsis") }
+        .menuIndicator(.hidden)
+        .accessibilityLabel(L("Ещё"))
+        .accessibilityIdentifier("chatMore")
     }
 
     private func openDetails() {
@@ -236,6 +255,7 @@ struct ConversationView: View {
         .padding(.horizontal, Layout.edge)
         .padding(.bottom, Layout.belowComposer)
         .frame(maxWidth: .infinity)
+        .dockFade()
         // A growing composer keeps the latest message and its 24 of room above the glass.
         // A size-change scroll anchor would loop the lazy rows (see TranscriptStack).
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _ in
@@ -372,8 +392,8 @@ struct OpenAIRecoveryNotice: View {
             } else if dynamicTypeSize.isAccessibilitySize && provider == nil {
                 action(L("Как восстановить вход"), perform: openAccounts)
             }
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
-            .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
+            .cardTile(radius: 22)
             .wrapsInFull()
             #if os(iOS)
             .sheet(isPresented: $showAccounts) { SettingsView(initialSection: .accounts) }
@@ -439,39 +459,6 @@ private extension View {
     }
 }
 
-/// The employee's character and name. On Mac it is the detail toolbar's navigation item.
-struct ConversationTitle: View {
-    @EnvironmentObject private var client: HomeClient
-    let openEmployee: () -> Void
-    var body: some View {
-        #if os(macOS)
-        Button(action: openEmployee) { identity }
-            .accessibilityLabel(L("Настройки сотрудника"))
-            .accessibilityValue(client.activeAgentName)
-            .accessibilityIdentifier("openEmployeeDetails")
-            .help(L("Открыть сотрудника «\(client.activeAgentName)»"))
-        #else
-        Button(action: openEmployee) {
-            identity.frame(minHeight: controlTarget).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(L("Настройки сотрудника"))
-        .accessibilityValue(client.activeAgentName)
-        .accessibilityIdentifier("openEmployeeDetails")
-        .frame(minHeight: controlTarget).contentShape(Rectangle())
-        #endif
-    }
-
-    private var identity: some View {
-        HStack(spacing: 8) {
-            AgentAvatar(appearance: client.activeAppearance, size: AvatarSize.toolbar)
-                .offlineCharacter(client.isOffline(client.activeProfile))
-            Text(client.activeAgentName).font(.body.weight(.semibold)).lineLimit(1)
-        }
-        .frame(maxWidth: 240)
-    }
-}
-
 /// The conversation's edges: 32 from the detail edges and under the Mac toolbar, the 16 margin on iOS;
 /// the composer 24 above the Mac window edge and 20 above the iOS safe area.
 extension Layout {
@@ -480,8 +467,8 @@ extension Layout {
     static let belowToolbar: CGFloat = 32
     static let belowComposer: CGFloat = 24
     #else
-    static let edge: CGFloat = 16
+    static let edge: CGFloat = 22
     static let belowToolbar: CGFloat = 24
-    static let belowComposer: CGFloat = 20
+    static let belowComposer: CGFloat = 8
     #endif
 }

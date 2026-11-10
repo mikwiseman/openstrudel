@@ -1,27 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" font-family="Helvetica, Arial, sans-serif">
-  <!-- An invented chart for the UI fixtures: no real product or measurement. -->
-  <rect width="1200" height="675" fill="#F7F3EC"/>
-  <text x="80" y="96" font-size="34" font-weight="600" fill="#262422">Words per second on a laptop</text>
-  <text x="80" y="136" font-size="22" fill="#615B57">Maple 3, three sizes · invented numbers for a test fixture</text>
-  <g stroke="#DCD5CB" stroke-width="2">
-    <line x1="80" y1="560" x2="1120" y2="560"/>
-    <line x1="80" y1="440" x2="1120" y2="440" stroke-dasharray="4 8"/>
-    <line x1="80" y1="320" x2="1120" y2="320" stroke-dasharray="4 8"/>
-    <line x1="80" y1="200" x2="1120" y2="200" stroke-dasharray="4 8"/>
-  </g>
-  <g fill="#262422">
-    <rect x="180" y="236" width="180" height="324" rx="10"/>
-    <rect x="510" y="368" width="180" height="192" rx="10" fill="#55504C"/>
-    <rect x="840" y="488" width="180" height="72" rx="10" fill="#8F887F"/>
-  </g>
-  <g font-size="30" font-weight="600" fill="#262422" text-anchor="middle">
-    <text x="270" y="218">27</text>
-    <text x="600" y="350">16</text>
-    <text x="930" y="470">6</text>
-  </g>
-  <g font-size="24" fill="#615B57" text-anchor="middle">
-    <text x="270" y="604">4B</text>
-    <text x="600" y="604">16B</text>
-    <text x="930" y="604">70B</text>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+  <!-- An invented picture for the UI fixtures: a rising line over a night sky. No real product or measurement. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#141B4D"/>
+      <stop offset="0.55" stop-color="#1E2A78"/>
+      <stop offset="1" stop-color="#2B3FA6"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F28B3C" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#F28B3C" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="800" fill="url(#sky)"/>
+  <path d="M0 470 L170 452 L330 462 L500 428 L680 440 L860 404 L1040 414 L1200 386" fill="none" stroke="#8C97D8" stroke-opacity="0.55" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M0 540 L150 520 L290 470 L400 500 L560 400 L690 420 L830 300 L960 322 L1200 150 L1200 800 L0 800 Z" fill="url(#glow)"/>
+  <path d="M0 540 L150 520 L290 470 L400 500 L560 400 L690 420 L830 300 L960 322 L1200 150" fill="none" stroke="#F28B3C" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"/>
 </svg>

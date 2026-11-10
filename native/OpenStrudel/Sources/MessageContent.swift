@@ -94,30 +94,35 @@ struct ImportedMessageText: View {
     }
 }
 
-/// A person's words on a rounded fill: the user bubble, a neutral step darker than the surface,
-/// for the owner, and the surface for other people in a shared conversation. One line is a 40-pt capsule.
+/// A person's words in a bubble with one tight corner, the one that points at them: ink with the canvas's colour
+/// for the owner, the quiet fill for other people in a shared conversation.
 struct ChatBubble: View {
+    @Environment(\.colorSchemeContrast) private var contrast
     let text: String
     var fill: Color = AppTheme.userBubble
     /// A bubble with its own context menu stays plain: selectable text answers a right-click with the system text menu.
     var selectable = true
+    private var own: Bool { fill == AppTheme.userBubble }
 
     var body: some View {
         if selectable { bubble.textSelection(.enabled) } else { bubble }
     }
 
     private var bubble: some View {
-        Text(text)
+        let shape = UnevenRoundedRectangle(topLeadingRadius: Radius.bubble, bottomLeadingRadius: own ? Radius.bubble : Radius.bubbleTail,
+                                           bottomTrailingRadius: own ? Radius.bubbleTail : Radius.bubble, topTrailingRadius: Radius.bubble, style: .continuous)
+        return Text(text)
             .font(AppTypography.reading)
             .lineSpacing(AppTypography.readingLineSpacing)
-            .foregroundStyle(.primary)
+            .foregroundStyle(own ? AppTheme.canvas : Color.primary)
+            .tint(own ? AppTheme.canvas : AppTheme.accentText)
             .fixedSize(horizontal: false, vertical: true)
-            // A single 15-pt line is 19 tall; its 22-pt line box keeps the capsule at 40.
             .frame(minHeight: 22)
             .paragraphDirection(of: text)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 9)
-            .chatSurface(fill, radius: Radius.bubble)
+            .padding(.horizontal, 17)
+            .padding(.vertical, 11)
+            .background(fill, in: shape)
+            .overlay { if contrast == .increased && !own { shape.strokeBorder(AppTheme.separator, lineWidth: 1) } }
     }
 }
 
@@ -167,6 +172,9 @@ extension View {
 
     /// A transcript fill. Increased contrast adds a 1-pt separator edge, because a fill alone is too faint.
     func chatSurface(_ fill: Color, radius: CGFloat) -> some View { modifier(ChatSurface(fill: fill, radius: radius)) }
+
+    /// A card in the transcript: a white tile with a soft shadow. A question, an approval, a notice, a file.
+    func cardTile(radius: CGFloat = Radius.cardTile) -> some View { modifier(ChatSurface(fill: AppTheme.tile, radius: radius)).tileShadow(0.7) }
 }
 
 /// A one-pixel rule in the separator colour.

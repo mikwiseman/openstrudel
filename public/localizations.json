@@ -10933,13 +10933,6 @@
     "es": "Para: {0}",
     "he": "עבור: {0}"
   },
-  "Insights": {
-    "en": "Insights",
-    "fr": "Éclairages",
-    "es": "Hallazgos",
-    "he": "תובנות",
-    "ru": "Инсайты"
-  },
   "Progress": {
     "en": "Progress",
     "fr": "Progrès",
@@ -11044,13 +11037,6 @@
     "es": "Programaciones activas",
     "he": "תזמונים פעילים",
     "ru": "Активные расписания"
-  },
-  "Recent checks": {
-    "en": "Recent checks",
-    "fr": "Vérifications récentes",
-    "es": "Comprobaciones recientes",
-    "he": "בדיקות אחרונות",
-    "ru": "Последние проверки"
   },
   "Quiet runs · no new result": {
     "en": "Quiet runs · no new result",
@@ -12228,13 +12214,6 @@
     "he": "לא עובד מאז {0}.",
     "ru": "Не получается с {0}."
   },
-  "Взять последнее сообщение в чат": {
-    "en": "Take the latest message to the chat",
-    "fr": "Reprendre le dernier message dans le chat",
-    "es": "Llevar el último mensaje al chat",
-    "he": "להעביר את ההודעה האחרונה לצ׳אט",
-    "ru": "Взять последнее сообщение в чат"
-  },
   "Открыть расписание": {
     "en": "Open the schedule",
     "fr": "Ouvrir la planification",
@@ -12262,5 +12241,89 @@
     "es": "Edición",
     "he": "מהדורה",
     "ru": "Выпуск"
+  },
+  "Найти": {
+    "en": "Search",
+    "fr": "Rechercher",
+    "es": "Buscar",
+    "he": "חיפוש",
+    "ru": "Найти"
+  },
+  "Главный помощник": {
+    "en": "Main assistant",
+    "fr": "Assistant principal",
+    "es": "Asistente principal",
+    "he": "העוזר הראשי",
+    "ru": "Главный помощник"
+  },
+  "Что важно": {
+    "en": "What matters",
+    "fr": "L’essentiel",
+    "es": "Lo importante",
+    "he": "מה חשוב",
+    "ru": "Что важно"
+  },
+  "Лимит недели": {
+    "en": "Weekly limit",
+    "fr": "Limite hebdo",
+    "es": "Límite semanal",
+    "he": "מכסה שבועית",
+    "ru": "Лимит недели"
+  },
+  "Лимит": {
+    "en": "Limit",
+    "fr": "Limite",
+    "es": "Límite",
+    "he": "מכסה",
+    "ru": "Лимит"
+  },
+  "Прогресс": {
+    "en": "Progress",
+    "fr": "Progrès",
+    "es": "Progreso",
+    "he": "התקדמות",
+    "ru": "Прогресс"
+  },
+  "сделано за 7 дней": {
+    "en": "done in 7 days",
+    "fr": "faits en 7 jours",
+    "es": "hechos en 7 días",
+    "he": "נעשו ב־7 ימים",
+    "ru": "сделано за 7 дней"
+  },
+  "сегодня": {
+    "en": "today",
+    "fr": "aujourd’hui",
+    "es": "hoy",
+    "he": "היום",
+    "ru": "сегодня"
+  },
+  "завтра": {
+    "en": "tomorrow",
+    "fr": "demain",
+    "es": "mañana",
+    "he": "מחר",
+    "ru": "завтра"
+  },
+  "Ещё": {
+    "en": "More",
+    "fr": "Plus",
+    "es": "Más",
+    "he": "עוד",
+    "ru": "Ещё"
+  },
+  "Спросить про {0}": {
+    "en": "Ask about {0}",
+    "fr": "Demander à propos de {0}",
+    "es": "Preguntar sobre {0}",
+    "he": "לשאול על {0}",
+    "ru": "Спросить про {0}"
+  },
+  "Спросить про историю": {
+    "en": "Ask about this story",
+    "fr": "Demander à propos de cet article",
+    "es": "Preguntar sobre esta noticia",
+    "he": "לשאול על הידיעה",
+    "ru": "Спросить про историю"
   }
 }

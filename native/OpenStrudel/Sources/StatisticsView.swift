@@ -37,8 +37,9 @@ struct StatisticsScreen: View {
         }
         .navigationTitle(L("Статистика"))
         #if os(iOS)
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         #endif
+        .background(AppTheme.canvas)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Picker(L("Период"), selection: $period) { ForEach(UsagePeriod.allCases) { Text($0.title).tag($0) } }
@@ -125,11 +126,11 @@ struct StatisticsScreen: View {
 
     private func hero(_ slice: UsageSlice, in all: [UsageSlice]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(periodTitle(slice, in: all).uppercased())
-                .font(AppTypography.meta.weight(.semibold)).foregroundStyle(AppTheme.secondaryText)
+            Text(periodTitle(slice, in: all))
+                .font(AppTypography.label).foregroundStyle(AppTheme.secondaryText)
                 .accessibilityAddTraits(.isHeader)
             Text(slice.requests.formatted(.number.locale(L10n.locale)))
-                .font(.system(size: heroSize, weight: .semibold))
+                .font(.system(size: heroSize, weight: .semibold)).tracking(-heroSize * 0.035)
                 .lineLimit(1).minimumScaleFactor(0.4)
                 .contentTransition(.numericText(value: Double(slice.requests)))
                 .accessibilityLabel(L("Запросы: \(slice.requests.formatted(.number.locale(L10n.locale)))"))
@@ -175,20 +176,18 @@ struct StatisticsScreen: View {
         if !items.isEmpty {
             let open = expanded.contains(key), visible = open ? items : Array(items.prefix(5))
             VStack(alignment: .leading, spacing: 0) {
-                Text(title.uppercased())
-                    .font(AppTypography.meta.weight(.semibold)).foregroundStyle(AppTheme.secondaryText)
-                    .padding(.bottom, 8)
+                Text(title)
+                    .font(AppTypography.label).foregroundStyle(AppTheme.secondaryText)
+                    .padding(.bottom, 4)
                     .accessibilityAddTraits(.isHeader)
-                Hairline()
                 ForEach(visible) { item in
                     VStack(alignment: .leading, spacing: 4) {
                         figures(item.title, requests: item.requests, cost: item.costUsd)
                         let detail = rowDetail(item, schedule: schedule, model: model)
                         if !detail.isEmpty { Text(detail).font(AppTypography.meta).foregroundStyle(AppTheme.secondaryText).lineLimit(2) }
                     }
-                    .padding(.vertical, 12)
+                    .padding(.vertical, 11)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .overlay(alignment: .bottom) { Hairline() }
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("statisticsRow-" + key)
                 }
