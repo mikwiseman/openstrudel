@@ -37,7 +37,7 @@ On the server, from the unpacked kit or a checkout of this repository:
 sudo bash deploy/server-shell/install.sh --telegram 123456789
 ```
 
-Repeat `--telegram` for each person. Without it only the owner's devices in the app have the shell. `--container NAME` selects another Home container; the default is `openstrudel-home-1`. Run the script again to change the list or to install a newer version. The Home sees the change on the next message. It needs no restart.
+Repeat `--telegram` for each person. Without it only the owner's devices in the app have the shell. `--container NAME` selects another Home container; the default is `openstrudel-home-1`. Run the script again to change the list or to install a newer version. The Home sees the change on the next message. It needs no restart. An update of the Home does not replace these scripts. To get a newer runner or updater, run the script again from a current checkout.
 
 The script installs a small service, `openstrudel-server-shell`, and the command `openstrudel-update`. It creates the folder `.data/server-shell` on the Home's data volume. The Home writes each command there, the service runs it and writes the result back. No port is opened and no key is created.
 
