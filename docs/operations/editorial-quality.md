@@ -75,9 +75,10 @@ never imply a test was performed when it was only proposed. Votes do not prove
 demand, letters of intent do not prove revenue, and a large company's feature
 is not an independent startup.
 
-Use existing `read_news`, stable story IDs, `view`, `verification`, sources,
-`publish_edition` and the claim/delivery ledger. Unknown delivery is not a reason
-to retry. A successful search with nothing useful can be quiet; an essential
+Use existing `read_news`, stable story IDs, `view`, `verification`, sources and
+`publish_edition`. The application writes and sends a story's Telegram post and
+the edition from those fields, once each, and reports what went out. Unknown
+delivery is not a reason to retry. A successful search with nothing useful can be quiet; an essential
 source failure must not masquerade as a quiet day. Apply the
 [sender-specific disclosure policy](telegram-disclosure-policy.md) to future
 output, without rewriting approved drafts or old messages.
