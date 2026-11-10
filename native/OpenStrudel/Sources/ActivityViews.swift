@@ -10,6 +10,7 @@ private extension HomeActivity.Insight {
 struct InsightsTab: View {
     @EnvironmentObject private var library: DeviceLibrary
     @EnvironmentObject private var client: HomeClient
+    @EnvironmentObject private var newsroom: Newsroom
     @ObservedObject var model: ActivityModel
     let scope: String
     let refresh: () async -> Void
@@ -18,6 +19,15 @@ struct InsightsTab: View {
 
     var body: some View {
         List {
+            // What to read first: each News feed with its lead and how much of today is new.
+            if !library.newsFeeds.isEmpty {
+                Section {
+                    ForEach(library.newsFeeds, id: \.route.id) { feed in
+                        NavigationLink(value: feed.route) { NewsEntryRow(feed: newsroom.feed(feed.route, on: feed.source)) }
+                            .accessibilityIdentifier("newsEntry-" + (feed.route.profileID ?? ""))
+                    }
+                }
+            }
             ActivityStatus(model: model, scope: scope, openChat: openChat)
             if let activity {
                 if activity.insights.isEmpty {
@@ -33,16 +43,6 @@ struct InsightsTab: View {
                 }
                 Section { ActivityChecked(date: activity.checkedAt, home: client.displayName) }
                     .listRowBackground(Color.clear)
-            }
-            let feeds = library.visibleProfiles(on: client).filter { $0.news == true }
-            if !feeds.isEmpty {
-                Section(L("News and briefings")) {
-                    ForEach(feeds) { profile in
-                        NavigationLink(value: ReaderRoute(connectionID: client.id, kind: .employee(profile.id), title: profile.name)) {
-                            Label(profile.name, systemImage: "newspaper")
-                        }
-                    }
-                }
             }
         }
         .listStyle(.insetGrouped)

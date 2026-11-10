@@ -115,7 +115,34 @@ struct NewsStory: Codable, Hashable {
     let sources: [Source]
 }
 
-struct NewsFeedEnvelope: Decodable { let messages: [HomeMessage]; let stamp: String? }
+/// What the Home knows about the feed's scheduled runs. Older Homes send none, and every field may be missing.
+struct NewsStatus: Decodable, Equatable {
+    /// A scheduled run is in progress now.
+    var running = false
+    /// Start of the last run that succeeded: it published, or found nothing.
+    var checkedAt: String? = nil
+    /// Start of the latest run when it failed and nothing has succeeded since.
+    var failedAt: String? = nil
+    /// One plain line about that failure.
+    var failure: String? = nil
+    /// Nil when every schedule of the chat is paused.
+    var nextRunAt: String? = nil
+
+    init(running: Bool = false, checkedAt: String? = nil, failedAt: String? = nil, failure: String? = nil, nextRunAt: String? = nil) {
+        self.running = running; self.checkedAt = checkedAt; self.failedAt = failedAt; self.failure = failure; self.nextRunAt = nextRunAt
+    }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: Keys.self)
+        running = (try? values.decodeIfPresent(Bool.self, forKey: .running)) ?? false
+        checkedAt = try? values.decodeIfPresent(String.self, forKey: .checkedAt)
+        failedAt = try? values.decodeIfPresent(String.self, forKey: .failedAt)
+        failure = try? values.decodeIfPresent(String.self, forKey: .failure)
+        nextRunAt = try? values.decodeIfPresent(String.self, forKey: .nextRunAt)
+    }
+    private enum Keys: String, CodingKey { case running, checkedAt, failedAt, failure, nextRunAt }
+}
+
+struct NewsFeedEnvelope: Decodable { let messages: [HomeMessage]; let stamp: String?; var status: NewsStatus? = nil }
 
 struct TelegramStatus: Codable {
     let configured: Bool
@@ -814,10 +841,10 @@ struct ChatQuestion: Decodable, Identifiable, Equatable {
 
 // MARK: - One chat: readers, business clients and the context a message carries
 
-/// A conversation the owner reads without writing in it: an employee's feed, another Home's main assistant,
-/// or one Telegram chat or archive. The composer stays on the main chat whatever is read.
+/// A conversation the owner reads without writing in it: an employee's feed, its News stories, another Home's main
+/// assistant, or one Telegram chat or archive. The composer stays on the main chat whatever is read.
 struct ReaderRoute: Hashable, Identifiable {
-    enum Kind: Hashable { case main, employee(String), conversation(String) }
+    enum Kind: Hashable { case main, employee(String), news(String), conversation(String) }
     let connectionID: String
     let kind: Kind
     let title: String
@@ -825,6 +852,7 @@ struct ReaderRoute: Hashable, Identifiable {
         switch kind {
         case .main: connectionID + ":main"
         case .employee(let profile): connectionID + ":employee:" + profile
+        case .news(let profile): connectionID + ":news:" + profile
         case .conversation(let conversation): connectionID + ":conversation:" + conversation
         }
     }
@@ -832,8 +860,15 @@ struct ReaderRoute: Hashable, Identifiable {
     var path: String {
         switch kind {
         case .main: "/v1/conversation"
-        case .employee(let profile): "/v1/agents/" + profile + "/conversation"
+        case .employee(let profile), .news(let profile): "/v1/agents/" + profile + "/conversation"
         case .conversation(let conversation): "/v1/conversations/" + conversation
+        }
+    }
+    /// The employee whose history or News this is.
+    var profileID: String? {
+        switch kind {
+        case .employee(let profile), .news(let profile): profile
+        default: nil
         }
     }
     /// An employee's feed joins its app chat and Telegram chats; one Telegram chat or archive is paged on its own.

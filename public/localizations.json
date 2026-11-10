@@ -12024,5 +12024,187 @@
     "es": "Solo el propietario del dispositivo ve sus programaciones.",
     "he": "רק בעל המכשיר רואה את לוחות הזמנים שלו.",
     "ru": "Расписания видит владелец устройства."
+  },
+  "Выпуск {0}": {
+    "en": "Edition {0}",
+    "fr": "Édition {0}",
+    "es": "Edición {0}",
+    "he": "מהדורה {0}",
+    "ru": "Выпуск {0}"
+  },
+  "радар проверил {0}": {
+    "en": "radar checked {0}",
+    "fr": "radar vérifié {0}",
+    "es": "radar revisado {0}",
+    "he": "הרדאר נבדק {0}",
+    "ru": "радар проверил {0}"
+  },
+  "{0} проверяет источники…": {
+    "en": "{0} is checking sources…",
+    "fr": "{0} vérifie ses sources…",
+    "es": "{0} está revisando las fuentes…",
+    "he": "{0} בודק מקורות…",
+    "ru": "{0} проверяет источники…"
+  },
+  "Радар не работает с {0}": {
+    "en": "The radar has not worked since {0}",
+    "fr": "Le radar ne fonctionne plus depuis {0}",
+    "es": "El radar no funciona desde {0}",
+    "he": "הרדאר לא פועל מאז {0}",
+    "ru": "Радар не работает с {0}"
+  },
+  "Радар не работает": {
+    "en": "The radar is not working",
+    "fr": "Le radar ne fonctionne pas",
+    "es": "El radar no funciona",
+    "he": "הרדאר לא פועל",
+    "ru": "Радар не работает"
+  },
+  "{0} на паузе с {1}": {
+    "en": "{0} has been paused since {1}",
+    "fr": "{0} est en pause depuis le {1}",
+    "es": "{0} está en pausa desde el {1}",
+    "he": "{0} בהשהיה מאז {1}",
+    "ru": "{0} на паузе с {1}"
+  },
+  "{0} на паузе": {
+    "en": "{0} is paused",
+    "fr": "{0} est en pause",
+    "es": "{0} está en pausa",
+    "he": "{0} בהשהיה",
+    "ru": "{0} на паузе"
+  },
+  "Сегодняшнего выпуска нет. Ниже выпуск за {0}.": {
+    "en": "No edition today. Below is the edition of {0}.",
+    "fr": "Pas d’édition aujourd’hui. Ci-dessous, celle du {0}.",
+    "es": "Hoy no hay edición. Abajo, la del {0}.",
+    "he": "אין מהדורה היום. למטה המהדורה של {0}.",
+    "ru": "Сегодняшнего выпуска нет. Ниже выпуск за {0}."
+  },
+  "Сегодняшнего выпуска нет.": {
+    "en": "No edition today.",
+    "fr": "Pas d’édition aujourd’hui.",
+    "es": "Hoy no hay edición.",
+    "he": "אין מהדורה היום.",
+    "ru": "Сегодняшнего выпуска нет."
+  },
+  "Выпуска в этот день не было.": {
+    "en": "There was no edition that day.",
+    "fr": "Pas d’édition ce jour-là.",
+    "es": "Ese día no hubo edición.",
+    "he": "באותו יום לא הייתה מהדורה.",
+    "ru": "Выпуска в этот день не было."
+  },
+  "Новое с {0} · {1}": {
+    "en": "New since {0} · {1}",
+    "fr": "Nouveau depuis {0} · {1}",
+    "es": "Nuevo desde {0} · {1}",
+    "he": "חדש מאז {0} · {1}",
+    "ru": "Новое с {0} · {1}"
+  },
+  "Новое · {0}": {
+    "en": "New · {0}",
+    "fr": "Nouveau · {0}",
+    "es": "Nuevo · {0}",
+    "he": "חדש · {0}",
+    "ru": "Новое · {0}"
+  },
+  "Выпуск за {0}": {
+    "en": "Edition of {0}",
+    "fr": "Édition du {0}",
+    "es": "Edición del {0}",
+    "he": "המהדורה של {0}",
+    "ru": "Выпуск за {0}"
+  },
+  "Радар за день": {
+    "en": "Radar of the day",
+    "fr": "Radar du jour",
+    "es": "Radar del día",
+    "he": "רדאר היום",
+    "ru": "Радар за день"
+  },
+  "Раньше": {
+    "en": "Earlier",
+    "fr": "Plus tôt",
+    "es": "Antes",
+    "he": "מוקדם יותר",
+    "ru": "Раньше"
+  },
+  "выпуска нет": {
+    "en": "no edition",
+    "fr": "pas d’édition",
+    "es": "sin edición",
+    "he": "אין מהדורה",
+    "ru": "выпуска нет"
+  },
+  "в радаре {0}": {
+    "en": "{0} on the radar",
+    "fr": "{0} au radar",
+    "es": "{0} en el radar",
+    "he": "{0} ברדאר",
+    "ru": "в радаре {0}"
+  },
+  "{0} новая": {
+    "en": "{0} new",
+    "fr": "{0} nouvelle",
+    "es": "{0} nueva",
+    "he": "{0} חדשה",
+    "ru": "{0} новая"
+  },
+  "{0} новых": {
+    "en": "{0} new",
+    "fr": "{0} nouvelles",
+    "es": "{0} nuevas",
+    "he": "{0} חדשות",
+    "ru": "{0} новых"
+  },
+  "Что произошло": {
+    "en": "What happened",
+    "fr": "Ce qui s’est passé",
+    "es": "Qué pasó",
+    "he": "מה קרה",
+    "ru": "Что произошло"
+  },
+  "Доказательства": {
+    "en": "Evidence",
+    "fr": "Preuves",
+    "es": "Pruebas",
+    "he": "ראיות",
+    "ru": "Доказательства"
+  },
+  "Прочитано": {
+    "en": "Read",
+    "fr": "Lu",
+    "es": "Leído",
+    "he": "נקרא",
+    "ru": "Прочитано"
+  },
+  "Не проверено": {
+    "en": "Not checked",
+    "fr": "Non vérifié",
+    "es": "Sin verificar",
+    "he": "לא נבדק",
+    "ru": "Не проверено"
+  },
+  "Событие": {
+    "en": "Event",
+    "fr": "Événement",
+    "es": "Evento",
+    "he": "אירוע",
+    "ru": "Событие"
+  },
+  "Развитие": {
+    "en": "Developments",
+    "fr": "Évolution",
+    "es": "Evolución",
+    "he": "התפתחות",
+    "ru": "Развитие"
+  },
+  "Истории за последние две недели появятся здесь.": {
+    "en": "Stories from the last two weeks will appear here.",
+    "fr": "Les articles des deux dernières semaines apparaîtront ici.",
+    "es": "Las noticias de las dos últimas semanas aparecerán aquí.",
+    "he": "כתבות מהשבועיים האחרונים יופיעו כאן.",
+    "ru": "Истории за последние две недели появятся здесь."
   }
 }
