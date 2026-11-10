@@ -1,7 +1,7 @@
 import XCTest
 
-/// Runs against tests/fixtures/one-chat.ts on a disposable simulator: one chat with one composer, readers behind it,
-/// Insights, Progress and Statistics beside it, and no second composer anywhere.
+/// Runs against tests/fixtures/one-chat.ts on a disposable simulator: the home, one chat with one composer behind its
+/// capsule, readers behind the chat, «Что важно» and Progress behind their tiles, and no second composer anywhere.
 final class OneChatUITests: XCTestCase {
     private var control = ""
 
@@ -19,16 +19,21 @@ final class OneChatUITests: XCTestCase {
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 5) { consent.tap() }
 
-        // 1. The chat is the first place: history already there, the composer ready, the team beside it and no Clients.
+        // 1. Home is the first place, without tabs; its capsule opens the chat: history already there, the composer
+        // ready, nothing to send yet and no Clients.
+        let homeComposer = app.buttons["homeComposer"], important = app.buttons["tile-important"], progress = app.buttons["tile-progress"]
+        XCTAssertTrue(homeComposer.waitForExistence(timeout: 40), app.debugDescription)
+        XCTAssertEqual(app.tabBars.count, 0)
+        XCTAssertFalse(app.textFields["Сообщение"].exists, "The home's capsule opens the composer; it is not a second one")
+        homeComposer.tap()
         let composer = app.textFields["Сообщение"]
         XCTAssertTrue(composer.waitForExistence(timeout: 30), app.debugDescription)
+        // A fresh simulator explains its keyboard once.
+        let tip = app.buttons["Continue"]
+        if tip.waitForExistence(timeout: 3) { tip.tap() }
         XCTAssertTrue(app.staticTexts["Три встречи и один акт на подпись."].waitForExistence(timeout: 40), app.debugDescription)
-        XCTAssertTrue(app.tabBars.buttons["Чат"].exists && app.tabBars.buttons["Команда"].exists && app.tabBars.buttons["Инсайты"].exists && app.tabBars.buttons["Прогресс"].exists && app.tabBars.buttons["Статистика"].exists, app.debugDescription)
-        XCTAssertEqual(app.tabBars.buttons.count, 5)
         XCTAssertFalse(app.buttons["newEmployee"].exists)
-        let send = app.buttons["sendMessage"]
-        XCTAssertTrue(send.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertFalse(send.isEnabled, "The fresh fixture must start with an empty composer")
+        XCTAssertFalse(app.buttons["sendMessage"].exists, "The fresh fixture must start with an empty composer, which has nothing to send")
         XCTAssertFalse(app.buttons["removeDraftContext"].exists)
         // An empty TextField can expose its custom prompt as its accessibility value.
         let emptyComposerValue = try XCTUnwrap(composer.value as? String)
@@ -50,7 +55,7 @@ final class OneChatUITests: XCTestCase {
 
         // 3. A draft and the readers: the employee's News, its history, the group. None has a composer; the draft waits unchanged.
         composer.tap(); composer.typeText("Черновик, который должен выжить")
-        app.buttons["openChats"].tap()
+        openHistory(app)
         let editorID = try XCTUnwrap(state["editor"] as? String)
         let feed = app.buttons["feed-" + editorID]
         XCTAssertTrue(feed.waitForExistence(timeout: 10), app.debugDescription)
@@ -75,7 +80,7 @@ final class OneChatUITests: XCTestCase {
         capture("chat-story-context", app)
         app.buttons["removeDraftContext"].tap()
         // Back in the feed, the story the reader left to discuss is still open; the way back leads to the day.
-        app.buttons["openChats"].tap()
+        openHistory(app)
         XCTAssertTrue(feed.waitForExistence(timeout: 10), app.debugDescription); feed.tap()
         XCTAssertTrue(discussStory.waitForExistence(timeout: 10), app.debugDescription)
         capture("reader-story-kept", app)
@@ -85,7 +90,7 @@ final class OneChatUITests: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertEqual(app.textFields["Сообщение"].waitForExistence(timeout: 10) ? app.textFields["Сообщение"].value as? String : nil, "Черновик, который должен выжить")
 
-        app.buttons["openChats"].tap()
+        openHistory(app)
         let employee = app.buttons["employee-" + editorID]
         XCTAssertTrue(employee.waitForExistence(timeout: 10)); employee.tap()
         XCTAssertTrue(app.descendants(matching: .any)["reader"].waitForExistence(timeout: 10), app.debugDescription)
@@ -107,7 +112,7 @@ final class OneChatUITests: XCTestCase {
         XCTAssertTrue(app.buttons["removeDraftContext"].waitForExistence(timeout: 5))
         app.buttons["removeDraftContext"].tap()
 
-        app.buttons["openChats"].tap()
+        openHistory(app)
         let search = app.searchFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 10)); search.tap(); search.typeText("Рабочая")
         let group = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "telegramConversation-")).firstMatch
@@ -121,11 +126,14 @@ final class OneChatUITests: XCTestCase {
         XCTAssertEqual(app.textFields["Сообщение"].waitForExistence(timeout: 10) ? app.textFields["Сообщение"].value as? String : nil, "Черновик, который должен выжить")
         try await assertNoSend(since: state)
 
-        // Insights and Progress are readers; neither takes ownership of the main draft or sends a message.
-        app.tabBars.buttons["Инсайты"].tap()
+        // «Что важно» and Progress open from their tiles on the home; neither takes ownership of the main draft or
+        // sends a message.
+        back(app)
+        XCTAssertTrue(important.waitForExistence(timeout: 20), app.debugDescription)
+        scrollShelf(app, to: important); important.tap()
         XCTAssertTrue(app.descendants(matching: .any)["insightsRoot"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.textFields["Сообщение"].exists)
-        // A desk is read from the team list now; Insights keeps to results and what needs attention.
+        // A desk is read from the team list now; this page keeps to results and what needs attention.
         XCTAssertFalse(app.buttons["newsEntry-" + editorID].exists)
         let activity = try XCTUnwrap(state["activity"] as? [String: Any])
         let insight = app.buttons["insight-" + (try XCTUnwrap(activity["id"] as? String))]
@@ -141,11 +149,15 @@ final class OneChatUITests: XCTestCase {
         try await assertNoSend(since: state)
         capture("insight-discuss-draft", app)
         app.buttons["removeDraftContext"].tap()
-        app.tabBars.buttons["Прогресс"].tap()
+        // The chat grew out of the result; the way back passes it and the page it came from.
+        back(app); back(app); back(app)
+        XCTAssertTrue(progress.waitForExistence(timeout: 20), app.debugDescription)
+        scrollShelf(app, to: progress); progress.tap()
         XCTAssertTrue(app.descendants(matching: .any)["progressRoot"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.buttons["openClients"].exists, "Clients left the app")
         XCTAssertFalse(app.textFields["Сообщение"].exists)
-        app.tabBars.buttons["Чат"].tap()
+        back(app)
+        XCTAssertTrue(homeComposer.waitForExistence(timeout: 10), app.debugDescription); homeComposer.tap()
         XCTAssertTrue(composer.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(composer.value as? String, "Черновик, который должен выжить")
         try await assertNoSend(since: state)
@@ -160,8 +172,7 @@ final class OneChatUITests: XCTestCase {
         capture("chat-draft-sent", app)
 
         // Owner setup uses the employee's actual device and existing project APIs. It never starts a turn.
-        app.tabBars.buttons["Чат"].tap()
-        app.buttons["openChats"].tap()
+        openHistory(app)
         XCTAssertTrue(employee.waitForExistence(timeout: 10), app.debugDescription); employee.tap()
         XCTAssertTrue(app.buttons["readerTitle"].waitForExistence(timeout: 10), app.debugDescription); app.buttons["readerTitle"].tap()
         let projectEntry = app.buttons["employeeProject"]
@@ -190,16 +201,20 @@ final class OneChatUITests: XCTestCase {
         app.terminate()
         app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         app.launch()
-        XCTAssertTrue(composer.waitForExistence(timeout: 30), app.debugDescription)
-        app.tabBars.buttons["Инсайты"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["homeRoot"].waitForExistence(timeout: 30), app.debugDescription)
+        XCTAssertTrue(important.waitForExistence(timeout: 30), app.debugDescription)
+        scrollShelf(app, to: important); important.tap()
         XCTAssertTrue(insight.waitForExistence(timeout: 20), app.debugDescription); insight.tap()
         XCTAssertTrue(app.descendants(matching: .any)["insightDetail"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.textFields["Сообщение"].exists)
         capture("large-text-insight", app)
-        app.tabBars.buttons["Прогресс"].tap()
+        back(app); back(app)
+        XCTAssertTrue(progress.waitForExistence(timeout: 20), app.debugDescription)
+        scrollShelf(app, to: progress); progress.tap()
         XCTAssertTrue(app.descendants(matching: .any)["progressCharacter"].waitForExistence(timeout: 15), app.debugDescription)
         capture("large-text-progress", app)
-        app.tabBars.buttons["Чат"].tap()
+        back(app)
+        XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 10), app.debugDescription)
         app.buttons["openChats"].tap()
         // At this size the desk's row with its latest headline fills the first screen of the list.
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 10), app.debugDescription)
@@ -220,15 +235,17 @@ final class OneChatUITests: XCTestCase {
         XCTAssertFalse(app.buttons["registerEmployeeProject"].exists)
         capture("project-owner-access-removed", app)
         // On the iPhone the sheet's Done sits on its first page.
-        let back = app.navigationBars.buttons["Сотрудник"]
-        XCTAssertTrue(back.waitForExistence(timeout: 5), app.debugDescription); back.tap()
+        let toEmployee = app.navigationBars.buttons["Сотрудник"]
+        XCTAssertTrue(toEmployee.waitForExistence(timeout: 5), app.debugDescription); toEmployee.tap()
         XCTAssertTrue(app.buttons["saveEmployeeChanges"].waitForExistence(timeout: 5), app.debugDescription)
         app.buttons["saveEmployeeChanges"].tap()
-        app.tabBars.buttons["Инсайты"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["activityState-ownerOnly"].waitForExistence(timeout: 15), app.debugDescription)
+        // Back on the home, what only the owner may read leaves its shelf.
+        back(app)
+        XCTAssertTrue(app.descendants(matching: .any)["homeRoot"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(important.waitForNonExistence(timeout: 20), app.debugDescription)
+        XCTAssertFalse(progress.exists)
         XCTAssertFalse(insight.exists)
-        XCTAssertFalse(app.buttons["discussInsight"].exists)
-        capture("insights-owner-access-removed", app)
+        capture("home-owner-access-removed", app)
         let denied = try await read("/")
         let reads = try XCTUnwrap(denied["privateReads"] as? [[String: Any]])
         XCTAssertTrue(reads.contains { $0["path"] as? String == "/v1/activity" && $0["status"] as? Int == 403 })
@@ -259,7 +276,33 @@ final class OneChatUITests: XCTestCase {
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
+    /// The other conversations are behind the chat's "…" button.
+    @MainActor private func openHistory(_ app: XCUIApplication) {
+        let more = app.buttons["chatMore"]
+        XCTAssertTrue(more.waitForExistence(timeout: 10), app.debugDescription); more.tap()
+        let history = app.buttons["chatHistory"]
+        XCTAssertTrue(history.waitForExistence(timeout: 5), app.debugDescription); history.tap()
+    }
+
+    @MainActor private func back(_ app: XCUIApplication) {
+        let button = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(button.waitForExistence(timeout: 10), app.debugDescription)
+        button.tap()
+    }
+
+    /// The shelf scrolls sideways; a tile out of sight is brought in before it is pressed.
+    @MainActor private func scrollShelf(_ app: XCUIApplication, to tile: XCUIElement) {
+        let tiles = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "tile-"))
+        for _ in 0..<4 where !tile.isHittable { tiles.firstMatch.swipeLeft() }
+        for _ in 0..<4 where !tile.isHittable { tiles.element(boundBy: min(2, tiles.count - 1)).swipeRight() }
+    }
+
+    /// A screenshot kept with the test, and beside the others when a folder is named for them.
     @MainActor private func capture(_ name: String, _ app: XCUIApplication) {
-        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = name; shot.lifetime = .keepAlways; add(shot)
+        let screenshot = XCUIScreen.main.screenshot()
+        let shot = XCTAttachment(screenshot: screenshot); shot.name = name; shot.lifetime = .keepAlways; add(shot)
+        guard let folder = ProcessInfo.processInfo.environment["OPENSTRUDEL_SHOTS"] else { return }
+        try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        try? screenshot.pngRepresentation.write(to: URL(fileURLWithPath: folder).appendingPathComponent("one-chat-" + name + ".png"))
     }
 }

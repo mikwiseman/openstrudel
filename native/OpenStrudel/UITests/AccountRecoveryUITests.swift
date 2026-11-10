@@ -8,7 +8,8 @@ final class AccountRecoveryUITests: XCTestCase {
         _ = try await read(fixture + "/seed")
         _ = try await read(fixture + "/mode?value=connected")
         let app = XCUIApplication()
-        app.launchArguments = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        // The flow reads the Russian interface; a fresh simulator opens in English.
+        app.launchArguments = ["-openstrudel.language", "ru", "-AppleLanguages", "(ru)", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         XCUIDevice.shared.orientation = .portrait
         app.launch()
         let invitation = try await read(fixture + "/invite?owner=1")
@@ -20,11 +21,15 @@ final class AccountRecoveryUITests: XCTestCase {
         if consent.waitForExistence(timeout: 3) { consent.tap() }
         XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 15))
         _ = try await read(fixture + "/mode?value=expired")
+        // The home says it first, with its search still in reach; the chat keeps its composer beside the notice.
         let recover = app.buttons["recoverOpenAIAccount"]
         XCTAssertTrue(recover.waitForExistence(timeout: 20))
         XCTAssertTrue(recover.isHittable)
-        XCTAssertTrue(app.textFields.firstMatch.isHittable)
         XCTAssertTrue(app.buttons["openChats"].isHittable)
+        app.openChat()
+        XCTAssertTrue(recover.waitForExistence(timeout: 10))
+        XCTAssertTrue(recover.isHittable)
+        XCTAssertTrue(app.textFields.firstMatch.isHittable)
         capture("largest-type-recovery-controls", app)
         recover.tap()
         // Each actions button names its account, so VoiceOver can tell them apart.
@@ -56,6 +61,7 @@ final class AccountRecoveryUITests: XCTestCase {
             throw XCTSkip("Start the isolated account-recovery fixture.")
         }
         let app = XCUIApplication()
+        app.launchArguments = ["-openstrudel.language", "ru", "-AppleLanguages", "(ru)"]
         XCUIDevice.shared.orientation = .portrait
         app.launch()
         let invitation = try await read(fixture + "/invite?owner=1")
@@ -88,6 +94,7 @@ final class AccountRecoveryUITests: XCTestCase {
         _ = try await read(fixture + "/mode?value=connected")
         XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 20))
         XCTAssertTrue(app.staticTexts["openAIRecoveryNotice"].waitForNonExistence(timeout: 20))
+        app.openChat()
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Эта история остаётся")).firstMatch.waitForExistence(timeout: 15))
         let composer = app.textFields.firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 5)); composer.tap()
@@ -97,6 +104,7 @@ final class AccountRecoveryUITests: XCTestCase {
         XCTAssertTrue(recover.waitForExistence(timeout: 20))
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Эта история остаётся")).firstMatch.exists)
         XCTAssertEqual(composer.value as? String, "Черновик должен сохраниться")
+        XCTAssertTrue(app.buttons["Отправить"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Отправить"].isEnabled)
         capture("expired-account-with-history-and-draft", app)
         _ = try await read(fixture + "/mode?value=unavailable")
@@ -109,7 +117,9 @@ final class AccountRecoveryUITests: XCTestCase {
         XCTAssertEqual(composer.value as? String, "Черновик должен сохраниться")
         app.terminate(); app.launch()
         XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 15))
+        app.openChat()
         XCTAssertEqual(app.textFields.firstMatch.value as? String, "Черновик должен сохраниться")
+        app.goHome()
 
         let clientInvitation = try await read(fixture + "/invite")
         app.open(try XCTUnwrap(URL(string: XCTUnwrap(clientInvitation["url"] as? String))))
@@ -162,5 +172,45 @@ final class AccountRecoveryUITests: XCTestCase {
         let open = buttons["openDeviceEmployees"]
         XCTAssertTrue(open.waitForExistence(timeout: 25), debugDescription)
         open.tap()
+    }
+
+    /// The home is the first screen; its capsule opens the one chat with the keyboard up.
+    func openChat() {
+        let capsule = buttons["homeComposer"]
+        XCTAssertTrue(capsule.waitForExistence(timeout: 30), debugDescription)
+        capsule.tap()
+        XCTAssertTrue(buttons["openEmployeeDetails"].waitForExistence(timeout: 15), debugDescription)
+        // A fresh simulator explains its keyboard once.
+        let tip = buttons["Continue"]
+        if tip.waitForExistence(timeout: 2) { tip.tap() }
+    }
+
+    /// The other conversations: the home's search button, or the chat's "…" menu.
+    func openConversations() {
+        let search = buttons["openChats"]
+        if search.exists && search.isHittable { search.tap(); return }
+        let more = buttons["chatMore"]
+        XCTAssertTrue(more.waitForExistence(timeout: 10), debugDescription); more.tap()
+        let history = buttons["chatHistory"]
+        XCTAssertTrue(history.waitForExistence(timeout: 5), debugDescription); history.tap()
+    }
+
+    /// Back from the open pages to the home.
+    func goHome() {
+        for _ in 0..<6 where !buttons["homeComposer"].exists {
+            let back = navigationBars.buttons.element(boundBy: 0)
+            guard back.waitForExistence(timeout: 5) else { break }
+            back.tap()
+        }
+        XCTAssertTrue(buttons["homeComposer"].waitForExistence(timeout: 10), debugDescription)
+    }
+
+    /// A tile of the home's shelf, brought into sight and pressed. The shelf scrolls sideways.
+    func openTile(_ identifier: String) {
+        let tile = buttons[identifier], tiles = buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "tile-"))
+        XCTAssertTrue(tile.waitForExistence(timeout: 30), debugDescription)
+        for _ in 0..<4 where !tile.isHittable { tiles.firstMatch.swipeLeft() }
+        for _ in 0..<4 where !tile.isHittable { tiles.element(boundBy: min(2, tiles.count - 1)).swipeRight() }
+        tile.tap()
     }
 }

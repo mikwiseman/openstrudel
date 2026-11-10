@@ -25,7 +25,10 @@ final class DesignAccessibilityUITests: XCTestCase {
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 5) { reveal(consent, app); audit("consent", app, &issues); consent.tap() }
         XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 15))
+        audit("home", app, &issues)
+        app.openChat()
         audit("conversation", app, &issues)
+        app.goHome()
         app.buttons["Настройки"].tap()
         XCTAssertTrue(app.buttons["addDevice"].waitForExistence(timeout: 10))
         audit("settings", app, &issues)
