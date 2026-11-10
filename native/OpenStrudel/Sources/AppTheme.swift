@@ -101,6 +101,8 @@ enum Radius {
 
 enum AvatarSize {
     static let toolbar: CGFloat = 24
+    /// A row of the Mac sidebar's team list.
+    static let sidebar: CGFloat = 32
     static let row: CGFloat = 36
     static let header: CGFloat = 64
     static let hero: CGFloat = 96

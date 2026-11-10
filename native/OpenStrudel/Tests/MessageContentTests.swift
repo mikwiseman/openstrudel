@@ -22,6 +22,31 @@ struct MessageContentTests {
         #expect(ImportedTranscript.parts("<file name=\"test.txt\" mime=\"text/plain\">\(raw)</file>") == [.file(name: "test.txt", text: raw)])
     }
 
+    /// The Home writes a post's sources as `[label](<address>)`, so an address with brackets or underscores stays whole.
+    @Test func linksWithAngleBracketDestinationsAreLinks() throws {
+        func links(_ source: String) -> [(label: String, url: String)] {
+            MessageContent(source: source).blocks.flatMap { block in
+                block.content.runs.compactMap { run in run.link.map { (String(block.content[run.range].characters), $0.absoluteString) } }
+            }
+        }
+        let brackets = links("[Model card](<https://example.org/wiki/Kettle_(model)>)")
+        #expect(brackets.count == 1 && brackets[0].label == "Model card" && brackets[0].url == "https://example.org/wiki/Kettle_(model)")
+        let underscores = links("Read [the release notes](<https://example.org/notes/v2_final_draft?ref=daily_brief>) first")
+        #expect(underscores.count == 1 && underscores[0].label == "the release notes" && underscores[0].url == "https://example.org/notes/v2_final_draft?ref=daily_brief")
+        // A whole post as the Home sends it: bold title, text, then the sources on one line.
+        let post = "**Kettle 3 ships**\n\nIt boils faster.\n\n→ Worth a look.\n\n[Maker](<https://kettle.example/blog/launch_(final)>) · [Forum](<https://forum.example/t/kettle_3>) · 10 November"
+        let blocks = MessageContent(source: post).blocks
+        #expect(blocks.map(\.kind) == ["paragraph", "paragraph", "paragraph", "paragraph"])
+        #expect(!blocks.contains { String($0.content.characters).contains("](") || String($0.content.characters).contains("**") })
+        #expect(links(post).map(\.url) == ["https://kettle.example/blog/launch_(final)", "https://forum.example/t/kettle_3"])
+        // Such a post is the employee's text, read as Markdown; only the owner's own reply sits in a plain bubble.
+        let sent = HomeMessage(id: "post", conversationId: "group", channel: "telegram", direction: "outbound", replyToId: nil, text: post,
+                               externalId: "-100200:news:desk:kettle-3", createdAt: "2026-11-10T09:00:00.000Z", status: "completed", error: nil, kind: "text", author: "Desk Bot")
+        #expect(!MessagePages.isOwnerReply(sent))
+        // Another scheme still loses its target.
+        #expect(links("[file](<file:///private/notes_(1).txt>)").isEmpty)
+    }
+
     @Test func imagesRemainVisibleBetweenText() {
         let blocks = MessageContent(source: "До ![Стул](https://example.com/chair.jpg) после").blocks
         #expect(blocks.map(\.kind) == ["paragraph", "image", "paragraph"])

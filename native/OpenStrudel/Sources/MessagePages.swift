@@ -44,10 +44,11 @@ enum MessagePages {
         return false
     }
 
-    /// The owner's explicit reply in Telegram: the bot publishes it, a person wrote it.
-    /// The employee's own replies carry no author.
+    /// The owner's explicit reply in Telegram: the bot publishes it, a person wrote it, and it answers a request.
+    /// The employee's own replies carry no author. What the Home posts by itself (a story, an edition, a message an
+    /// employee sent to a chat) carries the bot's name and answers nothing: it is the employee's text, read as Markdown.
     static func isOwnerReply(_ message: HomeMessage) -> Bool {
-        message.direction == "outbound" && message.channel == "telegram" && message.author != nil && message.imported != true
+        message.direction == "outbound" && message.channel == "telegram" && message.author != nil && message.imported != true && message.replyToId != nil
     }
 
     /// The one line above a message from Telegram or the archive. A request names its author first, then its group,

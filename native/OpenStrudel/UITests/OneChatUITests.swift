@@ -19,12 +19,12 @@ final class OneChatUITests: XCTestCase {
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 5) { consent.tap() }
 
-        // 1. The chat is the first place: history already there, the composer ready, exactly four tabs and no Clients.
+        // 1. The chat is the first place: history already there, the composer ready, the team beside it and no Clients.
         let composer = app.textFields["Сообщение"]
         XCTAssertTrue(composer.waitForExistence(timeout: 30), app.debugDescription)
         XCTAssertTrue(app.staticTexts["Три встречи и один акт на подпись."].waitForExistence(timeout: 40), app.debugDescription)
-        XCTAssertTrue(app.tabBars.buttons["Чат"].exists && app.tabBars.buttons["Инсайты"].exists && app.tabBars.buttons["Прогресс"].exists && app.tabBars.buttons["Статистика"].exists, app.debugDescription)
-        XCTAssertEqual(app.tabBars.buttons.count, 4)
+        XCTAssertTrue(app.tabBars.buttons["Чат"].exists && app.tabBars.buttons["Команда"].exists && app.tabBars.buttons["Инсайты"].exists && app.tabBars.buttons["Прогресс"].exists && app.tabBars.buttons["Статистика"].exists, app.debugDescription)
+        XCTAssertEqual(app.tabBars.buttons.count, 5)
         XCTAssertFalse(app.buttons["newEmployee"].exists)
         let send = app.buttons["sendMessage"]
         XCTAssertTrue(send.waitForExistence(timeout: 10), app.debugDescription)
@@ -99,7 +99,8 @@ final class OneChatUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Отправить"].exists)
         capture("reader-employee", app)
         history.press(forDuration: 1.2)
-        let discuss = app.buttons["Обсудить в чате"]
+        // The message's own menu, not the toolbar's button for the latest message.
+        let discuss = app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "Обсудить в чате", "discussLatest")).firstMatch
         XCTAssertTrue(discuss.waitForExistence(timeout: 5), app.debugDescription); discuss.tap()
         XCTAssertTrue(app.textFields["Сообщение"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.textFields["Сообщение"].value as? String, "Черновик, который должен выжить")
@@ -124,9 +125,8 @@ final class OneChatUITests: XCTestCase {
         app.tabBars.buttons["Инсайты"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["insightsRoot"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.textFields["Сообщение"].exists)
-        // The feed leads what there is to read, with its lead story.
-        XCTAssertTrue(app.buttons["newsEntry-" + editorID].waitForExistence(timeout: 15), app.debugDescription)
-        XCTAssertTrue((app.buttons["newsEntry-" + editorID].label).contains("Mistral"), app.debugDescription)
+        // A desk is read from the team list now; Insights keeps to results and what needs attention.
+        XCTAssertFalse(app.buttons["newsEntry-" + editorID].exists)
         let activity = try XCTUnwrap(state["activity"] as? [String: Any])
         let insight = app.buttons["insight-" + (try XCTUnwrap(activity["id"] as? String))]
         XCTAssertTrue(insight.waitForExistence(timeout: 15), app.debugDescription); insight.tap()
@@ -201,6 +201,9 @@ final class OneChatUITests: XCTestCase {
         capture("large-text-progress", app)
         app.tabBars.buttons["Чат"].tap()
         app.buttons["openChats"].tap()
+        // At this size the desk's row with its latest headline fills the first screen of the list.
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        for _ in 0..<4 { if employee.exists && employee.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(employee.waitForExistence(timeout: 10), app.debugDescription); employee.tap()
         XCTAssertTrue(app.buttons["readerTitle"].waitForExistence(timeout: 10)); app.buttons["readerTitle"].tap()
         for _ in 0..<5 { if projectEntry.isHittable { break }; app.swipeUp() }

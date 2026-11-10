@@ -146,6 +146,17 @@ enum ChatMedia {
         ] as CFDictionary)
     }
 
+    /// A story's picture, read into memory over https with the same unauthenticated session and limits.
+    static func picture(_ address: String, maxPixels: Int = 1600) async throws -> CGImage {
+        guard let url = URL(string: address), url.scheme?.lowercased() == "https", url.host != nil, url.user == nil, url.password == nil else { throw URLError(.unsupportedURL) }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 30
+        let (data, response) = try await publicImages.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), data.count <= 25 * 1024 * 1024,
+              let image = thumbnail(data, maxPixels: maxPixels) else { throw URLError(.cannotDecodeContentData) }
+        return image
+    }
+
     /// Web pictures use a separate, unauthenticated session, never the Home token.
     static func download(_ url: URL) async throws -> URL {
         guard ["https", "http"].contains(url.scheme?.lowercased() ?? ""), url.host != nil,

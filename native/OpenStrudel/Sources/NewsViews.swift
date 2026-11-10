@@ -115,6 +115,43 @@ private struct Kicker: View {
     }
 }
 
+/// A story's picture. Nothing is kept for it on the page: it takes its place when it has loaded, and one that
+/// does not load stays out without a word.
+private struct NewsPicture: View {
+    let address: String?
+    let maxHeight: CGFloat
+    @State private var image: CGImage?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// A picture seen on the page opens with its story at once.
+    @MainActor private static var loaded: [String: CGImage] = [:]
+
+    init(address: String?, maxHeight: CGFloat) {
+        self.address = address; self.maxHeight = maxHeight
+        _image = State(initialValue: address.flatMap { Self.loaded[$0] })
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if let image {
+                // The picture's own shape inside the column and the cap, so its corners are the picture's.
+                Image(decorative: image, scale: 1).resizable()
+                    .aspectRatio(CGFloat(image.width) / CGFloat(max(image.height, 1)), contentMode: .fit)
+                    .frame(maxHeight: maxHeight)
+                    .clipShape(.rect(cornerRadius: Radius.card, style: .continuous))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 20)
+                    .transition(.opacity)
+                    .accessibilityIdentifier("newsPicture")
+            }
+        }
+        .task(id: address) {
+            guard let address, image == nil, let picture = try? await ChatMedia.picture(address), !Task.isCancelled else { return }
+            Self.loaded[address] = picture
+            withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : .smooth(duration: 0.25)) { image = picture }
+        }
+    }
+}
+
 private struct ArrowLabel: View {
     let title: String
     var symbol = "arrow.right"
@@ -127,7 +164,7 @@ private struct ArrowLabel: View {
 
 // MARK: - The screen
 
-/// One feed, opened from the sidebar, from Insights or from the conversations list.
+/// One desk, opened from the team list or from the conversations list.
 struct NewsScreen: View {
     @EnvironmentObject private var library: DeviceLibrary
     @EnvironmentObject private var client: HomeClient
@@ -407,7 +444,7 @@ private struct NewsDayPage: View {
             }
         }
         if hasEdition {
-            head(page.editionDate == page.date ? words("Утренний выпуск") : words("Выпуск за \(words.day(page.editionDate ?? page.date, now: now))"), words: words)
+            head(words.editionTitle(page, named: feed.edition, now: now), words: words)
                 .padding(.top, hasFresh ? 32 : 0).padding(.bottom, 16).id("edition")
             // One run of rows, so a story keeps its identity when the next edition makes it the lead.
             ForEach(Array(page.edition.enumerated()), id: \.element.id) { index, item in
@@ -542,15 +579,18 @@ private struct NewsLeadStory: View {
 
     var body: some View {
         Button(action: open) {
-            VStack(alignment: .leading, spacing: 12) {
-                Kicker(section: item.story.section, status: item.story.status, developed: developed)
-                Text(item.story.title).font(NewsType.headline(36, .title)).lineSpacing(2)
-                    .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
-                Text(item.story.summary).font(NewsType.lead).foregroundStyle(AppTheme.secondaryText).lineSpacing(AppTypography.readingLineSpacing)
-                    .lineLimit(3).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
-                if !item.story.domains.isEmpty {
-                    Text(item.story.domains.joined(separator: " · ")).font(AppTypography.meta).foregroundStyle(AppTheme.secondaryText)
-                        .lineLimit(1).padding(.top, 4)
+            VStack(alignment: .leading, spacing: 0) {
+                NewsPicture(address: item.story.image, maxHeight: 320)
+                VStack(alignment: .leading, spacing: 12) {
+                    Kicker(section: item.story.section, status: item.story.status, developed: developed)
+                    Text(item.story.title).font(NewsType.headline(36, .title)).lineSpacing(2)
+                        .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                    Text(item.story.summary).font(NewsType.lead).foregroundStyle(AppTheme.secondaryText).lineSpacing(AppTypography.readingLineSpacing)
+                        .lineLimit(3).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                    if !item.story.domains.isEmpty {
+                        Text(item.story.domains.joined(separator: " · ")).font(AppTypography.meta).foregroundStyle(AppTheme.secondaryText)
+                            .lineLimit(1).padding(.top, 4)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -710,6 +750,7 @@ private struct NewsArticle: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                NewsPicture(address: story.image, maxHeight: 360)
                 Kicker(section: story.section, status: story.status)
                 Text(story.title).font(NewsType.headline(42, .largeTitle)).lineSpacing(2).padding(.top, 16)
                     .fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
@@ -906,49 +947,5 @@ private struct NewsArticle: View {
                      version.id == item.versions.first?.id ? words("Первое сообщение") : version.story?.change ?? "")
             }
         }
-    }
-}
-
-// MARK: - Entry points
-
-/// The Mac sidebar's row for a feed: its name and how much of today the reader has not seen.
-struct NewsSidebarRow: View {
-    @ObservedObject var feed: NewsFeed
-    var body: some View {
-        Label(feed.route.title, systemImage: "newspaper").badge(feed.unseen)
-    }
-}
-
-/// The feed's row where the iPhone lists what to read: what leads today, and how much is new.
-struct NewsEntryRow: View {
-    @ObservedObject var feed: NewsFeed
-    @Environment(\.dynamicTypeSize) private var textSize
-
-    var body: some View {
-        let words = feed.words, unseen = feed.unseen
-        let name = Text(feed.route.title.uppercased()).tracking(1.4).foregroundStyle(AppTheme.secondaryText)
-        let fresh = Text(words.fresh(unseen).uppercased(with: words.language.locale)).tracking(1.4).foregroundStyle(Color("NewsStatusText"))
-        VStack(alignment: .leading, spacing: 6) {
-            // Large text puts the count under the name rather than breaking its words.
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 6) {
-                    name.fixedSize()
-                    if unseen > 0 {
-                        Text("·").foregroundStyle(AppTheme.secondaryText).accessibilityHidden(true)
-                        fresh.fixedSize()
-                    }
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    name
-                    if unseen > 0 { fresh }
-                }
-            }
-            .font(NewsType.kicker)
-            Text(feed.headline ?? words("Утренний выпуск")).font(NewsType.headline(22, .title3)).foregroundStyle(.primary)
-                .lineLimit(textSize.isAccessibilitySize ? nil : 3).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
     }
 }

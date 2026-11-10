@@ -3,14 +3,15 @@ import SwiftUI
 enum PrimaryTab: String, CaseIterable {
     case chat, statistics
     #if os(iOS)
-    case insights, progress
+    case team, insights, progress
     #else
-    /// A News feed chosen in the sidebar.
-    case news
+    /// An employee chosen in the sidebar.
+    case member
     #endif
 }
 
-/// One chat owns the composer. Statistics reads every connected Home; the Mac lists each News feed beside them, and mobile
+/// One chat owns the composer; the team beside it is read. The Mac sidebar lists the main assistant and every employee with
+/// what it is doing now, the iPhone has the same rows under «Команда». Statistics reads every connected Home, and mobile
 /// adds sourced insights and recorded progress.
 struct OpenStrudelRootView: View {
     @EnvironmentObject private var library: DeviceLibrary
@@ -21,6 +22,8 @@ struct OpenStrudelRootView: View {
     @State private var titleBarHeight: CGFloat = 0
     #else
     @State private var showSettings = false
+    /// The pages opened from «Команда».
+    @State private var teamRoutes: [ReaderRoute] = []
     @State private var insightRoutes = NavigationPath()
     @State private var progressRoutes = NavigationPath()
     @StateObject private var activity = ActivityModel()
@@ -30,14 +33,27 @@ struct OpenStrudelRootView: View {
     @State private var tab = PrimaryTab.chat
     /// The News feeds: what each has shown, what this device has read, and where its reader is.
     @StateObject private var newsroom = Newsroom()
+    /// What this device has read of each employee.
+    @StateObject private var marks = TeamReadMarks()
     #if os(macOS)
-    /// The feed open while the sidebar is on News.
-    @State private var newsRoute: ReaderRoute?
+    /// The employee whose page is open while the sidebar is on one.
+    @State private var memberRoute: ReaderRoute?
+    @State private var renaming: RenameTarget?
+    @State private var moving: EmployeeMoveRequest?
     #endif
     /// The readers opened over the chat, newest last. Back returns to the chat as it was.
     @State private var readers: [ReaderRoute] = []
     @State private var showHistory = false
     @AppStorage("openstrudel.aiConsent.v1") private var aiConsent = false
+
+    /// Changes when a Home's list of employees does, or when a Home begins to list its team's work.
+    private var catalogues: [String] {
+        library.teamHomes.map { source in
+            let employees = source.profiles.map(\.id).joined(separator: ",")
+            let listsWork = source.profiles.contains { $0.working != nil }
+            return source.catalogueIdentity + ":" + employees + ":" + String(listsWork)
+        }
+    }
 
     private var pollingPhase: ScenePhase {
         #if os(iOS)
@@ -102,11 +118,20 @@ struct OpenStrudelRootView: View {
                 }
             }
         }
-        #if os(macOS)
-        // A feed that left with its employee or its device gives the sidebar back to the chat.
-        .onChange(of: library.newsFeeds.map(\.route.id)) { _, feeds in
-            if tab == .news, !feeds.contains(newsRoute?.id ?? "") { tab = .chat }
+        // An employee this device meets for the first time starts read.
+        .onChange(of: catalogues, initial: true) { _, _ in
+            for source in library.teamHomes { marks.meet(source.profiles, on: source) }
         }
+        #if os(macOS)
+        // An employee that left with its device, or was hidden, gives the sidebar back to the chat. One that published
+        // its first story stays chosen as the desk it has become.
+        .onChange(of: library.team.map(\.member.id)) { _, rows in
+            guard tab == .member, let route = memberRoute, !rows.contains(route.id) else { return }
+            if let same = library.team.first(where: { $0.member.route.connectionID == route.connectionID && $0.member.profile.id == route.profileID }) { memberRoute = same.member.route }
+            else { tab = .chat }
+        }
+        .sheet(item: $moving) { EmployeeMoveView(request: $0) }
+        .sheet(item: $renaming) { NameEditor(target: $0) }
         #endif
         #if os(macOS)
         // A server that finishes installing after its setup window closed joins the list by itself.
@@ -121,8 +146,8 @@ struct OpenStrudelRootView: View {
             EmployeePicker { route in
                 showHistory = false
                 #if os(macOS)
-                // A feed has its own place in the sidebar.
-                if case .news = route.kind { newsRoute = route; tab = .news; return }
+                // An employee has its own place in the sidebar.
+                if library.team.contains(where: { $0.member.id == route.id }) { sidebarSelection.wrappedValue = .member(route.id); return }
                 #endif
                 // A reader opens over the chat, whichever place the list was opened from.
                 newsroom.hold()
@@ -188,32 +213,42 @@ struct OpenStrudelRootView: View {
             #if os(macOS)
             NavigationSplitView {
                 List(selection: sidebarSelection) {
-                    Label(L("Чат"), systemImage: "bubble.left.and.text.bubble.right")
+                    TeamLeadRow(selected: tab == .chat)
                         .tag(SidebarPlace.tab(.chat)).accessibilityIdentifier("primaryTab-chat")
-                    // A Home with News has it one click away, with how much of today is unread.
-                    ForEach(library.newsFeeds, id: \.route.id) { feed in
-                        NewsSidebarRow(feed: newsroom.feed(feed.route, on: feed.source))
-                            .tag(SidebarPlace.news(feed.route.id)).accessibilityIdentifier("primaryTab-news-" + (feed.route.profileID ?? ""))
+                    ForEach(library.team(on: library.primary)) { sidebarRow($0, on: library.primary) }
+                    // Every other Home folds under its name.
+                    ForEach(Array(library.teamHomes.dropFirst())) { source in
+                        let members = library.team(on: source)
+                        if !members.isEmpty {
+                            Section(isExpanded: Binding(get: { !library.collapsedDeviceIDs.contains(source.id) }, set: { library.setCollapsed(!$0, client: source) })) {
+                                ForEach(members) { sidebarRow($0, on: source) }
+                            } header: {
+                                TeamHomeTitle(source: source).accessibilityIdentifier("teamHome-" + source.id)
+                            }
+                        }
                     }
-                    Label(L("Статистика"), systemImage: "chart.bar")
-                        .tag(SidebarPlace.tab(.statistics)).accessibilityIdentifier("primaryTab-statistics")
+                    Section {
+                        HiddenEmployeesButton()
+                        // The numbers stay within reach and out of the team's way.
+                        Label(L("Статистика"), systemImage: "chart.bar").foregroundStyle(.secondary)
+                            .tag(SidebarPlace.tab(.statistics)).accessibilityIdentifier("primaryTab-statistics")
+                    }
                 }
                 .listStyle(.sidebar)
-                .navigationSplitViewColumnWidth(min: 180, ideal: 220)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 264, max: 360)
             } detail: {
                 switch tab {
                 case .chat: chatStack
-                case .news: newsStack
+                case .member: memberStack
                 case .statistics: statisticsStack
                 }
             }
-            // View › Chat, News, Statistics: ⌘1, ⌘2… in the sidebar's order.
-            .focusedSceneValue(\.places, [PlaceCommand(id: "chat", title: L("Чат")) { sidebarSelection.wrappedValue = .tab(.chat) }]
-                + library.newsFeeds.map { feed in PlaceCommand(id: feed.route.id, title: feed.route.title) { sidebarSelection.wrappedValue = .news(feed.route.id) } }
-                + [PlaceCommand(id: "statistics", title: L("Статистика")) { sidebarSelection.wrappedValue = .tab(.statistics) }])
+            // View › the chat, each employee in sight, Statistics: ⌘1, ⌘2… in the sidebar's order.
+            .focusedSceneValue(\.places, placeCommands)
             #else
             TabView(selection: $tab) {
                 Tab(L("Чат"), systemImage: "bubble.left.and.text.bubble.right", value: PrimaryTab.chat) { chatStack }
+                Tab(L("Команда"), systemImage: "person.2", value: PrimaryTab.team) { teamStack }
                 Tab(L("Insights"), systemImage: "sparkle", value: PrimaryTab.insights) { insightsStack }
                 Tab(L("Progress"), systemImage: "checkmark.circle", value: PrimaryTab.progress) { progressStack }
                 Tab(L("Статистика"), systemImage: "chart.bar", value: PrimaryTab.statistics) { statisticsStack }
@@ -225,28 +260,44 @@ struct OpenStrudelRootView: View {
         // Edit › Find a chat (⌘F) opens the conversations and their search.
         .focusedSceneValue(\.findChat) { showHistory = true }
         .environmentObject(newsroom)
+        .environmentObject(marks)
     }
 
     #if os(macOS)
-    private enum SidebarPlace: Hashable { case tab(PrimaryTab), news(String) }
+    private enum SidebarPlace: Hashable { case tab(PrimaryTab), member(String) }
 
     private var sidebarSelection: Binding<SidebarPlace?> {
-        let current: SidebarPlace? = tab == .news ? newsRoute.map { .news($0.id) } : .tab(tab)
+        let current: SidebarPlace? = tab == .member ? memberRoute.map { .member($0.id) } : .tab(tab)
         return Binding(get: { current }, set: { selection in
             guard let selection, selection != current else { return }
-            // Leaving a feed for another place closes its pages, not what the reader had open in it.
+            // Leaving a desk for another place closes its pages, not what the reader had open in it.
             newsroom.hold()
             switch selection {
             case .tab(let place): tab = place
-            case .news(let id): if let feed = library.newsFeeds.first(where: { $0.route.id == id }) { newsRoute = feed.route; tab = .news }
+            case .member(let id): if let row = library.team.first(where: { $0.member.id == id }) { memberRoute = row.member.route; tab = .member }
             }
         })
     }
 
-    /// A feed read in its own place. Where the reader was in it stays with the feed, so the chat and back loses nothing.
-    @ViewBuilder private var newsStack: some View {
-        if let newsRoute {
-            NavigationStack { ReaderScreen(route: newsRoute, discuss: discuss) }.id(newsRoute.id)
+    private var placeCommands: [PlaceCommand] {
+        let shown = library.team.filter { $0.source === library.primary || !library.collapsedDeviceIDs.contains($0.source.id) }
+        let members = shown.map { row in PlaceCommand(id: row.member.id, title: row.member.profile.name) { sidebarSelection.wrappedValue = .member(row.member.id) } }
+        return [PlaceCommand(id: "chat", title: L("Чат")) { sidebarSelection.wrappedValue = .tab(.chat) }] + members
+            + [PlaceCommand(id: "statistics", title: L("Статистика")) { sidebarSelection.wrappedValue = .tab(.statistics) }]
+    }
+
+    private func sidebarRow(_ member: TeamMember, on source: HomeClient) -> some View {
+        TeamMemberRow(member: member, source: source, selected: tab == .member && memberRoute?.id == member.id)
+            .tag(SidebarPlace.member(member.id))
+            .accessibilityIdentifier("teamMember-" + member.profile.id)
+            .modifier(TeamMenu(member: member, source: source, renaming: $renaming, moving: $moving))
+    }
+
+    /// An employee read in its own place: a desk's reader, or its page. Where the reader was in a desk stays with the
+    /// desk, so the chat and back loses nothing.
+    @ViewBuilder private var memberStack: some View {
+        if let memberRoute {
+            NavigationStack { ReaderScreen(route: memberRoute, discuss: discuss) }.id(memberRoute.id)
         }
     }
     #endif
@@ -272,6 +323,14 @@ struct OpenStrudelRootView: View {
     }
 
     #if os(iOS)
+    /// The team's pages keep their place while the reader is in another tab.
+    private var teamStack: some View {
+        NavigationStack(path: $teamRoutes) {
+            TeamTab(openChat: { tab = .chat }, open: { teamRoutes.append($0) })
+                .navigationDestination(for: ReaderRoute.self) { route in ReaderScreen(route: route, discuss: discuss) }
+        }
+    }
+
     private var insightsStack: some View {
         NavigationStack(path: $insightRoutes) {
             InsightsTab(model: activity, scope: activityScope, refresh: { await refreshActivity(includeLimits: false) }, openChat: { tab = .chat })

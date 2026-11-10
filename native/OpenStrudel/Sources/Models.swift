@@ -113,6 +113,8 @@ struct NewsStory: Codable, Hashable {
     let eventAt: String?
     let change: String?
     let sources: [Source]
+    /// A picture that proves the story, as an https address; older Homes send none.
+    var image: String? = nil
 }
 
 /// What the Home knows about the feed's scheduled runs. Older Homes send none, and every field may be missing.
@@ -142,7 +144,9 @@ struct NewsStatus: Decodable, Equatable {
     private enum Keys: String, CodingKey { case running, checkedAt, failedAt, failure, nextRunAt }
 }
 
-struct NewsFeedEnvelope: Decodable { let messages: [HomeMessage]; let stamp: String?; var status: NewsStatus? = nil }
+/// The edition the desk named itself, when it gave it a title.
+struct NewsEditionTitle: Decodable, Equatable { let date: String; let title: String }
+struct NewsFeedEnvelope: Decodable { let messages: [HomeMessage]; let stamp: String?; var status: NewsStatus? = nil; var edition: NewsEditionTitle? = nil }
 
 struct TelegramStatus: Codable {
     let configured: Bool
@@ -223,6 +227,9 @@ struct ScheduleRun: Decodable, Identifiable {
     let id: String
     let status: String
     let error: String?
+    var scheduleId: String? = nil
+    /// The moment the run was due.
+    var scheduledFor: String? = nil
 }
 struct SchedulesEnvelope: Decodable { let schedules: [ChatSchedule]; let runs: [ScheduleRun] }
 struct ScheduleResponse: Decodable { let schedule: ChatSchedule }
@@ -435,6 +442,15 @@ struct EmployeeProfile: Codable, Identifiable, Hashable {
     let tokenLimit: Int?
     let createdAt: String
     var preview: String? = nil
+    /// When the answer the preview is taken from was written. This and the three below come from Homes that list
+    /// their team's work; an older Home sends none of them.
+    var previewAt: String? = nil
+    /// A request in one of its chats is waiting or running now.
+    var working: Bool? = nil
+    /// The earliest next run of its recurring schedules.
+    var nextRunAt: String? = nil
+    /// The latest finished run of one of its schedules failed.
+    var failing: Bool? = nil
     var domain: String? = nil
     var purpose: String? = nil
     var deviceId: String? = nil
@@ -445,11 +461,7 @@ struct EmployeeProfile: Codable, Identifiable, Hashable {
     var isWork: Bool { domain == "work" }
     var roleText: String { purpose?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
 
-    var previewText: String {
-        guard let firstLine = preview?.split(separator: "\n").first else { return "" }
-        let plain = (try? AttributedString(markdown: String(firstLine))) ?? AttributedString(String(firstLine))
-        return String(plain.characters)
-    }
+    var previewText: String { Team.line(preview) }
 }
 
 struct ProfilesEnvelope: Decodable {

@@ -43,10 +43,17 @@ struct ReaderScreen: View {
 private struct ReaderView: View {
     @EnvironmentObject private var library: DeviceLibrary
     @EnvironmentObject private var client: HomeClient
+    @EnvironmentObject private var marks: TeamReadMarks
     @StateObject private var reader: ConversationReader
     let discuss: (ChatContext) -> Void
     @State private var details: EmployeeProfile?
     @State private var unavailable: String?
+    @State private var onScreen = false
+    #if os(macOS)
+    @Environment(\.appearsActive) private var appearsActive
+    #else
+    @Environment(\.scenePhase) private var scenePhase
+    #endif
 
     init(reader: ConversationReader, discuss: @escaping (ChatContext) -> Void) {
         _reader = StateObject(wrappedValue: reader)
@@ -57,11 +64,33 @@ private struct ReaderView: View {
         if case .employee(let id) = reader.route.kind { return client.profiles.first { $0.id == id } }
         return nil
     }
+    /// The employee's name as it is now, also after a rename while its page is open.
+    private var title: String { profile?.name ?? reader.title }
+    /// The employee's latest words: what the toolbar's «Обсудить в чате» takes to the chat.
+    private var latest: HomeMessage? {
+        reader.messages.last { $0.direction == "outbound" && $0.kind != "notice" && $0.story == nil && !$0.text.isEmpty && !MessagePages.isOwnerReply($0) }
+    }
+    private var windowIsActive: Bool {
+        #if os(macOS)
+        appearsActive
+        #else
+        scenePhase == .active
+        #endif
+    }
+    /// What the Home says wins; a Home that does not say is read from the runs themselves.
+    private var failure: (since: Date?, reason: String?)? {
+        guard let profile, !client.isOffline(profile) else { return nil }
+        let found = Team.failure(reader.runs, schedules: reader.schedules)
+        guard profile.failing ?? (found != nil) else { return nil }
+        return (found?.since, found?.reason)
+    }
 
     var body: some View {
-        ReaderTranscript(reader: reader) { message in quote { home in .message(message, title: reader.title, home: home) } }
+        ReaderTranscript(reader: reader, profile: profile, offline: client.isOffline(profile), showDetails: { details = profile }) { message in
+            quote { home in .message(message, title: title, home: home) }
+        }
         .safeAreaBar(edge: .top, spacing: 0) { topBar }
-        .navigationTitle(reader.title)
+        .navigationTitle(title)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -71,7 +100,7 @@ private struct ReaderView: View {
                     HStack(spacing: 8) {
                         if let profile { AgentAvatar(appearance: profile.resolvedAppearance, size: AvatarSize.toolbar).offlineCharacter(client.isOffline(profile)) }
                         else if case .main = reader.route.kind { AgentAvatar(appearance: nil, size: AvatarSize.toolbar).offlineCharacter(client.isOffline(nil)) }
-                        Text(reader.title).font(.body.weight(.semibold)).lineLimit(1)
+                        Text(title).font(.body.weight(.semibold)).lineLimit(1)
                     }
                     .frame(maxWidth: 240)
                     #if os(iOS)
@@ -81,12 +110,36 @@ private struct ReaderView: View {
                 .buttonStyle(.plain)
                 .disabled(profile == nil)
                 .accessibilityLabel(profile == nil ? reader.title : L("Настройки сотрудника"))
-                .accessibilityValue(reader.title)
+                .accessibilityValue(title)
                 .accessibilityIdentifier("readerTitle")
+            }
+            if profile != nil {
+                // The page's one way to the composer: the employee's latest words go to the chat as context.
+                ToolbarItem(placement: .primaryAction) {
+                    Button { if let latest { quote { home in .message(latest, title: title, home: home) } } } label: {
+                        Label(L("Обсудить в чате"), systemImage: "text.quote")
+                    }
+                    #if os(macOS)
+                    .labelStyle(.titleAndIcon)
+                    #endif
+                    .disabled(latest == nil)
+                    .help(L("Взять последнее сообщение в чат"))
+                    .accessibilityIdentifier("discussLatest")
+                }
             }
         }
         .environment(\.readerMessages, reader.messages)
         .task { await reader.follow() }
+        // The rhythm is read when the page opens, when a run starts or ends, and when the details close.
+        .task(id: [reader.conversationID ?? "", profile?.nextRunAt ?? "", String(profile?.working == true), String(profile?.failing == true), String(details == nil)].joined(separator: "|")) {
+            await reader.loadRhythm()
+        }
+        .onAppear { onScreen = true }
+        .onDisappear { onScreen = false }
+        // What is on screen in the active window has been read.
+        .onChange(of: [profile?.previewAt ?? "", String(onScreen && windowIsActive)], initial: true) { _, _ in
+            if onScreen, windowIsActive, let profile { marks.see(profile, on: client) }
+        }
         .sheet(item: $details) { profile in BotDetailsView(profile: profile, conversationID: reader.conversationID).environmentObject(client) }
         .alert(L("Нет связи"), isPresented: Binding(get: { unavailable != nil }, set: { if !$0 { unavailable = nil } })) {
             Button(L("Понятно"), role: .cancel) {}
@@ -103,24 +156,99 @@ private struct ReaderView: View {
         discuss(make(home))
     }
 
+    /// What the reader must know wherever the page is scrolled: the device is out of reach, or the employee's runs fail.
     @ViewBuilder private var topBar: some View {
         let offline = client.homeUnreachable || client.connectionNeedsPairing
-        if offline || reader.error != nil {
-            Label(offline ? L("«\(client.displayName)» не на связи. Показано, что уже прочитано.") : (reader.error ?? ""), systemImage: "wifi.slash")
-                .font(AppTypography.meta).foregroundStyle(AppTheme.secondaryText)
-                .accessibilityIdentifier("readerUnavailable")
-                .frame(maxWidth: Layout.column, alignment: .leading)
-                .padding(.horizontal, Layout.edge)
-                .padding(.top, 16)
-                .padding(.bottom, 8)
-                .frame(maxWidth: .infinity)
+        if offline || reader.error != nil || failure != nil {
+            VStack(alignment: .leading, spacing: 8) {
+                if offline || reader.error != nil {
+                    Label(offline ? L("«\(client.displayName)» не на связи. Показано, что уже прочитано.") : (reader.error ?? ""), systemImage: "wifi.slash")
+                        .foregroundStyle(AppTheme.secondaryText)
+                        .accessibilityIdentifier("readerUnavailable")
+                }
+                if let failure {
+                    // Since when it has not worked, and why. The way to its schedules is one click away.
+                    Button { details = profile } label: {
+                        TimelineView(.everyMinute) { timeline in
+                            Label(TeamWords().failure(since: failure.since, reason: failure.reason, now: timeline.date), systemImage: "exclamationmark.triangle")
+                                .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(minHeight: controlTarget).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(AppTheme.warning)
+                    .accessibilityIdentifier("readerFailing")
+                }
+            }
+            .font(AppTypography.meta)
+            // Each line keeps its own name for assistive tools and tests, under the reader's.
+            .accessibilityElement(children: .contain)
+            .frame(maxWidth: Layout.column, alignment: .leading)
+            .padding(.horizontal, Layout.edge)
+            .padding(.top, offline || reader.error != nil ? 16 : 8)
+            .padding(.bottom, failure == nil ? 8 : 0)
+            .frame(maxWidth: .infinity)
         }
     }
 }
 
-/// The transcript of a reader: the same bubbles as the chat, read-only. Each message can be discussed in the chat.
+/// The top of an employee's page: who it is, what it is for and when it works. The rhythm line opens its details,
+/// where a schedule can be paused.
+private struct EmployeePageHeader: View {
+    let profile: EmployeeProfile
+    let offline: Bool
+    let schedules: [ChatSchedule]
+    let showDetails: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            WorkingCharacter(appearance: profile.resolvedAppearance, size: AvatarSize.header, working: profile.working == true && !offline, offline: offline)
+            Text(profile.name).font(AppTypography.display).fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 16).accessibilityAddTraits(.isHeader)
+            if !profile.roleText.isEmpty {
+                Text(profile.roleText).font(AppTypography.reading).lineSpacing(AppTypography.readingLineSpacing)
+                    .foregroundStyle(AppTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4).accessibilityIdentifier("employeeRole")
+            }
+            // "Tomorrow" becomes "today" by itself.
+            TimelineView(.everyMinute) { timeline in
+                if let rhythm = TeamWords().rhythm(schedules, now: timeline.date) {
+                    Button(action: showDetails) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Image(systemName: "clock").accessibilityHidden(true)
+                            Text(rhythm).monospacedDigit().multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                            Image(systemName: "chevron.forward").imageScale(.small).opacity(hovering ? 1 : 0.5).accessibilityHidden(true)
+                        }
+                        .font(AppTypography.meta)
+                        .foregroundStyle(hovering ? AnyShapeStyle(.primary) : AnyShapeStyle(AppTheme.secondaryText))
+                        .frame(minHeight: controlTarget).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { hovering = $0 }
+                    .animation(.easeInOut(duration: 0.15), value: hovering)
+                    .padding(.top, 8)
+                    .accessibilityHint(L("Открыть расписание"))
+                    .accessibilityIdentifier("employeeRhythm")
+                    .transition(.opacity)
+                }
+            }
+            .animation(.smooth(duration: 0.25), value: schedules.map(\.id))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("employeeHeader")
+    }
+}
+
+/// The transcript of a reader: the same bubbles as the chat, read-only. An employee's page opens with who it is.
+/// Each message can be discussed in the chat.
 private struct ReaderTranscript: View {
     @ObservedObject var reader: ConversationReader
+    /// The employee whose page this is; nil for a Telegram chat, an archive or another Home's assistant.
+    let profile: EmployeeProfile?
+    let offline: Bool
+    let showDetails: () -> Void
     let discuss: (HomeMessage) -> Void
     @State private var columnWidth: CGFloat = Layout.column
     /// Stories live in the News reader; the employee's history keeps the conversation, as the chat does.
@@ -128,24 +256,31 @@ private struct ReaderTranscript: View {
 
     var body: some View {
         ScrollView {
-            if messages.isEmpty {
-                if reader.loaded {
+            // Nothing is drawn before the first page arrives, so the page opens at its latest message.
+            if reader.loaded || !messages.isEmpty {
+                if let profile {
+                    VStack(alignment: .leading, spacing: 0) {
+                        EmployeePageHeader(profile: profile, offline: offline, schedules: reader.schedules, showDetails: showDetails)
+                            .padding(.bottom, 48)
+                        if messages.isEmpty {
+                            Text(L("Пока тихо. Первый результат появится здесь.")).font(AppTypography.reading).lineSpacing(AppTypography.readingLineSpacing)
+                                .foregroundStyle(AppTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("readerEmpty")
+                        } else { rows }
+                    }
+                    .modifier(ReaderColumn())
+                } else if messages.isEmpty {
                     VStack(spacing: 8) {
                         Text(L("Пока пусто")).font(AppTypography.display)
-                        Text(L("Здесь появится переписка этого чата. Писать можно во вкладке «Чат».")).font(AppTypography.interface).foregroundStyle(AppTheme.secondaryText)
+                        Text(L("Сообщения этой переписки появятся здесь.")).font(AppTypography.interface).foregroundStyle(AppTheme.secondaryText)
                             .multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: 360).padding(.horizontal, 24)
                     .frame(maxWidth: .infinity, minHeight: 430)
                     .accessibilityIdentifier("readerEmpty")
+                } else {
+                    rows.modifier(ReaderColumn())
                 }
-            } else {
-                rows
-                    .frame(maxWidth: Layout.column, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.horizontal, Layout.edge)
-                    .padding(.top, Layout.belowToolbar)
-                    .padding(.bottom, 48)
             }
         }
         .scrollIndicators(.hidden)
@@ -196,5 +331,17 @@ private struct ReaderTranscript: View {
             }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columnWidth = $0 }
+    }
+}
+
+/// The reading column: the chat's width, centred, with the chat's margins.
+private struct ReaderColumn: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: Layout.column, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.horizontal, Layout.edge)
+            .padding(.top, Layout.belowToolbar)
+            .padding(.bottom, 48)
     }
 }
