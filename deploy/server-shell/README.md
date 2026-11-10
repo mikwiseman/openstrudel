@@ -22,9 +22,10 @@ Nobody has it in a group, including the owner. Schedules, automatic runs, other 
 
 Read this before you install it.
 
-- The Home process becomes equal to root on the server. Anything that can write into the Home's data folder can run commands as root. The agents' own sandboxes cannot read or write that folder.
+- The Home process becomes equal to root on the server. Anything that can write into the Home's data folder can run commands as root. The agents' own sandboxes cannot read or write that folder. The services and plugins that the owner connects in "Services and skills" run outside those sandboxes, so connect only the ones you trust with the server.
 - The assistant decides which commands to run. A web page, a file or an email that the owner asks it to read may try to talk it into a harmful command. In the approval mode "no confirmations" nothing asks the owner first. In the other modes the owner confirms each command.
 - A Telegram account named at installation is a root login to this server. Protect it with two-step verification.
+- `openstrudel-update` runs whatever is on `main`. Whoever can merge into `main` decides what the Home runs after the next update.
 
 Install it only on a server that belongs to this owner and holds nothing that the owner would not trust the assistant with.
 
