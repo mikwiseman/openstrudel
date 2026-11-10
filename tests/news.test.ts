@@ -1,16 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Store } from "../src/store.js";
 import { MessageService } from "../src/messages.js";
 import { employeeTools } from "../src/personality.js";
 import { Interactions } from "../src/interactions.js";
-import { TelegramAdapter } from "../src/telegram.js";
 import { toolBridge } from "../src/acp-mcp.js";
-import { newsFeed, newsStamp } from "../src/news.js";
+import { newsFeed, newsStamp, storyPost } from "../src/news.js";
 import type { CodexEngine } from "../src/types.js";
 
 afterEach(() => { vi.unstubAllGlobals(); });
@@ -29,8 +25,8 @@ function newsDesk() {
   const store = new Store(":memory:");
   const profile = store.createProfile({ name: "News", instructions: "Редактор новостей." });
   const conversation = store.profileConversation(profile.id);
-  const tools = () => employeeTools(store, { run: async () => ({ threadId: "t", response: "", events: [] }) } as CodexEngine, new Interactions(),
-    { profile, conversationId: conversation.id, messageId: "turn", channel: "api", scheduled: true });
+  const tools = (scheduleTelegramChatId?: string) => employeeTools(store, { run: async () => ({ threadId: "t", response: "", events: [] }) } as CodexEngine, new Interactions(),
+    { profile, conversationId: conversation.id, messageId: "turn", channel: "api", scheduled: true, scheduleTelegramChatId });
   return { store, profile, conversation, tools };
 }
 
@@ -170,78 +166,8 @@ describe("News stories", () => {
     store.close();
   });
 
-  it("shows when a story first went out in a delivered Telegram post of this employee", async () => {
-    const root = mkdtempSync(join(tmpdir(), "news-telegram-"));
-    const store = new Store(join(root, "test.sqlite"));
-    const engine = { run: async () => ({ threadId: "t", response: "", events: [] }) } as CodexEngine;
-    const messages = new MessageService(store, engine, root);
-    const telegram = new TelegramAdapter("1:fixture", store, messages); messages.telegram = telegram;
-    let refuse = false;
-    vi.stubGlobal("fetch", vi.fn(async () => refuse
-      ? Response.json({ ok: false, error_code: 400, description: "Bad Request: chat not found" }, { status: 400 })
-      : Response.json({ ok: true, result: { message_id: 7 } })));
-    try {
-      const profile = store.createProfile({ name: "News", instructions: "Редактор новостей." });
-      const conversation = store.profileConversation(profile.id);
-      store.linkTelegramChat({ chatId: "-100", title: "Wai News", allowedSenders: [] });
-      const group = store.bindTelegramChat("-100", profile.id);
-      const tools = () => employeeTools(store, engine, messages.interactions, { profile, conversationId: conversation.id, messageId: "turn", channel: "api",
-        scheduled: true, scheduleTelegramChatId: "-100", telegram, files: messages.files, scope: messages.contextFor(conversation.id) });
-      const source = (url: string) => ({ title: "Источник", url, role: "Первоисточник", publishedAt: null });
-      const publish = (storyId: string, ...urls: string[]) => tools().call("publish_story", story({ storyId, edition: null, rank: null, sources: urls.map(source) }));
-      const post = async (title: string, url: string) => {
-        const receipt = await tools().call("send_telegram_message", { chatId: "-100", text: `**${title}**\nЧто произошло.\n[П](${url})`, paths: [] }) as { sent: boolean; messageId: string };
-        return { ...receipt, at: store.getMessage(group.conversationId!, receipt.messageId)!.createdAt };
-      };
-      const telegramOf = async () => Object.fromEntries((await tools().call("read_news", {}) as string).split("\n").map(line => [line.split(" | ")[0], line.split(" | ")[4]]));
-      const minute = (iso: string) => iso.slice(0, 16) + "Z";
-
-      // A changelog page that went out two hours before its new entry was published belongs to an earlier story.
-      const earlier = await post("Gemini: старая запись", "https://ai.google.dev/gemini-api/docs/changelog");
-      age(store, earlier.messageId, 2);
-      await publish("gemini-computer-use", "https://ai.google.dev/gemini-api/docs/changelog");
-      // The card links the story's second source, written with a trailing slash.
-      await publish("granola-voice-typing", "https://x.com/meetgranola/status/2115837013975081208", "https://www.granola.ai/blog/voice-typing");
-      const card = await post("Granola делает голосовой ввод бесплатным", "https://www.granola.ai/blog/voice-typing/");
-      expect(card.sent).toBe(true);
-      // A post linking a deeper page of the story's source is another story.
-      await publish("cursor-changelog", "https://cursor.com/changelog");
-      await post("Cursor собирает живое приложение", "https://cursor.com/changelog/build-live-apps");
-      // Telegram refused this one, so it never went out.
-      await publish("refused-story", "https://example.com/refused");
-      refuse = true;
-      expect(await post("Не дошло", "https://example.com/refused")).toMatchObject({ sent: false, status: "not_sent" });
-      refuse = false;
-      // Another employee's chat is not this reader's Telegram.
-      const other = store.createProfile({ name: "Startups" });
-      store.linkTelegramChat({ chatId: "-200", title: "Startups", allowedSenders: [] });
-      const otherGroup = store.bindTelegramChat("-200", other.id);
-      store.addMessage({ conversationId: otherGroup.conversationId!, channel: "telegram", direction: "outbound", text: "[П](https://example.com/other-desk)", externalId: "-200:send:fixture" });
-      await publish("other-desk", "https://example.com/other-desk");
-      // Only its own send_telegram_message posts count: neither a reply in the group nor a notification hook's post.
-      await publish("group-reply-story", "https://example.com/group-reply");
-      store.addMessage({ conversationId: group.conversationId!, channel: "telegram", direction: "outbound", text: "Источник: https://example.com/group-reply" });
-      await publish("notified-story", "https://example.com/notified");
-      store.addMessage({ conversationId: group.conversationId!, channel: "telegram", direction: "outbound", text: "[П](https://example.com/notified)", externalId: "notification:abc" });
-      // A run may post its card before it publishes the story.
-      const early = await post("Карточка до истории", "https://example.com/early");
-      age(store, early.messageId, 10 / 60);
-      await publish("early-card", "https://example.com/early");
-      const earlyAt = store.getMessage(group.conversationId!, early.messageId)!.createdAt;
-
-      expect(await telegramOf()).toEqual({ "other-desk": "not in Telegram", "refused-story": "not in Telegram", "cursor-changelog": "not in Telegram",
-        "granola-voice-typing": `Telegram ${minute(card.at)}`, "gemini-computer-use": "not in Telegram",
-        "group-reply-story": "not in Telegram", "notified-story": "not in Telegram", "early-card": `Telegram ${minute(earlyAt)}` });
-      expect(await tools().call("read_news", { storyId: "granola-voice-typing" })).toMatchObject({ telegram: card.at });
-      // Its own card counts, and the first post stays its time.
-      const gemini = await post("Gemini: computer use для всех", "https://ai.google.dev/gemini-api/docs/changelog");
-      await post("Gemini: повтор", "https://ai.google.dev/gemini-api/docs/changelog");
-      expect((await telegramOf())["gemini-computer-use"]).toBe(`Telegram ${minute(gemini.at)}`);
-    } finally { telegram.stop(); await messages.close(); store.close(); rmSync(root, { recursive: true, force: true }); }
-  });
-
   it("fits 100 Russian stories into the first 18,000 bytes Grok keeps of an MCP result", async () => {
-    const { store, profile, tools } = newsDesk();
+    const { store, profile, conversation, tools } = newsDesk();
     store.linkTelegramChat({ chatId: "-100", title: "Wai News", allowedSenders: [] });
     const group = store.bindTelegramChat("-100", profile.id);
     for (let n = 1; n <= 100; n++) {
@@ -250,10 +176,10 @@ describe("News stories", () => {
         title: `Модель номер ${n} научилась писать код быстрее предшественницы и стала вдвое дешевле`, sources: [{ title: "Источник", url, role: "Первоисточник", publishedAt: null }] })) as { messageId: string };
       age(store, messageId, 71 - n * 0.7);
       // Every third story went out as a card six minutes later.
-      if (n % 3 === 0) age(store, store.addMessage({ conversationId: group.conversationId!, channel: "telegram", direction: "outbound", text: `**Модель ${n}**\n[П](${url})`, externalId: `-100:send:${id}` }).id, 70.9 - n * 0.7);
+      if (n % 3 === 0) age(store, store.addMessage({ conversationId: group.conversationId!, channel: "telegram", direction: "outbound", text: `**Модель ${n}**`, externalId: storyPost("-100", conversation.id, id) }).id, 70.9 - n * 0.7);
     }
     // What an MCP client such as Grok receives from the turn's tool bridge.
-    const bridge = await toolBridge(tools());
+    const bridge = await toolBridge(tools("-100"));
     const client = new Client({ name: "grok", version: "1" });
     await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url), { requestInit: { headers: { authorization: `Bearer ${bridge.token}` } } }));
     try {

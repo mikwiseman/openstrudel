@@ -89,3 +89,25 @@ it("gives a scheduled Grok run in its new session the group's comments, while it
   expect(other.run.mock.calls[0]![0]).toContain("This one was a repeat.");
   expect(other.run.mock.calls[0]![0]).toContain("OWN_POST_2");
 });
+
+it("runs a News desk's schedule in a new session on any engine, and resumes the chat for its owner",async()=>{
+  const desk=setup();
+  const chat=desk.store.profileConversation(desk.employee.id);
+  desk.store.setConversationThread(chat.id,"owner-thread");
+  desk.store.addMessage({conversationId:chat.id,channel:"api",direction:"outbound",text:"EARLIER_RUN "+"карточка радара ".repeat(120)});
+  // Without a reader this employee's schedule resumes its chat, like every other schedule on this engine.
+  await desk.service.handle(desk.request);
+  expect(desk.run.mock.calls[0]![1]).toMatchObject({threadId:"owner-thread"});
+  expect(desk.run.mock.calls[0]![1].ephemeral).toBeUndefined();
+  desk.store.setConversationThread(chat.id,"owner-thread");
+  desk.store.addMessage({conversationId:chat.id,channel:"api",direction:"outbound",text:"A story",story:{id:"first-story",edition:null,rank:null,section:"Tools",status:"Out",title:"A story",summary:"What happened.",body:"What happened.",
+    view:null,check:null,verification:"Read the announcement.",eventAt:null,change:null,sources:[{title:"announcement",url:"https://example.com/a",role:"Primary",publishedAt:null}]}});
+  await desk.service.handle(desk.request);
+  expect(desk.run.mock.calls[1]![1]).toMatchObject({ephemeral:true});
+  expect(desk.run.mock.calls[1]![1].threadId).toBeUndefined();
+  expect(desk.run.mock.calls[1]![0]).not.toContain("EARLIER_RUN");
+  expect(desk.store.getConversation(chat.id)!.codexThreadId).toBe("owner-thread");
+  await desk.service.handle({channel:"api",profile:desk.employee.id,text:"What did you publish today?",byOwner:true});
+  expect(desk.run.mock.calls[2]![1]).toMatchObject({threadId:"owner-thread"});
+  expect(desk.run.mock.calls[2]![1].ephemeral).toBeUndefined();
+});

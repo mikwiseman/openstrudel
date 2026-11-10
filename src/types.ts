@@ -45,6 +45,8 @@ export interface NewsStory {
   id: string; edition: string | null; rank: number | null; section: string; status: string; title: string; summary: string; body: string;
   view: string | null; check: string | null; verification: string; eventAt: string | null; change: string | null;
   sources: Array<{ title: string; url: string; role: string; publishedAt: string | null }>;
+  /** How this version reaches the desk's Telegram chat: "alert" with sound, "card" silently; null or absent stays in the app and the edition. */
+  telegram?: "alert" | "card" | null;
 }
 
 export interface Attachment { id: string; conversationId: string; name: string; mimeType: string; size: number; }

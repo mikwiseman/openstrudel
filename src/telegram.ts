@@ -15,12 +15,14 @@ import type { Store } from "./store.js";
 import { agentTransfer, assertAgentWritable } from "./agent-move.js";
 import { isEnabledScopedGroup, isProtectedTelegramAudience, isRestrictedChat, isRestrictedSubject, telegramAuthorization, migrateScopedChat, protectScopedTelegramTransport } from "./authorization.js";
 import { recordAnswer, type SchedulePoll } from "./check-ins.js";
+import { recordReaction } from "./news.js";
 
 export interface TelegramUpdate {
   update_id: number;
   my_chat_member?: { chat: { id: number | string; title?: string; type?: string }; from: { id: number }; date: number; old_chat_member: { status: string }; new_chat_member: { status: string; is_member?: boolean } };
   callback_query?: { id: string; from?: { id:number }; data?: string; message?: { message_id: number; chat: { id: number | string } } };
   poll_answer?: { poll_id: string; user?: { id: number; first_name?: string; last_name?: string; is_bot?: boolean }; voter_chat?: { id: number }; option_ids: number[] };
+  message_reaction?: { chat: { id: number | string }; message_id: number; user?: { id: number; first_name?: string; is_bot?: boolean }; new_reaction: Array<{ type: string; emoji?: string }> };
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
 }
@@ -387,13 +389,15 @@ export class TelegramAdapter {
     return { messageId: reply.id };
   }
 
-  async sendMessage(chatId: string | number, text: string, deliveryKey: string = randomUUID(), replyToMessageId?: number, options: { silent?: boolean; linkPreview?: boolean; assertCurrent?: () => void; button?: TelegramLinkButton } = {}): Promise<void> {
+  async sendMessage(chatId: string | number, text: string, deliveryKey: string = randomUUID(), replyToMessageId?: number, options: { silent?: boolean; linkPreview?: boolean; preview?: string; rich?: string; assertCurrent?: () => void; button?: TelegramLinkButton } = {}): Promise<void> {
     if (!this.token) throw new Error("Telegram не подключён");
+    if (options.rich && await this.sendRich(chatId, options.rich, deliveryKey, replyToMessageId, options)) return;
     const chunks=telegramText(text);
     for (const [index,chunk] of chunks.entries()) {
       options.assertCurrent?.();
       const key=`${chatId}:${deliveryKey}:${index}`;
-      const payload=JSON.stringify({chat_id:chatId,...chunk,link_preview_options:{is_disabled:options.linkPreview !== true},
+      // A named page shows as a large preview under the first part; otherwise a preview is the sender's choice.
+      const payload=JSON.stringify({chat_id:chatId,...chunk,link_preview_options:options.preview && index === 0 ? {url:options.preview,prefer_large_media:true} : {is_disabled:options.linkPreview !== true || Boolean(options.preview)},
         ...(index === 0 && options.button ? {reply_markup:{inline_keyboard:[[options.button]]}} : {}),
         ...(options.silent ? { disable_notification:true } : {}),
         // The owner's words still reach the group if the original was deleted.
@@ -411,6 +415,31 @@ export class TelegramAdapter {
         this.store.db.prepare("UPDATE telegram_outbox SET status=?,error=? WHERE key=?").run(...(refused(error) ? ["not_sent", REFUSED] : ["unknown", "Ответ Telegram не подтверждён; автоматический повтор остановлен"]), key);
         throw error;
       }
+    }
+  }
+
+  /** One rich message (headings, sections that open, up to 32,768 characters) through the durable outbox. False when Telegram
+   * refused it: nothing went out, and the same content follows as ordinary text. An unconfirmed send is never repeated. */
+  private async sendRich(chatId: string | number, html: string, deliveryKey: string, replyToMessageId: number | undefined, options: { silent?: boolean; assertCurrent?: () => void }): Promise<boolean> {
+    options.assertCurrent?.();
+    const key=`${chatId}:${deliveryKey}:rich`;
+    const payload=JSON.stringify({chat_id:chatId,rich_message:{html},...(options.silent ? { disable_notification:true } : {}),
+      ...(replyToMessageId ? { reply_parameters: { message_id: replyToMessageId, allow_sending_without_reply: true } } : {})});
+    this.store.db.prepare("INSERT OR IGNORE INTO telegram_outbox(key,chat_id,payload,status) VALUES(?,?,?,'pending')").run(key,String(chatId),payload);
+    const row=this.store.db.prepare("SELECT * FROM telegram_outbox WHERE key=?").get(key)!;
+    if(row.payload!==payload) throw new Error("Содержимое доставки изменилось");
+    if(row.status==="delivered") return true;
+    if(row.status==="refused") return false;
+    if(row.status!=="pending") throw new Error("Доставка требует проверки в Telegram перед повтором");
+    this.store.db.prepare("UPDATE telegram_outbox SET status='sending' WHERE key=?").run(key);
+    try {
+      const sent=await this.call<{message_id:number}>("sendRichMessage",JSON.parse(payload),undefined,undefined,options.assertCurrent);
+      this.store.db.prepare("UPDATE telegram_outbox SET status='delivered',message_id=? WHERE key=?").run(String(sent.message_id),key);
+      return true;
+    } catch (error) {
+      if (refused(error)) { this.store.db.prepare("UPDATE telegram_outbox SET status='refused',error=? WHERE key=?").run(error instanceof Error ? error.message : String(error),key); return false; }
+      this.store.db.prepare("UPDATE telegram_outbox SET status='unknown',error=? WHERE key=?").run("Ответ Telegram не подтверждён; автоматический повтор остановлен",key);
+      throw error;
     }
   }
 
@@ -490,7 +519,8 @@ export class TelegramAdapter {
   }
 
   /** A requested cross-chat delivery uses the same durable outbox as ordinary replies. */
-  async sendToChat(input: {chatId:string;text:string;files:Array<{name:string;mimeType?:string;contentBase64:string}>;externalId:string;silent?:boolean;linkPreview?:boolean;album?:boolean;scopedGroup?:boolean}) {
+  async sendToChat(input: {chatId:string;text:string;files:Array<{name:string;mimeType?:string;contentBase64:string}>;externalId:string;silent?:boolean;linkPreview?:boolean;album?:boolean;scopedGroup?:boolean;
+    /** A page to show as a large preview under the text. */ preview?:string; /** The Telegram message this one answers. */ replyTo?:number; /** The same content as one rich message; text is sent if Telegram refuses it. */ rich?:string}) {
     const {chat,conversation,previous} = this.deliveryTarget(input.chatId,input.externalId,{scopedGroup:input.scopedGroup});
     const receipt = (messageId:string) => {
       const message = this.store.getMessage(conversation.id,messageId)!;
@@ -525,7 +555,7 @@ export class TelegramAdapter {
       else {
         // A protected group is rechecked before every part, so switching it off in the policy stops the rest.
         const options = input.scopedGroup ? {...input, assertCurrent: () => { this.deliveryTarget(input.chatId,input.externalId,{scopedGroup:true}); }} : input;
-        await this.sendMessage(chat.chatId,input.text,"reply:"+message.id,undefined,options);
+        await this.sendMessage(chat.chatId,input.text,"reply:"+message.id,input.replyTo,options);
         await this.sendFiles(chat.chatId,files,"reply:"+message.id,options);
       }
       this.store.setMessageStatus(message.id,"completed");
@@ -666,6 +696,14 @@ export class TelegramAdapter {
         recordAnswer(this.store, { pollId: String(answer.poll_id), userId: String(user.id), userName: [user.first_name, user.last_name].filter(Boolean).join(" ").trim() || String(user.id),
           optionIds: answer.option_ids.map(Number), at: new Date().toISOString() });
       }
+      this.store.markTelegramUpdate(update.update_id); return;
+    }
+    if (update.message_reaction) {
+      // Telegram sends these for a private chat, and for a group where the bot is an administrator. Only a reader's reaction to
+      // a News post is kept, for that desk's editor.
+      const reaction = update.message_reaction, user = reaction.user;
+      if (user && !user.is_bot && Array.isArray(reaction.new_reaction)) recordReaction(this.store, String(reaction.chat.id), reaction.message_id,
+        { id: String(user.id), name: user.first_name ?? "" }, reaction.new_reaction.flatMap(r => r.type === "emoji" && r.emoji ? [r.emoji] : []));
       this.store.markTelegramUpdate(update.update_id); return;
     }
     if (update.callback_query) {
@@ -984,7 +1022,7 @@ export class TelegramAdapter {
     const controller = this.controller;
     while (this.running && controller === this.controller) {
       try {
-        const updates = await this.call<TelegramUpdate[]>("getUpdates", { offset: this.offset, timeout: 20, allowed_updates: ["message", "edited_message", "callback_query", "my_chat_member", "poll_answer"] });
+        const updates = await this.call<TelegramUpdate[]>("getUpdates", { offset: this.offset, timeout: 20, allowed_updates: ["message", "edited_message", "callback_query", "my_chat_member", "poll_answer", "message_reaction"] });
         if (!this.running || controller !== this.controller) return;
         if (this.connectionError) recordDiagnostic(this.store, "telegram.connected");
         this.connectionError = null;
