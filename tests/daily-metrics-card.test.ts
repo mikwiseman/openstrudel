@@ -49,8 +49,8 @@ it("puts English weekdays above each date for both people and skips Saturday", (
     expect(Number(rows[0]![1])).toBeLessThan(Number(rows[1]![1]));
   }
   expect(svg).not.toContain("2026-11-07");
-  expect(svg).toContain("3 workdays of calm"); // Thu, Fri, Sun; historical zero still counts.
-  expect(svg).toContain("0 workdays of calm"); // Focus alone does not count as calm.
+  expect(svg).toContain("Calm streak · 3 check-in days"); // Thu, Fri, Sun; historical zero still counts.
+  expect(svg).toContain("Calm streak · 0 check-in days"); // Focus alone does not count as calm.
   expect(svg).not.toContain("Week:"); // Weekly review has its own Sunday schedule.
   expect(svg).not.toContain('data-score="10"');
 });
@@ -59,6 +59,65 @@ it("labels weekdays correctly across a year boundary", () => {
   const { svg, caption } = dailyMetricsCard({ ...data, today: "2027-01-02", days: [] });
   expect(caption).toBe("**Exhale · Friday, 1 January**");
   expect(svg).toMatch(/data-header-date="2026-12-31">.*?>Thu<.*?>31\/12</);
+});
+
+it("draws all four trends and exact changes independently for both people", () => {
+  const { svg } = dailyMetricsCard({ ...data, today: "2026-11-10",
+    participants: [{ id: "42", name: "Person A" }, { id: "77", name: "Person B" }], days: [
+      { date: "2026-11-08", values: { "42": { calm: 2, focus: 8, energy: 6, mood: 5 }, "77": { calm: 5, focus: 3, energy: 8, mood: 4 } } },
+      { date: "2026-11-09", values: { "42": { calm: 4, focus: 7, energy: 6, mood: 3 }, "77": { calm: 3, focus: 6, energy: 7, mood: 4 } } },
+    ] });
+  const changes = { "42": { calm: 2, focus: -1, energy: 0, mood: -2 }, "77": { calm: -2, focus: 3, energy: -1, mood: 0 } };
+  for (const [id, metrics] of Object.entries(changes)) {
+    for (const [metric, delta] of Object.entries(metrics)) {
+      const chart = svg.match(new RegExp(`<path data-trend-person="${id}" data-trend-metric="${metric}" d="([^"]+)"`))![1]!;
+      expect(chart).toMatch(/^M890 [\d.]+ L1000 [\d.]+$/);
+      expect(svg).toContain(`data-change-person="${id}" data-change-metric="${metric}" data-from="2026-11-08" data-to="2026-11-09" data-delta="${delta}"`);
+    }
+  }
+  expect(svg).toContain(">+2 points</text>");
+  expect(svg).toContain(">−1 point</text>");
+  expect(svg).toContain(">0 points</text>");
+  expect(svg.match(/>vs Sun 8 Nov<\/text>/g)).toHaveLength(8);
+});
+
+it("breaks trends at missing days, retaining zero and the same fixed scale", () => {
+  const { svg } = dailyMetricsCard({ ...data, today: "2026-11-10", days: [
+    { date: "2026-11-02", values: { "42": { calm: 0, focus: 10 } } },
+    { date: "2026-11-03", values: { "42": { calm: 10, focus: 0 } } },
+    { date: "2026-11-05", values: { "42": { calm: 5 } } },
+    { date: "2026-11-06", values: { "42": { calm: 3 } } },
+    { date: "2026-11-07", values: { "42": { calm: 10 } } }, // Saturday is excluded, not a gap.
+    { date: "2026-11-08", values: { "42": { calm: 7 } } },
+    { date: "2026-11-09", values: { "42": { calm: 4 } } },
+  ] });
+  const calm = svg.match(/data-trend-metric="calm" d="([^"]+)"/)![1]!;
+  const focus = svg.match(/data-trend-metric="focus" d="([^"]+)"/)![1]!;
+  // Zero sits on the baseline, ten at the top, and both metrics span 73 pixels.
+  expect(calm).toMatch(/^M340 457 L450 384 M670 420.5 L780 [\d.]+ L890 [\d.]+ L1000 [\d.]+$/);
+  expect(focus).toBe("M340 527 L450 600");
+  expect(svg).not.toContain("2026-11-07");
+  expect(svg).not.toContain('data-trend-metric="energy"');
+  expect(svg).not.toContain('data-trend-metric="mood"');
+});
+
+it("uses each metric's previous recorded date, even outside the chart and across a year", () => {
+  const { svg } = dailyMetricsCard({ ...data, today: "2027-01-11", days: [
+    { date: "2026-12-31", values: { "42": { calm: 0 } } },
+    { date: "2027-01-07", values: { "42": { focus: 4 } } },
+    { date: "2027-01-08", values: { "42": { energy: 6 } } },
+    { date: "2027-01-09", values: { "42": { calm: 10, focus: 10, energy: 10, mood: 10 } } },
+    { date: "2027-01-10", values: { "42": { calm: 3, focus: 5, mood: 7 } } },
+    { date: "2027-01-11", values: { "42": { calm: 10 } } },
+  ] });
+  expect(svg).toContain('data-change-metric="calm" data-from="2026-12-31" data-to="2027-01-10" data-delta="3"');
+  expect(svg).toContain(">vs Thu 31 Dec 2026</text>");
+  expect(svg).toContain('data-change-metric="focus" data-from="2027-01-07" data-to="2027-01-10" data-delta="1"');
+  expect(svg).not.toContain('data-change-metric="energy"'); // No new rating, no stale change.
+  expect(svg).not.toContain('data-change-metric="mood"'); // First rating, no invented baseline.
+  expect(svg).toContain(">No rating</text>");
+  expect(svg).toContain(">First rating</text>");
+  expect(svg).not.toContain('data-score="10"'); // Today and Saturday never affect this report.
 });
 
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
