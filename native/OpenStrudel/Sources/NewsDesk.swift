@@ -243,7 +243,9 @@ enum NewsStatusLine: Equatable {
             // The pause began with or after the last run of any kind.
             self = .paused(since: [instant(status.checkedAt), instant(status.failedAt)].compactMap { $0 }.max())
         } else if let status, status.failedAt != nil {
-            self = .failing(since: instant(status.failedAt), reason: status.failure?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty)
+            // The Home names its latest failed run, which moves with every retry. The radar stopped working after the
+            // last check that succeeded, so that is the time the line gives when there is one.
+            self = .failing(since: instant(status.checkedAt) ?? instant(status.failedAt), reason: status.failure?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty)
         } else if current {
             self = .edition(published: page.published, stories: page.edition.count, checked: instant(status?.checkedAt))
         } else {
@@ -392,7 +394,6 @@ final class NewsFeed: ObservableObject, Identifiable {
     private(set) var conversationID: String?
     private var messages: [HomeMessage] = []
     private var stamp: String?
-    private var fetchedAt = Date.distantPast
     private var askedAt = Date.distantPast
     private var refreshing = false
     private var hasBaseline = false
@@ -437,16 +438,14 @@ final class NewsFeed: ObservableObject, Identifiable {
         do {
             let envelope: ConversationEnvelope = try await client.read(route.path + "?page=true&limit=1" + (route.usesTimeline ? "&timeline=true" : ""))
             if conversationID != envelope.conversation.id { conversationID = envelope.conversation.id; restore() }
-            // Stories reload when their stamp changes. The status has no stamp yet, so an open page asks again each minute.
-            let stale = isOpen && Date.now.timeIntervalSince(fetchedAt) >= 60
-            if envelope.conversation.news != stamp || !loaded || stale {
+            // The stamp moves with every story and with every change in what the Home says about its runs.
+            if envelope.conversation.news != stamp || !loaded {
                 if envelope.conversation.news == nil { receive([], status: nil) }
                 else {
                     let feed: NewsFeedEnvelope = try await client.read("/v1/conversations/" + envelope.conversation.id + "/stories")
                     receive(feed.messages, status: feed.status)
                 }
                 stamp = envelope.conversation.news
-                fetchedAt = .now
             }
             if unreachable { unreachable = false }
         } catch is CancellationError {
@@ -512,6 +511,7 @@ final class NewsFeed: ObservableObject, Identifiable {
         leaving = Task { [weak self] in
             try? await Task.sleep(for: .seconds(0.6))
             guard !Task.isCancelled, let self else { return }
+            self.leaving = nil
             self.screens = 0
             self.settle(now: .now)
         }

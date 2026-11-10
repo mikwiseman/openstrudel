@@ -248,8 +248,9 @@ import Testing
         #expect(text(nil) == "Выпуск 07:04 · 1 история")
         #expect(text(NewsStatus(running: true, checkedAt: "2026-11-10T11:35:00.000Z", failedAt: "2026-11-10T07:20:00.000Z", failure: "x", nextRunAt: next)) == "News проверяет источники…")
         #expect(line(NewsStatus(running: true)).isRunning)
-        #expect(text(NewsStatus(checkedAt: "2026-11-10T07:05:00.000Z", failedAt: "2026-11-10T07:20:00.000Z", failure: " Закончился лимит модели. ", nextRunAt: next))
-                == "Радар не работает с 10:20: Закончился лимит модели.")
+        // The Home names its latest failed run; the radar stopped after the last check that worked.
+        #expect(text(NewsStatus(checkedAt: "2026-11-10T07:05:00.000Z", failedAt: "2026-11-10T11:35:00.000Z", failure: " Закончился лимит модели. ", nextRunAt: next))
+                == "Радар не работает с 10:05: Закончился лимит модели.")
         #expect(text(NewsStatus(failedAt: "2026-11-09T07:20:00.000Z", failure: nil, nextRunAt: next)) == "Радар не работает с 9 ноября, 10:20")
         #expect(line(NewsStatus(failedAt: "2026-11-09T07:20:00.000Z", nextRunAt: next)).isFailing)
         // Paused wins over an old failure: the owner stopped it.
@@ -343,10 +344,26 @@ import Testing
         // The visit starts over with what has been seen so far, so «Новое» is just what arrived.
         #expect(feed.desk.page(read: feed.visit).fresh.map(\.id) == ["gate"])
 
+        // One page of the feed replacing another is the same visit: «Новое» keeps what it showed.
+        feed.see(["gate"])
+        #expect(feed.visit != feed.read)
+        feed.disappear(); feed.appear()
+        #expect(feed.isOpen && feed.desk.page(read: feed.visit).fresh.map(\.id) == ["gate"])
+        // Leaving the feed and coming back is a new visit: what was seen is no longer new, and the place may be held.
+        feed.place.story = "gate"
+        feed.hold(); feed.closeStory()
+        feed.disappear()
+        try await Task.sleep(for: .milliseconds(900))
+        #expect(!feed.isOpen && feed.place.story == "gate")
+        feed.appear()
+        #expect(feed.isOpen && feed.visit == feed.read && feed.desk.page(read: feed.visit).fresh.isEmpty)
+        feed.closeStory()
+        #expect(feed.place.story == nil)
+
         // Another launch of the app reads the same Home and conversation: seen is still seen.
         let again = NewsFeed(client: client, route: route, defaults: defaults)
         await again.refresh()
-        #expect(again.read.seen.isSuperset(of: ["old", "now"]) && again.unseen == 1)
+        #expect(again.read.seen.isSuperset(of: ["old", "now", "gate"]) && again.unseen == 0)
         // A different conversation of the same Home starts clean.
         fixture.conversation = "c-other"
         let other = NewsFeed(client: client, route: ReaderRoute(connectionID: client.id, kind: .news("other"), title: "Other"), defaults: defaults)

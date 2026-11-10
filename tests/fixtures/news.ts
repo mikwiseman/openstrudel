@@ -151,7 +151,8 @@ function status() {
   switch (variant) {
     case "ok": return { running: false, checkedAt: minutesAgo(14), failedAt: null, failure: null, nextRunAt: next };
     case "running": return { running: true, checkedAt: minutesAgo(15), failedAt: null, failure: null, nextRunAt: next };
-    case "failed": return { running: false, checkedAt: at(0, "10:05"), failedAt: at(0, "10:20"), failure: "Закончился лимит модели.", nextRunAt: next };
+    // As the Home reports it: the last run that worked, and the latest of the failed ones since.
+    case "failed": return { running: false, checkedAt: at(0, "10:05"), failedAt: minutesAgo(10), failure: "Закончился лимит модели.", nextRunAt: next };
     case "paused": return { running: false, checkedAt: at(1, "23:40"), failedAt: null, failure: null, nextRunAt: null };
     case "absent": return undefined;
   }

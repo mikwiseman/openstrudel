@@ -48,14 +48,17 @@ final class OneChatUITests: XCTestCase {
         XCTAssertEqual((state["sentMessages"] as? [[String: Any]])?.count, 2)
         capture("two-services", app)
 
-        // 3. A draft and the readers: the employee, its edition, the group. None has a composer; the draft waits unchanged.
+        // 3. A draft and the readers: the employee's News, its history, the group. None has a composer; the draft waits unchanged.
         composer.tap(); composer.typeText("Черновик, который должен выжить")
         app.buttons["openChats"].tap()
         let editorID = try XCTUnwrap(state["editor"] as? String)
         let feed = app.buttons["feed-" + editorID]
         XCTAssertTrue(feed.waitForExistence(timeout: 10), app.debugDescription)
         feed.tap()
-        XCTAssertTrue(app.buttons["newsMode-edition"].waitForExistence(timeout: 15), app.debugDescription)
+        // One page for the day: no tabs, a status line, the edition.
+        XCTAssertTrue(app.scrollViews["newsToday"].waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(app.descendants(matching: .any)["newsStatus"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["newsMode-chat"].exists)
         XCTAssertFalse(app.textFields["Сообщение"].exists)
         XCTAssertFalse(app.buttons["Отправить"].exists)
         XCTAssertFalse(app.textFields["Спросить News об этой истории"].exists)
@@ -71,6 +74,16 @@ final class OneChatUITests: XCTestCase {
         XCTAssertEqual(app.textFields["Сообщение"].value as? String, "Черновик, который должен выжить")
         capture("chat-story-context", app)
         app.buttons["removeDraftContext"].tap()
+        // Back in the feed, the story the reader left to discuss is still open; the way back leads to the day.
+        app.buttons["openChats"].tap()
+        XCTAssertTrue(feed.waitForExistence(timeout: 10), app.debugDescription); feed.tap()
+        XCTAssertTrue(discussStory.waitForExistence(timeout: 10), app.debugDescription)
+        capture("reader-story-kept", app)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.scrollViews["newsToday"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(discussStory.exists)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertEqual(app.textFields["Сообщение"].waitForExistence(timeout: 10) ? app.textFields["Сообщение"].value as? String : nil, "Черновик, который должен выжить")
 
         app.buttons["openChats"].tap()
         let employee = app.buttons["employee-" + editorID]
@@ -78,8 +91,8 @@ final class OneChatUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["reader"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(app.buttons["readerTitle"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(app.buttons["readerTitle"].value as? String, "Редактор")
-        XCTAssertTrue(app.buttons["newsMode-chat"].waitForExistence(timeout: 10), app.debugDescription)
-        app.buttons["newsMode-chat"].tap()
+        // The employee's history keeps the conversation; its stories are read in the feed.
+        XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Mistral")).firstMatch.exists)
         let history = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Черновик готов")).firstMatch
         XCTAssertTrue(history.waitForExistence(timeout: 15), app.debugDescription)
         XCTAssertFalse(app.textFields["Сообщение"].exists)
@@ -111,6 +124,9 @@ final class OneChatUITests: XCTestCase {
         app.tabBars.buttons["Инсайты"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["insightsRoot"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.textFields["Сообщение"].exists)
+        // The feed leads what there is to read, with its lead story.
+        XCTAssertTrue(app.buttons["newsEntry-" + editorID].waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue((app.buttons["newsEntry-" + editorID].label).contains("Mistral"), app.debugDescription)
         let activity = try XCTUnwrap(state["activity"] as? [String: Any])
         let insight = app.buttons["insight-" + (try XCTUnwrap(activity["id"] as? String))]
         XCTAssertTrue(insight.waitForExistence(timeout: 15), app.debugDescription); insight.tap()

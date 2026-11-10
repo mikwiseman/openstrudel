@@ -84,9 +84,10 @@ private struct Kicker: View {
                 label.fixedSize()
                 if let status {
                     Text("•").foregroundStyle(AppTheme.secondaryText).accessibilityHidden(true)
-                    pill(status)
+                    pill(status).fixedSize()
                 }
             }
+            // One over the other, both may wrap: at the largest text sizes neither is ever wider than the page.
             VStack(alignment: .leading, spacing: 6) {
                 label
                 if let status { pill(status) }
@@ -110,7 +111,7 @@ private struct Kicker: View {
             .foregroundStyle(Color("NewsStatusText"))
             .padding(.horizontal, 6).padding(.vertical, 3)
             .background(Color("NewsStatusFill"), in: .rect(cornerRadius: 4, style: .continuous))
-            .fixedSize()
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -184,6 +185,8 @@ private extension View {
         navigationTitle(title)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            // A pushed page would sit on the system's white; the edition reads on the app's own paper.
+            .containerBackground(AppTheme.canvas, for: .navigation)
             #endif
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -235,6 +238,7 @@ private struct NewsArrivals: View {
     let words: NewsWords
     let show: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
         ZStack {
@@ -246,10 +250,15 @@ private struct NewsArrivals: View {
                         #endif
                 }
                 .buttonStyle(.glass)
+                // It floats over the page, so it grows only as far as it can without covering the lines under it.
+                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                 .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
                 .accessibilityIdentifier("newsArrivals")
             }
         }
+        // Over a wide column it sits in the middle; on a phone at the trailing edge, where the date's line is free.
+        .frame(maxWidth: .infinity, alignment: sizeClass == .compact ? .trailing : .center)
+        .padding(.horizontal, Layout.edge)
         .padding(.top, 8)
         .animation(reduceMotion ? .easeInOut(duration: 0.15) : .smooth(duration: 0.25), value: feed.arrivals > 0)
     }
@@ -296,6 +305,7 @@ private struct NewsDayPage: View {
                 .scrollPosition(id: Binding(get: { feed.anchors[date ?? ""] }, set: { feed.anchors[date ?? ""] = $0 }), anchor: .top)
                 .scrollIndicators(.hidden)
                 .newsScrollEdge()
+                .accessibilityIdentifier(date == nil ? "newsToday" : "newsDay")
                 .overlay(alignment: .top) {
                     NewsArrivals(feed: feed, words: words) {
                         feed.showIncoming()
@@ -329,7 +339,6 @@ private struct NewsDayPage: View {
         }
         .onDisappear { feed.disappear() }
         .onChange(of: chrome.attentive && isFront, initial: true) { _, looking in dwell.attentive = looking }
-        .accessibilityIdentifier(date == nil ? "newsToday" : "newsDay")
     }
 
     // MARK: Masthead
@@ -646,7 +655,6 @@ private struct NewsStoryPage: View {
         }
         // A story that left the feed leaves the screen.
         .onChange(of: item == nil) { _, gone in if gone { feed.place.story = nil } }
-        .accessibilityIdentifier("newsStory")
     }
 
     /// Opening a story is the plainest way of seeing it.
@@ -708,7 +716,7 @@ private struct NewsArticle: View {
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 if item.developments.count > 1, let change = item.newest.story?.change { development(item.newest, change).padding(.top, 16) }
                 ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .firstTextBaseline, spacing: 24) { domains; Spacer(minLength: 0); discussButton }
+                    HStack(alignment: .firstTextBaseline, spacing: 24) { domains; Spacer(minLength: 0); discussButton.fixedSize() }
                     VStack(alignment: .leading, spacing: 12) { domains; discussButton }
                 }
                 .padding(.top, 24).padding(.bottom, 32)
@@ -744,6 +752,7 @@ private struct NewsArticle: View {
         }
         .scrollIndicators(.hidden)
         .newsScrollEdge()
+        .accessibilityIdentifier("newsStory")
         #if os(macOS)
         // The story takes the keyboard from the sidebar, so it reads without the mouse: J, K and the arrows move
         // between stories, Space and the paging keys scroll, Esc goes back.
@@ -791,7 +800,7 @@ private struct NewsArticle: View {
     }
 
     private var discussButton: some View {
-        Button(action: discuss) { ArrowLabel(title: words("Обсудить в чате")).fixedSize() }
+        Button(action: discuss) { ArrowLabel(title: words("Обсудить в чате")).multilineTextAlignment(.leading) }
             .buttonStyle(.plain).accessibilityIdentifier("discussStory")
     }
 
@@ -912,19 +921,30 @@ struct NewsSidebarRow: View {
 /// The feed's row where the iPhone lists what to read: what leads today, and how much is new.
 struct NewsEntryRow: View {
     @ObservedObject var feed: NewsFeed
+    @Environment(\.dynamicTypeSize) private var textSize
+
     var body: some View {
         let words = feed.words, unseen = feed.unseen
+        let name = Text(feed.route.title.uppercased()).tracking(1.4).foregroundStyle(AppTheme.secondaryText)
+        let fresh = Text(words.fresh(unseen).uppercased(with: words.language.locale)).tracking(1.4).foregroundStyle(Color("NewsStatusText"))
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Text(feed.route.title.uppercased()).tracking(1.4).foregroundStyle(AppTheme.secondaryText)
-                if unseen > 0 {
-                    Text("·").foregroundStyle(AppTheme.secondaryText).accessibilityHidden(true)
-                    Text(words.fresh(unseen).uppercased(with: words.language.locale)).tracking(1.4).foregroundStyle(Color("NewsStatusText"))
+            // Large text puts the count under the name rather than breaking its words.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) {
+                    name.fixedSize()
+                    if unseen > 0 {
+                        Text("·").foregroundStyle(AppTheme.secondaryText).accessibilityHidden(true)
+                        fresh.fixedSize()
+                    }
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    name
+                    if unseen > 0 { fresh }
                 }
             }
             .font(NewsType.kicker)
             Text(feed.headline ?? words("Утренний выпуск")).font(NewsType.headline(22, .title3)).foregroundStyle(.primary)
-                .lineLimit(3).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                .lineLimit(textSize.isAccessibilitySize ? nil : 3).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
