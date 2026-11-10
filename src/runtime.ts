@@ -116,6 +116,7 @@ export class OpenStrudelRuntime {
     if (this.startTelegram) await this.telegram.start();
     if (this.engine instanceof AccountEngines) this.accounts.startQuotaChecks();
     this.scheduler.start();
+    this.messages.serverShell.start();
     this.api.correspondence.start();
     this.api.gmailPush?.start();
     this.started = true;
@@ -129,6 +130,7 @@ export class OpenStrudelRuntime {
       this.setup = undefined;
     }
     this.scheduler.stop();
+    this.messages.serverShell.stop();
     this.api.gmailPush?.stop();
     this.api.correspondence.stop();
     await this.accounts.stopQuotaChecks();

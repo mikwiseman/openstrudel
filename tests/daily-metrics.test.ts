@@ -6,6 +6,8 @@ import { MessageService } from "../src/messages.js";
 import { TelegramAdapter } from "../src/telegram.js";
 import { HttpApi } from "../src/server.js";
 import { readCheckIns, recordAnswer, recordPoll } from "../src/check-ins.js";
+import { employeeTools } from "../src/personality.js";
+import { Interactions } from "../src/interactions.js";
 import { authenticateDailyMetrics, dailyMetricsReportConfig, dailyMetricsSummary, readDailyMetrics, saveDailyMetrics, type DailyMetricsConfig } from "../src/daily-metrics.js";
 
 const now = new Date("2026-11-05T14:00:00.000Z"), token = "123:test-token";
@@ -104,6 +106,30 @@ describe("the metrics journal", () => {
     expect(dailyMetricsSummary(store, "other", now)).toBeNull();
     store.setSetting("home.transfer", "true");
     expect(() => saveDailyMetrics(store, "42", input, now)).toThrow();
+  });
+  it("lets a Home administrator record the scores a participant gave in chat for a day they missed", async () => {
+    const { store, vote, conversationId, scheduler } = setup();
+    vi.useFakeTimers({ now });
+    vote("telegram", "calm", "2026-11-03", "42", 3, "2026-11-03T15:40:00Z");
+    store.linkTelegramChat({ chatId: "42", title: "Mik", allowedSenders: ["42"] });
+    store.setSetting("access.managers", JSON.stringify(["77"]));
+    const tools = (sender: string, extra = {}) => employeeTools(store, { run: vi.fn() } as never, new Interactions(), { profile: null, conversationId: store.primaryConversation().id, messageId: "m", channel: "telegram", telegramSenderId: sender, scheduler, scope: "personal", ...extra });
+    const scores = { calm: 5, focus: 3, energy: 7, mood: 7 };
+    expect(await tools("42").call("record_daily_scores", { participant: "Mik", date: "2026-11-03", scores })).toEqual({ saved: true, participant: "Mik", date: "2026-11-03", scores });
+    // The later statement replaces the Telegram vote for that day; the vote itself stays in the journal.
+    expect(readDailyMetrics(store, "77", now).days.find(day => day.date === "2026-11-03")!.values).toEqual({ "42": scores });
+    expect(store.db.prepare("SELECT option_index FROM schedule_poll_answers WHERE poll_id='telegram'").get()!.option_index).toBe(2);
+    expect(dailyMetricsSummary(store, conversationId, now)).toContain("2026-11-03: Mik: Calm 5/10 · Focus 3/10 · Energy 7/10 · Mood 7/10");
+    // An administrator records for another participant, by id; today works as well.
+    expect(await tools("77").call("record_daily_scores", { participant: "42", date: "2026-11-05", scores: { ...scores, calm: 6 } })).toMatchObject({ saved: true, scores: { calm: 6 } });
+    for (const input of [{ participant: "Nobody", date: "2026-11-03", scores }, { participant: "Mik", date: "2026-11-06", scores }, { participant: "Mik", date: "2026-10-06", scores },
+      { participant: "Mik", date: "2026-11-31", scores }, { participant: "Mik", date: "yesterday", scores }, { participant: "Mik", date: "2026-11-03", scores: { ...scores, mood: 11 } }, { participant: "Mik", date: "2026-11-03", scores: { calm: 5 } }])
+      await expect(tools("42").call("record_daily_scores", input)).rejects.toThrow();
+    // Not for people without Home administration, schedules, or a Home without the journal.
+    expect(tools("99").definitions.map(tool => tool.name)).not.toContain("record_daily_scores");
+    await expect(tools("42", { scheduled: true }).call("record_daily_scores", { participant: "Mik", date: "2026-11-03", scores })).rejects.toThrow();
+    store.deleteSetting("dailyMetrics.config");
+    expect(tools("42").definitions.map(tool => tool.name)).not.toContain("record_daily_scores");
   });
   it("refuses a changed or foreign schedule mapping and uses Moscow's calendar date", () => {
     const { store, config } = setup();
