@@ -1,164 +1,199 @@
 import { Resvg } from "@resvg/resvg-js";
-import type { RequestSource, Statistics, StatisticsPeriod } from "./statistics.js";
+import type { Spend, Statistics, StatisticsPeriod } from "./statistics.js";
 import type { Store } from "./store.js";
 import { xml } from "./daily-metrics-card.js";
 
-/** The owner's morning card: yesterday on this Home and, on Sunday, the seven days that ended with it. The app's light
- * palette, one large number, words beside every figure. The clock draws it from `readStatistics`; no model writes it. */
+/** The owner's morning card: what this Home spent yesterday and on what, and on Sunday the seven days that ended with it.
+ * The app's light palette, one large number, every figure named once. The clock draws it from `readStatistics`; no model writes it. */
 
 const canvas = "#f7f3ec", ink = "#1c1b1a", muted = "#615b57", hairline = "#dcd5cb", warning = "#865021";
 const width = 1080, left = 72, right = width - 72;
-const number = (n: number) => new Intl.NumberFormat("ru").format(n);
-const compact = (n: number) => new Intl.NumberFormat("ru", { notation: "compact", maximumFractionDigits: 1 }).format(n);
-const money = (usd: number) => "≈ " + new Intl.NumberFormat("ru", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(usd);
-const plural = (n: number, one: string, few: string, many: string) => {
-  const tens = n % 100, units = n % 10;
-  return tens >= 11 && tens <= 14 ? many : units === 1 ? one : units >= 2 && units <= 4 ? few : many;
-};
-const requestsWord = (n: number) => plural(n, "запрос", "запроса", "запросов");
-const label = (date: string, options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("ru", { ...options, timeZone: "UTC" }).format(new Date(date + "T12:00:00Z"));
+const number = (n: number) => new Intl.NumberFormat("en-US").format(n);
+const compact = (n: number) => new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(n);
+const usd = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+const count = (n: number, one: string) => `${number(n)} ${one}${n === 1 ? "" : "s"}`;
+const label = (date: string, options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-US", { ...options, timeZone: "UTC" }).format(new Date(date + "T12:00:00Z"));
+const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 const short = (text: string, max: number) => text.length > max ? text.slice(0, max - 1).trimEnd() + "…" : text;
-/** Words broken into lines that fit the card: about half an em a letter, a little more in bold (Liberation Sans on the Homes). */
-const wrap = (value: string, size: number, weight = 400) => {
-  const fit = Math.floor((right - left) / (size * (weight >= 600 ? 0.6 : 0.52))), lines: string[] = [];
-  let line = "";
-  for (const word of value.split(" ")) {
-    if (line && (line + " " + word).length > fit) { lines.push(line); line = word; } else line = line ? line + " " + word : word;
-  }
-  return line ? [...lines, line] : lines;
+/** How wide a text draws, erring wide: Arial's and Liberation Sans's letters by class, in ems. */
+const em = (c: string) => /[\s.,:;!'·|ijlItfr]/.test(c) ? 0.34 : /[—…WMЖШЩЮЫФ@%]/.test(c) ? 1 : /[A-ZА-ЯЁmwжшщюыфм&]/.test(c) ? 0.76 : 0.58;
+const wide = (text: string, size: number, weight = 400) => [...text].reduce((sum, c) => sum + em(c), 0) * size * (weight >= 600 ? 1.06 : 1);
+/** The text cut to the room it has on its line. */
+const fit = (text: string, size: number, room: number, weight = 400) => {
+  if (wide(text, size, weight) <= room) return text;
+  const cut = [...text];
+  while (cut.length > 1 && wide(cut.join("") + "…", size, weight) > room) cut.pop();
+  return cut.join("").trimEnd() + "…";
 };
-const versus = (now: number, before: number, unit: string) => now === before ? `столько же, сколько ${unit} раньше`
-  : `на ${number(Math.abs(now - before))} ${now > before ? "больше" : "меньше"}, чем ${unit} раньше`;
 
-/** Several days as one: requests, outcomes, spend, and what ran where, without the card's own runs. */
-function total(days: StatisticsPeriod[], own?: { id: string; chat?: string }) {
-  const sum = { requests: 0, answered: 0, quiet: 0, failed: 0, measured: 0, tokens: 0, cost: 0, priced: false,
-    sources: { app: 0, telegram: 0, schedule: 0, events: 0 } as Record<RequestSource, number>,
-    chats: new Map<string, { requests: number; failed: number }>(), models: new Map<string, number>(), schedules: new Map<string, number>() };
+type Amount = Spend & { quiet: number; failed: number };
+/** Something that ran, under the name the owner knows it by, counted in its own word: runs, events or messages. */
+type Line = Amount & { name: string; one: string };
+const nothing = (): Amount => ({ requests: 0, quiet: 0, failed: 0, tokens: 0, costUsd: null });
+const add = (sum: Amount, part: Partial<Amount>) => {
+  sum.requests += part.requests ?? 0; sum.quiet += part.quiet ?? 0; sum.failed += part.failed ?? 0; sum.tokens += part.tokens ?? 0;
+  if (part.costUsd != null) sum.costUsd = (sum.costUsd ?? 0) + part.costUsd;
+};
+
+function named(statistics: Statistics, work: StatisticsPeriod["work"][number]): { name: string; one: string } {
+  if (work.kind === "schedule") return { name: statistics.schedules[work.id]?.name ?? "Schedule", one: "run" };
+  if (work.kind === "events") return { name: capital(work.id.replaceAll("-", " ")), one: "event" };
+  const chat = statistics.chats[work.id];
+  return { name: chat?.kind === "main" ? "Main chat" : chat?.title ?? "Chat", one: "message" };
+}
+
+/** Several days as one: the whole, what ran, how it ended and the models that served it. `own` is the card's schedule:
+ * its runs are drawings, not requests, and stay out of what it reports. */
+function total(statistics: Statistics, days: StatisticsPeriod[], own?: string) {
+  const all = nothing(), lines = new Map<string, Line>(), models = new Map<string, Amount>();
+  const ended = { answered: nothing(), quiet: nothing(), failed: nothing() };
+  let unpriced = 0;
   for (const day of days) {
-    const self = own ? day.schedules.find(schedule => schedule.id === own.id) : undefined;
-    const runs = self?.runs ?? 0, quiet = self?.quiet ?? 0, failed = self?.failed ?? 0;
-    sum.requests += day.requests - runs; sum.measured += day.measured;
-    sum.answered += day.outcomes.answered - (runs - quiet - failed); sum.quiet += day.outcomes.quiet - quiet; sum.failed += day.outcomes.failed - failed;
-    sum.sources.schedule -= runs;
-    sum.tokens += day.tokens.input + day.tokens.output;
-    if (day.costUsd !== null) { sum.cost += day.costUsd; sum.priced = true; }
-    for (const source of Object.keys(sum.sources) as RequestSource[]) sum.sources[source] += day.sources[source];
-    for (const chat of day.chats) {
-      const seen = sum.chats.get(chat.id) ?? { requests: 0, failed: 0 }, mine = chat.id === own?.chat;
-      sum.chats.set(chat.id, { requests: seen.requests + chat.requests - (mine ? runs : 0), failed: seen.failed + chat.failed - (mine ? failed : 0) });
+    unpriced += day.unpriced;
+    for (const outcome of ["answered", "quiet", "failed"] as const) add(ended[outcome], { requests: day.outcomes[outcome], ...day.spent[outcome] });
+    for (const work of day.work) {
+      if (work.kind === "schedule" && work.id === own) {
+        ended.answered.requests -= work.requests - work.quiet - work.failed; ended.quiet.requests -= work.quiet; ended.failed.requests -= work.failed;
+        continue;
+      }
+      const key = work.kind + ":" + work.id, line = lines.get(key) ?? { ...nothing(), ...named(statistics, work) };
+      add(line, work); add(all, work); lines.set(key, line);
     }
-    for (const model of day.models) if (model.model) sum.models.set(model.name, (sum.models.get(model.name) ?? 0) + model.requests);
-    for (const schedule of day.schedules) if (schedule.costUsd) sum.schedules.set(schedule.id, (sum.schedules.get(schedule.id) ?? 0) + schedule.costUsd);
+    for (const model of day.models) if (model.model) { const sum = models.get(model.name) ?? nothing(); add(sum, model); models.set(model.name, sum); }
   }
-  const top = <T>(map: Map<string, T>, value: (v: T) => number) => [...map].filter(([, v]) => value(v) > 0).sort((a, b) => value(b[1]) - value(a[1]));
-  return { ...sum, costUsd: sum.priced ? sum.cost : null, topChats: top(sum.chats, v => v.requests), failedChats: top(sum.chats, v => v.failed),
-    topModel: top(sum.models, v => v)[0]?.[0] ?? null, costliest: top(sum.schedules, v => v)[0] ?? null };
+  return { ...all, unpriced, ended, lines: [...lines.values()], models: [...models].map(([name, sum]) => ({ ...sum, name })) };
 }
 
-/** One honest line with a little character, from the numbers alone. */
-function remark(day: ReturnType<typeof total>, week: number[], title: (id: string) => string): string {
-  if (!day.requests) return "Тихий день: ни одного запроса.";
-  const unique = (value: number) => week.filter(count => count === value).length === 1;
-  if (day.requests === Math.max(...week) && unique(day.requests)) return "Самый занятой день недели.";
-  if (day.requests === Math.min(...week) && unique(day.requests)) return "Самый спокойный день недели.";
-  const [top] = day.topChats;
-  if (top && day.topChats.length > 1 && top[1].requests * 4 >= day.requests * 3) return `Почти весь день ушёл на «${short(title(top[0]), 26)}».`;
-  if (top && day.topChats.length > 1 && top[1].requests * 2 >= day.requests) return `Половина дня ушла на «${short(title(top[0]), 28)}».`;
-  if (!day.failed) return "Ни одного сбоя.";
-  if (day.quiet > day.answered) return `Больше слушал, чем говорил: ${number(day.quiet)} ${plural(day.quiet, "тихая проверка", "тихие проверки", "тихих проверок")}.`;
-  return `Ответил ${number(day.answered)} ${plural(day.answered, "раз", "раза", "раз")}.`;
+/** A span is counted in what it has: cost when anything in it had a price, tokens when it was only measured, requests otherwise. */
+function measure(span: Spend) {
+  if (span.costUsd !== null) return { name: "Spent", where: "Where it went", cost: true, counted: false, less: "less", of: (a: Spend) => a.costUsd, show: usd, phrase: (a: Spend) => "≈ " + usd(a.costUsd ?? 0) };
+  if (span.tokens) return { name: "Tokens", where: "Where they went", cost: false, counted: false, less: "fewer", of: (a: Spend) => a.tokens || null, show: compact, phrase: (a: Spend) => compact(a.tokens) + " tokens" };
+  return { name: "Requests", where: "What ran", cost: false, counted: true, less: "fewer", of: (a: Spend): number | null => a.requests, show: number, phrase: (a: Spend) => count(a.requests, "request") };
 }
+type Measure = ReturnType<typeof measure>;
+const value = (unit: Measure, a: Spend) => { const n = unit.of(a); return n === null ? "—" : unit.show(n); };
+/** A line's figure; where requests are all there is to count, in the line's own word. */
+const figure = (unit: Measure, line: Line) => unit.counted ? count(line.requests, line.one) : value(unit, line);
+const ranked = <T extends Amount & { name: string }>(unit: Measure, lines: T[]) =>
+  [...lines].sort((a, b) => (unit.of(b) ?? 0) - (unit.of(a) ?? 0) || b.tokens - a.tokens || b.requests - a.requests || a.name.localeCompare(b.name));
+/** Nothing to compare with when the earlier span was not measured the same way. */
+const versus = (unit: Measure, now: Spend, before: Spend, span: string) => {
+  const a = unit.of(now), b = unit.of(before);
+  if (a === null || b === null) return "";
+  const gap = unit.show(Math.abs(a - b));
+  return gap === unit.show(0) ? `the same as the ${span} before` : `${gap} ${a > b ? "more" : unit.less} than the ${span} before`;
+};
 
 export function homeName(store: Store): string {
   try { return String(JSON.parse(store.getSetting("home.state") ?? "{}").name || "OpenStrudel"); } catch { return "OpenStrudel"; }
 }
 
-/** `own` is the card's schedule: its runs are drawings, not requests, and stay out of what it reports. */
 export function statisticsCard(statistics: Statistics, home: string, own?: string) {
-  const days = statistics.days, today = days.at(-1)!, yesterday = days.at(-2)!;
-  const week = days.slice(-8, -1), previousWeek = days.slice(-15, -8);
-  const sunday = new Date(today.start + "T12:00:00Z").getUTCDay() === 0;
-  const title = (id: string) => statistics.chats[id]?.title ?? "Чат";
-  const self = own ? { id: own, chat: statistics.schedules[own]?.chatId } : undefined;
-  const day = total([yesterday], self), before = total([days.at(-3)!], self), seven = total(week, self), earlier = total(previousWeek, self);
-  const requests = (period: StatisticsPeriod) => period.requests - (period.schedules.find(schedule => schedule.id === own)?.runs ?? 0);
+  const days = statistics.days, yesterday = days.at(-2)!, week = days.slice(-8, -1);
+  const sunday = new Date(days.at(-1)!.start + "T12:00:00Z").getUTCDay() === 0;
+  const sum = (span: StatisticsPeriod[]) => total(statistics, span, own);
+  const day = sum([yesterday]), unit = measure(day);
 
   const parts: string[] = [];
-  const text = (x: number, y: number, value: string | number, size: number, fill = ink, weight = 400, extra = "") =>
-    parts.push(`<text x="${x}" y="${y}" font-size="${size}" fill="${fill}" font-weight="${weight}" ${extra}>${xml(value)}</text>`);
+  const text = (x: number, y: number, content: string | number, size: number, fill = ink, weight = 400, extra = "") =>
+    parts.push(`<text x="${x}" y="${y}" font-size="${size}" fill="${fill}" font-weight="${weight}" ${extra}>${xml(content)}</text>`);
   const rule = (y: number) => parts.push(`<path d="M${left} ${y}H${right}" stroke="${hairline}" stroke-width="2"/>`);
-  const meta = (y: number, value: string) => text(left, y, value.toUpperCase(), 22, muted, 500, 'letter-spacing="3"');
-  /** Tokens, cost and failures side by side; a figure without data says so with a dash. */
-  const figures = (y: number, sum: ReturnType<typeof total>) => {
-    const cells: Array<[string, string, string]> = [
-      ["Токены", sum.measured ? compact(sum.tokens) : "—", ink],
-      ["Стоимость", sum.costUsd === null ? "—" : money(sum.costUsd), ink],
-      ["Сбои", number(sum.failed), sum.failed ? warning : ink]];
-    cells.forEach(([name, value, fill], i) => { text(left + i * 330, y, name.toUpperCase(), 22, muted, 500, 'letter-spacing="3"'); text(left + i * 330, y + 62, value, 54, fill, 600); });
+  const meta = (x: number, y: number, content: string, fill = muted) => text(x, y, content.toUpperCase(), 22, fill, 500, 'letter-spacing="3"');
+  /** A name with its figure at the right edge; the name gives way. */
+  const pair = (y: number, name: string, amount: string) => {
+    text(left, y, fit(name, 32, right - left - wide(amount, 32, 600) - 28), 32, ink);
+    text(right, y, amount, 32, ink, 600, 'text-anchor="end"');
+  };
+  /** The one large figure; a cost carries its "about" sign small and quiet, since it is the providers' API price. */
+  const hero = (y: number, size: number, of: Measure, amount: Spend) => {
+    if (of.cost) text(left, y - size * 0.13, "≈", size * 0.48, muted);
+    text(left + (of.cost ? size * 0.37 : 0) - size * 0.04, y, value(of, amount), size, ink, 700, `letter-spacing="${-size * 0.038}"`);
   };
 
   let y = 104;
-  text(left, y, short(home, 26), 46, ink, 700);
-  text(right, y, label(yesterday.start, { weekday: "long", day: "numeric", month: "long" }), 30, muted, 400, 'text-anchor="end"');
-  meta(y += 50, "Вчера");
-  text(left - 8, y += 196, number(day.requests), 210, ink, 700, 'letter-spacing="-8"');
-  text(left, y += 58, `${requestsWord(day.requests)} · ${versus(day.requests, before.requests, "днём")}`, 32, muted);
+  const date = label(yesterday.start, { weekday: "long", month: "long", day: "numeric" });
+  text(left, y, fit(home, 46, right - left - wide(date, 30) - 28, 700), 46, ink, 700);
+  text(right, y, date, 30, muted, 400, 'text-anchor="end"');
+  meta(left, y += 50, `${unit.name} yesterday`);
+  hero(y += 186, 190, unit, day);
+  /** Spend compares only with a span measured from its first day; requests always compare. */
+  const since = statistics.usageSince, comparable = (of: Measure, from: string) => of.counted || (since !== null && from > since);
+  const against = comparable(unit, days.at(-3)!.start) ? versus(unit, day, sum([days.at(-3)!]), "day") : "";
+  const beside = [against, unit.cost && day.tokens ? compact(day.tokens) + " tokens" : ""].filter(Boolean).join(" · ");
+  if (beside) text(left, y += 64, capital(beside), 32, muted);
 
-  // Seven days ending yesterday, one bar each; only yesterday carries its number.
-  const top = y + 50, height = 180, gap = 24, bar = (right - left - gap * 6) / 7, most = Math.max(1, ...week.map(requests));
+  // Seven days ending yesterday, one bar each; a day with nothing to show keeps a trace on the baseline.
+  const top = y + 44, height = 120, gap = 24, bar = (right - left - gap * 6) / 7;
+  const daily = week.map(period => unit.of(sum([period])) ?? 0), most = Math.max(...daily);
   week.forEach((period, i) => {
-    const x = left + i * (bar + gap), h = Math.max(6, Math.round(requests(period) / most * height)), latest = i === 6;
-    parts.push(`<g data-day="${period.start}" data-requests="${requests(period)}"><rect x="${x}" y="${top + height - h}" width="${bar}" height="${h}" rx="10" fill="${latest ? ink : hairline}"/></g>`);
-    text(x + bar / 2, top + height + 42, label(period.start, { weekday: "short" }), 26, latest ? ink : muted, latest ? 700 : 400, 'text-anchor="middle"');
+    const x = left + i * (bar + gap), h = daily[i] ? Math.max(6, Math.round(daily[i]! / most * height)) : 2, latest = i === 6;
+    parts.push(`<g data-day="${period.start}" data-value="${Number(daily[i]!.toFixed(2))}"><rect x="${x}" y="${top + height - h}" width="${bar}" height="${h}" rx="${Math.min(10, h / 2)}" fill="${latest ? ink : hairline}"/></g>`);
+    text(x + bar / 2, top + height + 40, label(period.start, { weekday: "short" }), 26, latest ? ink : muted, latest ? 700 : 400, 'text-anchor="middle"');
   });
-  y = top + height + 88;
-  rule(y);
-  figures(y += 58, day);
-  rule(y += 108);
+  y = top + height + 40;
 
-  const sources = ([["Telegram", day.sources.telegram], ["расписания", day.sources.schedule], ["приложение", day.sources.app], ["события", day.sources.events]] as const)
-    .filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).map(([name, n]) => `${name}\u00a0${number(n)}`);
-  // No-break spaces keep each word with its number, so a long line breaks only after a separator.
-  const lines = day.requests ? [`Ответил\u00a0${number(day.answered)}\u00a0· промолчал\u00a0${number(day.quiet)}`] : [];
-  if (sources.length) { const joined = sources.join("\u00a0· "); lines.push(joined.charAt(0).toUpperCase() + joined.slice(1)); }
-  if (day.topChats[0]) lines.push(`Больше всего — «${short(title(day.topChats[0][0]), 30)}»: ${number(day.topChats[0][1].requests)}`);
-  if (day.failedChats[0]) lines.push(`Сбои чаще всего — «${short(title(day.failedChats[0][0]), 26)}»: ${number(day.failedChats[0][1].failed)}`);
-  if (day.topModel) lines.push(`Модель — ${day.topModel}`);
-  for (const line of lines) wrap(line, 32).forEach((part, i) => text(left, y += i ? 42 : 58, part, 32, ink));
-  const said = remark(day, week.map(requests), title);
-  wrap(said, 38, 700).forEach((part, i) => text(left, y += i ? 50 : 82, part, 38, ink, 700));
+  const quietDay = "A quiet day: nothing ran.";
+  // What ran, the largest first. A line that cost nothing and did not fail has nothing to say here.
+  const worth = (line: Amount) => (unit.of(line) ?? 0) > 0 || line.failed > 0;
+  const listed = ranked(unit, day.lines).filter(worth);
+  if (!day.requests) text(left, y += 86, quietDay, 38, ink, 700);
+  else {
+    // How the requests ended, and what each ending spent.
+    rule(y += 46);
+    (["answered", "quiet", "failed"] as const).forEach((outcome, i) => {
+      const end = day.ended[outcome], x = left + i * 330, alarm = outcome === "failed" && end.requests > 0;
+      meta(x, y + 58, unit.counted ? outcome : `${number(end.requests)} ${outcome}`, alarm ? warning : muted);
+      text(x, y + 120, !end.requests ? "—" : unit.counted ? number(end.requests) : value(unit, end), 54, alarm ? warning : ink, 600);
+    });
+    rule(y += 166);
+
+    meta(left, y += 58, unit.where);
+    const shown = listed.length > 6 ? listed.slice(0, 5) : [...listed], rest = day.lines.filter(line => !shown.includes(line));
+    const more: Line = { ...nothing(), name: `${rest.length} more`, one: "request" };
+    for (const line of rest) add(more, line);
+    if (worth(more)) shown.push(more);
+    const all = unit.of(day) ?? 0;
+    for (const line of shown) {
+      const share = all ? (unit.of(line) ?? 0) / all : 0;
+      parts.push(`<g data-line="${xml(line.name)}" data-share="${Math.round(share * 100)}">`);
+      pair(y += 58, line.name, figure(unit, line));
+      parts.push(`<rect x="${left}" y="${y + 18}" width="${right - left}" height="8" rx="4" fill="${hairline}"/>`);
+      if (share > 0) parts.push(`<rect x="${left}" y="${y + 18}" width="${Math.max(8, Math.round(share * (right - left)))}" height="8" rx="4" fill="${ink}"/>`);
+      const calm = [unit.counted ? "" : count(line.requests, line.one), line.quiet ? `${number(line.quiet)} quiet` : ""].filter(Boolean).join(" · ");
+      const failed = line.failed ? `${number(line.failed)} failed` : "";
+      parts.push(`<text x="${left}" y="${y += 58}" font-size="24" fill="${muted}">${xml(calm + (calm && failed ? " · " : ""))}<tspan fill="${warning}">${xml(failed)}</tspan></text></g>`);
+    }
+
+    const notes: string[] = [];
+    const models = ranked(unit, day.models).slice(0, 3);
+    if (models.length) notes.push(models.length > 1 ? models.map(model => `${model.name} ${value(unit, model)}`).join(" · ") : models[0]!.name);
+    if (unit.cost && day.unpriced) notes.push(`${count(day.unpriced, "request")} without a published price ${day.unpriced === 1 ? "is" : "are"} not in the cost.`);
+    notes.forEach((note, i) => text(left, y += i ? 38 : 70, fit(note, 26, right - left), 26, muted));
+  }
 
   let weekly = "";
   if (sunday) {
-    const first = label(week[0]!.start, { day: "numeric", month: "long" }), last = label(yesterday.start, { day: "numeric", month: "long" });
-    const range = first.split(" ")[1] === last.split(" ")[1] ? `${first.split(" ")[0]}–${last}` : `${first} – ${last}`;
+    const seven = sum(week), of = measure(seven);
+    const first = label(week[0]!.start, { month: "long", day: "numeric" }), last = label(yesterday.start, { month: "long", day: "numeric" });
+    const range = first.split(" ")[0] === last.split(" ")[0] ? `${first}–${last.split(" ")[1]}` : `${first} – ${last}`;
+    const earlier = comparable(of, days.at(-15)!.start) ? versus(of, seven, sum(days.slice(-15, -8)), "week") : "";
     rule(y += 64);
-    meta(y += 58, `Неделя · ${range}`);
-    text(left - 4, y += 128, number(seven.requests), 130, ink, 700, 'letter-spacing="-5"');
-    text(left, y += 52, `${requestsWord(seven.requests)} · ${versus(seven.requests, earlier.requests, "неделей")}`, 32, muted);
+    meta(left, y += 58, `Week · ${range}`);
+    hero(y += 128, 130, of, seven);
+    if (earlier) text(left, y += 52, capital(earlier), 32, muted);
     rule(y += 46);
-    figures(y += 58, seven);
-    rule(y += 108);
-    for (const [id, value] of seven.topChats.slice(0, 3)) {
-      text(left, y += 58, short(title(id), 40), 32, ink);
-      text(right, y, number(value.requests), 32, ink, 600, 'text-anchor="end"');
-    }
-    if (seven.costliest) wrap(`Дороже всего — «${short(statistics.schedules[seven.costliest[0]]?.name ?? "расписание", 30)}»: ${money(seven.costliest[1])}`, 30)
-      .forEach((part, i) => text(left, y += i ? 40 : 70, part, 30, muted));
-    weekly = `\n**Неделя · ${range}:** ${number(seven.requests)} ${requestsWord(seven.requests)}, ${versus(seven.requests, earlier.requests, "неделей")}`
-      + (seven.costUsd === null ? "" : ` · ${money(seven.costUsd)}`);
+    for (const line of ranked(of, seven.lines).slice(0, 3)) pair(y += 58, line.name, figure(of, line));
+    weekly = `\n**Week · ${range}:** ${of.phrase(seven)}${earlier ? ", " + earlier : ""}`;
   }
 
-  // Tokens and cost exist from the first day a turn reported them; a span that began earlier says so.
-  const since = statistics.usageSince, shown = sunday ? week[0]!.start : yesterday.start;
-  if (since && since >= shown) wrap(`Токены и стоимость — с ${label(since, { day: "numeric", month: "long" })}.`, 26).forEach((part, i) => text(left, y += i ? 34 : 76, part, 26, muted));
+  // Tokens and cost exist from the first day a turn reported them; bars that began earlier say so.
+  if (since && since > week[0]!.start) text(left, y += 70, `Tokens and cost are counted from ${label(since, { month: "long", day: "numeric" })}.`, 26, muted);
   const end = y + 72;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${end}" viewBox="0 0 ${width} ${end}" font-family="Arial, Liberation Sans, sans-serif">`
     + `<rect width="${width}" height="${end}" fill="${canvas}"/>${parts.join("")}</svg>`;
   const png = new Resvg(svg).render().asPng();
-  const spend = [day.measured ? `${compact(day.tokens)} токенов` : "", day.costUsd === null ? "" : money(day.costUsd), day.failed ? `сбои: ${number(day.failed)}` : ""].filter(Boolean);
-  const caption = `**${home} · вчера, ${label(yesterday.start, { day: "numeric", month: "long" })}**\n`
-    + `${number(day.requests)} ${requestsWord(day.requests)}, ${versus(day.requests, before.requests, "днём")}${spend.length ? " · " + spend.join(" · ") : ""}\n${said}${weekly}`;
+  const caption = [`**${home} · ${date}**`, ...day.requests ? [
+    `${unit.phrase(day)}${against ? ", " + against : ""}${day.failed ? ` · ${number(day.failed)} failed` : ""}`,
+    listed.slice(0, 3).map(line => `${short(line.name, 28)} ${figure(unit, line)}`).join(" · ")] : [quietDay]].filter(Boolean).join("\n") + weekly;
   return { date: yesterday.start, weekly: sunday, svg, png, caption };
 }

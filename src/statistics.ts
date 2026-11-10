@@ -29,6 +29,11 @@ export interface StatisticsPeriod {
   chats: Array<{ id: string } & Spend & { failed: number }>;
   models: Array<{ provider: string | null; model: string | null; name: string } & Spend>;
   schedules: Array<{ id: string; runs: number; quiet: number; failed: number; tokens: number; costUsd: number | null }>;
+  /** What ran, each request counted once, the costliest first: a schedule (its id), a kind of event (the word before the
+   * colon in its request, `correspondence`), or people writing in a chat (its id). */
+  work: Array<{ kind: "schedule" | "events" | "chat"; id: string; quiet: number; failed: number } & Spend>;
+  /** What the answers, the quiet checks and the failures spent. */
+  spent: Record<"answered" | "quiet" | "failed", { tokens: number; costUsd: number | null }>;
   /** The current, unfinished period only: the previous one up to the same moment, for a fair comparison. */
   previousToDate?: Spend;
 }
@@ -87,6 +92,8 @@ class Bucket {
   chats = new Map<string, { requests: number; failed: number; tokens: number; costTicks: number; priced: number }>();
   models = new Map<string, { provider: string | null; model: string | null; requests: number; tokens: number; costTicks: number; priced: number }>();
   schedules = new Map<string, { runs: number; quiet: number; failed: number; tokens: number; costTicks: number; priced: number }>();
+  work = new Map<string, { kind: StatisticsPeriod["work"][number]["kind"]; id: string; requests: number; quiet: number; failed: number; tokens: number; costTicks: number; priced: number }>();
+  spent = { answered: { tokens: 0, costTicks: 0, priced: 0 }, quiet: { tokens: 0, costTicks: 0, priced: 0 }, failed: { tokens: 0, costTicks: 0, priced: 0 } };
 }
 
 export function modelName(store: Store, provider: string | null, model: string | null): string {
@@ -158,7 +165,8 @@ export function readStatistics(store: Store, owner: boolean, now = new Date()): 
     if (!Number.isFinite(instant)) continue;
     const date = calendar.date(instant), week = monday(date);
     const external = row.external_id == null ? "" : String(row.external_id);
-    const source: RequestSource = row.channel === "telegram" ? "telegram" : external.startsWith("schedule:") ? "schedule" : /^[a-z][a-z-]*:/.test(external) ? "events" : "app";
+    const word = row.channel === "telegram" ? undefined : /^([a-z][a-z-]*):/.exec(external)?.[1];
+    const source: RequestSource = row.channel === "telegram" ? "telegram" : word === "schedule" ? "schedule" : word ? "events" : "app";
     const runStatus = row.run_status == null ? null : String(row.run_status);
     const outcome = row.status === "failed" || runStatus === "failed" || row.reply_id && row.failed_reply === 1 ? "failed"
       : runStatus === "quiet" || row.reply_id && row.quiet === 1 ? "quiet" : row.status === "completed" ? "answered" : null;
@@ -188,6 +196,12 @@ export function readStatistics(store: Store, owner: boolean, now = new Date()): 
         run.runs++; if (outcome === "quiet") run.quiet++; if (outcome === "failed") run.failed++; run.tokens += total; if (cost !== null) { run.costTicks += cost; run.priced++; }
         bucket.schedules.set(schedule, run);
       }
+      // A run whose schedule is gone stays an event named by its word.
+      const [kind, id] = schedule ? ["schedule", schedule] as const : word ? ["events", word] as const : ["chat", conversation] as const;
+      const work = bucket.work.get(kind + ":" + id) ?? { kind, id, requests: 0, quiet: 0, failed: 0, tokens: 0, costTicks: 0, priced: 0 };
+      work.requests++; if (outcome === "quiet") work.quiet++; if (outcome === "failed") work.failed++; work.tokens += total; if (cost !== null) { work.costTicks += cost; work.priced++; }
+      bucket.work.set(kind + ":" + id, work);
+      if (outcome) { const spent = bucket.spent[outcome]; spent.tokens += total; if (cost !== null) { spent.costTicks += cost; spent.priced++; } }
     }
     for (const [mark, period, cut] of [[toDate.day, yesterday === date, yesterdayCut], [toDate.week, lastWeek === week, lastWeekCut]] as const) {
       if (!period || instant >= cut) continue;
@@ -196,6 +210,7 @@ export function readStatistics(store: Store, owner: boolean, now = new Date()): 
   }
 
   const price = (ticks: number, priced: number) => priced ? usd(ticks) : null;
+  const spend = (s: { tokens: number; costTicks: number; priced: number }) => ({ tokens: s.tokens, costUsd: price(s.costTicks, s.priced) });
   const period = (start: string, bucket: Bucket, previous?: typeof toDate.day): StatisticsPeriod => ({
     start, requests: bucket.requests, sources: bucket.sources, outcomes: bucket.outcomes, measured: bucket.measured, tokens: bucket.tokens,
     costUsd: price(bucket.costTicks, bucket.priced), unpriced: bucket.unpriced,
@@ -205,6 +220,9 @@ export function readStatistics(store: Store, owner: boolean, now = new Date()): 
       .sort((a, b) => b.requests - a.requests || a.name.localeCompare(b.name)),
     schedules: [...bucket.schedules].map(([id, s]) => ({ id, runs: s.runs, quiet: s.quiet, failed: s.failed, tokens: s.tokens, costUsd: price(s.costTicks, s.priced) }))
       .sort((a, b) => (b.costUsd ?? 0) - (a.costUsd ?? 0) || b.runs - a.runs || a.id.localeCompare(b.id)),
+    work: [...bucket.work.values()].map(w => ({ kind: w.kind, id: w.id, requests: w.requests, quiet: w.quiet, failed: w.failed, tokens: w.tokens, costUsd: price(w.costTicks, w.priced) }))
+      .sort((a, b) => (b.costUsd ?? 0) - (a.costUsd ?? 0) || b.tokens - a.tokens || b.requests - a.requests || a.id.localeCompare(b.id)),
+    spent: { answered: spend(bucket.spent.answered), quiet: spend(bucket.spent.quiet), failed: spend(bucket.spent.failed) },
     ...previous ? { previousToDate: { requests: previous.requests, tokens: previous.tokens, costUsd: price(previous.costTicks, previous.priced) } } : {},
   });
 

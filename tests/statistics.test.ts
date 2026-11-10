@@ -119,6 +119,12 @@ it("counts executed requests by the owner's local day and week, with their sourc
   ]);
   expect(today.schedules).toEqual([{ id: "radar", runs: 2, quiet: 1, failed: 1, tokens: 110, costUsd: null }]);
   expect(statistics.schedules).toEqual({ radar: { name: "Радар", chatId: news, enabled: true } });
+  // What ran: a schedule by its id, an event by its kind, people writing in a chat by the chat. The costliest first.
+  const ran = today.work.map(w => [w.kind, w.kind === "chat" ? statistics.chats[w.id]!.title : w.id, w.requests, w.quiet, w.failed, w.tokens, w.costUsd]);
+  expect(ran.slice(0, 3)).toEqual([["chat", "Главный чат", 3, 0, 0, 1_050, 0.7], ["chat", "Рабочая группа", 1, 1, 0, 505, 0.1], ["schedule", "radar", 2, 1, 1, 110, null]]);
+  expect(ran.slice(3)).toEqual(expect.arrayContaining([["chat", "Анна Петрова", 1, 0, 0, 0, null], ["events", "correspondence", 1, 1, 0, 0, null], ["events", "operations", 1, 0, 0, 0, null]]));
+  expect(ran).toHaveLength(6);
+  expect(today.spent).toEqual({ answered: { tokens: 1_050, costUsd: 0.7 }, quiet: { tokens: 505, costUsd: 0.1 }, failed: { tokens: 110, costUsd: null } });
   expect(day(statistics, "2026-11-07")).toMatchObject({ requests: 2, outcomes: { answered: 2, quiet: 0, failed: 0 }, costUsd: 0.5 });
   // Both days sit in the week from Monday 2 November.
   expect(statistics.weeks.at(-1)).toMatchObject({ start: "2026-11-02", requests: 11, costUsd: 1.3, previousToDate: { requests: 0 } });
