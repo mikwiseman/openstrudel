@@ -7,14 +7,15 @@ import { HomeError } from "./home.js";
 import { privateMainConversation } from "./private-sources.js";
 import { checkModelSelection, parseModelSelection, type ModelChoice, type ModelSelection } from "./model-settings.js";
 
-const SETTING = "correspondence.config", GRANT = "correspondence.grant", POLICY = "correspondence-v1", MODEL = "correspondence.model";
+const SETTING = "correspondence.config", GRANT = "correspondence.grant", POLICY = "correspondence-v1", MODEL = "correspondence.model", OFF = "correspondence.off";
 const DEBOUNCE = 45_000, MAX_WAIT = 120_000;
 /** A Telegram group (a negative chat ID; channels never arrive) mostly talks among its members.
  * On 5–9 November groups made 89% of Telegram runs and 4% of those runs showed the owner anything,
  * so a group waits for 10 quiet minutes and is read at least every 30 minutes; other chats after 45 seconds. */
 const GROUP_DEBOUNCE = 600_000, GROUP_MAX_WAIT = 1_800_000;
+const telegramGroup = (source: Pick<Source, "provider">, threadId: string) => source.provider === "telegram" && threadId.startsWith("-");
 const batchWindow = (source: Pick<Source, "provider">, threadId: string) =>
-  source.provider === "telegram" && threadId.startsWith("-") ? [GROUP_DEBOUNCE, GROUP_MAX_WAIT] as const : [DEBOUNCE, MAX_WAIT] as const;
+  telegramGroup(source, threadId) ? [GROUP_DEBOUNCE, GROUP_MAX_WAIT] as const : [DEBOUNCE, MAX_WAIT] as const;
 const DELETED = "message.deleted";
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const identifier = z.string().min(1).max(256).regex(/^[^\s\x00-\x1f]+$/);
@@ -29,7 +30,9 @@ const inputSchema = configSchema.extend({ sources: z.array(sourceSchema.omit({ t
     .refine(source => !unipileSource(source) || ["gmail", "whatsapp", "linkedin"].includes(source.provider))).min(1).max(20) });
 const eventSchema = z.object({ id: identifier, threadId: identifier, messageId: identifier.optional(),
   type: z.enum(["message.new", "message.updated", "message.deleted", "transcript.ready"]), occurredAt: z.iso.datetime({ offset: true }) }).strict();
+const offSchema = z.object({ sources: z.array(z.string().regex(/^[a-z0-9-]{1,64}$/)).max(20).default([]), telegramGroups: z.boolean().default(false) }).strict();
 type Config = z.infer<typeof configSchema>;
+type Off = z.infer<typeof offSchema>;
 type Source = z.infer<typeof sourceSchema> & { fingerprint: string };
 type Event = z.infer<typeof eventSchema>;
 function unipileSource(source: { provider: string; auth?: string }) {
@@ -78,6 +81,20 @@ function modelInput(raw: unknown): ModelSelection | null | undefined {
   if (!selection.model) throw new HomeError("Invalid correspondence model.", 400);
   return selection;
 }
+/** What the owner switched off without removing it: whole sources, and Telegram groups. Their events are still accepted
+ * and then skipped, so a source keeps its credential and a producer's backlog drains without a model run.
+ * Like the model, it only narrows what runs and is no part of the grant. */
+export function correspondenceOff(store: Store): Off {
+  try { return offSchema.parse(JSON.parse(store.getSetting(OFF) ?? "{}")); } catch { return { sources: [], telegramGroups: false }; }
+}
+/** `off` in a configuration request: an object sets it, null switches everything back on, omitted keeps it. */
+function offInput(raw: unknown, sources: { id: string }[]): Off | null | undefined {
+  const off = raw && typeof raw === "object" ? (raw as { off?: unknown }).off : undefined;
+  if (off === undefined || off === null) return off;
+  const parsed = offSchema.safeParse(off);
+  if (!parsed.success || parsed.data.sources.some(id => !sources.some(s => s.id === id))) throw new HomeError("Invalid correspondence switch.", 400);
+  return parsed.data;
+}
 /** A configuration request that chooses a model for event runs; the caller reads the device's catalog only then. */
 export const choosesCorrespondenceModel = (raw: unknown) => Boolean(raw && typeof raw === "object" && (raw as { model?: unknown }).model);
 
@@ -88,10 +105,10 @@ export function configureCorrespondence(store: Store, owner: boolean, raw: unkno
   if (!owner) throw new HomeError("Only the owner can configure correspondence.", 403);
   const model = modelInput(raw);
   if (model) checkModelSelection(store, model, models);
-  const { model: _model, ...input } = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+  const { model: _model, off: _off, ...input } = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
   const parsed = inputSchema.safeParse(input);
   if (!parsed.success) throw new HomeError("Invalid correspondence configuration.", 400);
-  const previous = config(store), value = parsed.data;
+  const previous = config(store), value = parsed.data, off = offInput(raw, value.sources);
   if (!privateMainConversation(store, value.conversationId)) throw new HomeError("Choose the owner's main private conversation.", 403);
   if (new Set(value.sources.map(s => s.id)).size !== value.sources.length || new Set(value.sources.map(s => s.provider + ":" + s.accountId)).size !== value.sources.length)
     throw new HomeError("Configure each source account once.", 400);
@@ -109,10 +126,11 @@ export function configureCorrespondence(store: Store, owner: boolean, raw: unkno
   try {
     store.setSetting(SETTING, JSON.stringify(saved)); store.setSetting(GRANT, fingerprint(store, saved));
     if (model === null) store.deleteSetting(MODEL); else if (model) store.setSetting(MODEL, JSON.stringify(model));
+    if (off === null) store.deleteSetting(OFF); else if (off) store.setSetting(OFF, JSON.stringify(off));
     store.db.exec("COMMIT");
   } catch (error) { store.db.exec("ROLLBACK"); throw error; }
   return { enabled: saved.enabled, conversationId: saved.conversationId, calendarId: saved.calendarId,
-    defaultDurationMinutes: saved.defaultDurationMinutes, sources: saved.sources.map(({ tokenHash, signatureSecret, ...s }) => s), model: correspondenceModel(store) };
+    defaultDurationMinutes: saved.defaultDurationMinutes, sources: saved.sources.map(({ tokenHash, signatureSecret, ...s }) => s), model: correspondenceModel(store), off: correspondenceOff(store) };
 }
 
 export function correspondenceSource(store: Store, id: string, authorization: string | undefined): Source {
@@ -259,7 +277,7 @@ export class Correspondence {
     if (!owner) throw new HomeError("Owner access required.", 403);
     let authorized = false; try { permitted(this.store); authorized = true; } catch { /* Report revoked setup. */ }
     const value = config(this.store);
-    return { enabled: value?.enabled ?? false, authorized, sources: value?.sources.map(({ tokenHash, signatureSecret, ...s }) => s) ?? [], model: correspondenceModel(this.store),
+    return { enabled: value?.enabled ?? false, authorized, sources: value?.sources.map(({ tokenHash, signatureSecret, ...s }) => s) ?? [], model: correspondenceModel(this.store), off: correspondenceOff(this.store),
       note: "Completed means the event run finished. Only live provider readback proves a saved draft or calendar change.",
       counts: Object.fromEntries(this.store.db.prepare("SELECT status,COUNT(*) AS count FROM correspondence_events GROUP BY status").all().map(r => [r.status, r.count])),
       recent: this.store.db.prepare("SELECT source_id,event_id,thread_id,received_at,status,run_id,error FROM correspondence_events ORDER BY seq DESC LIMIT 25").all() };
@@ -291,7 +309,9 @@ export class Correspondence {
     }
     // A deletion alone asks nothing of the owner, and the next real change here re-reads the conversation live.
     // On 5–9 November such runs were 16% of all runs; the one result they showed said a message was unavailable.
-    if (rows.every(r => (JSON.parse(r.payload) as Event).type === DELETED)) {
+    // So does a source or a Telegram group the owner switched off: accepted, never run.
+    const off = correspondenceOff(this.store);
+    if (rows.every(r => (JSON.parse(r.payload) as Event).type === DELETED) || off.sources.includes(source.id) || off.telegramGroups && telegramGroup(source, first.thread_id)) {
       this.store.db.prepare("UPDATE correspondence_events SET status='skipped' WHERE source_id=? AND thread_id=? AND status='pending'").run(first.source_id, first.thread_id);
       return;
     }
