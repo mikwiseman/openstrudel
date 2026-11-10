@@ -156,6 +156,15 @@ describe("News in Telegram", () => {
     const [post] = telegramText(storyCard({ ...story(), id: "x", title, summary: "- не список\n\n> не цитата `и не код`", view: null } as unknown as NewsStory, "Europe/Moscow"));
     expect(post!.text.split("\n\n").slice(0, 3)).toEqual([title, "- не список", "> не цитата `и не код`"]);
     expect(post!.entities.filter(e => e.type !== "text_link")).toEqual([{ type: "bold", offset: 0, length: title.length }]);
+    // A line that begins like a heading, a list or a rule stays a line of text, and ordinary punctuation is left alone,
+    // so the copy the Home keeps reads as the post does.
+    const lines = "1. первый пункт\n\n# не заголовок\n\n+ не список\n\n=== не черта\n\n2026) год\n\nFable 5.2 стоит $8/$40 (на 20% дешевле) — это не всё!";
+    const card = storyCard({ ...story(), id: "y", title: "Fable 5.2: цена ниже на 20%", summary: lines, view: null } as unknown as NewsStory, "Europe/Moscow");
+    expect(card).toContain("**Fable 5.2: цена ниже на 20%**");
+    expect(card).toContain("Fable 5.2 стоит $8/$40 (на 20% дешевле) — это не всё!");
+    const [rendered] = telegramText(card);
+    expect(rendered!.text.split("\n\n").slice(1, 7)).toEqual(lines.split("\n\n"));
+    expect(rendered!.entities.filter(e => e.type !== "text_link")).toEqual([{ type: "bold", offset: 0, length: "Fable 5.2: цена ниже на 20%".length }]);
   });
 
   it("sends today's edition once as one rich message: the lead in full, the rest under their sections", async () => {
