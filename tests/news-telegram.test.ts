@@ -242,6 +242,9 @@ describe("News in Telegram", () => {
       run("b", "failed", "2026-11-10T08:05:00.000Z", "Закончился недельный лимит.\nПодробности");
       expect(newsFeed(store, conversation.id).status).toMatchObject({ checkedAt: "2026-11-10T07:05:00.000Z", failedAt: "2026-11-10T08:05:00.000Z", failure: "Закончился недельный лимит. Подробности" });
       expect(newsStamp(store, conversation.id)).not.toBe(quiet);
+      // Since when is the first failure after the last success; why is what the latest one said.
+      run("b2", "failed", "2026-11-10T08:35:00.000Z", "Источники недоступны.");
+      expect(newsFeed(store, conversation.id).status).toMatchObject({ failedAt: "2026-11-10T08:05:00.000Z", failure: "Источники недоступны." });
       run("c", "running", "2026-11-10T09:05:00.000Z");
       expect(newsFeed(store, conversation.id).status).toMatchObject({ running: true, failedAt: "2026-11-10T08:05:00.000Z" });
       store.db.prepare("UPDATE schedule_runs SET status='completed' WHERE id='c'").run();
