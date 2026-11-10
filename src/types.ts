@@ -78,6 +78,8 @@ export interface EmployeeProfile {
   nextRunAt?: string | null;
   /** The team list only: the latest finished run of one of its enabled schedules failed. */
   failing?: boolean;
+  /** The team list only: the first picture attached to the answer the preview is taken from; null when it has none. */
+  previewImage?: Attachment | null;
   domain?: "personal" | "work";
   purpose?: string;
   /** The employee publishes News stories, so the app lists its reader among the feeds. */

@@ -43,6 +43,22 @@ describe("the team list", () => {
     expect(store.listTeam()[1]).toMatchObject({ preview: "Latest answer", previewAt: latest.createdAt, working: false, nextRunAt: null, failing: false });
   });
 
+  it("carries the first picture of the answer the preview is taken from, and none when that answer has none", () => {
+    const { store, team } = desk();
+    const painter = store.createProfile({ name: "Painter" }), writer = store.createProfile({ name: "Writer" });
+    const studio = store.profileConversation(painter.id), page = store.profileConversation(writer.id);
+    const file = (name: string, mimeType: string) => ({ id: "00000000-0000-4000-8000-" + name.padEnd(12, "0").slice(0, 12).replace(/[^0-9a-f]/g, "a"), conversationId: studio.id, name, mimeType, size: 10 });
+    const notes = file("notes.pdf", "application/pdf"), sketch = file("sketch.png", "image/png"), second = file("second.png", "image/png");
+    store.addMessage({ conversationId: studio.id, channel: "api", direction: "outbound", text: "An earlier sketch", attachments: [second] });
+    store.addMessage({ conversationId: studio.id, channel: "api", direction: "outbound", text: "The poster", attachments: [notes, sketch, second] });
+    store.addMessage({ conversationId: page.id, channel: "api", direction: "outbound", text: "A picture came first", attachments: [second] });
+    store.addMessage({ conversationId: page.id, channel: "api", direction: "outbound", text: "Then only words" });
+    expect(team().Painter).toMatchObject({ preview: "The poster", previewImage: sketch });
+    expect(team().Writer).toMatchObject({ preview: "Then only words", previewImage: null });
+    // The engine's description of a turn's helpers stays free of what changes with every answer.
+    expect(store.listProfiles().every(profile => !("previewImage" in profile))).toBe(true);
+  });
+
   it("says who is working while a request of any of their chats waits or runs", async () => {
     const { store, messages, team, answers, release } = desk();
     const writer = store.createProfile({ name: "Writer" }), idle = store.createProfile({ name: "Idle" });

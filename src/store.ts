@@ -624,9 +624,9 @@ export class Store {
   }
 
   /** The employees as the app's team list shows them: each with whether a request of one of its chats is waiting or running now, the
-   * earliest next run of its enabled recurring schedules, and whether the latest finished run of one of them failed. These change with
-   * every run, so they stay out of listProfiles, whose rows also describe a turn's helpers to its engine. A backup stands in for its
-   * main schedule: the later of their finished runs decides. */
+   * earliest next run of its enabled recurring schedules, whether the latest finished run of one of them failed, and the first picture
+   * of the answer its preview is taken from. These change with every run, so they stay out of listProfiles, whose rows also describe
+   * a turn's helpers to its engine. A backup stands in for its main schedule: the later of their finished runs decides. */
   listTeam(): EmployeeProfile[] {
     const working = new Set((this.db.prepare(`SELECT DISTINCT c.profile_id AS profile FROM messages m JOIN conversations c ON c.id=m.conversation_id
       WHERE m.status IN ('queued','running') AND c.profile_id IS NOT NULL`).all() as Row[]).map(row => String(row.profile)));
@@ -643,7 +643,15 @@ export class Store {
       }
     }
     const failing = new Set([...latest.values()].filter(run => run.failed).map(run => run.profile));
-    return this.listProfiles().map(profile => ({ ...profile, working: working.has(profile.id), nextRunAt: next.get(profile.id) ?? null, failing: failing.has(profile.id) }));
+    // The same message listProfiles previews: the employee's latest answer in any of its chats.
+    const pictures = new Map((this.db.prepare(`SELECT p.id AS profile, (
+        SELECT m.attachments_json FROM messages m JOIN conversations c ON c.id=m.conversation_id
+        WHERE c.profile_id=p.id AND m.direction='outbound' AND m.kind='text' AND m.hidden=0
+        ORDER BY m.created_at DESC,m.rowid DESC LIMIT 1
+      ) AS files FROM employee_profiles p`).all() as Row[]).map(row =>
+      [String(row.profile), (JSON.parse(String(row.files ?? "[]")) as Attachment[]).find(file => file.mimeType.startsWith("image/")) ?? null] as const));
+    return this.listProfiles().map(profile => ({ ...profile, working: working.has(profile.id), nextRunAt: next.get(profile.id) ?? null, failing: failing.has(profile.id),
+      previewImage: pictures.get(profile.id) ?? null }));
   }
 
   getProfile(profileIdOrName: string): EmployeeProfile | null {
