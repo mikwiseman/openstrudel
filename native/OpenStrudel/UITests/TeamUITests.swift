@@ -207,6 +207,42 @@ final class TeamUITests: XCTestCase {
         app.terminate()
     }
 
+    /// On an iPad at full width the home stands beside the open place, as on the Mac: the chat first, then whatever a
+    /// row or a tile opens. The home keeps its search; the composer is the chat's own.
+    @MainActor
+    func testAnIPadShowsTheHomeBesideTheOpenPlace() async throws {
+        continueAfterFailure = false
+        guard let fixture = environment["OPENSTRUDEL_TEAM_FIXTURE"] else { throw XCTSkip("Start tests/fixtures/team.ts and pass its control URL.") }
+        guard UIDevice.current.userInterfaceIdiom == .pad else { throw XCTSkip("An iPad's layout.") }
+        control = fixture
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = launch()
+        try await pair(app, "/invite")
+        let consent = app.buttons["acceptAIDataSharing"]
+        if consent.waitForExistence(timeout: 5) { consent.tap() }
+        let state = try await read("/")
+        XCTAssertTrue(app.descendants(matching: .any)["homeRoot"].waitForExistence(timeout: 40), app.debugDescription)
+        XCTAssertTrue(app.buttons["openEmployeeDetails"].waitForExistence(timeout: 20), "The chat is open beside the home: " + app.debugDescription)
+        XCTAssertTrue(app.buttons["openChats"].exists && !app.buttons["homeComposer"].exists, app.debugDescription)
+        XCTAssertEqual(app.tabBars.count, 0)
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "tile-desk:")).firstMatch.waitForExistence(timeout: 20), app.debugDescription)
+        try await Task.sleep(for: .seconds(2))
+        capture("ipad-home-chat", app)
+        let desk = app.buttons["teamMember-" + (try XCTUnwrap(state["news"] as? String))]
+        XCTAssertTrue(desk.waitForExistence(timeout: 20), app.debugDescription); desk.tap()
+        XCTAssertTrue(app.scrollViews["newsToday"].waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(app.descendants(matching: .any)["homeRoot"].exists, "The home stays beside the desk")
+        try await Task.sleep(for: .seconds(2))
+        capture("ipad-desk", app)
+        open(app.buttons["teamMember-" + (try XCTUnwrap(state["fresh"] as? String))], in: app)
+        XCTAssertTrue(app.buttons["discussLatest"].waitForExistence(timeout: 15), app.debugDescription)
+        capture("ipad-employee", app)
+        // «Спросить про…» leads to the chat beside the same home.
+        app.buttons["discussLatest"].tap()
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@", "draftContext")).firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["removeDraftContext"].tap()
+    }
+
     /// The chat grows out of a glass capsule at the bottom of the home, or of an employee's page, and goes back into
     /// it while its keyboard is still on its way, after a sheet over the chat has closed. SwiftUI's glass effect on
     /// those capsules took the app down right here within a few rounds; UIKit's glass does not.
@@ -273,7 +309,8 @@ final class TeamUITests: XCTestCase {
 
     /// A row below the dock is scrolled above it before it is pressed.
     @MainActor private func open(_ row: XCUIElement, in app: XCUIApplication) {
-        let dock = app.buttons["homeComposer"]
+        // On a phone the dock is the composer capsule; beside an open place it is the search capsule.
+        let dock = app.buttons["homeComposer"].exists ? app.buttons["homeComposer"] : app.buttons["openChats"]
         XCTAssertTrue(row.waitForExistence(timeout: 20), app.debugDescription)
         for _ in 0..<4 where dock.exists && row.frame.maxY > dock.frame.minY - 12 {
             app.descendants(matching: .any)["homeRoot"].swipeUp(velocity: .slow)

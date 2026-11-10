@@ -21,8 +21,13 @@ struct ConversationView: View {
     var writes = 0
     /// The chat was opened from the composer capsule: the keyboard comes up with it.
     var startsWriting = false
+    /// A sheet of the app is over the chat.
+    var covered = false
     /// Opens the conversations this chat can read.
     let openHistory: () -> Void
+    @State private var startedWriting = false
+    /// The count of `writes` this chat has already answered; nil until it has seen the one it was opened with.
+    @State private var opened: Int?
     @State private var draft = ""
     @State private var pickedFiles: [PickedFile] = []
     @State private var context: ChatContext?
@@ -63,12 +68,25 @@ struct ConversationView: View {
         }
         .task { draft = library.draft(for: draftKey); pickedFiles = library.fileDrafts[draftKey] ?? []; context = library.draftContext(for: draftKey) }
         .task {
-            guard startsWriting else { return }
+            // Once: coming back from a page the chat led to does not raise the keyboard again.
+            guard startsWriting, !startedWriting else { return }
+            startedWriting = true
             // After the page has grown out of the capsule, so the keyboard does not fight the zoom.
             try? await Task.sleep(for: .milliseconds(350))
             focused = true
         }
-        .onChange(of: writes) { _, _ in focused = true }
+        // «Спросить про…» from a page over the chat: the keyboard waits until the chat is back in place, or the
+        // composer would stay under it.
+        .task(id: writes) {
+            guard let answered = opened, writes > answered else { opened = writes; return }
+            opened = writes
+            try? await Task.sleep(for: .milliseconds(500))
+            if !Task.isCancelled { focused = true }
+        }
+        // A page over the chat, or the way back home, takes the keyboard down with it.
+        .onDisappear { focused = false }
+        // A menu hands the keyboard back to the field it took it from, even when its item opened a sheet over the chat.
+        .onChange(of: focused) { _, now in if now && (covered || details != nil) { focused = false } }
         .onChange(of: client.openAIAccount?.connected) { _, connected in
             if connected == false { focused = false }
         }

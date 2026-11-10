@@ -322,9 +322,10 @@ struct OpenStrudelRootView: View {
     private var chat: some View {
         // Each device keeps its own draft, files and reading position.
         #if os(macOS)
-        ConversationView(writes: writes, openHistory: { showHistory = true })
+        ConversationView(writes: writes, covered: showHistory, openHistory: { showHistory = true })
         #else
-        ConversationView(showSettings: $showSettings, writes: writes, startsWriting: !isSplit && sources[.chat] != AnyHashable(HomePlace.chat), openHistory: { showHistory = true })
+        ConversationView(showSettings: $showSettings, writes: writes, startsWriting: !isSplit && sources[.chat] != AnyHashable(HomePlace.chat),
+                         covered: showHistory || showSettings, openHistory: { showHistory = true })
         #endif
     }
 }

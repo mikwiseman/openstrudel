@@ -80,7 +80,8 @@ private struct ViewLine: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text("→").fontWeight(.semibold).foregroundStyle(AppTheme.signal).accessibilityHidden(true)
+            // A symbol, so it points the other way in a language that reads from the right.
+            Image(systemName: "arrow.forward").imageScale(.small).fontWeight(.semibold).foregroundStyle(AppTheme.signal).accessibilityHidden(true)
             Text(text).lineLimit(limit).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
         }
         .font(AppTypography.reading).lineSpacing(AppTypography.readingLineSpacing)

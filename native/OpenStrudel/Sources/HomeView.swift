@@ -58,8 +58,9 @@ struct HomeView: View {
         // Named before the dock joins it, so the dock's buttons keep their own names.
         .accessibilityIdentifier("homeRoot")
         .safeAreaBar(edge: .bottom, spacing: 0) { dock }
-        // Beside an open place the rows end at the search capsule instead of showing through it.
-        .scrollEdgeEffectStyle(split ? .hard : .automatic, for: .bottom)
+        // Beside an open place the rows end at the search capsule instead of showing through it, and the shelf goes
+        // under the window's top edge cleanly.
+        .scrollEdgeEffectStyle(split ? .hard : .automatic, for: .vertical)
         // Nothing is typed here: a keyboard leaving the chat must not carry the dock with it.
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .sheet(item: $moving) { EmployeeMoveView(request: $0) }
@@ -91,6 +92,8 @@ struct HomeView: View {
         }
         .padding(.horizontal, margin)
         .padding(.top, split ? 6 : 10).padding(.bottom, split ? 10 : 12)
+        // The wordmark is a mark, not reading text: it grows like a bar's title and never loses its end.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
     }
 
     // MARK: The team

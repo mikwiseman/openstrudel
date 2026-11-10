@@ -196,7 +196,7 @@ private struct ShelfTileView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(words.time(at)).font(.system(size: TileMetrics.side * 0.26, weight: .semibold)).tracking(-1.6).monospacedDigit()
                             .lineLimit(1).minimumScaleFactor(0.6)
-                        Text(name + " · " + words.day(at, now: timeline.date)).font(AppTypography.label.weight(.regular)).opacity(0.62).lineLimit(2)
+                        Text(name + " · " + words.day(at, now: timeline.date)).font(AppTypography.label.weight(.regular)).opacity(0.62).lineLimit(2).minimumScaleFactor(0.8)
                     }
                     .padding(.top, TileMetrics.side * 0.13)
                 }
@@ -216,7 +216,7 @@ private struct ShelfTileView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(done.formatted()).font(.system(size: TileMetrics.side * 0.26, weight: .semibold)).tracking(-1.6).monospacedDigit()
                         .contentTransition(.numericText(value: Double(done))).lineLimit(1).minimumScaleFactor(0.6)
-                    Text(L("сделано за 7 дней")).font(AppTypography.label.weight(.regular)).opacity(0.62).lineLimit(2)
+                    Text(L("сделано за 7 дней")).font(AppTypography.label.weight(.regular)).opacity(0.62).lineLimit(2).minimumScaleFactor(0.8)
                 }
                 .padding(.top, TileMetrics.side * 0.13)
             }
