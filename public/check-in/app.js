@@ -1,18 +1,20 @@
 const METRICS = [
-  { id: "calm", name: "Спокойствие", description: "Насколько спокойно прошёл день", low: "1 · суета", high: "10 · спокойно" },
-  { id: "focus", name: "Фокус", description: "Удалось ли сделать запланированное", low: "1 · рассеянно", high: "10 · в фокусе" },
-  { id: "energy", name: "Энергия", description: "Насколько бодро ты себя чувствуешь", low: "1 · без сил", high: "10 · бодро" },
-  { id: "mood", name: "Настроение", description: "Насколько радостно и кайфово", low: "1 · тяжело", high: "10 · кайф" },
+  { id: "calm", name: "Calm", description: "How calm your day felt", low: "1 · hectic", high: "10 · calm" },
+  { id: "focus", name: "Focus", description: "How much of your plan you finished", low: "1 · little finished", high: "10 · plan finished" },
+  { id: "energy", name: "Energy", description: "How energetic you feel", low: "1 · drained", high: "10 · energized" },
+  { id: "mood", name: "Mood", description: "How good you feel", low: "1 · low", high: "10 · great" },
 ];
 const $ = (id) => document.getElementById(id);
 const telegram = window.Telegram?.WebApp;
 const state = { data: null, person: null, metric: "calm", period: 7, draft: {}, saving: false };
-const numberFormat = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
+const numberFormat = new Intl.NumberFormat("en-GB", { maximumFractionDigits: 1 });
 const hasScore = (value) => typeof value === "number" && Number.isFinite(value);
 const scoreText = (value) => hasScore(value) ? numberFormat.format(value) : "—";
 const dateValue = (date) => new Date(`${date}T12:00:00Z`);
-const dateText = (date, options = { day: "numeric", month: "long" }) => new Intl.DateTimeFormat("ru-RU", { timeZone: "UTC", ...options }).format(dateValue(date));
+const dateText = (date, options = { day: "numeric", month: "long" }) => new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", ...options }).format(dateValue(date));
 const shiftDate = (date, days) => new Date(dateValue(date).getTime() + days * 86400000).toISOString().slice(0, 10);
+const isReportingDay = (date) => dateValue(date).getUTCDay() !== 6;
+const previousReportingDay = (date) => { let day = shiftDate(date, -1); while (!isReportingDay(day)) day = shiftDate(day, -1); return day; };
 const own = () => state.person === String(state.data?.viewerId);
 const valuesOn = (date, person = state.person) => state.data?.days.find((day) => day.date === date)?.values?.[person] ?? {};
 const element = (tag, className, text) => {
@@ -48,16 +50,16 @@ function showGate(kind) {
   $("retry").hidden = kind !== "network";
   $("open-telegram").hidden = kind === "network" || kind === "loading";
   $("gate-note").hidden = kind === "loading";
-  $("gate-eyebrow").textContent = kind === "forbidden" ? "ТОЛЬКО ДЛЯ СВОИХ" : "МИНУТА ДЛЯ СЕБЯ";
+  $("gate-eyebrow").textContent = kind === "forbidden" ? "WAI HQ MEMBERS ONLY" : "A MOMENT FOR YOURSELF";
   $("gate-title").replaceChildren();
-  const title = kind === "network" ? ["Не удалось", "загрузить день."] : kind === "expired" ? ["Давай", "откроем заново."] : ["Меньше суеты.", "Больше жизни."];
+  const title = kind === "network" ? ["Could not", "load your day."] : kind === "expired" ? ["Let’s", "open it again."] : ["Less bustle.", "More life."];
   $("gate-title").append(document.createTextNode(title[0]), document.createElement("br"), document.createTextNode(title[1]));
   $("gate-copy").textContent = {
-    loading: "Открываем твой день…",
-    outside: "Спокойствие, фокус, энергия и настроение — в одном месте. Открой Выдох через меню Волка в Telegram.",
-    expired: "Вход устарел. Закрой приложение и открой Выдох снова через меню Волка в Telegram.",
-    forbidden: "Это пространство участников WAI HQ. Для доступа нужен твой Telegram-аккаунт в этой группе.",
-    network: "Оценки на месте. Проверь соединение и попробуй ещё раз.",
+    loading: "Opening your day…",
+    outside: "Calm, focus, energy and mood in one place. Open Exhale from Wolf’s menu in Telegram.",
+    expired: "Your session expired. Close the app and reopen Exhale from Wolf’s menu in Telegram.",
+    forbidden: "This space is for WAI HQ members. Use your Telegram account to open it.",
+    network: "Could not load your ratings. Check your connection and try again.",
   }[kind];
 }
 
@@ -97,8 +99,8 @@ async function load() {
 }
 
 function personName(person) {
-  const name = person?.name ?? "Участник";
-  return name === "Mik Wiseman" ? "Мик" : name === "Grisha Ottens" || name === "Grigoriy Ottens" ? "Гриша" : name;
+  const name = person?.name ?? "Participant";
+  return (name === "Mik Wiseman" || name === "Мик") ? "Mik" : ["Grisha Ottens", "Grigoriy Ottens", "Гриша"].includes(name) ? "Grisha" : name;
 }
 function renderPeople() {
   $("people").replaceChildren(...state.data.participants.map((person) => {
@@ -120,7 +122,7 @@ function setOutput(metric, value) {
   const output = $(`output-${metric.id}`);
   output.replaceChildren(document.createTextNode(scoreText(value)), element("span", "", "/10"));
   const range = $(`range-${metric.id}`);
-  range?.setAttribute("aria-valuetext", hasScore(value) ? `${value} из 10` : "Не выбрано");
+  range?.setAttribute("aria-valuetext", hasScore(value) ? `${value} out of 10` : "Not selected");
   if (range) range.style.setProperty("--value", hasScore(value) ? `${(Math.max(1, value) - 1) / 9 * 100}%` : "0%");
   $(`metric-${metric.id}`).classList.toggle("unanswered", !hasScore(value));
 }
@@ -139,16 +141,16 @@ function renderToday() {
   const person = state.data.participants.find((entry) => entry.id === state.person);
   $("today-date").textContent = `${dateText(state.data.today)} · ${dateText(state.data.today, { weekday: "short" })}`;
   $("today-date").dateTime = state.data.today;
-  $("today-state").textContent = todayCount === 4 ? "День отмечен" : todayCount ? `${todayCount} из 4` : "Сегодня";
+  $("today-state").textContent = todayCount === 4 ? "Day recorded" : todayCount ? `${todayCount} of 4` : "Today";
   $("today-title").replaceChildren();
-  if (isOwn) $("today-title").append(document.createTextNode("Как ты"), document.createElement("br"), document.createTextNode("сегодня?"));
-  else $("today-title").textContent = `${personName(person)} сегодня`;
-  $("today-intro").textContent = isOwn ? "От 1 до 10. Больше — лучше." : "Четыре стороны одного дня.";
+  if (isOwn) $("today-title").append(document.createTextNode("How are you"), document.createElement("br"), document.createTextNode("today?"));
+  else $("today-title").textContent = `${personName(person)} today`;
+  $("today-intro").textContent = isOwn ? "From 1 to 10. Higher is better." : "Four sides of one day.";
   $("save-area").hidden = !isOwn;
   $("other-note").hidden = isOwn;
   if (!isOwn) {
-    const latest = [...state.data.days].reverse().find((day) => METRICS.some((metric) => hasScore(day.values?.[state.person]?.[metric.id])));
-    $("other-note").textContent = todayCount ? "Каждый отмечает свой день сам." : latest ? `Сегодня оценок пока нет. Последняя запись — ${dateText(latest.date)}.` : "Оценок пока нет. Каждый отмечает свой день сам.";
+    const latest = [...state.data.days].reverse().find((day) => isReportingDay(day.date) && METRICS.some((metric) => hasScore(day.values?.[state.person]?.[metric.id])));
+    $("other-note").textContent = todayCount ? "Everyone records their own day." : latest ? `No ratings today yet. Latest entry: ${dateText(latest.date)}.` : "No ratings yet. Everyone records their own day.";
   }
   $("metrics").replaceChildren(...METRICS.map((metric) => {
     const row = element("div", `metric ${metric.id}${isOwn ? "" : " metric-readonly"}`);
@@ -196,9 +198,9 @@ function updateSave(message) {
   const unchanged = METRICS.every((metric) => existing[metric.id] === state.draft[metric.id]);
   $("save").disabled = !complete || unchanged || state.saving;
   $("save").setAttribute("aria-busy", String(state.saving));
-  $("save-label").textContent = state.saving ? "Сохраняем…" : complete && unchanged ? "День сохранён" : !complete ? "Отметь все четыре" : METRICS.some((metric) => hasScore(existing[metric.id])) ? "Сохранить изменения" : "Сохранить мой день";
+  $("save-label").textContent = state.saving ? "Saving…" : complete && unchanged ? "Day saved" : !complete ? "Rate all four" : METRICS.some((metric) => hasScore(existing[metric.id])) ? "Save changes" : "Save my day";
   $("save-status").classList.remove("error");
-  $("save-status").textContent = message ?? "Оценки можно изменить в течение дня.";
+  $("save-status").textContent = message ?? "You can edit your ratings throughout the day.";
 }
 
 async function save(event) {
@@ -211,7 +213,7 @@ async function save(event) {
     const data = await request("POST", { date: state.data.today, scores: { ...state.draft } });
     state.saving = false;
     acceptData(data, true);
-    updateSave("Сохранено. Можно выдохнуть.");
+    updateSave("Saved. Take a breath.");
     haptic("success");
   } catch (error) {
     state.saving = false;
@@ -219,18 +221,18 @@ async function save(event) {
     updateSave();
     for (const input of document.querySelectorAll(".metric input")) input.disabled = false;
     $("save-status").classList.add("error");
-    $("save-status").textContent = error.status === 400 || error.status === 422 ? "Нужны четыре оценки от 1 до 10. Проверь значения." : error.status === 409 ? "День уже сменился. Закрой и снова открой приложение." : "Не сохранилось. Твои оценки здесь — попробуй ещё раз.";
+    $("save-status").textContent = error.status === 400 || error.status === 422 ? "Choose four ratings from 1 to 10. Check your values." : error.status === 409 ? "The day has changed. Close and reopen the app." : "Not saved. Your choices are still here; try again.";
   }
 }
 
 function datesForPeriod() {
-  return Array.from({ length: state.period }, (_, index) => shiftDate(state.data.today, index - state.period + 1));
+  return Array.from({ length: state.period }, (_, index) => shiftDate(state.data.today, index - state.period + 1)).filter(isReportingDay);
 }
 function calendarStreak() {
-  const answered = new Set(state.data.days.filter((day) => METRICS.some((metric) => hasScore(day.values?.[state.person]?.[metric.id]))).map((day) => day.date));
-  let date = answered.has(state.data.today) ? state.data.today : shiftDate(state.data.today, -1);
+  const answered = new Set(state.data.days.filter((day) => isReportingDay(day.date) && hasScore(day.values?.[state.person]?.calm)).map((day) => day.date));
+  let date = answered.has(state.data.today) ? state.data.today : previousReportingDay(state.data.today);
   let count = 0;
-  while (answered.has(date)) { count += 1; date = shiftDate(date, -1); }
+  while (answered.has(date)) { count += 1; date = previousReportingDay(date); }
   return count;
 }
 function svgElement(tag, attributes, text) {
@@ -243,7 +245,7 @@ function renderChart(dates, metric) {
   const chart = $("chart");
   const values = dates.map((date) => valuesOn(date)[metric.id]);
   const allValues = values.filter(hasScore);
-  chart.replaceChildren(svgElement("title", { id: "chart-title" }, `${metric.name}: последние ${state.period} дней`), svgElement("desc", { id: "chart-description" }, dates.map((date, index) => `${dateText(date)}: ${hasScore(values[index]) ? values[index] + " из 10" : "нет оценки"}`).join(". ")));
+  chart.replaceChildren(svgElement("title", { id: "chart-title" }, `${metric.name}: last ${state.period} days`), svgElement("desc", { id: "chart-description" }, dates.map((date, index) => `${dateText(date)}: ${hasScore(values[index]) ? values[index] + " out of 10" : "no rating"}`).join(". ")));
   chart.style.setProperty("--chart-color", `var(--${metric.id})`);
   const left = 24, right = 569, top = 20, bottom = 186;
   const x = (index) => left + index / (dates.length - 1) * (right - left);
@@ -260,23 +262,25 @@ function renderChart(dates, metric) {
   flush();
   values.forEach((value, index) => {
     const point = hasScore(value) ? svgElement("circle", { cx: x(index), cy: y(value), r: state.period === 7 ? 6.5 : 4.5, class: "chart-dot" }) : svgElement("circle", { cx: x(index), cy: bottom, r: 2.5, class: "chart-gap" });
-    point.append(svgElement("title", {}, `${dateText(dates[index])}: ${hasScore(value) ? value + "/10" : "нет оценки"}`));
+    point.append(svgElement("title", {}, `${dateText(dates[index])}: ${hasScore(value) ? value + "/10" : "no rating"}`));
     chart.append(point);
-    if (state.period === 7 || index === 0 || index === dates.length - 1 || index % 7 === 0 && index < dates.length - 3) chart.append(svgElement("text", { x: x(index), y: 219, "text-anchor": "middle" }, state.period === 7 ? dateText(dates[index], { day: "numeric" }) : dateText(dates[index], { day: "numeric", month: "numeric" })));
+    if (state.period === 7 || index === 0 || index === dates.length - 1 || index % 7 === 0 && index < dates.length - 3) {
+      chart.append(svgElement("text", { x: x(index), y: 207, "text-anchor": "middle" }, dateText(dates[index], { weekday: "short" })),
+        svgElement("text", { x: x(index), y: 225, "text-anchor": "middle" }, dateText(dates[index], { day: "2-digit", month: "2-digit" })));
+    }
   });
   $("chart-empty").hidden = Boolean(allValues.length);
   $("average").textContent = allValues.length ? numberFormat.format(allValues.reduce((sum, value) => sum + value, 0) / allValues.length) : "—";
   $("average").style.color = `var(--${metric.id})`;
-  $("average-caption").textContent = allValues.length ? `Среднее · ${allValues.length} ${plural(allValues.length, ["ответ", "ответа", "ответов"])}` : state.period === 7 ? "За последние 7 дней" : "За последние 30 дней";
-  $("chart-empty").textContent = own() ? "Здесь появится твой ритм.\nНачни с одной оценки." : "За эти дни оценок пока нет.";
+  $("average-caption").textContent = allValues.length ? `Average · ${allValues.length} ${plural(allValues.length, ["rating", "ratings"])}` : state.period === 7 ? "Over the last 7 days" : "Over the last 30 days";
+  $("chart-empty").textContent = own() ? "Your rhythm will appear here.\nStart with one rating." : "No ratings for these days yet.";
   $("chart-empty").style.whiteSpace = "pre-line";
-  const latest = [...state.data.days].reverse().find((day) => hasScore(day.values?.[state.person]?.[metric.id]));
-  const latestText = latest ? `Последняя оценка: ${dateText(latest.date)} · ${scoreText(latest.values[state.person][metric.id])}/10. ` : "";
-  $("chart-footnote").textContent = latestText + (metric.id === "calm" ? "Старые оценки: 10 − суета. Ноль сохранён. Пробел — нет ответа." : "Пробел на графике — день без оценки.");
+  const latest = [...state.data.days].reverse().find((day) => isReportingDay(day.date) && hasScore(day.values?.[state.person]?.[metric.id]));
+  const latestText = latest ? `Latest rating: ${dateText(latest.date)} · ${scoreText(latest.values[state.person][metric.id])}/10. ` : "";
+  $("chart-footnote").textContent = latestText + (metric.id === "calm" ? "Historical calm: 10 − bustle. Zero is preserved. Gaps mean no rating. Saturdays are excluded." : "A gap means no rating. Saturdays are excluded.");
 }
 function plural(number, words) {
-  const last = number % 10, two = number % 100;
-  return two >= 11 && two <= 14 ? words[2] : last === 1 ? words[0] : last >= 2 && last <= 4 ? words[1] : words[2];
+  return number === 1 ? words[0] : words[1];
 }
 function renderHistory() {
   $("metric-tabs").replaceChildren(...METRICS.map((metric) => {
@@ -297,15 +301,16 @@ function renderHistory() {
   renderChart(dates, METRICS.find((metric) => metric.id === state.metric));
   const streak = calendarStreak();
   $("streak").textContent = String(streak);
-  $("streak-caption").textContent = `${plural(streak, ["день", "дня", "дней"])} с ответом подряд`;
+  $("streak-caption").textContent = `${streak === 1 ? "workday" : "workdays"} of calm in a row`;
   $("history-rows").replaceChildren(...[...dates].reverse().map((date) => {
     const row = element("tr");
-    const label = element("td", "", dateText(date, { day: "numeric", month: "short" }));
+    const label = element("td");
+    label.append(element("div", "history-weekday", dateText(date, { weekday: "short" })), element("div", "", dateText(date, { day: "numeric", month: "short" })));
     row.append(label);
     for (const metric of METRICS) {
       const value = valuesOn(date)[metric.id];
       const cell = element("td", hasScore(value) ? metric.id : "missing", scoreText(value));
-      if (!hasScore(value)) cell.setAttribute("aria-label", "Нет оценки");
+      if (!hasScore(value)) cell.setAttribute("aria-label", "No rating");
       row.append(cell);
     }
     return row;

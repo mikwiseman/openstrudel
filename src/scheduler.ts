@@ -213,9 +213,15 @@ export class Scheduler {
       const metrics = dailyMetricsReportConfig(this.store, schedule.conversationId, schedule.id);
       if (metrics) {
         if (destination !== metrics.chatId) throw new Error("Чат сводки Выдоха изменился. Проверьте расписание.");
+        const data = readDailyMetrics(this.store, metrics.participants[0]!.id, new Date(scheduledFor));
+        // Sunday morning would report Saturday, which is outside this journal.
+        if (new Date(data.today + "T12:00:00Z").getUTCDay() === 0) {
+          this.store.db.prepare("UPDATE schedule_runs SET status='quiet' WHERE id=?").run(runId);
+          return;
+        }
         dailyMetricsLaunchButton(this.store);
-        const card = dailyMetricsCard(readDailyMetrics(this.store, metrics.participants[0]!.id, new Date(scheduledFor)));
-        await this.postCard(schedule, runId, card, `vydoh-${card.date}.png`, `Выдох · ${card.date}`);
+        const card = dailyMetricsCard(data);
+        await this.postCard(schedule, runId, card, `exhale-${card.date}.png`, `Exhale · ${card.date}`);
         return;
       }
       const checkIns = dailyMetricsSummary(this.store, schedule.conversationId, new Date(scheduledFor)) ?? checkInSummary(this.store, schedule.conversationId, new Date(scheduledFor));

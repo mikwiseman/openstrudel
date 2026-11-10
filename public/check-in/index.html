@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f5f3ed">
   <meta name="color-scheme" content="light dark">
   <meta name="robots" content="noindex, nofollow">
-  <title>Выдох · WAI HQ</title>
+  <title>Exhale · WAI HQ</title>
   <link rel="stylesheet" href="./style.css">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script type="module" src="./app.js"></script>
@@ -14,49 +14,49 @@
 <body>
   <main class="shell" id="app">
     <header class="masthead">
-      <a class="wordmark" href="./" aria-label="Выдох — главная">Выдох<span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span></a>
+      <a class="wordmark" href="./" aria-label="Exhale — home">Exhale<span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span></a>
       <span class="edition">WAI HQ</span>
     </header>
 
     <section id="gate" class="gate" aria-live="polite">
-      <div class="eyebrow" id="gate-eyebrow">МИНУТА ДЛЯ СЕБЯ</div>
-      <h1 id="gate-title">Меньше суеты.<br>Больше жизни.</h1>
-      <p id="gate-copy">Открываем твой день…</p>
-      <div class="gate-metrics" aria-hidden="true"><span class="calm">Спокойствие</span><span class="focus">Фокус</span><span class="energy">Энергия</span><span class="mood">Настроение</span></div>
+      <div class="eyebrow" id="gate-eyebrow">A MOMENT FOR YOURSELF</div>
+      <h1 id="gate-title">Less bustle.<br>More life.</h1>
+      <p id="gate-copy">Opening your day…</p>
+      <div class="gate-metrics" aria-hidden="true"><span class="calm">Calm</span><span class="focus">Focus</span><span class="energy">Energy</span><span class="mood">Mood</span></div>
       <div class="gate-actions">
-        <a id="open-telegram" class="primary" href="https://t.me/waiwai_is_bot" hidden>Открыть в Telegram <span aria-hidden="true">↗</span></a>
-        <button id="retry" class="primary" type="button" hidden>Попробовать ещё раз <span aria-hidden="true">↻</span></button>
+        <a id="open-telegram" class="primary" href="https://t.me/waiwai_is_bot" hidden>Open in Telegram <span aria-hidden="true">↗</span></a>
+        <button id="retry" class="primary" type="button" hidden>Try again <span aria-hidden="true">↻</span></button>
       </div>
-      <p class="gate-note" id="gate-note">Твои оценки видны только участникам WAI HQ.</p>
+      <p class="gate-note" id="gate-note">Your ratings are visible only to WAI HQ participants.</p>
     </section>
 
     <div id="dashboard" hidden>
-      <nav id="people" class="people" aria-label="Чьи оценки"></nav>
+      <nav id="people" class="people" aria-label="Whose ratings"></nav>
       <section class="today-section" aria-labelledby="today-title">
         <div class="section-kicker"><time id="today-date"></time><span id="today-state" class="state-label"></span></div>
-        <div class="hero"><h1 id="today-title">Как ты<br>сегодня?</h1><span class="hero-orbit" aria-hidden="true"><i></i><i></i><i></i><i></i></span></div>
-        <p class="intro" id="today-intro">От 1 до 10. Больше — лучше.</p>
+        <div class="hero"><h1 id="today-title">How are you<br>today?</h1><span class="hero-orbit" aria-hidden="true"><i></i><i></i><i></i><i></i></span></div>
+        <p class="intro" id="today-intro">From 1 to 10. Higher is better.</p>
         <form id="check-in-form">
           <div id="metrics" class="metrics"></div>
           <div id="save-area" class="save-area">
-            <button class="primary" id="save" type="submit" disabled><span id="save-label">Отметь все четыре</span><span class="save-arrow" aria-hidden="true">↗</span></button>
-            <p id="save-status" class="save-status" role="status" aria-live="polite">Оценки можно изменить в течение дня.</p>
+            <button class="primary" id="save" type="submit" disabled><span id="save-label">Rate all four</span><span class="save-arrow" aria-hidden="true">↗</span></button>
+            <p id="save-status" class="save-status" role="status" aria-live="polite">You can edit your ratings throughout the day.</p>
           </div>
         </form>
         <p id="other-note" class="other-note" hidden></p>
       </section>
 
       <section class="history" aria-labelledby="history-title">
-        <div class="history-heading"><h2 id="history-title">Свой ритм</h2><div class="periods" role="group" aria-label="Период"><button type="button" data-period="7" aria-pressed="true">7 дней</button><button type="button" data-period="30" aria-pressed="false">30 дней</button></div></div>
-        <div id="metric-tabs" class="metric-tabs" role="group" aria-label="Метрика на графике"></div>
-        <div class="trend-heading"><div class="trend-value"><span id="average">—</span><span class="out-of">/10</span><p id="average-caption">Среднее за неделю</p></div><div class="trend-note"><strong id="streak">—</strong><span id="streak-caption">дней с ответом подряд</span></div></div>
-        <div class="chart-wrap"><svg id="chart" viewBox="0 0 600 230" role="img" aria-labelledby="chart-title chart-description"><title id="chart-title">Оценки по дням</title><desc id="chart-description"></desc></svg><p id="chart-empty" class="chart-empty" hidden>Здесь появится твой ритм.<br>Начни с одной оценки.</p></div>
-        <p class="chart-footnote" id="chart-footnote">Пробел на графике — день без оценки.</p>
-        <details class="history-details"><summary>Оценки по дням <span aria-hidden="true">+</span></summary><div class="table-scroll"><table><caption class="sr-only">Все четыре оценки за выбранный период</caption><thead><tr><th scope="col">День</th><th scope="col" class="calm"><abbr title="Спокойствие">Спок.</abbr></th><th scope="col" class="focus">Фокус</th><th scope="col" class="energy">Энергия</th><th scope="col" class="mood"><abbr title="Настроение">Настр.</abbr></th></tr></thead><tbody id="history-rows"></tbody></table></div></details>
+        <div class="history-heading"><h2 id="history-title">Your rhythm</h2><div class="periods" role="group" aria-label="Period"><button type="button" data-period="7" aria-pressed="true">7 days</button><button type="button" data-period="30" aria-pressed="false">30 days</button></div></div>
+        <div id="metric-tabs" class="metric-tabs" role="group" aria-label="Chart metric"></div>
+        <div class="trend-heading"><div class="trend-value"><span id="average">—</span><span class="out-of">/10</span><p id="average-caption">Weekly average</p></div><div class="trend-note"><strong id="streak">—</strong><span id="streak-caption">workdays of calm in a row</span></div></div>
+        <div class="chart-wrap"><svg id="chart" viewBox="0 0 600 230" role="img" aria-labelledby="chart-title chart-description"><title id="chart-title">Daily ratings</title><desc id="chart-description"></desc></svg><p id="chart-empty" class="chart-empty" hidden>Your rhythm will appear here.<br>Start with one rating.</p></div>
+        <p class="chart-footnote" id="chart-footnote">A gap means no rating. Saturdays are excluded.</p>
+        <details class="history-details"><summary>Daily ratings <span aria-hidden="true">+</span></summary><div class="table-scroll"><table><caption class="sr-only">All four ratings for the selected period</caption><thead><tr><th scope="col">Day</th><th scope="col" class="calm"><abbr title="Calm">Calm</abbr></th><th scope="col" class="focus">Focus</th><th scope="col" class="energy">Energy</th><th scope="col" class="mood"><abbr title="Mood">Mood</abbr></th></tr></thead><tbody id="history-rows"></tbody></table></div></details>
       </section>
-      <footer class="footer"><span>Маленькая пауза. Каждый день.</span><span id="version"></span></footer>
+      <footer class="footer"><span>A small pause. Every day.</span><span id="version"></span></footer>
     </div>
-    <noscript><p class="intro">Для Выдоха нужен JavaScript. Открой приложение в Telegram.</p></noscript>
+    <noscript><p class="intro">Exhale needs JavaScript. Open the app in Telegram.</p></noscript>
   </main>
 </body>
 </html>

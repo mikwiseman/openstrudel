@@ -80,8 +80,8 @@ describe("the metrics journal", () => {
     expect(data.days.at(-1)).toEqual({ date: "2026-11-05", values: {} });
     expect(data.participants).toEqual([{ id: "42", name: "Мик" }, { id: "77", name: "Гриша" }]);
     const summary = dailyMetricsSummary(store, conversationId, now);
-    expect(summary).toContain("2026-11-01: Мик: Спокойствие 0/10");
-    expect(summary).toContain("Мик: 2 consecutive calendar days");
+    expect(summary).toContain("2026-11-01: Mik: Calm 0/10");
+    expect(summary).toContain("Mik: 2 consecutive reporting days");
   });
   it("writes only today's own four values atomically, without modifying poll votes or scheduling sends", () => {
     const { store, vote, conversationId } = setup();
@@ -100,7 +100,7 @@ describe("the metrics journal", () => {
     const updated = saveDailyMetrics(store, "42", { ...input, scores: { ...input.scores, focus: 10 } }, new Date(now.getTime() + 1000));
     expect(updated.days.at(-1)!.values["42"]!.focus).toBe(10);
     expect(store.db.prepare("SELECT count(*) AS n FROM schedule_polls WHERE message_id IS NULL").get()!.n).toBe(4);
-    expect(dailyMetricsSummary(store, conversationId, now)).toContain("Спокойствие 8/10 · Фокус 10/10 · Энергия 7/10 · Настроение 9/10");
+    expect(dailyMetricsSummary(store, conversationId, now)).toContain("Calm 8/10 · Focus 10/10 · Energy 7/10 · Mood 9/10");
     expect(dailyMetricsSummary(store, "other", now)).toBeNull();
     store.setSetting("home.transfer", "true");
     expect(() => saveDailyMetrics(store, "42", input, now)).toThrow();
