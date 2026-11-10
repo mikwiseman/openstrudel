@@ -15,12 +15,14 @@ import type { Store } from "./store.js";
 import { agentTransfer, assertAgentWritable } from "./agent-move.js";
 import { isEnabledScopedGroup, isProtectedTelegramAudience, isRestrictedChat, isRestrictedSubject, telegramAuthorization, migrateScopedChat, protectScopedTelegramTransport } from "./authorization.js";
 import { recordAnswer, type SchedulePoll } from "./check-ins.js";
+import { recordReaction } from "./news.js";
 
 export interface TelegramUpdate {
   update_id: number;
   my_chat_member?: { chat: { id: number | string; title?: string; type?: string }; from: { id: number }; date: number; old_chat_member: { status: string }; new_chat_member: { status: string; is_member?: boolean } };
   callback_query?: { id: string; from?: { id:number }; data?: string; message?: { message_id: number; chat: { id: number | string } } };
   poll_answer?: { poll_id: string; user?: { id: number; first_name?: string; last_name?: string; is_bot?: boolean }; voter_chat?: { id: number }; option_ids: number[] };
+  message_reaction?: { chat: { id: number | string }; message_id: number; user?: { id: number; first_name?: string; is_bot?: boolean }; new_reaction: Array<{ type: string; emoji?: string }> };
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
 }
@@ -696,6 +698,14 @@ export class TelegramAdapter {
       }
       this.store.markTelegramUpdate(update.update_id); return;
     }
+    if (update.message_reaction) {
+      // Telegram sends these for a private chat, and for a group where the bot is an administrator. Only a reader's reaction to
+      // a News post is kept, for that desk's editor.
+      const reaction = update.message_reaction, user = reaction.user;
+      if (user && !user.is_bot && Array.isArray(reaction.new_reaction)) recordReaction(this.store, String(reaction.chat.id), reaction.message_id,
+        { id: String(user.id), name: user.first_name ?? "" }, reaction.new_reaction.flatMap(r => r.type === "emoji" && r.emoji ? [r.emoji] : []));
+      this.store.markTelegramUpdate(update.update_id); return;
+    }
     if (update.callback_query) {
       const query = update.callback_query;
       const chatId = String(query.message?.chat.id ?? "");
@@ -1012,7 +1022,7 @@ export class TelegramAdapter {
     const controller = this.controller;
     while (this.running && controller === this.controller) {
       try {
-        const updates = await this.call<TelegramUpdate[]>("getUpdates", { offset: this.offset, timeout: 20, allowed_updates: ["message", "edited_message", "callback_query", "my_chat_member", "poll_answer"] });
+        const updates = await this.call<TelegramUpdate[]>("getUpdates", { offset: this.offset, timeout: 20, allowed_updates: ["message", "edited_message", "callback_query", "my_chat_member", "poll_answer", "message_reaction"] });
         if (!this.running || controller !== this.controller) return;
         if (this.connectionError) recordDiagnostic(this.store, "telegram.connected");
         this.connectionError = null;

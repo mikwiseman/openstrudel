@@ -129,6 +129,28 @@ describe("News in Telegram", () => {
     } finally { await close(); }
   });
 
+  it("shows the editor what readers left on a story's post, and nothing about other messages", async () => {
+    const { store, messages, publish, tools, close } = desk();
+    try {
+      await publish();
+      await publish({ status: "Обновление", change: "Вышла версия для Windows." });
+      const telegram = messages.telegram!;
+      const react = (id: number, message: number, user: { id: number; first_name: string; is_bot?: boolean }, ...emoji: string[]) =>
+        telegram.processUpdate({ update_id: id, message_reaction: { chat: { id: -100 }, message_id: message, user, new_reaction: emoji.map(e => ({ type: "emoji", emoji: e })) } });
+      await react(1, 101, { id: 7, first_name: "Ann" }, "🔥");
+      // A reaction to the reply that carried a development belongs to the same story.
+      await react(2, 102, { id: 8, first_name: "Ben" }, "👎");
+      await react(3, 999, { id: 7, first_name: "Ann" }, "👍");
+      await react(4, 101, { id: 9, first_name: "Helper", is_bot: true }, "👍");
+      expect(await tools().call("read_news", {})).toMatch(/^voice-typing-free \| .+ \| https:\/\/example\.com\/blog\/voice-typing \| 🔥 Ann · 👎 Ben$/);
+      expect(await tools().call("read_news", { storyId: "voice-typing-free" })).toMatchObject({ reactions: "🔥 Ann · 👎 Ben" });
+      // A changed mind replaces the reaction; a removed one leaves nothing.
+      await react(5, 101, { id: 7, first_name: "Ann" }, "🤔");
+      await react(6, 102, { id: 8, first_name: "Ben" });
+      expect(await tools().call("read_news", {})).toMatch(/ \| 🤔 Ann$/);
+    } finally { await close(); }
+  });
+
   it("treats story text as plain text whatever characters it holds", () => {
     const title = "Модель *v2_beta* [почти](x) готова: 1. быстрее #всех & <дешевле> — на 30%!";
     const [post] = telegramText(storyCard({ ...story(), id: "x", title, summary: "- не список\n\n> не цитата `и не код`", view: null } as unknown as NewsStory, "Europe/Moscow"));

@@ -21,7 +21,7 @@ CLI: `python3 .agents/skills/wai-news/scripts/news/wai-news.py --state wai-news/
 
 ## Опубликовать
 
-- `read_news` без storyId — строка на историю за 72 часа с отметкой «Telegram <время>» или «not in Telegram»; со storyId — полная история с источниками.
+- `read_news` без storyId — строка на историю за 72 часа с отметкой «Telegram <время>» или «not in Telegram» и реакциями читателей, если они есть; со storyId — полная история с источниками.
 - `publish_story` — одна история. Пост в Telegram пишет и отправляет приложение по полю telegram ("alert", "card" или null) и возвращает, что ушло.
 - `publish_edition` — утренний выпуск одним вызовом. Приложение отправляет его один раз за дату.
 

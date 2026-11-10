@@ -197,6 +197,37 @@ export function telegramTimes(store: Store, conversationId: string, chatId: stri
   return sent;
 }
 
+/** What a reader thinks of a story, as the emoji they left on its post. One row a reader and story: the reaction as it stands now. */
+const reactionsTable = (store: Store) => store.db.exec(`CREATE TABLE IF NOT EXISTS news_reactions(
+  conversation_id TEXT NOT NULL, story_id TEXT NOT NULL, reader_id TEXT NOT NULL, reader TEXT NOT NULL, emoji TEXT NOT NULL, at TEXT NOT NULL,
+  PRIMARY KEY(conversation_id,story_id,reader_id))`);
+
+/** Keeps a reaction to one of the application's story posts or their replies; a reaction to anything else is not the editor's business.
+ * An emptied reaction removes the reader's row. */
+export function recordReaction(store: Store, chatId: string, telegramMessageId: number, reader: { id: string; name: string }, emoji: string[]): boolean {
+  const part = store.db.prepare("SELECT key FROM telegram_outbox WHERE chat_id=? AND message_id=? AND status='delivered' LIMIT 1").get(chatId, String(telegramMessageId)) as { key: string } | undefined;
+  const messageId = part?.key.slice(`${chatId}:reply:`.length).split(":")[0];
+  const post = messageId ? store.db.prepare("SELECT external_id AS id FROM messages WHERE id=? AND channel='telegram' AND direction='outbound'").get(messageId) as { id: string | null } | undefined : undefined;
+  const marker = `${chatId}:news:`;
+  if (!post?.id?.startsWith(marker)) return false;
+  const [conversationId, storyId] = post.id.slice(marker.length).split(":");
+  if (!conversationId || !storyId) return false;
+  reactionsTable(store);
+  if (emoji.length) store.db.prepare("INSERT OR REPLACE INTO news_reactions(conversation_id,story_id,reader_id,reader,emoji,at) VALUES(?,?,?,?,?,?)")
+    .run(conversationId, storyId, reader.id, oneLine(reader.name).slice(0, 40) || reader.id, emoji.join(""), new Date().toISOString());
+  else store.db.prepare("DELETE FROM news_reactions WHERE conversation_id=? AND story_id=? AND reader_id=?").run(conversationId, storyId, reader.id);
+  return true;
+}
+
+/** Each story's reactions as the editor reads them: "🔥 Ann · 👎 Ben". */
+function reactions(store: Store, conversationId: string): Map<string, string> {
+  reactionsTable(store);
+  const byStory = new Map<string, string[]>();
+  for (const row of store.db.prepare("SELECT story_id AS story, reader, emoji FROM news_reactions WHERE conversation_id=? ORDER BY at").all(conversationId) as Array<{ story: string; reader: string; emoji: string }>)
+    byStory.set(row.story, [...byStory.get(row.story) ?? [], `${row.emoji} ${row.reader}`]);
+  return new Map([...byStory].map(([story, readers]) => [story, readers.join(" · ")]));
+}
+
 const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 const minute = (iso: string) => new Date(iso).toISOString().slice(0, 16) + "Z";
 /** The event's UTC minute, or its date alone when only the date is known. */
@@ -205,8 +236,9 @@ const eventTime = (at: string | null) => !at ? "undated" : /^\d{4}-\d{2}-\d{2}$/
 const encoded = (line: string) => Buffer.byteLength(JSON.stringify(line));
 
 /** The editor's view of its reader. By default one line per story of the last 72 hours, newest first, within what Grok reads of a tool
- * result: `storyId | event time | title | section | Telegram <time> or not in Telegram | first source`, then "+N older stories omitted"
- * when the rest does not fit. With a storyId, that story's latest full version at any age. */
+ * result: `storyId | event time | title | section | Telegram <time> or not in Telegram | first source`, then the readers' reactions
+ * when the story has any, then "+N older stories omitted" when the rest does not fit. With a storyId, that story's latest full version
+ * at any age. */
 export function readNews(store: Store, conversationId: string, args: Record<string, unknown> = {}, chatId = newsChat(store, conversationId)) {
   if (args.storyId != null && typeof args.storyId !== "string") throw new Error("storyId — ключ истории из read_news.");
   if (args.storyId) {
@@ -214,13 +246,14 @@ export function readNews(store: Store, conversationId: string, args: Record<stri
       .get(conversationId, args.storyId) as { id: string } | undefined;
     const message = row && store.getMessage(conversationId, row.id);
     if (!message?.story) throw new Error(`История ${args.storyId} не найдена в этом чате.`);
-    return { messageId: message.id, updatedAt: message.createdAt, telegram: telegramTimes(store, conversationId, chatId).get(message.story.id) ?? null, story: message.story };
+    const reacted = reactions(store, conversationId).get(message.story.id);
+    return { messageId: message.id, updatedAt: message.createdAt, telegram: telegramTimes(store, conversationId, chatId).get(message.story.id) ?? null, ...reacted ? { reactions: reacted } : {}, story: message.story };
   }
   const stories = latestStories(store, conversationId);
   if (!stories.length) return "No stories in the last 72 hours.";
-  const sent = telegramTimes(store, conversationId, chatId);
+  const sent = telegramTimes(store, conversationId, chatId), reacted = reactions(store, conversationId);
   const lines = stories.map(({ story }) => [story.id, eventTime(story.eventAt), oneLine(story.title), oneLine(story.section),
-    sent.has(story.id) ? `Telegram ${minute(sent.get(story.id)!)}` : "not in Telegram", story.sources[0]?.url ?? ""].join(" | "));
+    sent.has(story.id) ? `Telegram ${minute(sent.get(story.id)!)}` : "not in Telegram", story.sources[0]?.url ?? "", ...reacted.has(story.id) ? [reacted.get(story.id)!] : []].join(" | "));
   // Room for the last line stays free until the last story fits.
   const room = encoded(`+${lines.length} older stories omitted`);
   let shown = 0, used = 0;
