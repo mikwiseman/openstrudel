@@ -54,6 +54,11 @@ def counts(db):
     return {t: db.execute('SELECT COUNT(*) FROM ' + t).fetchone()[0] for t in TABLES if t in present}
 
 
+def missing_rows(before, after):
+    """Tables that lost rows across the switch. Settings are left out: a Home deletes settings in normal work."""
+    return {t: (before[t], after.get(t, 0)) for t in before if t != 'settings' and after.get(t, 0) < before[t]}
+
+
 def backup_database(source, target):
     """A consistent copy of the live database with SQLite's online backup, checked."""
     src, dst = read(source), sqlite3.connect(target)
@@ -191,7 +196,7 @@ def update(container):
             after = counts(db)
         finally:
             db.close()
-        lost = {t: (rows[t], after.get(t)) for t in rows if after.get(t, 0) < rows[t]}
+        lost = missing_rows(rows, after)
         if lost:
             raise RuntimeError(f'rows disappeared: {lost}')
     except BaseException as error:

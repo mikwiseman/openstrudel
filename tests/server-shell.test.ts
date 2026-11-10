@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -133,4 +133,13 @@ it("runs nothing without a live runner, and never runs a command twice after the
 it("writes a short, readable message", () => {
   expect(serverNotice("openstrudel-update", { exitCode: 0, output: "building\nUpdated to abc1234 \"Fix\".\n", seconds: 200 })).toBe("**Server command finished** · 3 min\n`openstrudel-update`\n\n```\nbuilding\nUpdated to abc1234 \"Fix\".\n```");
   expect(serverNotice("a\n`b`", { exitCode: 2, output: "", seconds: 4 })).toBe("**Server command failed (exit 2)** · 4 s\n`a 'b'`");
+});
+
+it("rolls an update back for lost data, not for a setting that normal work removed", () => {
+  const missing = (before: Record<string, number>, after: Record<string, number>) => JSON.parse(execFileSync("python3", ["-c",
+    "import json, sys; sys.path.insert(0, 'deploy/server-shell'); import update; print(json.dumps(update.missing_rows(*json.loads(sys.argv[1]))))", JSON.stringify([before, after])],
+    { encoding: "utf8", env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } }));
+  expect(missing({ messages: 10, schedules: 3, settings: 5 }, { messages: 11, schedules: 3, settings: 4 })).toEqual({});
+  expect(missing({ messages: 10, settings: 5 }, { messages: 9, settings: 6 })).toEqual({ messages: [10, 9] });
+  expect(missing({ conversations: 2 }, {})).toEqual({ conversations: [2, 0] });
 });
