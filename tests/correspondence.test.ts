@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { Store } from "../src/store.js";
-import { Correspondence, configureCorrespondence, correspondenceCheckpoint, correspondenceModel, correspondenceSource } from "../src/correspondence.js";
+import { Correspondence, configureCorrespondence, correspondenceCheckpoint, correspondenceModel, correspondenceOff, correspondenceSource } from "../src/correspondence.js";
 import { disconnectProvider } from "../src/providers.js";
 import { privateSourceAudience } from "../src/private-sources.js";
 import type { MessageInput, MessageResult } from "../src/types.js";
@@ -187,6 +187,35 @@ it("lets the owner choose a model this device offers for event runs without revo
   disconnectProvider(f.store, "xai"); expect(correspondenceModel(f.store)).toBeNull();
   expect(() => configureCorrespondence(f.store, false, { ...f.input, model: { model: "gpt-6-sol" } }, catalog)).toThrow(/owner/i);
   expect(correspondenceModel(f.store)).toBeNull();
+});
+
+it("accepts but starts no run for a source or Telegram groups the owner switched off, and keeps the source's credential", async () => {
+  const f = fixture(), mailToken = "a-second-private-source-token-of-32-chars";
+  const both = { ...f.input, sources: [...f.input.sources, { id: "gmail", provider: "gmail", accountId: "owner@example.com", space: "both", token: mailToken }] };
+  expect(configureCorrespondence(f.store, true, { ...both, off: { sources: ["gmail"], telegramGroups: true } })).toMatchObject({ off: { sources: ["gmail"], telegramGroups: true } });
+  const mail = () => correspondenceSource(f.store, "gmail", "Bearer " + mailToken);
+  f.worker.receive(f.source(), f.event("group", "-1001234567890"));
+  expect(f.worker.receive(mail(), f.event("mail", "abcdef0123456789"))).toMatchObject({ accepted: true });
+  f.worker.receive(f.source(), f.event("private", "123"));
+  // The skipped mail is due first; the private chat starts on the next tick.
+  await vi.advanceTimersByTimeAsync(45_001);
+  expect(f.calls).toHaveLength(1); expect(f.calls[0]!.text).toContain('"threadId":"123"');
+  await f.finishRun(); await vi.advanceTimersByTimeAsync(1_800_000);
+  expect(f.calls).toHaveLength(1);
+  expect(f.worker.status(true)).toMatchObject({ off: { sources: ["gmail"], telegramGroups: true }, counts: { skipped: 2, completed: 1 } });
+  // Omitted keeps the choice; a source that is not configured is refused; only the owner chooses.
+  const kept = { ...both, sources: both.sources.map(({ token, ...source }) => source) };
+  configureCorrespondence(f.store, true, kept); expect(correspondenceOff(f.store)).toEqual({ sources: ["gmail"], telegramGroups: true });
+  expect(() => configureCorrespondence(f.store, true, { ...kept, off: { sources: ["whatsapp"] } })).toThrow();
+  expect(() => configureCorrespondence(f.store, true, { ...kept, off: "gmail" })).toThrow();
+  expect(() => configureCorrespondence(f.store, false, { ...kept, off: null })).toThrow(/owner/i);
+  expect(correspondenceOff(f.store).sources).toEqual(["gmail"]);
+  // null switches everything back on: the source still has its credential, and a group is read again.
+  configureCorrespondence(f.store, true, { ...kept, off: null }); expect(correspondenceOff(f.store)).toEqual({ sources: [], telegramGroups: false });
+  f.worker.receive(mail(), f.event("mail-2", "abcdef0123456789")); f.worker.receive(f.source(), f.event("group-2", "-1001234567890"));
+  await vi.advanceTimersByTimeAsync(45_000); expect(f.calls).toHaveLength(2); expect(f.calls[1]!.text).toContain('"id":"mail-2"');
+  await f.finishRun(); await vi.advanceTimersByTimeAsync(600_000);
+  expect(f.calls).toHaveLength(3); expect(f.calls[2]!.text).toContain('"id":"group-2"');
 });
 
 it("asks each run to triage the change before it reads more", async () => {

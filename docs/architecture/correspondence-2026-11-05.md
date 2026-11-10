@@ -113,3 +113,5 @@ Now each run starts an ephemeral session with no chat history. No thread is save
 
 The owner may give event runs their own model in `POST /v1/correspondence` with `model: {provider, model, reasoningEffort?}`; `null` returns them to the main chat's model and omission keeps the choice. It is checked against the device's catalog, is not part of any receipt grant and, like a chat's or employee's own model, runs without the device's reserves. Per token, GPT-6 Sol costs a fifth of GPT-6 Astra and GPT-6 Luna a hundredth.
 
+The owner may also switch off whole sources and Telegram groups in the same request with `off: {sources: [ids], telegramGroups: true}`; `null` switches everything back on and omission keeps the choice. Events from a switched-off source or group are still accepted and marked skipped, so the source keeps its credential, the producer's backlog drains and no model run starts. On 5–9 November groups made 89% of Telegram runs and 4% of those showed the owner anything.
+
