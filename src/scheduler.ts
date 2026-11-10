@@ -207,7 +207,7 @@ export class Scheduler {
         const ownChat = conversation?.channel === "telegram" ? String(conversation.externalId ?? "").split("::")[0] : undefined;
         if (!ownChat || destination !== ownChat || !accessOwners(this.store).includes(ownChat)) throw new Error("Карточка статистики приходит только в личный чат владельца.");
         const card = statisticsCard(readStatistics(this.store, true, new Date(scheduledFor)), homeName(this.store), schedule.id);
-        await this.postCard(schedule, runId, card, `statistics-${card.date}.png`, `Статистика · ${card.date}`);
+        await this.postCard(schedule, runId, card, `statistics-${card.date}.png`, `Statistics · ${card.date}`);
         return;
       }
       const metrics = dailyMetricsReportConfig(this.store, schedule.conversationId, schedule.id);

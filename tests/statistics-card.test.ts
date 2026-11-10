@@ -168,6 +168,8 @@ it("sends the owner's own chat the card at nine through Telegram without a model
     expect(String(photos[0]!.get("caption"))).toContain("Мик 2 messages");
     expect(String(photos[0]!.get("caption"))).toContain("Week · November 1–7:");
     expect(scheduler.runs(own)[0]?.status).toBe("completed");
+    // The run is kept in the owner's chat under an English title, like the card it carries.
+    expect(store.db.prepare("SELECT text FROM messages WHERE conversation_id=? AND external_id LIKE 'schedule:%'").get(own)).toEqual({ text: "Statistics · 2026-11-07" });
 
     // The same card pointed at a group fails before anything is drawn or sent there.
     scheduler.save({ ...card, enabled: false }, saved);
@@ -183,7 +185,7 @@ it("sends the owner's own chat the card at nine through Telegram without a model
     const before = store.db.prepare("SELECT count(*) AS n FROM messages WHERE conversation_id=?").get(group) as { n: number };
     await scheduler.tick(new Date("2026-11-10T06:00:00Z")); await scheduler.idle();
     expect(scheduler.runs(group)[0]).toMatchObject({ status: "failed", error: expect.stringContaining("только в личный чат владельца") });
-    expect(store.db.prepare("SELECT count(*) AS n FROM messages WHERE conversation_id=? AND (text LIKE 'Статистика%' OR text LIKE '%November%')").get(group)).toEqual({ n: 0 });
+    expect(store.db.prepare("SELECT count(*) AS n FROM messages WHERE conversation_id=? AND (text LIKE 'Statistics%' OR text LIKE '%November%')").get(group)).toEqual({ n: 0 });
     expect((store.db.prepare("SELECT count(*) AS n FROM messages WHERE conversation_id=?").get(group) as { n: number }).n).toBeGreaterThanOrEqual(before.n);
     expect(model).not.toHaveBeenCalled();
   } finally { await runtime.stop(); rmSync(root, { recursive: true, force: true }); }
