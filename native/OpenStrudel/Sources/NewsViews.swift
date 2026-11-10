@@ -273,6 +273,7 @@ private struct NewsDayPage: View {
     let chrome: NewsChrome
     @EnvironmentObject private var client: HomeClient
     @Environment(\.dynamicTypeSize) private var textSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var width = NewsLayout.column
     @State private var dwell = NewsDwell()
 
@@ -309,7 +310,7 @@ private struct NewsDayPage: View {
                 .overlay(alignment: .top) {
                     NewsArrivals(feed: feed, words: words) {
                         feed.showIncoming()
-                        if date == nil { withAnimation(.smooth(duration: 0.25)) { proxy.scrollTo("top", anchor: .top) } }
+                        if date == nil { withAnimation(reduceMotion ? nil : .smooth(duration: 0.25)) { proxy.scrollTo("top", anchor: .top) } }
                         else { feed.place.top += 1; feed.place.day = nil }
                     }
                 }
@@ -324,7 +325,6 @@ private struct NewsDayPage: View {
         .navigationDestination(item: Binding(get: { date == nil ? feed.place.day : nil }, set: { if date == nil { if let day = $0 { feed.place.day = day } else { feed.closeDay() } } })) { day in
             NewsDayPage(feed: feed, date: day, chrome: chrome).environmentObject(client).id(day)
         }
-        // Rows are named by their section; a story id has no colon.
         #if os(macOS)
         .background {
             // Esc goes back from an earlier day, as it does from a story.
@@ -335,6 +335,7 @@ private struct NewsDayPage: View {
         #endif
         .onAppear {
             feed.appear()
+            // Rows are named by their section and story; a story id has no colon.
             dwell.seen = { [feed] rows in feed.see(Set(rows.map { String($0.split(separator: ":", maxSplits: 1).last ?? "") })) }
         }
         .onDisappear { feed.disappear() }
@@ -844,7 +845,7 @@ private struct NewsArticle: View {
         VStack(alignment: .leading, spacing: 12) {
             label(words("Доказательства"))
             if story.sources.count > 3 {
-                Button { withAnimation(.smooth(duration: 0.25)) { showsSources.toggle() } } label: {
+                Button { withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : .smooth(duration: 0.25)) { showsSources.toggle() } } label: {
                     HStack {
                         Text(words("Источники · \(story.sources.count)")).font(AppTypography.interface.weight(.medium))
                         Spacer()
