@@ -88,7 +88,7 @@ describe("News in Telegram", () => {
       const update = await publish({ status: "Обновление", change: "Вышла версия для Windows, тоже без лимита." });
       expect(update.telegram).toEqual({ sent: true, kind: "update", telegramMessageId: "102" });
       expect(calls[1]!.body).toMatchObject({ reply_parameters: { message_id: 101, allow_sending_without_reply: true }, disable_notification: true, link_preview_options: { is_disabled: true } });
-      expect(calls[1]!.body.text).toMatch(/^↻ Диктовка на Mac стала бесплатной и безлимитной\n\nВышла версия для Windows, тоже без лимита\.\n\nанонс · /);
+      expect(calls[1]!.body.text).toMatch(/^↻ Обновление\n\nВышла версия для Windows, тоже без лимита\.\n\nанонс · /);
       // Another storyId for the page that already went out stays in the app and says which story to develop.
       const twin = await publish({ storyId: "free-dictation-again", title: "Диктовку сделали бесплатной" });
       expect(twin.telegram).toMatchObject({ sent: false, sameSourceAs: "voice-typing-free" });
@@ -153,7 +153,9 @@ describe("News in Telegram", () => {
       expect(calls[0]!.body.disable_notification).toBeUndefined();
       const html = calls[0]!.body.rich_message.html as string;
       expect(html.startsWith("<h1>AI-дайджест · вторник, 10 ноября</h1><p>Вчера в радаре было две карточки. Ниже только новое.</p><h2>Главное</h2><h3>1. Первая главная история &lt;дня&gt; &amp; её цена</h3>")).toBe(true);
-      expect(html).toContain('<h3>2. Вторая главная история</h3><p>Приложение для заметок открыло диктовку в любом окне на Mac.</p><p>Лимита слов нет, платный план для этого не нужен.</p><p>→ Голосовой ввод');
+      // A lead story is its headline, what happened and why it matters; a story under a section opens to its whole account.
+      expect(html).toContain('<h3>2. Вторая главная история</h3><p>Приложение для заметок открыло диктовку в любом окне на Mac.</p><p>→ Голосовой ввод');
+      expect(html).toContain('<details><summary>4. Сделка на миллиард</summary><p>Приложение для заметок открыло диктовку в любом окне на Mac.</p><p>Лимита слов нет, платный план для этого не нужен.</p><p>→ Голосовой ввод');
       expect(html).toContain('<p><a href="https://example.com/lead-two">анонс</a></p>');
       // Sections come in the order of their first story; the numbers are the edition's ranks.
       expect([...html.matchAll(/<h2>([^<]+)<\/h2>|<summary>([^<]+)<\/summary>/g)].map(m => m[1] ?? m[2]))
@@ -188,8 +190,8 @@ describe("News in Telegram", () => {
     const post = editionPost({ edition: "2026-11-10", storyIds: stories.map(s => s.id) }, stories, "News", "Europe/Moscow");
     expect(post.html.length).toBeLessThanOrEqual(30_000);
     for (const item of stories) expect(post.html).toContain(item.title);
-    // The lead keeps its whole account even on the longest day.
-    expect(post.html).toContain(`<h3>1. История номер 0 о важном событии дня</h3><p>${long}</p><p>${long}</p>`);
+    // The lead keeps what happened and why it matters even on the longest day.
+    expect(post.html).toContain(`<h3>1. История номер 0 о важном событии дня</h3><p>${long}</p><p>→ `);
   });
 
   it("tells the reader's app whether the desk is working", async () => {

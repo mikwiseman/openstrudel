@@ -51,9 +51,9 @@ export function storyCard(story: NewsStory, zone: string | null): string {
     .filter(Boolean).join("\n\n");
 }
 
-/** A development, sent as a reply under the story's first post. */
+/** A development, sent as a reply under the story's first post: the reply already shows the story, so this says what kind of news it is and what changed. */
 export function storyUpdate(story: NewsStory, zone: string | null): string {
-  return [`↻ **${plain(oneLine(story.title))}**`, ...paragraphs(story.change ?? story.summary).map(plain), footer(story, zone)].join("\n\n");
+  return [`↻ **${plain(oneLine(story.status))}**`, ...paragraphs(story.change ?? story.summary).map(plain), footer(story, zone)].join("\n\n");
 }
 
 function count(stories: number, inRussian: boolean): string {
@@ -80,23 +80,24 @@ export function editionPost(selection: EditionSelection, stories: NewsStory[], n
   const end = inRussian ? `Это всё на сегодня · ${count(stories.length, true)}` : `That is all for today · ${count(stories.length, false)}`;
   const arranged = arrange(selection, stories);
   const anchors = (story: NewsStory) => links(story).map(source => `<a href="${attribute(source.url)}">${html(label(source))}</a>`).join(" · ");
-  const account = (story: NewsStory, detail: number) => [
-    ...(detail === 0 ? paragraphs(story.summary) : paragraphs(story.summary).slice(0, 1)).map(paragraph => `<p>${html(paragraph)}</p>`),
-    story.view && detail === 0 ? `<p>→ ${html(oneLine(story.view))}</p>` : "", `<p>${anchors(story)}</p>`].join("");
-  // The lead is always whole. A long day first shortens what the other stories open to, then lists them with their links alone.
+  const account = (story: NewsStory, whole: boolean, view = true) => [
+    ...(whole ? paragraphs(story.summary) : paragraphs(story.summary).slice(0, 1)).map(paragraph => `<p>${html(paragraph)}</p>`),
+    story.view && view ? `<p>→ ${html(oneLine(story.view))}</p>` : "", `<p>${anchors(story)}</p>`].join("");
+  // A lead story is its headline, what happened and why it matters: two minutes for the five of them. Every other story is one line
+  // that opens to its whole account. A long day first shortens what those lines open to, then lists them with their links alone.
   const rich = (detail: number) => [
     `<h1>${html(heading)}</h1>`, selection.intro ? paragraphs(selection.intro).map(paragraph => `<p>${html(paragraph)}</p>`).join("") : "",
     `<h2>${lead}</h2>`,
-    ...arranged.lead.map((story, index) => `<h3>${index + 1}. ${html(oneLine(story.title))}</h3>${account(story, 0)}`),
+    ...arranged.lead.map((story, index) => `<h3>${index + 1}. ${html(oneLine(story.title))}</h3>${account(story, false)}`),
     ...arranged.sections.flatMap(([section, items]) => [`<h2>${html(section)}</h2>`, ...items.map(({ number, story }) => detail < 2
-      ? `<details><summary>${number}. ${html(oneLine(story.title))}</summary>${account(story, detail)}</details>`
+      ? `<details><summary>${number}. ${html(oneLine(story.title))}</summary>${account(story, detail === 0, detail === 0)}</details>`
       : `<p>${number}. ${html(oneLine(story.title))} · ${anchors(story)}</p>`)]),
     `<footer>${html(end)}</footer>`].join("");
   const fitted = [0, 1, 2].map(rich).find(message => message.length <= EDITION_CHARACTERS) ?? rich(2);
   const text = [
     `**${plain(heading)}**`, ...selection.intro ? paragraphs(selection.intro).map(plain) : [],
     `**${lead}**`,
-    ...arranged.lead.flatMap((story, index) => [`**${index + 1}\\. ${plain(oneLine(story.title))}**`, ...paragraphs(story.summary).map(plain),
+    ...arranged.lead.flatMap((story, index) => [`**${index + 1}\\. ${plain(oneLine(story.title))}**`, ...paragraphs(story.summary).slice(0, 1).map(plain),
       ...story.view ? [`→ ${plain(oneLine(story.view))}`] : [], footer({ ...story, eventAt: null }, zone)]),
     ...arranged.sections.flatMap(([section, items]) => [`**${plain(section)}**`,
       ...items.map(({ number, story }) => `${number}\\. ${plain(oneLine(story.title))} · ${footer({ ...story, eventAt: null }, zone)}`)]),
