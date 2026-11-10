@@ -121,10 +121,11 @@ export function newsStatus(store: Store, conversationId: string): NewsStatus | n
   if (!schedules.n) return null;
   const runs = store.db.prepare(`SELECT max(CASE WHEN status IN ('completed','quiet') THEN created_at END) AS checked, sum(status IN ('running','ready')) AS running
     FROM schedule_runs WHERE conversation_id=?`).get(conversationId) as { checked: string | null; running: number | null };
-  const failed = store.db.prepare("SELECT created_at AS at, error FROM schedule_runs WHERE conversation_id=? AND status IN ('failed','uncertain') AND created_at>? ORDER BY created_at DESC LIMIT 1")
-    .get(conversationId, runs.checked ?? "") as { at: string; error: string | null } | undefined;
-  return { running: Boolean(runs.running), checkedAt: runs.checked, failedAt: failed?.at ?? null,
-    failure: failed ? oneLine(failed.error ?? "").slice(0, 200) || null : null, nextRunAt: schedules.next };
+  // Since when it has not worked is the first failure after the last success; why is what the latest failure said.
+  const failures = store.db.prepare("SELECT created_at AS at, error FROM schedule_runs WHERE conversation_id=? AND status IN ('failed','uncertain') AND created_at>? ORDER BY created_at")
+    .all(conversationId, runs.checked ?? "") as Array<{ at: string; error: string | null }>;
+  return { running: Boolean(runs.running), checkedAt: runs.checked, failedAt: failures[0]?.at ?? null,
+    failure: failures.length ? oneLine(failures.at(-1)!.error ?? "").slice(0, 200) || null : null, nextRunAt: schedules.next };
 }
 
 /** Changes whenever a story, a question or an answer is added, a question finishes or the desk's runs move on; the app fetches the reader only then. */

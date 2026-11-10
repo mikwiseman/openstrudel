@@ -1,14 +1,12 @@
 import Foundation
 
-/// Reads one conversation through its Home: a page of its feed, earlier pages on request, and its News stories when it
-/// has any. It never touches the connection's selection, pending sends or drafts: the composer belongs to the main chat.
+/// Reads one conversation through its Home: a page of its feed and earlier pages on request. It never touches the
+/// connection's selection, pending sends or drafts: the composer belongs to the main chat.
 @MainActor
 final class ConversationReader: ObservableObject {
     let client: HomeClient
     let route: ReaderRoute
     @Published private(set) var messages: [HomeMessage] = []
-    /// Nil until the Home answers; empty when the chat has no stories.
-    @Published private(set) var news: [HomeMessage]? = nil
     @Published private(set) var conversationID: String?
     @Published private(set) var hasEarlierMessages = false
     @Published private(set) var isLoadingEarlier = false
@@ -16,16 +14,12 @@ final class ConversationReader: ObservableObject {
     @Published private(set) var error: String?
     private var olderCursor: String?
     private var newerCursor: String?
-    private var newsStamp: String?
     private var generation = 0
 
     init(client: HomeClient, route: ReaderRoute) {
         self.client = client
         self.route = route
     }
-
-    /// The feed has stories and the reader may open on them.
-    var hasNews: Bool { !(news ?? []).isEmpty }
 
     /// Keeps the page current while the reader is on screen.
     func follow() async {
@@ -51,14 +45,6 @@ final class ConversationReader: ObservableObject {
                 if messages != updated { messages = updated }
                 newerCursor = page.newerCursor
             } else if messages != envelope.messages { messages = envelope.messages }
-            if envelope.conversation.news != newsStamp || news == nil {
-                if let stamp = envelope.conversation.news {
-                    let feed: NewsFeedEnvelope = try await client.read("/v1/conversations/" + envelope.conversation.id + "/stories")
-                    guard run == generation else { return }
-                    if news != feed.messages { news = feed.messages }
-                    newsStamp = stamp
-                } else { news = []; newsStamp = nil }
-            }
             loaded = true
             if error != nil { error = nil }
         } catch is CancellationError {
@@ -87,20 +73,22 @@ final class ConversationReader: ObservableObject {
         }
     }
 
-    /// Where a quote of this reader comes from: nil for a record the chat's own node holds; otherwise that Home's identity,
-    /// with the node when an employee of the chat's Home lives on another of its devices. Without a verified Home id there
-    /// is no truthful origin, so nothing can be quoted from an unreachable Home.
-    func quoteHome(primary: HomeClient) -> ChatContext.Home?? {
-        let homeId = client.health?.homeId
-        if case .employee(let id) = route.kind, let homeId, let own = client.health?.nodeId,
-           let device = client.profiles.first(where: { $0.id == id })?.deviceId, device != own {
-            return .some(ChatContext.Home(id: client.id, homeId: homeId, nodeId: device, name: client.devices.first { $0.id == device }?.name ?? client.displayName))
-        }
-        if client === primary { return .some(nil) }
-        guard let homeId else { return nil }
-        return .some(ChatContext.Home(id: client.id, homeId: homeId, name: client.displayName))
-    }
-
     /// The name a quote carries: the employee or chat the reader shows.
     var title: String { route.title }
+}
+
+extension HomeClient {
+    /// Where a quote of a reader on this Home comes from: nil for a record the chat's own node holds; otherwise this Home's
+    /// identity, with the node when an employee of the chat's Home lives on another of its devices. Without a verified Home
+    /// id there is no truthful origin, so nothing can be quoted from an unreachable Home.
+    func quoteHome(for route: ReaderRoute, primary: HomeClient) -> ChatContext.Home?? {
+        let homeId = health?.homeId
+        if let id = route.profileID, let homeId, let own = health?.nodeId,
+           let device = profiles.first(where: { $0.id == id })?.deviceId, device != own {
+            return .some(ChatContext.Home(id: self.id, homeId: homeId, nodeId: device, name: devices.first { $0.id == device }?.name ?? displayName))
+        }
+        if self === primary { return .some(nil) }
+        guard let homeId else { return nil }
+        return .some(ChatContext.Home(id: self.id, homeId: homeId, name: displayName))
+    }
 }

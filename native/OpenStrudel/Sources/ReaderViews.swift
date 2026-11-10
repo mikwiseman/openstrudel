@@ -5,24 +5,34 @@ extension EnvironmentValues {
     @Entry var readerMessages: [HomeMessage]? = nil
 }
 
-/// Where to switch between Chat and Clients from the menu bar.
+/// A place of the Mac sidebar, as the View menu lists it: ⌘1, ⌘2… in the sidebar's order.
+struct PlaceCommand: Identifiable {
+    let id: String
+    let title: String
+    let open: () -> Void
+}
+
 extension FocusedValues {
-    @Entry var selectTab: ((PrimaryTab) -> Void)?
+    @Entry var places: [PlaceCommand]?
     /// Edit › Find a chat (⌘F): the chat opens its conversations and their search.
     @Entry var findChat: (() -> Void)?
 }
 
-/// One conversation read over the chat: an employee's feed, another Home's assistant, a Telegram chat or an archive.
-/// There is nothing to type into here. "Обсудить в чате" takes a message or a story back to the one composer as context.
+/// One conversation read over the chat: an employee's feed or its News, another Home's assistant, a Telegram chat or an
+/// archive. There is nothing to type into here. "Обсудить в чате" takes a message or a story back to the one composer as context.
 struct ReaderScreen: View {
     @EnvironmentObject private var library: DeviceLibrary
+    @EnvironmentObject private var newsroom: Newsroom
     let route: ReaderRoute
     let discuss: (ChatContext) -> Void
 
     var body: some View {
         if let client = library.clients.first(where: { $0.id == route.connectionID && !$0.isSignedOut }) {
-            ReaderView(reader: ConversationReader(client: client, route: route), discuss: discuss)
-                .environmentObject(client)
+            Group {
+                if case .news = route.kind { NewsScreen(feed: newsroom.feed(route, on: client), discuss: discuss) }
+                else { ReaderView(reader: ConversationReader(client: client, route: route), discuss: discuss) }
+            }
+            .environmentObject(client)
         } else {
             ContentUnavailableView(L("Подключение не найдено"), systemImage: "wifi.slash",
                                    description: Text(L("Это устройство больше не подключено. Переписка осталась на нём.")))
@@ -35,7 +45,6 @@ private struct ReaderView: View {
     @EnvironmentObject private var client: HomeClient
     @StateObject private var reader: ConversationReader
     let discuss: (ChatContext) -> Void
-    @State private var newsPlace = NewsPlace()
     @State private var details: EmployeeProfile?
     @State private var unavailable: String?
 
@@ -50,13 +59,7 @@ private struct ReaderView: View {
     }
 
     var body: some View {
-        Group {
-            if reader.hasNews && newsPlace.mode != .chat {
-                NewsDeskView(place: $newsPlace, messages: reader.news ?? []) { version in quote { home in .story(version, home: home) } }
-            } else {
-                ReaderTranscript(reader: reader) { message in quote { home in .message(message, title: reader.title, home: home) } }
-            }
-        }
+        ReaderTranscript(reader: reader) { message in quote { home in .message(message, title: reader.title, home: home) } }
         .safeAreaBar(edge: .top, spacing: 0) { topBar }
         .navigationTitle(reader.title)
         #if os(iOS)
@@ -93,7 +96,7 @@ private struct ReaderView: View {
 
     /// A quote carries where it came from. Without a verified Home there is no truthful origin, so nothing is attached.
     private func quote(_ make: (ChatContext.Home?) -> ChatContext) {
-        guard let home = reader.quoteHome(primary: library.primary) else {
+        guard let home = client.quoteHome(for: reader.route, primary: library.primary) else {
             unavailable = L("«\(client.displayName)» не на связи. Цитату можно передать, когда устройство подключится.")
             return
         }
@@ -102,23 +105,15 @@ private struct ReaderView: View {
 
     @ViewBuilder private var topBar: some View {
         let offline = client.homeUnreachable || client.connectionNeedsPairing
-        if reader.hasNews || offline || reader.error != nil {
-            VStack(alignment: .leading, spacing: 8) {
-                if reader.hasNews { NewsSwitcher(mode: $newsPlace.mode) }
-                if offline || reader.error != nil {
-                    Label(offline ? L("«\(client.displayName)» не на связи. Показано, что уже прочитано.") : (reader.error ?? ""), systemImage: "wifi.slash")
-                        .font(AppTypography.meta).foregroundStyle(AppTheme.secondaryText)
-                        .accessibilityIdentifier("readerUnavailable")
-                }
-            }
-            .frame(maxWidth: reader.hasNews ? NewsLayout.column : Layout.column, alignment: .leading)
-            .padding(.horizontal, Layout.edge)
-            .padding(.top, 16)
-            .padding(.bottom, reader.hasNews ? 0 : 8)
-            .frame(maxWidth: .infinity)
-            #if os(iOS)
-            .overlay(alignment: .bottom) { if reader.hasNews { Hairline() } }
-            #endif
+        if offline || reader.error != nil {
+            Label(offline ? L("«\(client.displayName)» не на связи. Показано, что уже прочитано.") : (reader.error ?? ""), systemImage: "wifi.slash")
+                .font(AppTypography.meta).foregroundStyle(AppTheme.secondaryText)
+                .accessibilityIdentifier("readerUnavailable")
+                .frame(maxWidth: Layout.column, alignment: .leading)
+                .padding(.horizontal, Layout.edge)
+                .padding(.top, 16)
+                .padding(.bottom, 8)
+                .frame(maxWidth: .infinity)
         }
     }
 }
@@ -128,10 +123,12 @@ private struct ReaderTranscript: View {
     @ObservedObject var reader: ConversationReader
     let discuss: (HomeMessage) -> Void
     @State private var columnWidth: CGFloat = Layout.column
+    /// Stories live in the News reader; the employee's history keeps the conversation, as the chat does.
+    private var messages: [HomeMessage] { reader.messages.filter { $0.story == nil } }
 
     var body: some View {
         ScrollView {
-            if reader.messages.isEmpty {
+            if messages.isEmpty {
                 if reader.loaded {
                     VStack(spacing: 8) {
                         Text(L("Пока пусто")).font(AppTypography.display)
@@ -160,9 +157,9 @@ private struct ReaderTranscript: View {
     }
 
     private var rows: some View {
-        let rows = MessagePages.rows(reader.messages)
+        let rows = MessagePages.rows(messages)
         // One Telegram chat or an archive shows who wrote; an employee's feed reads like a one-to-one conversation.
-        let shared = !reader.route.usesTimeline || MessagePages.isMultiAuthor(reader.messages)
+        let shared = !reader.route.usesTimeline || MessagePages.isMultiAuthor(messages)
         let bubbleWidth = (columnWidth * 0.75).rounded()
         return LazyVStack(alignment: .leading, spacing: 0) {
             if reader.hasEarlierMessages {

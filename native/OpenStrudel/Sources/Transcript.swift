@@ -274,24 +274,11 @@ struct PendingMessageBubble: View {
 /// it proofs like rising dough while the employee works and plops once when a reply lands.
 struct ConversationHelper: View {
     @EnvironmentObject private var client: HomeClient
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var textSize
-    #if os(macOS)
-    @Environment(\.appearsActive) private var appearsActive
-    #else
-    @Environment(\.scenePhase) private var scenePhase
-    #endif
     @State private var awaitingReply = false
     @State private var landings = 0
 
     private var working: Bool { client.isWorking && client.interactions.isEmpty }
-    private var windowIsActive: Bool {
-        #if os(macOS)
-        appearsActive
-        #else
-        scenePhase == .active
-        #endif
-    }
     private var reply: ReplyMark {
         ReplyMark(conversation: HomeDrafts.key(home: client.baseURLString, profile: client.selectedProfileID, chat: client.selectedChatID),
                   id: client.messages.last { $0.direction == "outbound" && !MessagePages.isOwnerReply($0) }?.id)
@@ -328,7 +315,35 @@ struct ConversationHelper: View {
     }
 
     private var character: some View {
-        let avatar = AgentAvatar(appearance: client.activeAppearance, size: AvatarSize.toolbar)
+        WorkingCharacter(appearance: client.activeAppearance, working: working, landings: landings, offline: client.isOffline(client.activeProfile))
+    }
+}
+
+/// A character at the "now" edge: it proofs like rising dough while its employee works, plops once when
+/// `landings` changes, and rests in grey while its employee is out of reach.
+struct WorkingCharacter: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if os(macOS)
+    @Environment(\.appearsActive) private var appearsActive
+    #else
+    @Environment(\.scenePhase) private var scenePhase
+    #endif
+    let appearance: AgentAppearance?
+    var size = AvatarSize.toolbar
+    let working: Bool
+    var landings = 0
+    var offline = false
+
+    private var windowIsActive: Bool {
+        #if os(macOS)
+        appearsActive
+        #else
+        scenePhase == .active
+        #endif
+    }
+
+    var body: some View {
+        let avatar = AgentAvatar(appearance: appearance, size: size)
         let still = reduceMotion
         return Group {
             if working && windowIsActive && !still {
@@ -345,7 +360,7 @@ struct ConversationHelper: View {
             LinearKeyframe(0.86, duration: 0.09)
             SpringKeyframe(1, spring: Spring(response: 0.35, dampingRatio: 0.55))
         }
-        .offlineCharacter(client.isOffline(client.activeProfile))
+        .offlineCharacter(offline)
     }
 }
 

@@ -15,10 +15,6 @@ struct EmployeePicker: View {
     @State private var renaming: RenameTarget?
     private var searchTerm: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var showsMain: Bool { searchTerm.isEmpty || "OpenStrudel".localizedCaseInsensitiveContains(searchTerm) }
-    /// Employees with a News edition, on every device.
-    private var feeds: [(source: HomeClient, profile: EmployeeProfile)] {
-        library.visibleClients.flatMap { source in library.visibleProfiles(on: source).filter { $0.news == true }.map { (source, $0) } }
-    }
 
     var body: some View {
         NavigationStack {
@@ -28,14 +24,14 @@ struct EmployeePicker: View {
                         Label(L("Переписки"), systemImage: "clock.arrow.circlepath")
                     }.accessibilityIdentifier("openConversations")
                 }
-                if searchTerm.isEmpty && !feeds.isEmpty {
+                if searchTerm.isEmpty && !library.newsFeeds.isEmpty {
                     Section(L("Ленты")) {
-                        ForEach(feeds, id: \.profile.id) { feed in
-                            EmployeePickerRow(name: feed.profile.name, subtitle: library.hasOtherDevices ? L("Утренний выпуск · \(feed.source.displayName)") : L("Утренний выпуск"),
-                                              selected: false, appearance: nil, offline: feed.source.isOffline(feed.profile), symbol: "newspaper") {
-                                open(ReaderRoute(connectionID: feed.source.id, kind: .employee(feed.profile.id), title: feed.profile.name)); dismiss()
+                        ForEach(library.newsFeeds, id: \.route.id) { feed in
+                            EmployeePickerRow(name: feed.route.title, subtitle: library.hasOtherDevices ? L("Утренний выпуск · \(feed.source.displayName)") : L("Утренний выпуск"),
+                                              selected: false, appearance: nil, offline: feed.source.isOffline(feed.source.profiles.first { $0.id == feed.route.profileID }), symbol: "newspaper") {
+                                open(feed.route); dismiss()
                             }
-                            .accessibilityIdentifier("feed-" + feed.profile.id)
+                            .accessibilityIdentifier("feed-" + (feed.route.profileID ?? ""))
                         }
                     }
                 }

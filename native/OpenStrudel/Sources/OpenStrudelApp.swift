@@ -19,7 +19,7 @@ struct OpenStrudelApp: App {
                 EmployeeDetailsCommand()
             }
             CommandGroup(after: .textEditing) { FindChatCommand() }
-            // View › Chat / Clients: the two places the app has.
+            // View › the sidebar's places, in its order.
             CommandGroup(after: .sidebar) { PlaceCommands() }
             CommandGroup(after: .appInfo) {
                 Button(L("Аккаунты и остатки")) {
@@ -133,15 +133,18 @@ private struct FindChatCommand: View {
 }
 
 private struct PlaceCommands: View {
-    @FocusedValue(\.selectTab) private var selectTab
+    @FocusedValue(\.places) private var places
 
     var body: some View {
-        Button(L("Чат")) { selectTab?(.chat) }
-            .keyboardShortcut("1", modifiers: .command)
-            .disabled(selectTab == nil)
-        Button(L("Статистика")) { selectTab?(.statistics) }
-            .keyboardShortcut("2", modifiers: .command)
-            .disabled(selectTab == nil)
+        if let places {
+            ForEach(Array(places.prefix(9).enumerated()), id: \.element.id) { index, place in
+                Button(place.title, action: place.open)
+                    .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
+            }
+        } else {
+            Button(L("Чат")) {}.keyboardShortcut("1", modifiers: .command).disabled(true)
+            Button(L("Статистика")) {}.keyboardShortcut("2", modifiers: .command).disabled(true)
+        }
     }
 }
 

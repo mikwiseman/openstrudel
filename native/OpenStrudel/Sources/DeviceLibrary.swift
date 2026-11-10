@@ -250,6 +250,12 @@ final class DeviceLibrary: ObservableObject {
         hiddenEmployees[visibilityKey(client)]?.contains(profile.id) == true
     }
     func visibleProfiles(on client: HomeClient) -> [EmployeeProfile] { client.profiles.filter { !isHidden($0, on: client) } }
+    /// Employees with News stories, on every device: the sidebar's feeds on the Mac, the first rows of Insights on the iPhone.
+    var newsFeeds: [(source: HomeClient, route: ReaderRoute)] {
+        visibleClients.flatMap { source in
+            visibleProfiles(on: source).filter { $0.news == true }.map { (source, ReaderRoute(connectionID: source.id, kind: .news($0.id), title: $0.name)) }
+        }
+    }
     func hiddenProfiles(on client: HomeClient) -> [EmployeeProfile] { client.profiles.filter { isHidden($0, on: client) } }
 
     func setHidden(_ hidden: Bool, profile: EmployeeProfile, on client: HomeClient) async {
