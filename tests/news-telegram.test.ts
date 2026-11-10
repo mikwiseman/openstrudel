@@ -22,7 +22,7 @@ const story = (changes: Record<string, unknown> = {}) => ({
   check: null, verification: "Прочитаны анонс и страница продукта.", eventAt: "2026-11-10T08:03:00Z", change: null,
   sources: [{ title: "анонс", url: "https://example.com/blog/voice-typing", role: "Первоисточник", publishedAt: null },
     { title: "The Example Times", url: "https://news.example.org/2026/voice", role: "Перепечатка", publishedAt: null }],
-  telegram: "card", ...changes,
+  telegram: "card", image: null, ...changes,
 });
 
 /** A News desk whose schedule delivers to the group -100, with every Telegram request recorded. */
@@ -78,6 +78,34 @@ describe("News in Telegram", () => {
       expect((await publish({ storyId: "edition-only", telegram: null, sources: [story().sources[1]] })).telegram).toBeNull();
       expect(calls).toHaveLength(1);
       expect(await tools().call("read_news", {})).toMatch(/^edition-only \| .+ \| not in Telegram \| /m);
+    } finally { await close(); }
+  });
+
+  it("puts a story's picture on top of its post, and sends the post as text when Telegram cannot take the picture", async () => {
+    const { publish, calls, refusing, close } = desk();
+    try {
+      const chart = "https://example.com/charts/remote-work.png?v=2&size=large";
+      const shown = await publish({ image: chart });
+      expect(shown.telegram).toEqual({ sent: true, kind: "card", telegramMessageId: "101" });
+      expect(calls.map(call => call.method)).toEqual(["sendRichMessage"]);
+      expect(calls[0]!.body.disable_notification).toBe(true);
+      const html = calls[0]!.body.rich_message.html as string;
+      expect(html.startsWith('<img src="https://example.com/charts/remote-work.png?v=2&amp;size=large"/><p><b>Диктовка на Mac стала бесплатной и безлимитной</b></p><p>Приложение для заметок открыло диктовку в любом окне на Mac.</p>')).toBe(true);
+      expect(html).toContain('<p>→ Голосовой ввод становится частью рабочего инструмента, а не отдельной подпиской.</p><p><a href="https://example.com/blog/voice-typing">анонс</a> · <a href="https://news.example.org/2026/voice">The Example Times</a> · 10 ноября');
+      // A development still answers under that post.
+      const update = await publish({ image: chart, status: "Обновление", change: "Вышла версия для Windows." });
+      expect(update.telegram).toMatchObject({ sent: true, kind: "update" });
+      expect(calls[1]!.method).toBe("sendMessage");
+      expect(calls[1]!.body.reply_parameters).toMatchObject({ message_id: 101 });
+      // A picture Telegram cannot fetch costs the picture, not the post.
+      refusing.add("sendRichMessage");
+      const plain = await publish({ storyId: "broken-picture", image: "https://example.com/missing.png", sources: [{ title: "анонс", url: "https://example.com/blog/other", role: "Первоисточник", publishedAt: null }] });
+      expect(plain.telegram).toMatchObject({ sent: true, kind: "card" });
+      expect(calls.slice(2).map(call => call.method)).toEqual(["sendRichMessage", "sendMessage"]);
+      expect(calls[3]!.body.link_preview_options).toEqual({ url: "https://example.com/blog/other", prefer_large_media: true });
+      // Only a real https link is a picture.
+      await expect(publish({ storyId: "bad-picture", image: "http://example.com/a.png" })).rejects.toThrow(/https/);
+      await expect(publish({ storyId: "bad-picture", image: "график" })).rejects.toThrow(/картинк/);
     } finally { await close(); }
   });
 
