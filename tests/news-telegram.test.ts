@@ -258,6 +258,10 @@ it("parts a long text between paragraphs when it can", () => {
   const paragraph = "Слово ".repeat(100).trim();
   const chunks = telegramText(Array.from({ length: 20 }, () => paragraph).join("\n\n"));
   expect(chunks.length).toBeGreaterThan(1);
-  for (const chunk of chunks.slice(0, -1)) expect(chunk.text.endsWith(paragraph + "\n\n")).toBe(true);
-  expect(chunks.map(chunk => chunk.text).join("")).toBe(Array.from({ length: 20 }, () => paragraph).join("\n\n"));
+  for (const chunk of chunks) { expect(chunk.text.startsWith("Слово")).toBe(true); expect(chunk.text.endsWith("Слово")).toBe(true); }
+  expect(chunks.map(chunk => chunk.text).join("\n\n")).toBe(Array.from({ length: 20 }, () => paragraph).join("\n\n"));
+  // An entity that spans the break is kept on both sides of it.
+  const code = telegramText("```\n" + Array.from({ length: 20 }, () => paragraph).join("\n\n") + "\n```");
+  expect(code.length).toBeGreaterThan(1);
+  for (const chunk of code) expect(chunk.entities).toEqual([{ type: "pre", offset: 0, length: chunk.text.length }]);
 });

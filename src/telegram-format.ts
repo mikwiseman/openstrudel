@@ -66,17 +66,18 @@ export function telegramText(markdown: string): TelegramText[] {
   const compatibleEntities=entities.filter(e=>code.includes(e) || !code.some(c=>c.offset<e.offset+e.length && c.offset+c.length>e.offset));
   const chunks:TelegramText[]=[];
   for(let start=0;start<text.length;) {
-    let end=Math.min(start+4096,text.length);
+    let end=Math.min(start+4096,text.length), next=end;
     if(end<text.length) {
       // A long text parts between paragraphs when one ends in the last third of the part, never inside a word it could avoid.
+      // The blank line between the two parts belongs to neither.
       const paragraph=text.lastIndexOf("\n\n",end-2);
-      if(paragraph>start+2730) end=paragraph+2;
-      else if(/[\uD800-\uDBFF]/.test(text[end-1]!)) end--;
+      if(paragraph>start+2730) { end=paragraph; next=paragraph+2; }
+      else if(/[\uD800-\uDBFF]/.test(text[end-1]!)) next=--end;
     }
     chunks.push({text:text.slice(start,end),entities:compatibleEntities.flatMap(e => {
       const lo=Math.max(e.offset,start), hi=Math.min(e.offset+e.length,end);
       return hi>lo ? [{...e,offset:lo-start,length:hi-lo}] : [];
-    })}); start=end;
+    })}); start=next;
   }
   return chunks;
 }
