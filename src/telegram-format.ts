@@ -67,7 +67,12 @@ export function telegramText(markdown: string): TelegramText[] {
   const chunks:TelegramText[]=[];
   for(let start=0;start<text.length;) {
     let end=Math.min(start+4096,text.length);
-    if(end<text.length && /[\uD800-\uDBFF]/.test(text[end-1]!)) end--;
+    if(end<text.length) {
+      // A long text parts between paragraphs when one ends in the last third of the part, never inside a word it could avoid.
+      const paragraph=text.lastIndexOf("\n\n",end-2);
+      if(paragraph>start+2730) end=paragraph+2;
+      else if(/[\uD800-\uDBFF]/.test(text[end-1]!)) end--;
+    }
     chunks.push({text:text.slice(start,end),entities:compatibleEntities.flatMap(e => {
       const lo=Math.max(e.offset,start), hi=Math.min(e.offset+e.length,end);
       return hi>lo ? [{...e,offset:lo-start,length:hi-lo}] : [];
