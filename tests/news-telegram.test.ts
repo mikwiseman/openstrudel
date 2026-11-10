@@ -106,6 +106,8 @@ describe("News in Telegram", () => {
       // Only a real https link is a picture.
       await expect(publish({ storyId: "bad-picture", image: "http://example.com/a.png" })).rejects.toThrow(/https/);
       await expect(publish({ storyId: "bad-picture", image: "график" })).rejects.toThrow(/картинк/);
+      // Telegram refuses a picture from its own file storage, so the editor is told to take it from the source's page.
+      await expect(publish({ storyId: "bad-picture", image: "https://cdn1.telesco.pe/file/abc.jpg" })).rejects.toThrow(/источника/);
     } finally { await close(); }
   });
 
