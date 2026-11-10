@@ -17,8 +17,10 @@ const EDITION_CHARACTERS = 30_000;
 const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 const paragraphs = (text: string) => text.split(/\n\s*\n/).map(oneLine).filter(Boolean);
 const russian = (text: string) => /[а-яё]/i.test(text);
-/** Story text is plain: every character Markdown could read as formatting is escaped. */
-const plain = (text: string) => text.replace(/[\\`*_{}[\]()#+\-.!~|<>&=]/g, "\\$&");
+/** Story text is plain. Only what Markdown would read as formatting is escaped, so the copy the Home keeps of a post reads as the
+ * post does: marks inside a line, and a line's first character when it would start a heading, a quote, a list or a rule. */
+const plain = (text: string) => text.replace(/[\\`*_[\]<>&~|]/g, "\\$&").replace(/^(\s*)([#+\-=]|\d+(?=[.)]))/gm, (_, space: string, mark: string) =>
+  /^\d/.test(mark) ? `${space}${mark}\\` : `${space}\\${mark}`);
 const html = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const attribute = (text: string) => html(text).replace(/"/g, "&quot;");
 
