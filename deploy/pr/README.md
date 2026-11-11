@@ -12,8 +12,10 @@ Three mornings a week, 09:00 in the owner's time zone, into the team's group. At
 
 | Day | Run | Message |
 |---|---|---|
-| Monday | `week.md` | Deadlines of this week, up to three new opportunities to answer by number, one line on what comes next |
-| Tuesday, Thursday | `posts.md` | Two or three post ideas: title, the point, opening lines, sources; one of them also for LinkedIn |
+| Monday | `week.md` | Deadlines of this week and one new opportunity, the best one still unanswered |
+| Tuesday, Thursday | `posts.md` | Two or three post ideas: title, the point, opening lines, sources; one of them also for LinkedIn. One ready post instead when the channel has been silent for five days |
+
+Every message ends with one question that takes one word, and names the words: «Идём? Ответь на это сообщение: да / нет / позже». The answer has to be a reply to the message: the Home brings a reply to a delivered report back to the employee's own conversation, where it marks the calendar at once and prepares the next step.
 
 Why not daily. The first version ran every morning for twelve days and sent three to five items each time: meetups a day away, paid awards nobody had chosen, early price stages. Nobody answered one of them. Calls for speakers and awards move in weeks, so one checked list a week is enough, and a deadline still gets its reminder: every run first looks at what expires before the next run. Posts follow the pace the owner really publishes at, about two a week.
 
@@ -25,12 +27,12 @@ All private facts live in the employee's working folder on the Home, not in this
 - `pr/calendar.md`: the one living list, four tables: commitments, to decide, waiting, archive. One opportunity is one row with its date, place, format, deadline, why it fits, status, link and the date it was last checked at the organiser's page.
 - `pr/posts.md`: every idea it offered and what became of it.
 
-The owner's voice comes from a skill installed for this employee (a description of how he writes, with his published posts as examples). The profile carries a short version, because a reply in the group is answered by the main assistant with this employee's profile and without its folder.
+The owner's voice comes from the skill `wisemantalks`, installed for this employee: how he writes, with his published posts as examples. The prompts name the skill and do not copy it.
 
 ## What it needs from the Home
 
 - `read_news` with `desk`: an employee reads a colleague's reader (`desk: "News"`), so post ideas start from stories that are already checked. Employees of one domain read each other's desks.
-- The delivery group's recent messages, which the scheduler adds to a scheduled run: answers such as «1 да, 2 нет» reach the next run this way.
+- Delivery to a group that belongs to the main assistant, and replies to a delivered report routed back to the employee's conversation. A message in the group that is not a reply does not reach the employee.
 - A web search and page reading for organisers' pages, and the public preview page of the owner's channel for views and reactions.
 
 ## Apply
