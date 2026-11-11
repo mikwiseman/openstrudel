@@ -124,6 +124,8 @@ export class Store {
       chat_id TEXT NOT NULL, external_message_id TEXT NOT NULL, fingerprint TEXT NOT NULL
     )`);
     this.db.exec("CREATE INDEX IF NOT EXISTS messages_page_idx ON messages(conversation_id, hidden, created_at)");
+    // Only requests still waiting or running: the team list asks who is working with every poll.
+    this.db.exec("CREATE INDEX IF NOT EXISTS messages_active_idx ON messages(conversation_id) WHERE status IN ('queued','running')");
     if (!columns.has("story_id")) this.db.exec("ALTER TABLE messages ADD COLUMN story_id TEXT");
     if (!columns.has("story_json")) this.db.exec("ALTER TABLE messages ADD COLUMN story_json TEXT");
     if (!columns.has("context_json")) this.db.exec("ALTER TABLE messages ADD COLUMN context_json TEXT");
@@ -608,16 +610,48 @@ export class Store {
   }
 
   listProfiles(): EmployeeProfile[] {
-    const rows = this.db.prepare(`SELECT p.*, (
-      SELECT substr(m.text,1,240) FROM messages m JOIN conversations c ON c.id=m.conversation_id
-      WHERE c.profile_id=p.id AND m.direction='outbound' AND m.kind='text' AND m.hidden=0
-      ORDER BY m.created_at DESC,m.rowid DESC LIMIT 1
-    ) AS preview, EXISTS (
+    // The preview and its time come from one message: the employee's latest answer in any of its chats.
+    const rows = this.db.prepare(`SELECT p.*, substr(m.text,1,240) AS preview, m.created_at AS preview_at, EXISTS (
       SELECT 1 FROM messages m JOIN conversations c ON c.id=m.conversation_id
       WHERE c.profile_id=p.id AND m.story_id IS NOT NULL AND m.hidden=0
-    ) AS news FROM employee_profiles p ORDER BY p.name ASC`).all() as Row[];
+    ) AS news FROM employee_profiles p LEFT JOIN messages m ON m.rowid=(
+      SELECT m.rowid FROM messages m JOIN conversations c ON c.id=m.conversation_id
+      WHERE c.profile_id=p.id AND m.direction='outbound' AND m.kind='text' AND m.hidden=0
+      ORDER BY m.created_at DESC,m.rowid DESC LIMIT 1
+    ) ORDER BY p.name ASC`).all() as Row[];
     // An employee with stories is a reader the app lists under its feeds, before anyone opens it.
-    return rows.map((row) => ({ ...this.mapProfile(row), news: row.news === 1 }));
+    return rows.map((row) => ({ ...this.mapProfile(row), previewAt: row.preview_at == null ? null : String(row.preview_at), news: row.news === 1 }));
+  }
+
+  /** The employees as the app's team list shows them: each with whether a request of one of its chats is waiting or running now, the
+   * earliest next run of its enabled recurring schedules, whether the latest finished run of one of them failed, and the first picture
+   * of the answer its preview is taken from. These change with every run, so they stay out of listProfiles, whose rows also describe
+   * a turn's helpers to its engine. A backup stands in for its main schedule: the later of their finished runs decides. */
+  listTeam(): EmployeeProfile[] {
+    const working = new Set((this.db.prepare(`SELECT DISTINCT c.profile_id AS profile FROM messages m JOIN conversations c ON c.id=m.conversation_id
+      WHERE m.status IN ('queued','running') AND c.profile_id IS NOT NULL`).all() as Row[]).map(row => String(row.profile)));
+    const next = new Map<string, string>(), latest = new Map<string, { profile: string; at: string; failed: boolean }>();
+    if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schedule_runs'").get()) {
+      const schedules = this.db.prepare(`SELECT c.profile_id AS profile, COALESCE(s.backup_of,s.id) AS main, s.cron, s.next_run_at AS next, r.status, r.scheduled_for AS at
+        FROM schedules s JOIN conversations c ON c.id=s.conversation_id LEFT JOIN schedule_runs r ON r.id=(
+          SELECT id FROM schedule_runs WHERE schedule_id=s.id AND status IN ('completed','quiet','failed','uncertain') ORDER BY scheduled_for DESC LIMIT 1
+        ) WHERE s.enabled=1 AND c.profile_id IS NOT NULL`).all() as Row[];
+      for (const row of schedules) {
+        const profile = String(row.profile), main = String(row.main), soonest = next.get(profile), known = latest.get(main);
+        if (!String(row.cron).startsWith("@once ") && (!soonest || String(row.next) < soonest)) next.set(profile, String(row.next));
+        if (row.at != null && (!known || String(row.at) > known.at)) latest.set(main, { profile, at: String(row.at), failed: row.status === "failed" || row.status === "uncertain" });
+      }
+    }
+    const failing = new Set([...latest.values()].filter(run => run.failed).map(run => run.profile));
+    // The same message listProfiles previews: the employee's latest answer in any of its chats.
+    const pictures = new Map((this.db.prepare(`SELECT p.id AS profile, (
+        SELECT m.attachments_json FROM messages m JOIN conversations c ON c.id=m.conversation_id
+        WHERE c.profile_id=p.id AND m.direction='outbound' AND m.kind='text' AND m.hidden=0
+        ORDER BY m.created_at DESC,m.rowid DESC LIMIT 1
+      ) AS files FROM employee_profiles p`).all() as Row[]).map(row =>
+      [String(row.profile), (JSON.parse(String(row.files ?? "[]")) as Attachment[]).find(file => file.mimeType.startsWith("image/")) ?? null] as const));
+    return this.listProfiles().map(profile => ({ ...profile, working: working.has(profile.id), nextRunAt: next.get(profile.id) ?? null, failing: failing.has(profile.id),
+      previewImage: pictures.get(profile.id) ?? null }));
   }
 
   getProfile(profileIdOrName: string): EmployeeProfile | null {

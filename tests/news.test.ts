@@ -55,6 +55,10 @@ describe("News stories", () => {
     expect(ids()).toEqual(["second-story", "granola-voice-typing"]);
     await tools().call("publish_edition", { ...selection, storyIds: ["granola-voice-typing"] });
     expect(ids()).toEqual(["granola-voice-typing", "granola-voice-typing"]);
+    // The reader heads the edition with the name its desk gave it, and with its own word when the desk gave none.
+    expect(newsFeed(store, conversation.id).edition).toBeUndefined();
+    await tools().call("publish_edition", { ...selection, storyIds: ["granola-voice-typing"], title: "Founders' brief" });
+    expect(newsFeed(store, conversation.id).edition).toEqual({ date: "2026-11-01", title: "Founders' brief" });
     expect(newsFeed(store, conversation.id).messages.some(m => m.id === second.messageId)).toBe(true);
     expect(await tools().call("read_news", {})).toMatch(/^weak-story \| /m);
     store.close();

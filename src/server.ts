@@ -765,7 +765,7 @@ export class HttpApi {
         return;
       }
       if (request.method === "GET" && path === "/v1/profiles") {
-        this.send(response, 200, { profiles: this.store.listProfiles(), telegram: this.telegram.status(), importedConversations: this.store.listConversations().filter(c => c.externalId?.startsWith("import::")).map(c => ({ id: c.id, title: c.title ?? "Импортированный чат", profileId: c.profileId })) });
+        this.send(response, 200, { profiles: this.store.listTeam(), telegram: this.telegram.status(), importedConversations: this.store.listConversations().filter(c => c.externalId?.startsWith("import::")).map(c => ({ id: c.id, title: c.title ?? "Импортированный чат", profileId: c.profileId })) });
         return;
       }
       if (request.method === "POST" && path === "/v1/profiles") {
