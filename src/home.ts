@@ -172,7 +172,8 @@ export class Home {
   inventory(): Inventory {
     const visible = (agent: string) => !["moved", "staged"].includes(JSON.parse(this.store.getSetting("agent.transfer." + agent) ?? "null")?.phase);
     if (visible("main")) this.store.primaryConversation();
-    const profiles = this.store.listProfiles().filter(p => visible(p.id));
+    // The catalogue the app polls: each employee with what it is doing now.
+    const profiles = this.store.listTeam().filter(p => visible(p.id));
     for (const p of profiles) this.store.profileConversation(p.id);
     const conversations = this.store.listConversations().filter(c => visible(c.profileId ?? "main"));
     const chatIds = new Set(conversations.map(c => c.id));

@@ -70,6 +70,16 @@ export interface EmployeeProfile {
   tokenLimit: number | null;
   createdAt: string;
   preview?: string | null;
+  /** When the message the preview is taken from was written. */
+  previewAt?: string | null;
+  /** The team list only (`listTeam`): a request in one of its chats is waiting or running now. */
+  working?: boolean;
+  /** The team list only: the earliest next run of its enabled recurring schedules; null when it has none. */
+  nextRunAt?: string | null;
+  /** The team list only: the latest finished run of one of its enabled schedules failed. */
+  failing?: boolean;
+  /** The team list only: the first picture attached to the answer the preview is taken from; null when it has none. */
+  previewImage?: Attachment | null;
   domain?: "personal" | "work";
   purpose?: string;
   /** The employee publishes News stories, so the app lists its reader among the feeds. */

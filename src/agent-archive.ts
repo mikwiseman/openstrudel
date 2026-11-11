@@ -15,7 +15,7 @@ export const MAX_ARCHIVE_BYTES = 384 * 1024 * 1024;
 export const MAX_TRANSFER_BYTES = 192 * 1024 * 1024;
 const MAX_CONTENT_BYTES = 256 * 1024 * 1024;
 type Row = Record<string, any>;
-type Profile = Omit<EmployeeProfile, "preview"> & { context: string };
+type Profile = Omit<EmployeeProfile, "preview" | "previewAt"> & { context: string };
 interface Workspace { id: string; sourcePath: string; connections: string[]; directories: string[]; files: { path: string; content: string; sha256: string; executable: boolean }[] }
 interface Conversation { id: string; profileId: string; context: string; title: string; createdAt: string; updatedAt: string; primary: boolean; sourceChannel: string; modelSelection?: ModelSelection }
 interface Message { id: string; conversationId: string; direction: string; replyToId: string | null; text: string; createdAt: string; status: string; error: string | null; kind: string; author: string | null; hidden: boolean; attachments: string[] }
@@ -49,7 +49,7 @@ export class AgentArchives {
     const conversations = store.listConversations().filter(c => (profileId ? (c.profileId ?? "main") === profileId : visible(c.profileId ?? "main")));
     // One employee's copy waits only for that employee; colleagues keep working.
     if (profileId ? conversations.some(c => this.messages.isRunning(c.id)) : this.messages.hasActiveRuns) throw new Error("Сотрудники ещё работают. Дождитесь завершения их ответов и повторите экспорт.");
-    const profiles: Profile[] = store.listProfiles().filter(p => profileId ? p.id === profileId : visible(p.id)).map(({ preview: _, ...p }) => ({ ...p, context: store.getSetting("employee.context." + p.id) ?? p.domain ?? "personal" }));
+    const profiles: Profile[] = store.listProfiles().filter(p => profileId ? p.id === profileId : visible(p.id)).map(({ preview: _, previewAt: __, ...p }) => ({ ...p, context: store.getSetting("employee.context." + p.id) ?? p.domain ?? "personal" }));
     // The main assistant becomes an ordinary added employee on import. Never
     // overwrite the receiving Home's main personality or primary conversation.
     if (profileId === "main" || !profileId && visible("main")) profiles.unshift({ appearance: defaultAppearance("main"), id: "main", name: "OpenStrudel", instructions: store.getSetting("main.soul") ?? "", capabilities: [], ...readModelSelection(store,"main"), tokenLimit: null, domain: "personal", purpose: "", createdAt: new Date().toISOString(), context: "personal" });
