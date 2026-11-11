@@ -4,11 +4,16 @@
  * empties the feed, and publishes a story or a development while the reader is open. No real accounts, Telegram or
  * schedules; every company, product and story is invented. */
 import { createServer } from "node:http";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { OpenStrudelRuntime } from "../../src/runtime.js";
 import type { CodexEngine, NewsStory } from "../../src/types.js";
+import { POST_BRIEF } from "../../src/news-posts.js";
+
+/** A story's picture: an invented chart kept beside this file, served by the control port below. */
+const chart = fileURLToPath(new URL("./assets/chart.png", import.meta.url));
 
 const output = resolve(process.argv[2]!);
 const homeName = process.argv[3];
@@ -21,12 +26,26 @@ const engine: CodexEngine = {
   async run(input, options) {
     const message = input.split("Current user message:\n").at(-1)!.trim();
     options?.onEvent?.({ type: "thread.started", payload: { threadId: options.threadId ?? "news-thread" } });
+    // A post draft for the owner's channel: long enough to see it being written, then the post alone and a note after ---.
+    if (input.includes(POST_BRIEF)) {
+      await new Promise(done => setTimeout(done, postDelay));
+      if (postFails) throw new Error("Закончился лимит модели.");
+      const asked = /What the owner asks \(JSON string\):\n(".*")/.exec(input)?.[1];
+      const several = input.includes("these stories together");
+      if (input.includes("LinkedIn post")) return { threadId: "post", events: [], response:
+        "Открытые модели догнали закрытые там, где это видно каждому: в коде на обычном ноутбуке.\n\n«Северный мост» выложил «Клён 3» в трёх размерах. Младший работает без сети и без видеокарты. Для команды это значит одно: черновую работу с кодом можно вернуть на свои машины.\n\nЧто я бы проверил до переезда: скорость на своём железе и качество на своих задачах, а не на тестах компании.\n\nИсточник: severnymost.example" };
+      const body = asked ? `**«Клён 3» открыт, и младшая версия важнее старшей**\n\nКоротко: веса лежат в открытом доступе, младшая модель пишет код на ноутбуке без сети.\n\n→ Попробуйте её на своём проекте раньше, чем читать замеры.`
+        : `**«Северный мост» открыл «Клён 3». Главное в нём не старшая модель**\n\nВеса вышли под свободной лицензией в трёх размерах: 4, 16 и 70 млрд параметров. Старшая на тестах самой компании обходит прежний «Клён» в коде и переводе.\n\nНо интереснее младшая: она работает на обычном ноутбуке со скоростью разговора. Независимых замеров пока нет, так что цифры компании — это цифры компании.${several ? "\n\nВ тот же день модель появилась у двух облачных провайдеров по цене прежней версии." : ""}\n\n→ Я бы поставил младшую версию на рабочий ноутбук уже сегодня: локальная работа с кодом перестала требовать видеокарты.\n\n[Запись в блоге](https://severnymost.example/)`;
+      return { threadId: "post", events: [], response: body + "\n---\nКанал уже писал о «Клёне» 3 ноября: предысторию не повторял. Замеры компании независимо не проверены." };
+    }
     await new Promise(done => setTimeout(done, 400));
     return { threadId: options?.threadId ?? "news-thread", response: input.includes("Quoted News story") ? `Про эту историю: ${message}` : `Принято: ${message}`, events: [] };
   },
   async connections() { return []; },
   async connect() { return { url: "http://127.0.0.1/connect" }; },
 };
+/** How long a post draft takes, and whether it fails: the control port changes both. */
+let postDelay = 2500, postFails = false;
 const runtime = new OpenStrudelRuntime({ rootDirectory: directory, dbPath: ":memory:", engine, startTelegram: false, mobilePort: 0 });
 if (homeName !== undefined) runtime.api.home.rename(homeName);
 Object.assign((runtime.api.mobile as any).options, { host: "127.0.0.1", hostname: "127.0.0.1" });
@@ -52,6 +71,9 @@ const day = (daysAgo: number) => { const d = new Date(); d.setDate(d.getDate() -
 const source = (title: string, host: string, role = "Первоисточник", publishedAt: string | null = null) => ({ title, url: `https://${host}/`, role, publishedAt });
 
 type Draft = Partial<NewsStory> & Pick<NewsStory, "id" | "section" | "status" | "title" | "summary">;
+/** Whom a story is about, by the first word of its id: the names the week's page counts and a story's chapters follow. */
+const names: Record<string, string[]> = { klen: ["Северный мост", "Клён"], most: ["Северный мост"], granit: ["Гранит"], gavan: ["Тихая гавань"], iva: ["Ива"],
+  skvorets: ["Скворец"], pero: ["Перо"], soroka: ["Сорока"], mayak: ["Маяк"], veresk: ["Вереск"], rodnik: ["Родник"] };
 const drafts = new Map<string, NewsStory>();
 let sequence = 0;
 /** Publishes a version of a story at a moment in the past. Later versions start from the story as it stood. */
@@ -59,6 +81,7 @@ function publish(createdAt: string, draft: Draft, version: Partial<NewsStory> = 
   // Only an edition names its date and place; a report or a development belongs to the radar.
   const story: NewsStory = { body: draft.summary + "\n\nПодробности — в источнике.", view: null, check: null,
     verification: "Страница компании.", eventAt: null, sources: [source("Страница компании", draft.id.split("-")[0] + ".example")],
+    topics: names[draft.id.split("-")[0]!] ?? null, numbers: null, telegram: null,
     ...(drafts.get(draft.id) ?? {}), ...draft, edition: null, rank: null, change: null, ...version };
   drafts.set(story.id, story);
   const message = runtime.store.addMessage({ conversationId: chat.id, channel: "api", direction: "outbound", text: `**${story.title}**\n\n${story.summary}`, externalId: `story:${story.id}:${++sequence}`, story });
@@ -112,7 +135,8 @@ publish(at(0, "07:04"), { id: "klen-3", section: "Модели", status: "Выш
   view: "Младшая версия важнее старшей: она ставит локальную работу с кодом на обычный ноутбук.",
   check: "Замеры компании никто не повторил. Скорость на ноутбуке заявлена для одной конфигурации.",
   verification: "Запись в блоге и карточка модели. Веса не скачивал и не запускал.",
-  eventAt: at(0, "06:30"),
+  eventAt: at(0, "06:30"), telegram: "card",
+  numbers: [{ value: "70 млрд", label: "параметров в старшей версии, прежняя — 34 млрд" }, { value: "3", label: "размера: 4, 16 и 70 млрд параметров" }, { value: "0 ₽", label: "лицензия свободная, для коммерции тоже" }],
   sources: [source("Запись в блоге", "severnymost.example", "Первоисточник", at(0, "06:30")), source("Карточка модели", "hub.example", "Документация", at(0, "06:32")), source("Лицензия", "severnymost.example/license", "Документация"),
     source("Обсуждение у разработчиков", "forum.example", "Обсуждение", at(0, "06:55")), source("Пересказ в рассылке", "listok.example", "Перепечатка", at(0, "07:00"))] });
 publish(at(0, "07:04"), { id: "registry-label", section: "Правила", status: "Анонс", title: "Совет по открытым моделям предложил единую метку для синтетического текста", summary: "Метку предлагают ставить в служебные данные файла, а не в сам текст. Обсуждение открыто на месяц." });
@@ -128,6 +152,12 @@ publish(at(0, "09:41"), { id: "granit-price", section: "Железо", status: "
 publish(at(0, "10:12"), { id: "klen-clouds", section: "Модели", status: "Вышло", title: "«Клён 3» появился у двух облачных провайдеров", summary: "Оба дают модель по цене прежней версии; младший размер — бесплатно в пределах дневного лимита.",
   sources: [source("Каталог первого провайдера", "oblako-odin.example", "Первоисточник"), source("Каталог второго провайдера", "oblako-dva.example", "Первоисточник"), source("Карточка модели", "hub.example", "Документация"), source("Обсуждение у разработчиков", "forum.example", "Обсуждение")] });
 publish(at(0, "10:40"), again(harbour), { status: "Обновление", change: "Опубликован прайс: длинный контекст вдвое дороже обычного.", eventAt: at(0, "10:30") });
+publish(at(0, "10:55"), { id: "klen-3-laptop", section: "Модели", status: "Разбор", telegram: "card",
+  title: "Главное в «Клёне 3» не старшая модель: младшая впервые пишет код на ноутбуке без сети",
+  summary: "Все пишут про 70 млрд параметров и победу над прежней версией. Это не главное.\n\nВ карточке модели есть строка, которую пересказы пропустили: младшая версия на 4 млрд параметров проходит тот же набор задач по коду, что год назад требовал облака.\n\nЕсли замер подтвердится, локальная работа с кодом перестаёт быть компромиссом.",
+  view: "Смотреть стоит не на таблицу лидеров, а на то, что запускается у вас под рукой.",
+  numbers: [{ value: "4 млрд", label: "параметров хватает на задачи, которым год назад нужно было облако" }, { value: "×0", label: "цена запроса: модель работает на своём ноутбуке" }],
+  verification: "Карточка модели и таблица замеров компании. Сам модель не запускал.", check: "Повторит ли кто-нибудь замер на своих задачах." });
 publish(at(0, "11:05"), { id: "registry-january", section: "Правила", status: "Анонс", title: "Реестр синтетического текста заработает с января", summary: "Совет назвал срок и первых участников; подключение останется добровольным." });
 publish(at(0, "11:52"), { id: "pero-summaries", section: "Продукты", status: "Вышло", title: "«Перо» читает таблицы и строит по ним сводки", summary: "Функция из демо вышла для всех; источник каждой цифры виден по наведению." });
 
@@ -194,11 +224,15 @@ const control = createServer(async (req, res) => {
   if (url.pathname === "/empty") { empty = value === "1"; bump(); }
   if (url.pathname === "/offline") offline = value === "1";
   if (url.pathname === "/arrive") upcoming.shift()?.();
+  if (url.pathname === "/chart.png") { res.writeHead(200, { "content-type": "image/png", "cache-control": "no-store" }).end(await readFile(chart)); return; }
+  if (url.pathname === "/post") { postDelay = Number(url.searchParams.get("delay") ?? postDelay); postFails = value === "fail"; }
   res.end(JSON.stringify({ news: news.id, conversation: chat.id, main: main.id, variant, showsEdition, showsToday, empty, offline, upcoming: upcoming.length,
     stories: drafts.size, lead: again("klen-3").title, developing: harbour }));
 });
 await new Promise<void>(done => control.listen(0, "127.0.0.1", done));
 const controlURL = `http://127.0.0.1:${(control.address() as { port: number }).port}`;
+// The lead's picture and the analysis' chart come from this fixture's own host, which the app trusts as it trusts the Home beside it.
+runtime.store.db.prepare("UPDATE messages SET story_json=json_set(story_json,'$.image',?) WHERE conversation_id=? AND story_id IN ('klen-3','klen-3-laptop')").run(`${controlURL}/chart.png`, chat.id);
 const address = await runtime.api.listen("127.0.0.1", Number(process.env.OPENSTRUDEL_NEWS_FIXTURE_PORT ?? 0));
 await writeFile(output, JSON.stringify({ url: controlURL, localURL: `http://127.0.0.1:${address.port}`, token: runtime.api.localCredential(), news: news.id, conversation: chat.id, pid: process.pid }), { mode: 0o600 });
 console.log("Isolated News UI fixture ready.");

@@ -721,9 +721,9 @@ private struct NewsAnalysisShelf: View {
 
     private func card(_ item: NewsDesk.Item) -> some View {
         Button { open(item.id) } label: {
-            Tile(label: item.story.section, skin: .ink, side: .infinity, height: 172, radius: 32) {
+            Tile(label: item.story.section, skin: .ink, side: .infinity, height: 164, radius: 32) {
                 Spacer(minLength: 8)
-                FittedTitle(text: item.story.title, sizes: [19, 17.5, 16, 15, 14], lines: 4, most: 5, tracking: -0.2)
+                FittedTitle(text: item.story.title, sizes: [21, 19.5, 18, 16.5, 15, 14], lines: 4, most: 5, tracking: -0.2)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -882,8 +882,11 @@ struct NewsDock: View {
                 .padding(.horizontal, 20).frame(minHeight: AskCapsule.height)
                 .background(AppTheme.accentText, in: Capsule())
                 .contentShape(Capsule())
+                // The action keeps its whole name; the capsule beside it gives up the room.
+                .fixedSize()
             }
             .buttonStyle(TilePressStyle())
+            .layoutPriority(1)
             .accessibilityIdentifier("makePost")
         }
         .dynamicTypeSize(...DynamicTypeSize.accessibility1)
@@ -1159,7 +1162,8 @@ struct NewsNumbers: View {
                         Spacer(minLength: 0)
                     }
                     .padding(TileMetrics.padding)
-                    .frame(width: TileMetrics.side, height: TileMetrics.side, alignment: .topLeading)
+                    // A little wider than a tile of the shelf: what a figure measures is a phrase, not a word.
+                    .frame(width: TileMetrics.side * 1.2, height: TileMetrics.side, alignment: .topLeading)
                     .foregroundStyle(index == 0 ? AnyShapeStyle(AppTheme.canvas) : AnyShapeStyle(.primary))
                     .background(index == 0 ? AppTheme.accentText : AppTheme.tile, in: .rect(cornerRadius: TileMetrics.radius, style: .continuous))
                     .tileShadow()

@@ -235,6 +235,7 @@
 		C8E9F77A1A8A5D66D4211EF5 /* DeviceSignOut.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8709EBB6593952ABF30E9889 /* DeviceSignOut.swift */; };
 		C8ECA1EB842822AA9EE3421D /* TeamViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA51F25003FC05690E6B7E44 /* TeamViews.swift */; };
 		CA15005B9F3CCEBE68A50047 /* Composer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25AA5210AFF239878F982285 /* Composer.swift */; };
+		CA564386728D8304679BEABA /* NewspaperUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE07FD581B289C87827C3863 /* NewspaperUITests.swift */; };
 		CA7F91126B6B2D65FABF094C /* ConversationReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3E1E29ED1DDE39922834141 /* ConversationReader.swift */; };
 		CAA3BDCFAA92C1F19A9D9752 /* localizations.json in Resources */ = {isa = PBXBuildFile; fileRef = 1A4EAD91998B0B3E59C2A5BA /* localizations.json */; };
 		CBD1A671A4CE5FD36D786CEB /* ParakeetModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2D047BCE017BA5B3AE3827 /* ParakeetModel.swift */; };
@@ -452,6 +453,7 @@
 		F96054101E4801A6BCC170C1 /* LocalHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHome.swift; sourceTree = "<group>"; };
 		FC5BA14427968F91FEFE9F2F /* DigitalOceanWebLoginTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DigitalOceanWebLoginTests.swift; sourceTree = "<group>"; };
 		FCBC21712E63C28B07D8B114 /* HostingStoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostingStoreView.swift; sourceTree = "<group>"; };
+		FE07FD581B289C87827C3863 /* NewspaperUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewspaperUITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -607,6 +609,7 @@
 				96A2DF3BB4A7D519FA68EA0F /* LiveCloudPairingUITests.swift */,
 				4DDBDB4821F4175BB293C35F /* MobilePairingUITests.swift */,
 				B0CBD021FD1A24305C3A9FC8 /* ModelSettingsUITests.swift */,
+				FE07FD581B289C87827C3863 /* NewspaperUITests.swift */,
 				0EEF17D3888F1085AFAB5C06 /* OneChatUITests.swift */,
 				269C829F112500B5E34127F7 /* ReleaseScenariosUITests.swift */,
 				F78A1D9CE7EDB79E4CD70079 /* StatisticsUITests.swift */,
@@ -1184,6 +1187,7 @@
 				09FDF891ED4D0479E78D39E0 /* LiveCloudPairingUITests.swift in Sources */,
 				5E17805965A351ABB7620CF2 /* MobilePairingUITests.swift in Sources */,
 				0B7CD3FE0B4AB08FDB4CB197 /* ModelSettingsUITests.swift in Sources */,
+				CA564386728D8304679BEABA /* NewspaperUITests.swift in Sources */,
 				4AC3251C6C17D66DE9247D03 /* OneChatUITests.swift in Sources */,
 				396D0DCDA42F07B7B6AD8CDA /* ReleaseScenariosUITests.swift in Sources */,
 				27888D6995D01A60F3B90AF1 /* StatisticsUITests.swift in Sources */,

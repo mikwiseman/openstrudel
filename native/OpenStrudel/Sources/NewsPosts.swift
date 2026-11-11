@@ -27,6 +27,8 @@ struct NewsPostSheet: View {
     @State private var picking = false
     @State private var copied = false
     @State private var started = false
+    /// A request to the Home is on its way: the sheet shows the desk writing, not a button to press again.
+    @State private var asking = false
     @FocusState private var editing: Bool
 
     init(feed: NewsFeed, posts: NewsPostShelf, request: NewsPostRequest, appearance: AgentAppearance?) {
@@ -121,7 +123,7 @@ struct NewsPostSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
             Button(words("Сделать версию для LinkedIn")) { ask { drafts["linkedin"] = try await posts.write(stories, channel: "linkedin", from: base).id } }
                 .buttonStyle(InkCapsuleStyle()).accessibilityIdentifier("postLinkedIn")
-        } else if started {
+        } else if started, !asking {
             Button(words("Написать пост")) { ask { drafts[channel] = try await posts.write(stories, channel: channel).id } }.buttonStyle(InkCapsuleStyle())
         } else { writing }
     }
@@ -258,10 +260,12 @@ struct NewsPostSheet: View {
 
     private func ask(_ work: @escaping () async throws -> Void) {
         editing = false
+        asking = true
         Task {
             do { try await work() }
             catch is CancellationError {}
             catch { failure = error.localizedDescription }
+            asking = false
         }
     }
 }
