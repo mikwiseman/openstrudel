@@ -241,3 +241,16 @@ it("puts the reply where the owner answers and never reports unread media as a r
   expect(text).toMatch(/not readable yet[^.]*\.[^.]*NO_REPLY/);
   expect(text).toContain("the sources it rests on");
 });
+
+it("writes to the owner only when he has something to do, and ends every other run quietly", async () => {
+  const f = fixture(); f.worker.receive(f.source(), f.event()); await vi.advanceTimersByTimeAsync(45_000);
+  const text = f.calls[0]!.text;
+  // From 5 to 11 November the watcher showed 285 results; most said it could not read something or changed nothing.
+  expect(text).not.toContain("report the exact gap privately");
+  expect(text).toMatch(/failed source access[^.]*NO_REPLY/);
+  expect(text).toContain("the Home itself tells the owner when a connected service fails");
+  expect(text).toMatch(/Write a result only when[^.]*saved or updated a draft[^.]*changed the calendar[^.]*news/);
+  for (const quiet of ["he has already answered", "current=false", "a draft already in that chat covers it", "you changed nothing"]) expect(text).toContain(quiet);
+  expect(text).toContain("Never describe what you did not do");
+  expect(text).not.toContain("Return only a short private outcome, or NO_REPLY when nothing changed");
+});
