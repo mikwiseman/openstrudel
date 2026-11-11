@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Store } from "./store.js";
-import type { DynamicTool, Message, NewsStory } from "./types.js";
+import type { DynamicTool, EmployeeProfile, Message, NewsStory } from "./types.js";
 
 const text = (maxLength: number) => ({ type: "string", maxLength });
 const maybe = (maxLength: number) => ({ type: ["string", "null"], maxLength });
@@ -253,6 +253,14 @@ const encoded = (line: string) => Buffer.byteLength(JSON.stringify(line));
  * result: `storyId | event time | title | section | Telegram <time> or not in Telegram | first source`, then the readers' reactions
  * when the story has any, then "+N older stories omitted" when the rest does not fit. With a storyId, that story's latest full version
  * at any age. */
+/** A colleague's reader by the employee's name. Employees of one domain read each other's desks; a desk of the other domain is as absent as a wrong name. */
+export function deskConversation(store: Store, reader: EmployeeProfile, name: string): string {
+  const desks = store.listProfiles().filter(p => p.news && p.domain === reader.domain && !store.getSetting("employee.deleted." + p.id));
+  const desk = desks.find(p => p.name.toLocaleLowerCase() === name.trim().toLocaleLowerCase());
+  if (!desk) throw new Error(`Нет редакции «${name}». Доступны: ${desks.map(p => p.name).join(", ") || "ни одной"}.`);
+  return store.profileConversation(desk.id).id;
+}
+
 export function readNews(store: Store, conversationId: string, args: Record<string, unknown> = {}, chatId = newsChat(store, conversationId)) {
   if (args.storyId != null && typeof args.storyId !== "string") throw new Error("storyId — ключ истории из read_news.");
   if (args.storyId) {

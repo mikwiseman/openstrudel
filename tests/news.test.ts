@@ -122,6 +122,25 @@ describe("News stories", () => {
     store.close();
   });
 
+  it("lets a colleague of the same domain read a desk's stories, and nobody else", async () => {
+    const store = new Store(":memory:");
+    const colleague = (name: string, domain: "work" | "personal") => {
+      const profile = store.createProfile({ name, instructions: "Пишет.", domain });
+      return employeeTools(store, {} as CodexEngine, new Interactions(), { profile, conversationId: store.profileConversation(profile.id).id, messageId: "m", channel: "api", scheduled: true });
+    };
+    await colleague("News", "work").call("publish_story", story());
+    const writer = colleague("Writer", "work");
+    expect(await writer.call("read_news", {})).toBe("No stories in the last 72 hours.");
+    expect(await writer.call("read_news", { desk: "news" })).toMatch(/^granola-voice-typing \| /);
+    expect(await writer.call("read_news", { desk: "News", storyId: "granola-voice-typing" })).toMatchObject({ story: { title: "Granola делает голосовой ввод бесплатным" } });
+    // A name without a reader, and a desk of the other domain, answer the same way: with the desks this employee may read.
+    await expect(writer.call("read_news", { desk: "Writer" })).rejects.toThrow(/Доступны: News/);
+    await expect(colleague("Friend", "personal").call("read_news", { desk: "News" })).rejects.toThrow(/Нет редакции/);
+    // Reading leaves the desk as it was: the colleague's own reader stays empty.
+    expect(newsStamp(store, store.profileConversation(store.getProfile("Writer")!.id).id)).toBeNull();
+    store.close();
+  });
+
   it("answers a question about the chosen story with that story as context and keeps the thread with it", async () => {
     const { store, profile, conversation, tools } = newsDesk();
     const { messageId } = await tools().call("publish_story", story()) as { messageId: string };
