@@ -733,8 +733,14 @@ final class NewsFeed: ObservableObject, Identifiable {
 
     // MARK: The saved copy
 
+    /// The app's own folder for the copies. On a Mac the caches folder is shared by every app of the person, so the
+    /// copies go under this app's name there; on a phone the caches folder is already the app's alone.
     static var cacheDirectory: URL? {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?.appending(path: "News", directoryHint: .isDirectory)
+        guard var folder = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return nil }
+        #if os(macOS)
+        folder.append(path: Bundle.main.bundleIdentifier ?? "is.openstrudel.mac", directoryHint: .isDirectory)
+        #endif
+        return folder.appending(path: "News", directoryHint: .isDirectory)
     }
 
     private static func fileName(_ key: String) -> String {

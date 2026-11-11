@@ -38,6 +38,13 @@ struct NewsPostSheet: View {
 
     private var post: NewsPost? { posts.post(drafts[channel]) }
     private var name: String { feed.route.title }
+    private static var editorHeight: CGFloat {
+        #if os(macOS)
+        340
+        #else
+        220
+        #endif
+    }
 
     var body: some View {
         NavigationStack {
@@ -145,7 +152,9 @@ struct NewsPostSheet: View {
             .font(AppTypography.reading).lineSpacing(AppTypography.readingLineSpacing)
             .scrollContentBackground(.hidden).scrollDisabled(true)
             .focused($editing)
-            .frame(minHeight: 220)
+            // On a phone the editor grows with the draft. On the Mac it keeps its height and scrolls inside, so it is
+            // given room for a whole post.
+            .frame(minHeight: Self.editorHeight)
             .padding(.horizontal, 12).padding(.vertical, 10)
             .background(AppTheme.tile, in: .rect(cornerRadius: 22, style: .continuous))
             .overlay { RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(AppTheme.separator, lineWidth: 1) }
@@ -350,13 +359,13 @@ private struct NewsStoryPicker: View {
 /// One draft in a list: where it is meant for and when, its first lines, and what it was written from.
 struct NewsPostRow: View {
     let post: NewsPost
-    let open: () -> Void
     @Environment(\.newsWords) private var words
+    @Environment(\.newsPost) private var open
 
     var body: some View {
         let when = Team.date(post.updatedAt).map { words.moment($0) }
         let state = post.status == "writing" ? words("пишется…") : post.status == "failed" ? words("не получился") : post.usedAt != nil ? words("взят в работу") : nil
-        Button(action: open) {
+        Button { open(NewsPostRequest(stories: post.storyIds, post: post.id)) } label: {
             VStack(alignment: .leading, spacing: 4) {
                 QuietLine(text: [words.channel(post.channel), when, state].compactMap { $0 }.joined(separator: " · "))
                 Text(post.text.isEmpty ? (post.titles.first ?? "") : Team.plain(post.text)).font(AppTypography.reading).lineSpacing(AppTypography.readingLineSpacing)
@@ -399,7 +408,7 @@ struct NewsPostsPage: View {
                     .accessibilityElement(children: .combine).accessibilityIdentifier("postsEmpty")
                 }
                 ForEach(posts.posts) { post in
-                    NewsPostRow(post: post) { chrome.post(NewsPostRequest(stories: post.storyIds, post: post.id)) }
+                    NewsPostRow(post: post)
                         .contextMenu { Button(words("Удалить"), systemImage: "trash", role: .destructive) { Task { await posts.delete(post) } } }
                 }
             }

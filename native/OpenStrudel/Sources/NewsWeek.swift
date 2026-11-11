@@ -75,7 +75,7 @@ struct NewsWeekPage: View {
                     }
                     if !posts.posts.isEmpty {
                         group(words("Посты")) {
-                            ForEach(posts.posts.prefix(5)) { post in NewsPostRow(post: post) { chrome.post(NewsPostRequest(stories: post.storyIds, post: post.id)) } }
+                            ForEach(posts.posts.prefix(5)) { post in NewsPostRow(post: post) }
                         }
                     }
                 }

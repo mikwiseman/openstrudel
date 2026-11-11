@@ -174,11 +174,13 @@ private struct NewsPicture: View {
         VStack(spacing: 0) {
             if let image {
                 // The picture's own shape inside the column and the cap, so its corners are the picture's.
+                // The corners and the shadow belong to the picture itself, so they are set before the cap on its height:
+                // a wide column would otherwise round a frame wider than the picture and leave its corners square.
                 Image(decorative: image, scale: 1).resizable()
                     .aspectRatio(CGFloat(image.width) / CGFloat(max(image.height, 1)), contentMode: .fit)
-                    .frame(maxHeight: maxHeight)
                     .clipShape(.rect(cornerRadius: 28, style: .continuous))
                     .tileShadow()
+                    .frame(maxHeight: maxHeight)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.bottom, 24)
                     .transition(.opacity)
@@ -203,9 +205,7 @@ struct NewsScreen: View {
     @EnvironmentObject private var client: HomeClient
     @ObservedObject var feed: NewsFeed
     let discuss: (ChatContext) -> Void
-    @State private var details: EmployeeProfile?
     @State private var unavailable: String?
-    @State private var composing: NewsPostRequest?
     #if os(macOS)
     @Environment(\.appearsActive) private var appearsActive
     #else
@@ -222,17 +222,10 @@ struct NewsScreen: View {
     }
 
     var body: some View {
-        NewsDayPage(feed: feed, date: nil, chrome: NewsChrome(profile: profile, attentive: windowIsActive,
-                                                             showDetails: { details = profile }, discuss: quote,
-                                                             post: { composing = $0 }))
+        NewsDayPage(feed: feed, date: nil, chrome: NewsChrome(profile: profile, attentive: windowIsActive, discuss: quote))
             .environment(\.newsHome, URL(string: client.normalizedBaseURL)?.host)
             // Stories that arrive behind another app are read as new when the reader comes back.
             .onChange(of: windowIsActive, initial: true) { _, active in feed.attend(active) }
-            .sheet(item: $details) { profile in BotDetailsView(profile: profile, conversationID: feed.conversationID).environmentObject(client) }
-            .sheet(item: $composing) { request in
-                NewsPostSheet(feed: feed, posts: feed.posts, request: request, appearance: profile?.resolvedAppearance)
-                    .environment(\.newsWords, feed.words)
-            }
             .alert(L("Нет связи"), isPresented: Binding(get: { unavailable != nil }, set: { if !$0 { unavailable = nil } })) {
                 Button(L("Понятно"), role: .cancel) {}
             } message: { Text(unavailable ?? "") }
@@ -248,20 +241,41 @@ struct NewsScreen: View {
     }
 }
 
-/// What every page of a desk shares: whose desk it is, whether the reader is looking, and the two ways out.
+/// What every page of a desk shares: whose desk it is, whether the reader is looking, and the way to the chat.
 struct NewsChrome {
     let profile: EmployeeProfile?
     let attentive: Bool
-    let showDetails: () -> Void
     let discuss: (HomeMessage) -> Void
-    /// Opens the post sheet: a new draft from stories, or one already written.
-    let post: (NewsPostRequest) -> Void
+}
+
+extension EnvironmentValues {
+    /// Opens the post sheet from the page on screen: a new draft from stories, or one already written.
+    @Entry var newsPost: (NewsPostRequest) -> Void = { _ in }
 }
 
 extension View {
     /// The desk's capsule in the bar opens its settings, as on every page. Its character proofs there while a run is on.
     func newsToolbar(_ feed: NewsFeed, _ chrome: NewsChrome, title: String, working: Bool = false, offline: Bool = false) -> some View {
-        navigationTitle(title)
+        modifier(NewsToolbar(feed: feed, chrome: chrome, title: title, working: working, offline: offline))
+    }
+}
+
+/// A desk page's bar, and the two sheets a page can open: the desk's settings and a post. Each page presents them
+/// itself. On the Mac a sheet attached to the first page of the desk does not open while another page is pushed over
+/// it, so the page in front has to be the one that presents.
+private struct NewsToolbar: ViewModifier {
+    @ObservedObject var feed: NewsFeed
+    let chrome: NewsChrome
+    let title: String
+    let working: Bool
+    let offline: Bool
+    @State private var details: EmployeeProfile?
+    @State private var composing: NewsPostRequest?
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.newsPost) { composing = $0 }
+            .navigationTitle(title)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             // A pushed page would sit on the system's white; the edition reads on the app's own paper.
@@ -270,7 +284,7 @@ extension View {
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     TitleCapsule(appearance: chrome.profile?.resolvedAppearance, name: feed.route.title, offline: offline, working: working,
-                                 action: chrome.profile == nil ? nil : chrome.showDetails)
+                                 action: chrome.profile == nil ? nil : { details = chrome.profile })
                         .accessibilityLabel(chrome.profile == nil ? feed.route.title : L("Настройки сотрудника"))
                         .accessibilityValue(feed.route.title)
                         .accessibilityIdentifier("readerTitle")
@@ -278,17 +292,20 @@ extension View {
                 if chrome.profile != nil {
                     ToolbarItem(placement: .primaryAction) {
                         Menu {
-                            Button(feed.words("Найти в новостях"), systemImage: "magnifyingglass") { feed.place.panel = .search }
-                            Button(feed.words("Неделя"), systemImage: "chart.bar") { feed.place.panel = .week }
-                            Button(feed.words("Посты"), systemImage: "square.and.pencil") { feed.place.panel = .posts }
-                            Divider()
-                            Button(L("Настройки сотрудника"), systemImage: "slider.horizontal.3", action: chrome.showDetails)
+                            Button(L("Настройки сотрудника"), systemImage: "slider.horizontal.3") { details = chrome.profile }
                         } label: { Image(systemName: "ellipsis") }
                         .menuIndicator(.hidden)
                         .accessibilityLabel(L("Ещё"))
                         .accessibilityIdentifier("readerMore")
                     }
                 }
+            }
+            .sheet(item: $details) { profile in
+                BotDetailsView(profile: profile, conversationID: feed.conversationID).environmentObject(feed.client)
+            }
+            .sheet(item: $composing) { request in
+                NewsPostSheet(feed: feed, posts: feed.posts, request: request, appearance: chrome.profile?.resolvedAppearance)
+                    .environment(\.newsWords, feed.words)
             }
     }
 }
@@ -438,6 +455,8 @@ struct NewsDayPage: View {
         }
         .onDisappear { feed.disappear() }
         .onChange(of: chrome.attentive && isFront, initial: true) { _, looking in dwell.attentive = looking }
+        // Today's page says how many drafts there are, so it asks the Home once it is opened.
+        .task { if date == nil { await feed.posts.load() } }
     }
 
     // MARK: Masthead
@@ -467,7 +486,7 @@ struct NewsDayPage: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("newsStatus")
-            if date == nil, !front.isEmpty { ways(words).padding(.top, 14) }
+            if date == nil, !front.isEmpty { NewsWays(feed: feed, posts: feed.posts).padding(.top, 14) }
             if let intro {
                 Text(intro).font(AppTypography.reading).lineSpacing(AppTypography.readingLineSpacing).foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true).padding(.top, 16)
@@ -476,24 +495,6 @@ struct NewsDayPage: View {
         }
         // The space under the bar belongs to this first row, so scrolling to it shows the page's very top.
         .padding(.top, 10).padding(.bottom, 18)
-    }
-
-    /// The three ways further from today's paper, said in words: the week, the post drafts, the search.
-    private func ways(_ words: NewsWords) -> some View {
-        let drafts = feed.posts.posts.count
-        return Capsules {
-            way(words("Неделя"), "chart.bar", .week)
-            way(drafts > 0 ? words("Посты · \(drafts)") : words("Посты"), "square.and.pencil", .posts)
-            way(words("Найти"), "magnifyingglass", .search)
-        }
-    }
-
-    private func way(_ title: String, _ symbol: String, _ panel: NewsPanel) -> some View {
-        Button { feed.place.panel = panel } label: {
-            SourceCapsule(title: title, symbol: symbol).frame(minHeight: controlTarget - 8).contentShape(.rect)
-        }
-        .buttonStyle(NewsRowStyle())
-        .accessibilityIdentifier("newsWay-" + panel.rawValue)
     }
 
     /// No story in two weeks: the character, the truth in one sentence, and nothing to press.
@@ -579,6 +580,29 @@ struct NewsDayPage: View {
     private func open(_ story: String) {
         feed.storyScroll = nil
         feed.place.story = story
+    }
+}
+
+/// The three ways further from today's paper, said in words: the week, the post drafts with how many there are, the search.
+private struct NewsWays: View {
+    @ObservedObject var feed: NewsFeed
+    @ObservedObject var posts: NewsPostShelf
+
+    var body: some View {
+        let words = feed.words, drafts = posts.posts.count
+        Capsules {
+            way(words("Неделя"), "chart.bar", .week)
+            way(drafts > 0 ? words("Посты · \(drafts)") : words("Посты"), "square.and.pencil", .posts)
+            way(words("Найти"), "magnifyingglass", .search)
+        }
+    }
+
+    private func way(_ title: String, _ symbol: String, _ panel: NewsPanel) -> some View {
+        Button { feed.place.panel = panel } label: {
+            SourceCapsule(title: title, symbol: symbol).frame(minHeight: controlTarget - 8).contentShape(.rect)
+        }
+        .buttonStyle(NewsRowStyle())
+        .accessibilityIdentifier("newsWay-" + panel.rawValue)
     }
 }
 
@@ -819,8 +843,7 @@ struct NewsStoryPage: View {
         .safeAreaBar(edge: .bottom, spacing: 0) {
             // Two ways on from a story: ask about it in the chat, or have a post for the channel written from it.
             if let item {
-                NewsDock(ask: words("Спросить"), onAsk: { chrome.discuss(item.latest) },
-                         post: words("Сделать пост")) { chrome.post(NewsPostRequest(stories: [item.id])) }
+                NewsDock(ask: words("Спросить"), onAsk: { chrome.discuss(item.latest) }, post: words("Сделать пост"), stories: [item.id])
             }
         }
         .newsToolbar(feed, chrome, title: item?.story.title ?? "")
@@ -857,10 +880,12 @@ struct NewsStoryPage: View {
 /// name for VoiceOver: an action is never left as an ellipsis.
 struct NewsDock: View {
     @Environment(\.zoomNamespace) private var zoom
+    @Environment(\.newsPost) private var newsPost
     let ask: String
     let onAsk: () -> Void
     let post: String
-    let onPost: () -> Void
+    /// What a post is made from.
+    let stories: [String]
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -902,7 +927,7 @@ struct NewsDock: View {
     }
 
     private var posting: some View {
-        Button(action: onPost) {
+        Button { newsPost(NewsPostRequest(stories: stories)) } label: {
             HStack(spacing: 8) {
                 Image(systemName: "square.and.pencil").font(.system(size: AskCapsule.height * 0.33, weight: .medium))
                 Text(post).font(AppTypography.reading.weight(.medium)).lineLimit(1)
