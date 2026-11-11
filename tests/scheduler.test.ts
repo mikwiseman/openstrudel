@@ -98,6 +98,19 @@ describe("durable one-time reminders", () => {
     expect(scheduler.list(c.id)[0]).toMatchObject({enabled:false,lastRunStatus:"uncertain"});
   });
 
+  it("delivers an employee's report to a group that belongs to someone else", async () => {
+    const { store, scheduler, calls } = setup(), writer = store.createProfile({ name: "Writer" }), own = store.profileConversation(writer.id);
+    store.linkTelegramChat({ chatId: "-300", title: "Team", allowedSenders: ["123"] });
+    store.bindTelegramChat("-300", store.createProfile({ name: "Host" }).id);
+    const deliver = vi.fn(async (..._delivery: unknown[]) => {}); scheduler.deliver = deliver;
+    scheduler.save({ ...request, conversationId: own.id, delivery: "telegram", telegramChatId: "-300" }, now);
+    await scheduler.tick(new Date("2030-01-15T06:01:04Z")); await scheduler.idle();
+    expect(calls()).toBe(1);
+    expect(deliver).toHaveBeenCalledTimes(1);
+    expect(deliver.mock.calls[0]![0]).toBe("-300");
+    expect(scheduler.runs(own.id)[0]?.status).toBe("completed");
+  });
+
   it("disarms a claimed reminder on crash recovery without executing it again", async () => {
     const { store, scheduler, calls } = setup(), c = store.primaryConversation();
     const saved = scheduler.save({ ...request, conversationId: c.id }, now);
