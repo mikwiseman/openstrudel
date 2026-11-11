@@ -307,7 +307,9 @@ export class Scheduler {
         const run = this.store.db.prepare("SELECT schedule_id FROM schedule_runs WHERE id=?").get(runId)!;
         const metrics = dailyMetricsReportConfig(this.store, conversationId, String(run.schedule_id));
         if (metrics && metrics.chatId !== destination) throw new Error("Чат сводки Выдоха изменился. Проверьте расписание.");
-        await this.deliver(destination,name ? `**${name.replace(/[*_`]/g,"")}**\n\n${reply.text}` : reply.text,`schedule:${runId}`,JSON.parse(reply.attachments_json ?? "[]") as Attachment[],assertPrivateSources,metrics ? dailyMetricsLaunchButton(this.store) : undefined);
+        const post = name ? `**${name.replace(/[*_`]/g,"")}**\n\n${reply.text}` : reply.text;
+        await this.deliver(destination,post,`schedule:${runId}`,JSON.parse(reply.attachments_json ?? "[]") as Attachment[],assertPrivateSources,metrics ? dailyMetricsLaunchButton(this.store) : undefined);
+        this.recordPost(destination, conversationId, runId, post, name);
       }
       this.store.db.prepare("UPDATE schedule_runs SET status='completed',error=NULL WHERE id=?").run(runId); this.recovered(runId);
     } catch (error) {
@@ -316,6 +318,19 @@ export class Scheduler {
         await this.messages.reportProblem(conversationId,messageId,"delivery");
       } else await this.fail(runId,error);
     }
+  }
+  /**
+   * A report delivered into a chat whose talk lives in another conversation is recorded there too, as it appeared,
+   * so a plain message about it reaches an assistant that saw it. The post is that chat's own content; nothing of
+   * the chat flows back into the report's thread, and replies to the report still come back to it.
+   */
+  private recordPost(chatId: string, conversationId: string, runId: string, text: string, author?: string | null): void {
+    const chat = this.store.getTelegramChat(chatId);
+    const target = chat?.conversationId ? this.store.getConversation(chat.conversationId)
+      : chat && Number(chat.chatId) > 0 ? this.store.getOrCreateConversation({ channel: "telegram", externalId: chat.chatId, title: chat.title }) : null;
+    if (!target || target.id === conversationId || agentTransfer(this.store, target.profileId ?? "main")) return;
+    this.store.addMessage({ conversationId: target.id, channel: "telegram", direction: "outbound", externalId: `notification:schedule:${runId}`, text,
+      author: author ?? this.store.getSetting("telegram.bot_name") ?? "OpenStrudel" });
   }
   private privateSourceDeliveryGuard(runId: string, conversationId: string): (() => void) | undefined {
     const run = this.store.db.prepare("SELECT schedule_id,private_source_fingerprint FROM schedule_runs WHERE id=? AND conversation_id=?").get(runId,conversationId);
