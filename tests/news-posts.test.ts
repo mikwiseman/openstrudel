@@ -66,6 +66,9 @@ describe("News post drafts", () => {
       expect(input).toContain("Вышел независимый замер: младшая версия держит 40 токенов в секунду.");
       expect(input).toContain("«Гранит» назвал цену ускорителя");
       expect(input).toContain("Telegram");
+      // The voice is the owner's: the desk's own instructions name the guide, and the turn is told to open it and to send nothing.
+      expect(input).toContain("your instructions name the voice guide, a skill of yours; open it before you write and follow it");
+      expect(input).toContain("Never publish or send the post anywhere");
       expect(input).toContain("Current user message:\nПост для канала: «Клён 3» получил независимый замер и ещё 1");
       // The turn is the desk's own, so its instructions name the owner's voice; it starts clean and leaves no session behind.
       expect(options.profile).toContain("voice/guide.md");
