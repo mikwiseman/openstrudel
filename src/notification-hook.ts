@@ -3,6 +3,7 @@ import { digest, HomeError } from "./home.js";
 import { isEnabledScopedGroup, isProtectedTelegramAudience } from "./authorization.js";
 import type { Store } from "./store.js";
 import { telegramText } from "./telegram-format.js";
+import type { EmployeeProfile } from "./types.js";
 import type { TelegramAdapter } from "./telegram.js";
 
 /** The original credential relays to every chat it lists; a narrow key relays to one chat of its own list per request. */
@@ -34,6 +35,29 @@ function narrowKeys(settings: Record<string, unknown>): Array<{ id: string; toke
   const hashes = new Set(valid.map(key => key.tokenHash));
   if (valid.length !== keys.length || new Set(valid.map(key => key.id)).size !== valid.length || hashes.size !== valid.length || hashes.has(String(settings.tokenHash))) return [];
   return valid.map(key => ({ id: key.id, tokenHash: key.tokenHash, chatIds: key.chatIds, maxPerHour: key.maxPerHour ?? 30 }));
+}
+
+type Route = { keyPrefix: string; employee: string; chatIds: string[] };
+const routePrefix = /^[A-Za-z0-9._:-]{1,80}$/;
+
+/** A malformed list never applies, so the original credential keeps relaying to all of its chats. */
+function routes(settings: Record<string, unknown>): Route[] {
+  const list = settings.routes;
+  if (!Array.isArray(list) || !list.length || list.length > 20) return [];
+  const valid = list.filter((route): route is Route => Boolean(route) && typeof route === "object"
+    && typeof route.keyPrefix === "string" && routePrefix.test(route.keyPrefix) && typeof route.employee === "string" && route.employee.length >= 1 && route.employee.length <= 80
+    // A route may name no chat at all: the notification then stays on the employee's page in the app.
+    && Array.isArray(route.chatIds) && route.chatIds.length <= 10 && new Set(route.chatIds).size === route.chatIds.length
+    && route.chatIds.every((id: unknown) => typeof id === "string" && chatId.test(id)));
+  return valid.length === list.length ? valid : [];
+}
+
+/** The first route whose prefix starts the identity applies only while its employee exists and it names chats of the credential itself. */
+function notificationRoute(store: Store, chatIds: string[], idempotencyKey: string): { chatIds: string[]; page?: EmployeeProfile } {
+  const route = routes(hookSettings(store)).find(candidate => idempotencyKey.startsWith(candidate.keyPrefix));
+  const page = route ? store.getProfile(route.employee) : null;
+  if (!route || !page || !route.chatIds.every(id => chatIds.includes(id))) return { chatIds };
+  return { chatIds: route.chatIds, page };
 }
 
 /** This credential can only relay text to its preconfigured, connected chats. */
@@ -86,11 +110,18 @@ function identity(key: string | string[] | undefined, body: Record<string, unkno
 /** Answers 200 only when every chat confirmed delivery, because the sender treats any other answer as a failure. */
 export async function receiveNotification(store: Store, telegram: TelegramAdapter, chatIds: string[], key: string | string[] | undefined, body: Record<string, unknown>): Promise<[number, object]> {
   const { key: idempotencyKey, text } = identity(key, body);
+  const route = notificationRoute(store, chatIds, idempotencyKey);
   // Each chat keeps its own identity, so repeating the request never sends to the same chat twice.
-  const deliveries = chatIds.map(chatId => ({ chatId, text, files: [], externalId: "notification:" + digest(chatId + "\0" + idempotencyKey) }));
-  if (deliveries.some(({ externalId }) => (store.findMessageByExternal("telegram", externalId)?.text ?? text) !== text)) throw new HomeError("Содержимое уведомления изменилось.", 409);
+  const deliveries = route.chatIds.map(chatId => ({ chatId, text, files: [], externalId: "notification:" + digest(chatId + "\0" + idempotencyKey) }));
+  const pageId = route.page && "notification-page:" + digest(route.page.id + "\0" + idempotencyKey);
+  if (deliveries.some(({ externalId }) => (store.findMessageByExternal("telegram", externalId)?.text ?? text) !== text)
+    || pageId && (store.findMessageByExternal("api", pageId)?.text ?? text) !== text) throw new HomeError("Содержимое уведомления изменилось.", 409);
   // Nothing is sent unless every chat can receive it.
   for (const { chatId, externalId } of deliveries) telegram.deliveryTarget(chatId, externalId);
+  // The page is local and certain, so it is written before any chat; a repeat finds it and adds nothing.
+  if (route.page && pageId) store.addMessage({ conversationId: store.profileConversation(route.page.id).id, channel: "api", direction: "outbound", text, externalId: pageId });
+  const page = route.page ? { page: route.page.name } : {};
+  if (!deliveries.length) return [200, { sent: true, status: "stored", ...page }];
   // The original credential keeps working even if its journal cannot be written.
   let log: ReturnType<typeof journal> | undefined;
   try { log = journal(store); } catch {}
@@ -107,10 +138,10 @@ export async function receiveNotification(store: Store, telegram: TelegramAdapte
     }
     try { log?.result(delivery.externalId, receipts.at(-1)!); } catch {}
   }
-  if (receipts.length === 1) return receipts[0]!.sent ? [200, receipts[0]!] : [502, { error: UNCONFIRMED }];
+  if (receipts.length === 1) return receipts[0]!.sent ? [200, { ...receipts[0]!, ...page }] : [502, { error: UNCONFIRMED }];
   const sent = receipts.every(r => r.sent), statuses = receipts.map(r => r.status);
   const status = sent ? "delivered" : ["unknown", "pending"].find(state => statuses.includes(state)) ?? (statuses.every(state => state === "not_sent") ? "not_sent" : "partial");
-  const receipt = { sent, status, chatId: chatIds[0], deliveries: receipts };
+  const receipt = { sent, status, chatId: route.chatIds[0], deliveries: receipts, ...page };
   // With several chats, a failure still says which chats were reached.
   return sent ? [200, receipt] : [502, { error: UNCONFIRMED, ...receipt }];
 }
