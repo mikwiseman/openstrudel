@@ -107,7 +107,8 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
     // and a group served by the main assistant never rewrites the SOUL every other chat uses.
     if (["create_employee", "update_employee"].includes(name)) {
       if (context.scheduled) throw new Error("Автоматическое поручение не меняет сотрудников.");
-      if (context.scope?.startsWith("group-") && (!managementTurn(store,context) || name === "update_employee" && !context.profile && args.id == null)) throw new Error("Характер меняется в личном чате владельца. У группы свой разговор и доступ.");
+      if (context.scope?.startsWith("group-") && !managementTurn(store,context)) throw new Error("Характер меняется в личном чате владельца. У группы свой разговор и доступ.");
+      if (context.scope?.startsWith("group-") && name === "update_employee" && !context.profile && args.id == null) throw new Error("Общий характер помощника меняется в личном чате владельца. Правило для всего Home сохраните через save_home_rule.");
       if (context.channel === "telegram") assertManagement(store,context);
     }
     // The reader is the owner's: schedules, the owner's pipelines and his own requests publish there, a group member's mention does not.
