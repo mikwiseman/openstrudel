@@ -10555,13 +10555,6 @@
     "he": "לשאול את News על הכתבה",
     "ru": "Спросить News об этой истории"
   },
-  "Утренний выпуск": {
-    "en": "Morning edition",
-    "fr": "Édition du matin",
-    "es": "Edición matinal",
-    "he": "מהדורת בוקר",
-    "ru": "Утренний выпуск"
-  },
   "Чат": {
     "en": "Chat",
     "fr": "Chat",
@@ -10638,13 +10631,6 @@
     "fr": "L’accès aux clients est refusé pour cette connexion",
     "es": "El acceso a clientes está denegado para esta conexión",
     "he": "הגישה ללקוחות נדחתה לחיבור הזה"
-  },
-  "Здесь появится переписка этого чата. Писать можно во вкладке «Чат».": {
-    "en": "This chat’s messages will appear here. Writing happens in the Chat tab.",
-    "ru": "Здесь появится переписка этого чата. Писать можно во вкладке «Чат».",
-    "fr": "Les messages de cette conversation apparaîtront ici. On écrit dans l’onglet Conversation.",
-    "es": "Los mensajes de este chat aparecerán aquí. Se escribe en la pestaña Chat.",
-    "he": "ההודעות של הצ׳אט הזה יופיעו כאן. כותבים בלשונית צ׳אט."
   },
   "Из переписки": {
     "en": "From a conversation",
@@ -10884,13 +10870,6 @@
     "es": "Quitar el contexto y enviar",
     "he": "הסרת ההקשר ושליחה"
   },
-  "Утренний выпуск · {0}": {
-    "en": "Morning edition · {0}",
-    "ru": "Утренний выпуск · {0}",
-    "fr": "Édition du matin · {0}",
-    "es": "Edición matutina · {0}",
-    "he": "מהדורת בוקר · {0}"
-  },
   "Файлы": {
     "en": "Files",
     "ru": "Файлы",
@@ -10953,13 +10932,6 @@
     "fr": "Pour : {0}",
     "es": "Para: {0}",
     "he": "עבור: {0}"
-  },
-  "Insights": {
-    "en": "Insights",
-    "fr": "Éclairages",
-    "es": "Hallazgos",
-    "he": "תובנות",
-    "ru": "Инсайты"
   },
   "Progress": {
     "en": "Progress",
@@ -11065,13 +11037,6 @@
     "es": "Programaciones activas",
     "he": "תזמונים פעילים",
     "ru": "Активные расписания"
-  },
-  "Recent checks": {
-    "en": "Recent checks",
-    "fr": "Vérifications récentes",
-    "es": "Comprobaciones recientes",
-    "he": "בדיקות אחרונות",
-    "ru": "Последние проверки"
   },
   "Quiet runs · no new result": {
     "en": "Quiet runs · no new result",
@@ -11752,13 +11717,6 @@
     "he": "שבוע קודם: {0}",
     "ru": "Неделей раньше: {0}"
   },
-  "≈ {0} по ценам API": {
-    "en": "≈ {0} at API prices",
-    "fr": "≈ {0} aux tarifs de l’API",
-    "es": "≈ {0} a precios de la API",
-    "he": "≈ {0} לפי מחירי API",
-    "ru": "≈ {0} по ценам API"
-  },
   "Нет подключённых устройств": {
     "en": "No connected devices",
     "fr": "Aucun appareil connecté",
@@ -11899,12 +11857,12 @@
     "he": "מהדורה {0}",
     "ru": "Выпуск {0}"
   },
-  "радар проверил {0}": {
-    "en": "radar checked {0}",
-    "fr": "radar vérifié {0}",
-    "es": "radar revisado {0}",
-    "he": "הרדאר נבדק {0}",
-    "ru": "радар проверил {0}"
+  "радар {0}": {
+    "en": "radar {0}",
+    "fr": "radar {0}",
+    "es": "radar {0}",
+    "he": "רדאר {0}",
+    "ru": "радар {0}"
   },
   "{0} проверяет источники…": {
     "en": "{0} is checking sources…",
@@ -12073,5 +12031,348 @@
     "es": "Las noticias de las dos últimas semanas aparecerán aquí.",
     "he": "כתבות מהשבועיים האחרונים יופיעו כאן.",
     "ru": "Истории за последние две недели появятся здесь."
+  },
+  "Команда": {
+    "en": "Team",
+    "fr": "Équipe",
+    "es": "Equipo",
+    "he": "צוות",
+    "ru": "Команда"
+  },
+  "Работает…": {
+    "en": "Working…",
+    "fr": "Au travail…",
+    "es": "Trabajando…",
+    "he": "בעבודה…",
+    "ru": "Работает…"
+  },
+  "Не получилось": {
+    "en": "Did not work",
+    "fr": "Échec",
+    "es": "No salió",
+    "he": "לא הצליח",
+    "ru": "Не получилось"
+  },
+  "Новых: {0}": {
+    "en": "New: {0}",
+    "fr": "Nouveautés : {0}",
+    "es": "Nuevos: {0}",
+    "he": "חדשים: {0}",
+    "ru": "Новых: {0}"
+  },
+  "Есть новое": {
+    "en": "Something new",
+    "fr": "Du nouveau",
+    "es": "Hay novedades",
+    "he": "יש חדש",
+    "ru": "Есть новое"
+  },
+  "сейчас": {
+    "en": "now",
+    "fr": "à l’instant",
+    "es": "ahora",
+    "he": "עכשיו",
+    "ru": "сейчас"
+  },
+  "{0} мин": {
+    "en": "{0} min",
+    "fr": "{0} min",
+    "es": "{0} min",
+    "he": "{0} דק׳",
+    "ru": "{0} мин"
+  },
+  "{0} ч": {
+    "en": "{0} h",
+    "fr": "{0} h",
+    "es": "{0} h",
+    "he": "{0} שע׳",
+    "ru": "{0} ч"
+  },
+  "вчера": {
+    "en": "yesterday",
+    "fr": "hier",
+    "es": "ayer",
+    "he": "אתמול",
+    "ru": "вчера"
+  },
+  "сегодня в {0}": {
+    "en": "today at {0}",
+    "fr": "aujourd’hui à {0}",
+    "es": "hoy a las {0}",
+    "he": "היום ב־{0}",
+    "ru": "сегодня в {0}"
+  },
+  "завтра в {0}": {
+    "en": "tomorrow at {0}",
+    "fr": "demain à {0}",
+    "es": "mañana a las {0}",
+    "he": "מחר ב־{0}",
+    "ru": "завтра в {0}"
+  },
+  "вчера в {0}": {
+    "en": "yesterday at {0}",
+    "fr": "hier à {0}",
+    "es": "ayer a las {0}",
+    "he": "אתמול ב־{0}",
+    "ru": "вчера в {0}"
+  },
+  "{0} в {1}": {
+    "en": "{0} at {1}",
+    "fr": "{0} à {1}",
+    "es": "{0} a las {1}",
+    "he": "{0} ב־{1}",
+    "ru": "{0} в {1}"
+  },
+  "Следующий запуск {0}": {
+    "en": "Next run {0}",
+    "fr": "Prochaine exécution {0}",
+    "es": "Próxima ejecución {0}",
+    "he": "ההרצה הבאה {0}",
+    "ru": "Следующий запуск {0}"
+  },
+  "следующий {0}": {
+    "en": "next: {0}",
+    "fr": "prochain : {0}",
+    "es": "siguiente: {0}",
+    "he": "הבא: {0}",
+    "ru": "следующий {0}"
+  },
+  "следующий в {0}": {
+    "en": "next at {0}",
+    "fr": "prochain à {0}",
+    "es": "siguiente a las {0}",
+    "he": "הבא ב־{0}",
+    "ru": "следующий в {0}"
+  },
+  "Раз в {0} мин": {
+    "en": "Every {0} min",
+    "fr": "Toutes les {0} min",
+    "es": "Cada {0} min",
+    "he": "כל {0} דק׳",
+    "ru": "Раз в {0} мин"
+  },
+  "Каждый час": {
+    "en": "Every hour",
+    "fr": "Toutes les heures",
+    "es": "Cada hora",
+    "he": "כל שעה",
+    "ru": "Каждый час"
+  },
+  "Раз в {0} ч": {
+    "en": "Every {0} h",
+    "fr": "Toutes les {0} h",
+    "es": "Cada {0} h",
+    "he": "כל {0} שע׳",
+    "ru": "Раз в {0} ч"
+  },
+  "Каждый день в {0}": {
+    "en": "Every day at {0}",
+    "fr": "Tous les jours à {0}",
+    "es": "Todos los días a las {0}",
+    "he": "כל יום ב־{0}",
+    "ru": "Каждый день в {0}"
+  },
+  "По будням в {0}": {
+    "en": "On weekdays at {0}",
+    "fr": "En semaine à {0}",
+    "es": "Los días laborables a las {0}",
+    "he": "בימי חול ב־{0}",
+    "ru": "По будням в {0}"
+  },
+  "и ещё {0}": {
+    "en": "and {0} more",
+    "fr": "et {0} de plus",
+    "es": "y {0} más",
+    "he": "ועוד {0}",
+    "ru": "и ещё {0}"
+  },
+  "Расписание на паузе": {
+    "en": "Schedule paused",
+    "fr": "Planification en pause",
+    "es": "Programación en pausa",
+    "he": "התזמון מושהה",
+    "ru": "Расписание на паузе"
+  },
+  "Последний запуск не получился.": {
+    "en": "The last run did not work.",
+    "fr": "La dernière exécution a échoué.",
+    "es": "La última ejecución no salió.",
+    "he": "ההרצה האחרונה לא הצליחה.",
+    "ru": "Последний запуск не получился."
+  },
+  "Не получается с {0}: {1}": {
+    "en": "Not working since {0}: {1}",
+    "fr": "En échec depuis {0} : {1}",
+    "es": "No funciona desde {0}: {1}",
+    "he": "לא עובד מאז {0}: {1}",
+    "ru": "Не получается с {0}: {1}"
+  },
+  "Не получается с {0}.": {
+    "en": "Not working since {0}.",
+    "fr": "En échec depuis {0}.",
+    "es": "No funciona desde {0}.",
+    "he": "לא עובד מאז {0}.",
+    "ru": "Не получается с {0}."
+  },
+  "Открыть расписание": {
+    "en": "Open the schedule",
+    "fr": "Ouvrir la planification",
+    "es": "Abrir la programación",
+    "he": "לפתוח את התזמון",
+    "ru": "Открыть расписание"
+  },
+  "Пока тихо. Первый результат появится здесь.": {
+    "en": "Quiet so far. The first result will appear here.",
+    "fr": "Rien pour l’instant. Le premier résultat apparaîtra ici.",
+    "es": "Todo en calma por ahora. El primer resultado aparecerá aquí.",
+    "he": "שקט בינתיים. התוצאה הראשונה תופיע כאן.",
+    "ru": "Пока тихо. Первый результат появится здесь."
+  },
+  "Сообщения этой переписки появятся здесь.": {
+    "en": "This conversation’s messages will appear here.",
+    "fr": "Les messages de cette conversation apparaîtront ici.",
+    "es": "Los mensajes de esta conversación aparecerán aquí.",
+    "he": "ההודעות של השיחה הזו יופיעו כאן.",
+    "ru": "Сообщения этой переписки появятся здесь."
+  },
+  "Выпуск": {
+    "en": "Edition",
+    "fr": "Édition",
+    "es": "Edición",
+    "he": "מהדורה",
+    "ru": "Выпуск"
+  },
+  "Найти": {
+    "en": "Search",
+    "fr": "Rechercher",
+    "es": "Buscar",
+    "he": "חיפוש",
+    "ru": "Найти"
+  },
+  "Главный помощник": {
+    "en": "Main assistant",
+    "fr": "Assistant principal",
+    "es": "Asistente principal",
+    "he": "העוזר הראשי",
+    "ru": "Главный помощник"
+  },
+  "Что важно": {
+    "en": "What matters",
+    "fr": "L’essentiel",
+    "es": "Lo importante",
+    "he": "מה חשוב",
+    "ru": "Что важно"
+  },
+  "Лимит недели": {
+    "en": "Weekly limit",
+    "fr": "Limite hebdo",
+    "es": "Límite semanal",
+    "he": "מכסה שבועית",
+    "ru": "Лимит недели"
+  },
+  "Лимит": {
+    "en": "Limit",
+    "fr": "Limite",
+    "es": "Límite",
+    "he": "מכסה",
+    "ru": "Лимит"
+  },
+  "Прогресс": {
+    "en": "Progress",
+    "fr": "Progrès",
+    "es": "Progreso",
+    "he": "התקדמות",
+    "ru": "Прогресс"
+  },
+  "сделано за 7 дней": {
+    "en": "done in 7 days",
+    "fr": "faits en 7 jours",
+    "es": "hechos en 7 días",
+    "he": "נעשו ב־7 ימים",
+    "ru": "сделано за 7 дней"
+  },
+  "сегодня": {
+    "en": "today",
+    "fr": "aujourd’hui",
+    "es": "hoy",
+    "he": "היום",
+    "ru": "сегодня"
+  },
+  "завтра": {
+    "en": "tomorrow",
+    "fr": "demain",
+    "es": "mañana",
+    "he": "מחר",
+    "ru": "завтра"
+  },
+  "Ещё": {
+    "en": "More",
+    "fr": "Plus",
+    "es": "Más",
+    "he": "עוד",
+    "ru": "Ещё"
+  },
+  "Спросить про {0}": {
+    "en": "Ask about {0}",
+    "fr": "Demander à propos de {0}",
+    "es": "Preguntar sobre {0}",
+    "he": "לשאול על {0}",
+    "ru": "Спросить про {0}"
+  },
+  "Спросить про историю": {
+    "en": "Ask about this story",
+    "fr": "Demander à propos de cet article",
+    "es": "Preguntar sobre esta noticia",
+    "he": "לשאול על הידיעה",
+    "ru": "Спросить про историю"
+  },
+  "Запросы": {
+    "en": "Requests",
+    "fr": "Requêtes",
+    "es": "Solicitudes",
+    "he": "בקשות",
+    "ru": "Запросы"
+  },
+  "Стоимость": {
+    "en": "Cost",
+    "fr": "Coût",
+    "es": "Coste",
+    "he": "עלות",
+    "ru": "Стоимость"
+  },
+  "по ценам API": {
+    "en": "at API prices",
+    "fr": "aux tarifs de l’API",
+    "es": "a precios de la API",
+    "he": "במחירי ה־API",
+    "ru": "по ценам API"
+  },
+  "Токены": {
+    "en": "Tokens",
+    "fr": "Jetons",
+    "es": "Tokens",
+    "he": "טוקנים",
+    "ru": "Токены"
+  },
+  "Сделано": {
+    "en": "Done",
+    "fr": "Fait",
+    "es": "Hecho",
+    "he": "בוצע",
+    "ru": "Сделано"
+  },
+  "за 7 дней": {
+    "en": "in 7 days",
+    "fr": "en 7 jours",
+    "es": "en 7 días",
+    "he": "ב־7 ימים",
+    "ru": "за 7 дней"
+  },
+  "из 7": {
+    "en": "of 7",
+    "fr": "sur 7",
+    "es": "de 7",
+    "he": "מתוך 7",
+    "ru": "из 7"
   }
 }

@@ -72,7 +72,9 @@ struct ChatPicture: View {
             .resizable()
             .frame(maxWidth: size.width, maxHeight: size.height)
             .aspectRatio(size.width / max(size.height, 1), contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+            // A picture in the transcript is a tile.
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .tileShadow(0.7)
     }
 }
 
@@ -100,9 +102,9 @@ struct FileChip: View {
                     .monospacedDigit()
             }
         }
-        .padding(12)
-        .chatSurface(AppTheme.surface, radius: Radius.card)
-        .contentShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .cardTile(radius: 20)
+        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private var iconFont: Font {
@@ -144,6 +146,19 @@ enum ChatMedia {
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceThumbnailMaxPixelSize: maxPixels
         ] as CFDictionary)
+    }
+
+    /// A story's picture, read into memory with the same unauthenticated session and limits. It comes over https, or
+    /// from the Home's own host, which the reader already trusts with everything else on the page.
+    static func picture(_ address: String, home: String? = nil, maxPixels: Int = 1600) async throws -> CGImage {
+        guard let url = URL(string: address), let scheme = url.scheme?.lowercased(), let host = url.host, url.user == nil, url.password == nil,
+              scheme == "https" || scheme == "http" && host == home else { throw URLError(.unsupportedURL) }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 30
+        let (data, response) = try await publicImages.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), data.count <= 25 * 1024 * 1024,
+              let image = thumbnail(data, maxPixels: maxPixels) else { throw URLError(.cannotDecodeContentData) }
+        return image
     }
 
     /// Web pictures use a separate, unauthenticated session, never the Home token.

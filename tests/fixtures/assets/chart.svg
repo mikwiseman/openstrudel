@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+  <!-- An invented picture for the UI fixtures: a rising line over a night sky. No real product or measurement. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#141B4D"/>
+      <stop offset="0.55" stop-color="#1E2A78"/>
+      <stop offset="1" stop-color="#2B3FA6"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F28B3C" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#F28B3C" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="800" fill="url(#sky)"/>
+  <path d="M0 470 L170 452 L330 462 L500 428 L680 440 L860 404 L1040 414 L1200 386" fill="none" stroke="#8C97D8" stroke-opacity="0.55" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M0 540 L150 520 L290 470 L400 500 L560 400 L690 420 L830 300 L960 322 L1200 150 L1200 800 L0 800 Z" fill="url(#glow)"/>
+  <path d="M0 540 L150 520 L290 470 L400 500 L560 400 L690 420 L830 300 L960 322 L1200 150" fill="none" stroke="#F28B3C" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

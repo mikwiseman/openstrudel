@@ -1,6 +1,6 @@
 import XCTest
 
-/// Runs against a disposable Home seeded with one Telegram poll and two weeks of answers: the Progress tab shows the
+/// Runs against a disposable Home seeded with one Telegram poll and two weeks of answers: the Progress page shows the
 /// check-in card with each person's bars, the latest answer, the streak and today's state, and the card opens its chat.
 final class CheckInUITests: XCTestCase {
     @MainActor
@@ -20,8 +20,8 @@ final class CheckInUITests: XCTestCase {
         confirm.tap(); app.finishDevicePairing()
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 5) { consent.tap() }
-        XCTAssertTrue(app.tabBars.buttons["Прогресс"].waitForExistence(timeout: 30), app.debugDescription)
-        app.tabBars.buttons["Прогресс"].tap()
+        // Progress opens from its tile on the home.
+        app.openTile("tile-progress")
         let card = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "checkIn-")).firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 30), app.debugDescription)
         XCTAssertTrue(app.staticTexts["Сколько суеты сегодня?"].exists, app.debugDescription)

@@ -27,8 +27,11 @@ struct EmployeePicker: View {
                 if searchTerm.isEmpty && !library.newsFeeds.isEmpty {
                     Section(L("Ленты")) {
                         ForEach(library.newsFeeds, id: \.route.id) { feed in
-                            EmployeePickerRow(name: feed.route.title, subtitle: library.hasOtherDevices ? L("Утренний выпуск · \(feed.source.displayName)") : L("Утренний выпуск"),
-                                              selected: false, appearance: nil, offline: feed.source.isOffline(feed.source.profiles.first { $0.id == feed.route.profileID }), symbol: "newspaper") {
+                            // A desk is known by its own character and its latest headline, whatever it is called.
+                            let profile = feed.source.profiles.first { $0.id == feed.route.profileID }
+                            let line = profile.map { $0.previewText.isEmpty ? $0.roleText : $0.previewText } ?? ""
+                            EmployeePickerRow(name: feed.route.title, subtitle: [line, library.hasOtherDevices ? feed.source.displayName : ""].filter { !$0.isEmpty }.joined(separator: " · "),
+                                              selected: false, appearance: profile?.resolvedAppearance, offline: feed.source.isOffline(profile)) {
                                 open(feed.route); dismiss()
                             }
                             .accessibilityIdentifier("feed-" + (feed.route.profileID ?? ""))

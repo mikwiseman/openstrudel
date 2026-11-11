@@ -68,13 +68,15 @@ import XCTest
         app.finishDevicePairing()
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 5) { consent.tap() }
+        app.openChat()
         let input = app.textFields["messageComposer"]
         XCTAssertTrue(input.waitForExistence(timeout: 30), app.debugDescription)
         let expected = "Review ready " + UUID().uuidString.prefix(6)
         input.tap()
         input.typeText("Reply exactly: " + expected)
+        // The send button appears with the first words.
         let send = app.buttons["sendMessage"]
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true AND hittable == true"), object: send)
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true AND hittable == true"), object: send)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed, app.debugDescription)
         capture("review-composer-ready", app)
         send.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
@@ -82,6 +84,7 @@ import XCTest
         XCTAssertTrue(app.staticTexts[expected].waitForExistence(timeout: 120), app.debugDescription)
         capture("review-page-real-reply", app)
         app.terminate(); app.launch()
+        app.openChat()
         XCTAssertTrue(app.staticTexts[expected].waitForExistence(timeout: 20), app.debugDescription)
         capture("review-page-relaunch", app)
     }

@@ -46,6 +46,7 @@ final class MobilePairingUITests: XCTestCase {
         XCTAssertFalse(app.textFields["messageComposer"].exists, app.debugDescription)
         capture("phone-telegram-reader", app)
         app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.openChat()
         let composer = app.textFields["messageComposer"]
         XCTAssertTrue(composer.waitForExistence(timeout: 10)); composer.tap(); composer.typeText("Private app request from iPhone")
         app.buttons["sendMessage"].tap()
@@ -289,6 +290,8 @@ final class MobilePairingUITests: XCTestCase {
         }
         let initial = try await read(fixture + "/state")
         let app = XCUIApplication()
+        // The flow reads the Russian interface; a fresh simulator opens in English.
+        app.launchArguments = ["-openstrudel.language", "ru", "-AppleLanguages", "(ru)"]
         app.launch()
         // Only a disposable simulator may use this fixture. Keep real connections untouched.
         XCTAssertTrue(app.buttons["pasteInvitation"].waitForExistence(timeout: 15), app.debugDescription)
@@ -343,6 +346,7 @@ final class MobilePairingUITests: XCTestCase {
             consent.tap()
         }
         XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 35), app.debugDescription)
+        app.openChat()
         XCTAssertTrue(app.staticTexts["Подключение проверено."].waitForExistence(timeout: 10))
         let state = try await read(fixture + "/state")
         XCTAssertEqual(state["connections"] as? Int, (initial["connections"] as? Int ?? 0) + 1)
@@ -350,10 +354,15 @@ final class MobilePairingUITests: XCTestCase {
         capture("05-recovered", app)
         app.terminate(); app.launch()
         XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 20), app.debugDescription)
+        app.openChat()
         XCTAssertTrue(app.staticTexts["Подключение проверено."].waitForExistence(timeout: 10))
         capture("06-relaunch", app)
 
+        app.goHome()
         app.buttons["Настройки"].tap()
+        // Settings open on the models; the devices are their own section.
+        XCTAssertTrue(app.buttons["settingsSection"].waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["settingsSection"].tap(); app.buttons["Устройства"].tap()
         let addDevice = app.buttons["addDevice"]
         XCTAssertTrue(addDevice.waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["Управлять облаком"].exists)
@@ -371,6 +380,7 @@ final class MobilePairingUITests: XCTestCase {
         XCTAssertTrue(error.waitForExistence(timeout: 20))
         XCTAssertTrue(error.label.contains("уже использовано"), error.label)
         app.buttons["Отмена"].tap()
+        app.openChat()
         XCTAssertTrue(app.staticTexts["Подключение проверено."].waitForExistence(timeout: 10))
         // Failed replacement must preserve the previous Keychain credential.
         app.terminate(); app.launch()

@@ -82,6 +82,7 @@ final class ReleaseScenariosUITests: XCTestCase {
         let queue = try await read(fixture + "/queue-fixture")
         // The queue is the one chat's own: its rows edit and reorder right here.
         XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 15))
+        app.openChat()
         let first = try XCTUnwrap(queue["first"] as? String), second = try XCTUnwrap(queue["second"] as? String)
         let firstRow = app.buttons["editQueuedMessage-" + first]
         let secondRow = app.buttons["editQueuedMessage-" + second]

@@ -2,29 +2,59 @@ import SwiftUI
 
 /// First-run screens share one composition: the character, a display title, a short body and the
 /// actions, in a 480-pt column whose centre sits at 40 % of the height (docs/design-system.md).
-struct WelcomePage<Content: View>: View {
+/// On a phone the actions stand at the bottom, in the thumb's reach, and the words keep the room above them.
+struct WelcomePage<Content: View, Actions: View>: View {
+    @Environment(\.dynamicTypeSize) private var textSize
     /// Off where the same layout serves another window, such as Servers.
     var languageMenu = true
     @ViewBuilder var content: Content
+    @ViewBuilder var actions: Actions
+
+    /// At the largest text sizes the actions follow the words and scroll with them, as on the Mac and the iPad.
+    private var pinsActions: Bool {
+        #if os(iOS)
+        Actions.self != EmptyView.self && !textSize.isAccessibilitySize && UIDevice.current.userInterfaceIdiom == .phone
+        #else
+        false
+        #endif
+    }
 
     var body: some View {
         GeometryReader { proxy in
             ScrollView {
                 OpticalCentre(height: proxy.size.height) {
-                    VStack(spacing: 0) { content }
-                        .frame(maxWidth: OnboardingLayout.column)
-                        .padding(.horizontal, OnboardingLayout.margin)
-                        // Even bands keep the content's own centre at 40 %; the top one stays clear of the
-                        // language menu when the content fills the height.
-                        .padding(.vertical, 64)
+                    VStack(spacing: 0) {
+                        content
+                        if !pinsActions { actions }
+                    }
+                    .frame(maxWidth: OnboardingLayout.column)
+                    .padding(.horizontal, OnboardingLayout.margin)
+                    // Even bands keep the content's own centre at 40 %; the top one stays clear of the
+                    // language menu when the content fills the height.
+                    .padding(.vertical, 64)
                 }
             }
             .scrollBounceBehavior(.basedOnSize)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if pinsActions {
+                VStack(spacing: 0) { actions }
+                    .frame(maxWidth: OnboardingLayout.column)
+                    .padding(.horizontal, OnboardingLayout.margin)
+                    .padding(.bottom, 12)
+            }
         }
         // The language menu belongs to the welcome screens only, never to the workspace.
         .overlay(alignment: .topTrailing) { if languageMenu { LanguagePicker().padding(OnboardingLayout.margin) } }
         // Actions choose their own ink; glass inside shared cards stays clear.
         .tint(nil)
+    }
+}
+
+extension WelcomePage where Actions == EmptyView {
+    /// A screen that only says something: nothing to pin.
+    init(languageMenu: Bool = true, @ViewBuilder content: () -> Content) {
+        self.init(languageMenu: languageMenu, content: content, actions: { EmptyView() })
     }
 }
 
@@ -35,7 +65,7 @@ enum OnboardingLayout {
         #if os(macOS)
         20
         #else
-        16
+        22
         #endif
     }
 }
@@ -158,10 +188,10 @@ struct WelcomeHeader: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            AgentAvatar(appearance: nil, size: AvatarSize.hero)
+            ToneAvatar(appearance: nil, size: AvatarSize.hero + 16)
             BalancedLines {
                 Text(title)
-                    .font(AppTypography.display)
+                    .font(AppTypography.display).displayTracking()
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
             }
@@ -169,12 +199,12 @@ struct WelcomeHeader: View {
     }
 }
 
-/// Body copy: centred and balanced while the whole body fits on two lines, leading-aligned once it
-/// runs longer, counting the lines of every paragraph together.
+/// Body copy: centred and balanced under the centred title while it is short reading, up to eight lines;
+/// leading-aligned once it is longer, counting the lines of every paragraph together.
 struct WelcomeText: View {
     let paragraphs: [String]
     @State private var lines: [Int: Int] = [:]
-    private var centred: Bool { lines.values.reduce(0, +) <= 2 }
+    private var centred: Bool { lines.values.reduce(0, +) <= 8 }
 
     init(_ paragraphs: String...) { self.paragraphs = paragraphs.map(\.withoutWidow) }
 
@@ -308,10 +338,14 @@ struct OpenAIWelcomeView: View {
                         ? L("Сохранённый вход больше не действует. Войдите снова для сотрудников этого устройства.")
                         : L("Войдите на сайте OpenAI. Этот аккаунт будут использовать сотрудники на «\(client.displayName)»."))
                 .padding(.top, 12)
+            if client.openAILogin != nil || client.openAILoginPending {
+                // The code, the browser link and cancelling live in the shared account card, with the words.
+                OpenAISettingsCard(showIdentity: false).padding(.top, 32)
+            }
+        } actions: {
             Group {
                 if client.openAILogin != nil || client.openAILoginPending {
-                    // The code, the browser link and cancelling live in the shared account card.
-                    OpenAISettingsCard(showIdentity: false)
+                    EmptyView()
                 } else if client.openAIAccount?.isUnavailable == true {
                     VStack(spacing: 12) {
                         error

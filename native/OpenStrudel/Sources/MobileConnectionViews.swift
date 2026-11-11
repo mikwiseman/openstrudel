@@ -313,6 +313,7 @@ struct MobileWelcomeView: View {
             if reconnecting {
                 ProgressView().padding(.top, 24).accessibilityLabel(L("Восстанавливаем связь"))
             }
+        } actions: {
             Group {
                 if reconnecting {
                     Button { Task { await client.load(quiet: true) } } label: {

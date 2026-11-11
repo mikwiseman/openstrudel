@@ -11,9 +11,9 @@ struct EmptyChat: View {
     var body: some View {
         OpticalCentre {
             VStack(spacing: 0) {
-                AgentAvatar(appearance: client.activeAppearance, size: AvatarSize.hero)
+                ToneAvatar(appearance: client.activeAppearance, size: AvatarSize.hero + 16)
                 Text(client.isEmployeeDraft ? L("Создайте сотрудника") : client.activeProfile?.name ?? L("Напишите, что нужно"))
-                    .font(AppTypography.display)
+                    .font(AppTypography.display).displayTracking()
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .padding(.top, 16)
@@ -56,7 +56,7 @@ struct ClusterHeader: View {
     var body: some View {
         Text(ChatClock.cluster(date, hasTime: hasTime))
             .font(AppTypography.meta)
-            .foregroundStyle(AppTheme.secondaryText)
+            .foregroundStyle(AppTheme.faint)
             .monospacedDigit()
             .frame(maxWidth: .infinity)
             .accessibilityAddTraits(.isHeader)
@@ -69,6 +69,8 @@ struct MessageBubble: View {
     @EnvironmentObject private var client: HomeClient
     /// In a reader the neighbours are the reader's, and nothing here answers: the composer is the chat's.
     @Environment(\.readerMessages) private var readerMessages
+    /// In an employee's feed a request is one quiet line over the result it asked for.
+    @Environment(\.readerFeed) private var feed
     @State private var previewURL: URL?
     let message: HomeMessage
     /// Other people write here too (a Telegram group or history from several people),
@@ -120,6 +122,8 @@ struct MessageBubble: View {
             } else if message.kind == "notice" {
                 Label(withTime(L10n.text(message.text)), systemImage: "checkmark").modifier(MetaLine())
                     .frame(maxWidth: .infinity, alignment: .leading)
+            } else if feed && isInbound {
+                request
             } else if fromSomeoneElse {
                 someoneElse
             } else if isInbound || ownerReply {
@@ -176,6 +180,22 @@ struct MessageBubble: View {
         .frame(maxWidth: bubbleWidth, alignment: .trailing)
         .frame(maxWidth: .infinity, alignment: .trailing)
         .paragraphDirection(replySide)
+    }
+
+    /// What the employee was asked, by the owner or in a Telegram chat: who and what, quietly, never a bubble.
+    private var request: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !message.text.isEmpty {
+                let author = message.origin?.channel == "telegram" ? "" : (shared ? message.author : nil) ?? L("Вы")
+                Text(author.isEmpty ? message.text : author + ": " + message.text)
+                    .font(AppTypography.interface).foregroundStyle(AppTheme.secondaryText)
+                    .lineLimit(4).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+            }
+            attachments
+            if message.status == "queued" { Text(L("В очереди")).modifier(MetaLine()) }
+            if let error = message.error, message.delivery == nil { warning(error) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var someoneElse: some View {
@@ -389,7 +409,26 @@ struct InteractionCard: View {
                 if let source = interaction.sourceTitle { Text("Telegram · " + source).modifier(MetaLine()) }
                 Text(L10n.text(interaction.title)).font(AppTypography.interface.weight(.semibold))
                 if let detail = interaction.detail, !detail.isEmpty {
-                    Text(detail).font(AppTypography.interface).foregroundStyle(AppTheme.secondaryText).textSelection(.enabled)
+                    let parts = InteractionDetail(detail)
+                    if !parts.text.isEmpty {
+                        Text(parts.text).font(AppTypography.interface).foregroundStyle(AppTheme.secondaryText).textSelection(.enabled)
+                    }
+                    if !parts.rows.isEmpty {
+                        // What the action will be done with: the name quiet, the value plain.
+                        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 6) {
+                            ForEach(parts.rows) { row in
+                                GridRow {
+                                    Text(row.key).foregroundStyle(AppTheme.secondaryText).gridColumnAlignment(.leading)
+                                    Text(row.value).foregroundStyle(.primary).textSelection(.enabled).gridColumnAlignment(.leading)
+                                }
+                            }
+                        }
+                        .font(.subheadline).padding(.top, 8)
+                        .accessibilityIdentifier("interactionArguments")
+                    }
+                    if let raw = parts.raw {
+                        Text(raw).font(.caption.monospaced()).foregroundStyle(AppTheme.secondaryText).textSelection(.enabled).padding(.top, 8)
+                    }
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -428,9 +467,9 @@ struct InteractionCard: View {
                 }
             }
         }
-        .padding(16)
+        .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .chatSurface(AppTheme.surface, radius: Radius.card)
+        .cardTile()
     }
 
     private func options(for question: ChatQuestion) -> some View {
@@ -445,7 +484,8 @@ struct InteractionCard: View {
                     Text(L10n.text(option)).fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .buttonStyle(CardButtonStyle(prominent: false))
+            // A yes-or-no decision leads with its yes in ink; a list of choices stays even.
+            .buttonStyle(CardButtonStyle(prominent: question.id == "decision" && question.options.count == 2 && option == question.options.first))
             .accessibilityAddTraits(chosen ? .isSelected : [])
             .disabled(busy)
         }
@@ -624,23 +664,25 @@ extension HomeClient {
     var latestReplyText: String { messages.last { $0.direction == "outbound" && $0.kind != "notice" && !MessagePages.isOwnerReply($0) }?.text ?? "" }
 }
 
-/// Card actions at one height and radius. The one prominent action is ink with a canvas-coloured
-/// label; the others are a quiet tint of the text colour. Neither changes with window focus.
+/// Card actions are capsules at one height. The one prominent action is ink with a canvas-coloured
+/// label; the others sit on the quiet fill. Neither changes with window focus.
 private struct CardButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     let prominent: Bool
 
     func makeBody(configuration: Configuration) -> some View {
-        let shape = RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
         configuration.label
-            .font(AppTypography.interface.weight(.medium))
+            .font(AppTypography.interface.weight(.semibold))
             .labelStyle(CardButtonLabel())
             .foregroundStyle(label)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-            .frame(minHeight: controlTarget)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 6)
+            .frame(minHeight: max(controlTarget, 36))
             .background(fill(pressed: configuration.isPressed), in: shape)
             .contentShape(shape)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(configuration.isPressed ? .easeOut(duration: 0.1) : .spring(response: 0.35, dampingFraction: 0.7), value: configuration.isPressed)
     }
 
     private var label: AnyShapeStyle {
@@ -651,7 +693,7 @@ private struct CardButtonStyle: ButtonStyle {
     private func fill(pressed: Bool) -> AnyShapeStyle {
         guard isEnabled else { return AnyShapeStyle(.primary.opacity(0.06)) }
         if prominent { return AnyShapeStyle(pressed ? AppTheme.accentText.mix(with: AppTheme.canvas, by: 0.25) : AppTheme.accentText) }
-        return AnyShapeStyle(.primary.opacity(pressed ? 0.14 : 0.08))
+        return AnyShapeStyle(pressed ? AppTheme.surface.mix(with: AppTheme.accentText, by: 0.12) : AppTheme.surface)
     }
 }
 

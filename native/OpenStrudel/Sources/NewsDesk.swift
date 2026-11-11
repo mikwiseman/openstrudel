@@ -330,6 +330,11 @@ struct NewsWords {
         guard let since else { return self("Новое · \(count)") }
         return self("Новое с \(calendar.isDate(since, inSameDayAs: now) ? time(since) : day(since, now: now)) · \(count)")
     }
+    /// The line over an edition's stories: the name its desk gave it, or «Выпуск»; an edition standing in for today's says whose day it is.
+    func editionTitle(_ page: NewsDesk.Page, named: NewsEditionTitle?, now: Date = .now) -> String {
+        guard let date = page.editionDate, date != page.date else { return named.flatMap { $0.date == page.date ? $0.title : nil } ?? self("Выпуск") }
+        return self("Выпуск за \(day(date, now: now))")
+    }
     /// «8 историй», or what an earlier day had instead of an edition.
     func summary(_ day: NewsDesk.Day) -> String {
         if !day.edition.isEmpty { return stories(day.edition.count) }
@@ -339,7 +344,7 @@ struct NewsWords {
     func status(_ line: NewsStatusLine, name: String, now: Date = .now) -> String {
         switch line {
         case .edition(let published, let stories, let checked):
-            return [published.map { self("Выпуск \(time($0))") }, self.stories(stories), checked.map { self("радар проверил \(moment($0, now: now))") }]
+            return [published.map { self("Выпуск \(time($0))") }, self.stories(stories), checked.map { self("радар \(moment($0, now: now))") }]
                 .compactMap { $0 }.joined(separator: " · ")
         case .running: return self("\(name) проверяет источники…")
         case .failing(let since, let reason):
@@ -373,6 +378,8 @@ final class NewsFeed: ObservableObject, Identifiable {
     @Published private(set) var desk = NewsDesk([])
     @Published private(set) var incoming: NewsDesk?
     @Published private(set) var status: NewsStatus?
+    /// The name the desk gave its latest edition, when it gave one.
+    @Published private(set) var edition: NewsEditionTitle?
     @Published private(set) var read = NewsReadState()
     /// What had been seen when this visit began. «Новое» is measured against it, so it stays put while it is read.
     @Published private(set) var visit = NewsReadState()
@@ -443,7 +450,7 @@ final class NewsFeed: ObservableObject, Identifiable {
                 if envelope.conversation.news == nil { receive([], status: nil) }
                 else {
                     let feed: NewsFeedEnvelope = try await client.read("/v1/conversations/" + envelope.conversation.id + "/stories")
-                    receive(feed.messages, status: feed.status)
+                    receive(feed.messages, status: feed.status, edition: feed.edition)
                 }
                 stamp = envelope.conversation.news
             }
@@ -456,8 +463,9 @@ final class NewsFeed: ObservableObject, Identifiable {
         }
     }
 
-    func receive(_ messages: [HomeMessage], status: NewsStatus?, now: Date = .now) {
+    func receive(_ messages: [HomeMessage], status: NewsStatus?, edition: NewsEditionTitle? = nil, now: Date = .now) {
         if self.status != status { self.status = status }
+        if self.edition != edition { self.edition = edition }
         guard messages != self.messages || !loaded else { return }
         defer { if !loaded { loaded = true } }
         self.messages = messages
@@ -566,11 +574,14 @@ final class NewsFeed: ObservableObject, Identifiable {
 @MainActor
 final class Newsroom: ObservableObject {
     private var feeds: [String: NewsFeed] = [:]
+    private var changes: [String: AnyCancellable] = [:]
 
     func feed(_ route: ReaderRoute, on client: HomeClient) -> NewsFeed {
         if let feed = feeds[route.id], feed.client === client { return feed }
         let feed = NewsFeed(client: client, route: route)
         feeds[route.id] = feed
+        // The home's shelf shows every desk's lead, so a feed that changes tells whoever watches the newsroom.
+        changes[route.id] = feed.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         return feed
     }
 

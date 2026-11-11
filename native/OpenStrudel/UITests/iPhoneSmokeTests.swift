@@ -31,6 +31,7 @@ final class iPhoneSmokeTests: XCTestCase {
         let consent = app.buttons["acceptAIDataSharing"]
         if consent.waitForExistence(timeout: 5) { consent.tap() }
         XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 30), app.debugDescription)
+        app.openChat()
         let input = app.textFields["Сообщение"]
         XCTAssertTrue(input.waitForExistence(timeout: 10), app.debugDescription)
         let suffix = UUID().uuidString.prefix(6)
@@ -49,6 +50,7 @@ final class iPhoneSmokeTests: XCTestCase {
         app.terminate()
         app.launch()
         XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 20), app.debugDescription)
+        app.openChat()
         XCTAssertTrue(app.staticTexts[replies[2]].waitForExistence(timeout: 10), app.debugDescription)
         capture("release-server-relaunch", app)
     }
@@ -167,8 +169,7 @@ final class iPhoneSmokeTests: XCTestCase {
         XCTAssertTrue(app.textViews["Описание сотрудника"].waitForExistence(timeout: 10))
         capture("05-bot-settings", app)
         app.buttons["Готово"].tap()
-        app.buttons["openChats"].tap()
-        app.buttons["OpenStrudel"].tap()
+        app.goHome(); app.openChat()
         let input = app.textFields["Сообщение"]
         XCTAssertTrue(input.waitForExistence(timeout: 10))
         input.tap()
@@ -180,6 +181,7 @@ final class iPhoneSmokeTests: XCTestCase {
         app.terminate()
         app.launch()
         XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 20))
+        app.openChat()
         XCTAssertTrue(app.staticTexts[reply].waitForExistence(timeout: 10))
         capture("07-relaunch", app)
     }

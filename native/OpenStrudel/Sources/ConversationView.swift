@@ -17,8 +17,25 @@ struct ConversationView: View {
     #else
     @Binding var showSettings: Bool
     #endif
+    /// Counts the times the chat was opened to write; the composer takes the keyboard on each.
+    var writes = 0
+    /// The chat was opened from the composer capsule: the keyboard comes up with it.
+    var startsWriting = false
+    /// A sheet of the app is over the chat.
+    var covered = false
     /// Opens the conversations this chat can read.
     let openHistory: () -> Void
+    @State private var startedWriting = false
+    /// The count of `writes` this chat has already answered; nil until it has seen the one it was opened with.
+    @State private var opened: Int?
+    /// The composer was asked to take the keyboard, and has not yet.
+    @State private var wantsKeyboard = false
+    /// The page stands still on screen. On a phone UIKit says when; a Mac window has no transition to wait for.
+    #if os(iOS)
+    @State private var arrived = false
+    #else
+    @State private var arrived = true
+    #endif
     @State private var draft = ""
     @State private var pickedFiles: [PickedFile] = []
     @State private var context: ChatContext?
@@ -34,26 +51,59 @@ struct ConversationView: View {
             #if os(macOS)
             // The transcript runs under the toolbar and the composer; the system draws the scroll edges.
             transcript(proxy)
-                .safeAreaBar(edge: .top, spacing: 0) { topBar }
+                .safeAreaBar(edge: .top, spacing: 0) { VStack(spacing: 0) { topBar }.frame(maxWidth: .infinity).topFade() }
                 .safeAreaBar(edge: .bottom, spacing: 0) { bottomBar(proxy) }
             #else
-            VStack(spacing: 0) {
-                EmployeeMoveStatusButton()
-                if showsConnectionBanner {
-                    connectionBanner.padding(.horizontal, Layout.edge).padding(.vertical, 8)
+            // The transcript runs under the title capsule and the composer, as on the Mac; what must be said about
+            // the connection sits above it.
+            // Animate scrolling, not pending-row replacement: an implicit
+            // layout animation can loop while the iPad keyboard is visible.
+            transcript(proxy)
+                .safeAreaBar(edge: .top, spacing: 0) {
+                    VStack(spacing: 0) {
+                        EmployeeMoveStatusButton()
+                        if showsConnectionBanner {
+                            connectionBanner.padding(.horizontal, Layout.edge).padding(.vertical, 8)
+                        }
+                        if showsRecoveryNotice {
+                            OpenAIRecoveryNotice()
+                                .padding(.horizontal, Layout.edge).padding(.vertical, 8)
+                        }
+                    }
+                    .frame(maxWidth: .infinity).topFade()
                 }
-                if showsRecoveryNotice {
-                    OpenAIRecoveryNotice()
-                        .padding(.horizontal, Layout.edge).padding(.vertical, 8)
-                }
-                // Animate scrolling, not pending-row replacement: an implicit
-                // layout animation can loop while the iPad keyboard is visible.
-                transcript(proxy)
-                    .safeAreaBar(edge: .bottom, spacing: 0) { bottomBar(proxy) }
-            }
+                .safeAreaBar(edge: .bottom, spacing: 0) { bottomBar(proxy) }
             #endif
         }
         .task { draft = library.draft(for: draftKey); pickedFiles = library.fileDrafts[draftKey] ?? []; context = library.draftContext(for: draftKey) }
+        .task {
+            // Once: coming back from a page the chat led to does not raise the keyboard again.
+            guard startsWriting, !startedWriting else { return }
+            startedWriting = true
+            wantsKeyboard = true
+        }
+        // «Спросить про…» from a page over the chat asks for the keyboard as well.
+        .task(id: writes) {
+            guard let answered = opened, writes > answered else { opened = writes; return }
+            opened = writes
+            wantsKeyboard = true
+        }
+        // The keyboard comes up only once the page has really arrived: raised while the chat is still growing out of
+        // a capsule, or still coming back from under another page, it left the composer underneath it.
+        #if os(iOS)
+        .background { Arrival { arrived = true }.frame(width: 0, height: 0).accessibilityHidden(true) }
+        #endif
+        .onChange(of: arrived) { _, _ in raiseKeyboard() }
+        .onChange(of: wantsKeyboard) { _, _ in raiseKeyboard() }
+        // A page over the chat, or the way back home, takes the keyboard down with it.
+        .onDisappear {
+            focused = false
+            #if os(iOS)
+            arrived = false
+            #endif
+        }
+        // A menu hands the keyboard back to the field it took it from, even when its item opened a sheet over the chat.
+        .onChange(of: focused) { _, now in if now && (covered || details != nil) { focused = false } }
         .onChange(of: client.openAIAccount?.connected) { _, connected in
             if connected == false { focused = false }
         }
@@ -83,28 +133,24 @@ struct ConversationView: View {
             context = library.draftContext(for: new)
             focused = false
         }
-        #if os(macOS)
         .navigationTitle(client.activeAgentName)
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                ConversationTitle { openDetails() }
-            }
-            ToolbarItem(placement: .primaryAction) { historyButton }
-        }
+        #if os(macOS)
         .focusedSceneValue(\.showEmployeeDetails, { openDetails() })
         #else
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) { historyButton }
-            ToolbarItem(placement: .principal) {
-                ConversationTitle { focused = false; openDetails() }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { focused = false; showSettings = true } label: { Image(systemName: "gearshape") }
-                    .foregroundStyle(.primary).accessibilityLabel(L("Настройки"))
-            }
-        }
+        .containerBackground(AppTheme.canvas, for: .navigation)
         #endif
+        .toolbar {
+            // Whose chat this is, in a capsule; it opens the assistant's details.
+            ToolbarItem(placement: .principal) {
+                TitleCapsule(appearance: client.activeAppearance, name: client.activeAgentName, offline: client.isOffline(client.activeProfile)) { focused = false; openDetails() }
+                    .accessibilityLabel(L("Настройки сотрудника"))
+                    .accessibilityValue(client.activeAgentName)
+                    .accessibilityIdentifier("openEmployeeDetails")
+                    .help(L("Открыть сотрудника «\(client.activeAgentName)»"))
+            }
+            ToolbarItem(placement: .primaryAction) { more }
+        }
         .sheet(item: $details) { presentation in
             if let profile = presentation.profile {
                 BotDetailsView(profile: profile).environmentObject(client)
@@ -114,17 +160,31 @@ struct ConversationView: View {
         }
     }
 
-    /// Every other conversation of every Home, read from here.
-    private var historyButton: some View {
-        Button { focused = false; openHistory() } label: { Image(systemName: "clock.arrow.circlepath") }
-            .foregroundStyle(.primary)
-            .accessibilityLabel(L("Переписки"))
-            .accessibilityIdentifier("openChats")
-            .help(L("Переписки и ленты (⌘F)"))
+    /// What the chat's bar offers, behind one quiet button: every other conversation of every Home, the assistant's
+    /// details and, on a phone, the settings.
+    private var more: some View {
+        Menu {
+            Button(L("Переписки"), systemImage: "clock.arrow.circlepath") { focused = false; openHistory() }
+                .accessibilityIdentifier("chatHistory")
+            Button(L("Настройки сотрудника"), systemImage: "slider.horizontal.3") { focused = false; openDetails() }
+            #if os(iOS)
+            Button(L("Настройки"), systemImage: "gearshape") { focused = false; showSettings = true }
+                .accessibilityIdentifier("chatSettings")
+            #endif
+        } label: { Image(systemName: "ellipsis") }
+        .menuIndicator(.hidden)
+        .accessibilityLabel(L("Ещё"))
+        .accessibilityIdentifier("chatMore")
     }
 
     private func openDetails() {
         details = EmployeeDetailsPresentation(profile: client.activeProfile)
+    }
+
+    private func raiseKeyboard() {
+        guard wantsKeyboard, arrived, !covered, details == nil else { return }
+        wantsKeyboard = false
+        focused = true
     }
 
     private func transcript(_ proxy: ScrollViewProxy) -> some View {
@@ -150,10 +210,8 @@ struct ConversationView: View {
             }
         }
         .scrollIndicators(.hidden)
-        #if os(macOS)
-        // Under a Mac toolbar the soft style draws nothing visible; the hard one blurs and edges it like Settings.
-        .scrollEdgeEffectStyle(.hard, for: .top)
-        #endif
+        // The paper closes over the transcript at the top (`topFade`); the system adds only its soft edge, never a rule.
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         #if os(iOS)
         // Attachments settle after the initial scroll. Keep the end
@@ -236,6 +294,7 @@ struct ConversationView: View {
         .padding(.horizontal, Layout.edge)
         .padding(.bottom, Layout.belowComposer)
         .frame(maxWidth: .infinity)
+        .dockFade()
         // A growing composer keeps the latest message and its 24 of room above the glass.
         // A size-change scroll anchor would loop the lazy rows (see TranscriptStack).
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _ in
@@ -372,8 +431,8 @@ struct OpenAIRecoveryNotice: View {
             } else if dynamicTypeSize.isAccessibilitySize && provider == nil {
                 action(L("Как восстановить вход"), perform: openAccounts)
             }
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
-            .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
+            .cardTile(radius: 22)
             .wrapsInFull()
             #if os(iOS)
             .sheet(isPresented: $showAccounts) { SettingsView(initialSection: .accounts) }
@@ -439,39 +498,6 @@ private extension View {
     }
 }
 
-/// The employee's character and name. On Mac it is the detail toolbar's navigation item.
-struct ConversationTitle: View {
-    @EnvironmentObject private var client: HomeClient
-    let openEmployee: () -> Void
-    var body: some View {
-        #if os(macOS)
-        Button(action: openEmployee) { identity }
-            .accessibilityLabel(L("Настройки сотрудника"))
-            .accessibilityValue(client.activeAgentName)
-            .accessibilityIdentifier("openEmployeeDetails")
-            .help(L("Открыть сотрудника «\(client.activeAgentName)»"))
-        #else
-        Button(action: openEmployee) {
-            identity.frame(minHeight: controlTarget).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(L("Настройки сотрудника"))
-        .accessibilityValue(client.activeAgentName)
-        .accessibilityIdentifier("openEmployeeDetails")
-        .frame(minHeight: controlTarget).contentShape(Rectangle())
-        #endif
-    }
-
-    private var identity: some View {
-        HStack(spacing: 8) {
-            AgentAvatar(appearance: client.activeAppearance, size: AvatarSize.toolbar)
-                .offlineCharacter(client.isOffline(client.activeProfile))
-            Text(client.activeAgentName).font(.body.weight(.semibold)).lineLimit(1)
-        }
-        .frame(maxWidth: 240)
-    }
-}
-
 /// The conversation's edges: 32 from the detail edges and under the Mac toolbar, the 16 margin on iOS;
 /// the composer 24 above the Mac window edge and 20 above the iOS safe area.
 extension Layout {
@@ -480,8 +506,25 @@ extension Layout {
     static let belowToolbar: CGFloat = 32
     static let belowComposer: CGFloat = 24
     #else
-    static let edge: CGFloat = 16
+    static let edge: CGFloat = 22
     static let belowToolbar: CGFloat = 24
-    static let belowComposer: CGFloat = 20
+    static let belowComposer: CGFloat = 8
     #endif
 }
+
+#if os(iOS)
+/// Tells when a page has really arrived: UIKit's own word that the transition is over. SwiftUI's `onAppear` comes at
+/// its start.
+private struct Arrival: UIViewControllerRepresentable {
+    let arrived: () -> Void
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+    func updateUIViewController(_ controller: Controller, context: Context) { controller.arrived = arrived }
+    final class Controller: UIViewController {
+        var arrived: () -> Void = {}
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            arrived()
+        }
+    }
+}
+#endif

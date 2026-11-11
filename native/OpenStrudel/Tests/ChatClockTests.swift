@@ -144,7 +144,9 @@ struct EmployeeFeedTests {
     }
 
     @Test func theOwnersExplicitTelegramReplyIsTheOwnersNotTheEmployees() {
-        #expect(MessagePages.isOwnerReply(message("explicit", direction: "outbound", author: "OpenStrudel")))
+        #expect(MessagePages.isOwnerReply(message("explicit", direction: "outbound", replyTo: "request", author: "OpenStrudel")))
+        // What the Home posts by itself carries the bot's name and answers nothing: a story, an edition, a sent message.
+        #expect(!MessagePages.isOwnerReply(message("post", direction: "outbound", author: "Desk Bot")))
         #expect(!MessagePages.isOwnerReply(message("employee", direction: "outbound")))
         #expect(!MessagePages.isOwnerReply(message("archive", direction: "outbound", author: "Editor", imported: true)))
         #expect(!MessagePages.isOwnerReply(message("person", author: "Anna")))

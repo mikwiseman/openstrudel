@@ -250,7 +250,7 @@ final class DeviceLibrary: ObservableObject {
         hiddenEmployees[visibilityKey(client)]?.contains(profile.id) == true
     }
     func visibleProfiles(on client: HomeClient) -> [EmployeeProfile] { client.profiles.filter { !isHidden($0, on: client) } }
-    /// Employees with News stories, on every device: the sidebar's feeds on the Mac, the first rows of Insights on the iPhone.
+    /// Employees with News stories, on every device: the desks whose counts are kept current, and the feeds of the readers list.
     var newsFeeds: [(source: HomeClient, route: ReaderRoute)] {
         visibleClients.flatMap { source in
             visibleProfiles(on: source).filter { $0.news == true }.map { (source, ReaderRoute(connectionID: source.id, kind: .news($0.id), title: $0.name)) }
@@ -275,9 +275,13 @@ final class DeviceLibrary: ObservableObject {
         await withTaskGroup(of: Void.self) { group in
             for client in visibleClients where client.shouldRestoreConnection && !client.isPairing {
                 group.addTask {
+                    // One conditional request per Home tells the team list who is working, so «Работает…» comes and goes
+                    // within a few seconds; an unchanged catalogue costs a 304. Who is online is asked as often as before.
+                    var checks = 0
                     while !Task.isCancelled {
-                        await client.refreshCatalogue()
-                        do { try await Task.sleep(for: .seconds(await client.homeUnreachable ? 15 : 5)) } catch { break }
+                        await client.refreshCatalogue(refreshPresence: checks % 3 == 0)
+                        checks += 1
+                        do { try await Task.sleep(for: .seconds(await client.homeUnreachable ? 15 : 2)) } catch { break }
                     }
                 }
                 group.addTask {

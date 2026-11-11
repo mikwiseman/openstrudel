@@ -170,6 +170,9 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.menu).labelsHidden()
                     .accessibilityIdentifier("settingsSection")
+                    // How the Homes were used: also behind the limit's tile on the home, when a limit is known.
+                    NavigationLink { StatisticsScreen() } label: { Text(L("Статистика")) }
+                        .accessibilityIdentifier("openStatistics")
                 }
                 pane(section)
             }

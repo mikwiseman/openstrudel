@@ -18,12 +18,14 @@ final class StatisticsUITests: XCTestCase {
             try await pair(app, control: home[1], name: home[0])
             let consent = app.buttons["acceptAIDataSharing"]
             if consent.waitForExistence(timeout: 5) { consent.tap() }
-            XCTAssertTrue(app.textFields["Сообщение"].waitForExistence(timeout: 30), app.debugDescription)
+            XCTAssertTrue(app.buttons["homeComposer"].waitForExistence(timeout: 30), app.debugDescription)
         }
 
-        // 1. Its own place: today's requests of all Homes, the bars of the last days, and each Home's share.
-        let tab = app.tabBars.buttons["Статистика"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 10), app.debugDescription); tab.tap()
+        // 1. Its own page, opened from the settings: today's requests of all Homes, the bars of the last days, and
+        // each Home's share.
+        app.buttons["openSettings"].tap()
+        let entry = app.buttons["openStatistics"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 10), app.debugDescription); entry.tap()
         let requests = app.staticTexts["statisticsRequests"]
         XCTAssertTrue(requests.waitForExistence(timeout: 30), app.debugDescription)
         XCTAssertFalse(app.textFields["Сообщение"].exists, "Statistics is a reader, not a second composer")
@@ -57,7 +59,6 @@ final class StatisticsUITests: XCTestCase {
         capture("statistics-week-home-rows", app)
 
         // 5. Settings open on every device's default model, side by side.
-        // Scrolling minimised the tab bar; a relaunch opens on the chat with a full one.
         app.terminate(); app.launch()
         let gear = app.buttons["Настройки"].firstMatch
         XCTAssertTrue(gear.waitForExistence(timeout: 30), app.debugDescription); gear.tap()

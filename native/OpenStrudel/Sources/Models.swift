@@ -113,6 +113,8 @@ struct NewsStory: Codable, Hashable {
     let eventAt: String?
     let change: String?
     let sources: [Source]
+    /// A picture that proves the story, as an https address; older Homes send none.
+    var image: String? = nil
 }
 
 /// What the Home knows about the feed's scheduled runs. Older Homes send none, and every field may be missing.
@@ -142,7 +144,9 @@ struct NewsStatus: Decodable, Equatable {
     private enum Keys: String, CodingKey { case running, checkedAt, failedAt, failure, nextRunAt }
 }
 
-struct NewsFeedEnvelope: Decodable { let messages: [HomeMessage]; let stamp: String?; var status: NewsStatus? = nil }
+/// The edition the desk named itself, when it gave it a title.
+struct NewsEditionTitle: Decodable, Equatable { let date: String; let title: String }
+struct NewsFeedEnvelope: Decodable { let messages: [HomeMessage]; let stamp: String?; var status: NewsStatus? = nil; var edition: NewsEditionTitle? = nil }
 
 struct TelegramStatus: Codable {
     let configured: Bool
@@ -223,6 +227,9 @@ struct ScheduleRun: Decodable, Identifiable {
     let id: String
     let status: String
     let error: String?
+    var scheduleId: String? = nil
+    /// The moment the run was due.
+    var scheduledFor: String? = nil
 }
 struct SchedulesEnvelope: Decodable { let schedules: [ChatSchedule]; let runs: [ScheduleRun] }
 struct ScheduleResponse: Decodable { let schedule: ChatSchedule }
@@ -435,6 +442,17 @@ struct EmployeeProfile: Codable, Identifiable, Hashable {
     let tokenLimit: Int?
     let createdAt: String
     var preview: String? = nil
+    /// When the answer the preview is taken from was written. This and the three below come from Homes that list
+    /// their team's work; an older Home sends none of them.
+    var previewAt: String? = nil
+    /// A request in one of its chats is waiting or running now.
+    var working: Bool? = nil
+    /// The earliest next run of its recurring schedules.
+    var nextRunAt: String? = nil
+    /// The latest finished run of one of its schedules failed.
+    var failing: Bool? = nil
+    /// The first picture attached to the answer the preview is taken from.
+    var previewImage: ChatAttachment? = nil
     var domain: String? = nil
     var purpose: String? = nil
     var deviceId: String? = nil
@@ -445,11 +463,7 @@ struct EmployeeProfile: Codable, Identifiable, Hashable {
     var isWork: Bool { domain == "work" }
     var roleText: String { purpose?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
 
-    var previewText: String {
-        guard let firstLine = preview?.split(separator: "\n").first else { return "" }
-        let plain = (try? AttributedString(markdown: String(firstLine))) ?? AttributedString(String(firstLine))
-        return String(plain.characters)
-    }
+    var previewText: String { Team.line(preview) }
 }
 
 struct ProfilesEnvelope: Decodable {
@@ -833,6 +847,38 @@ struct ChatInteraction: Decodable, Identifiable, Equatable {
     let questions: [ChatQuestion]
     var sourceTitle: String? = nil
 }
+/// What a card says under its title, split for reading: the sentence, then the arguments the Home appended as JSON.
+/// A flat object reads as rows of name and value, in the order the Home wrote them; a nested one stays as it came.
+struct InteractionDetail: Equatable {
+    struct Row: Equatable, Identifiable { let key: String; let value: String; var id: String { key } }
+    let text: String
+    var rows: [Row] = []
+    var raw: String? = nil
+
+    init(_ detail: String) {
+        let start = detail.hasPrefix("{") ? detail.startIndex : detail.range(of: "\n\n{").map { detail.index($0.lowerBound, offsetBy: 2) }
+        guard let start, detail.hasSuffix("}"), let object = try? JSONSerialization.jsonObject(with: Data(detail[start...].utf8)) as? [String: Any], !object.isEmpty else {
+            text = detail; return
+        }
+        let json = String(detail[start...])
+        text = detail[..<start].trimmingCharacters(in: .whitespacesAndNewlines)
+        let values = object.compactMapValues(Self.plain)
+        guard values.count == object.count else { raw = json; return }
+        let place = { (key: String) in json.range(of: "\"" + key + "\":")?.lowerBound ?? json.endIndex }
+        rows = values.keys.sorted { place($0) < place($1) }.map { Row(key: $0, value: values[$0] ?? "") }
+    }
+
+    /// A value a row can show: words, a number, yes or no. An object or a list is not one.
+    private static func plain(_ value: Any) -> String? {
+        switch value {
+        case let text as String: text
+        case let number as NSNumber: CFGetTypeID(number) == CFBooleanGetTypeID() ? (number.boolValue ? "true" : "false") : number.stringValue
+        case is NSNull: "—"
+        default: nil
+        }
+    }
+}
+
 struct ChatQuestion: Decodable, Identifiable, Equatable {
     let id: String
     let question: String
