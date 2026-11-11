@@ -30,6 +30,7 @@ import { resolveScopedAuthorization, assertScopedAuthorization, type ScopedAutho
 import type { RestrictedExecutor } from "./restricted-executor.js";
 import { Projects, type ProjectRun } from "./projects.js";
 import { ServerShell } from "./server-shell.js";
+import { homeRulesPrompt } from "./home-management.js";
 import { ensureUsageTable, recordTurnUsage, type TurnRoute, type UsageReport } from "./usage.js";
 
 type QueuedMessage = { id: string; channel: string; run: () => Promise<MessageResult>; resolve: (result: MessageResult) => void; reject: (error: unknown) => void };
@@ -291,7 +292,7 @@ export class MessageService {
             telegramActor: input.channel === "telegram" && input.telegramSenderId && input.externalChatId && input.externalId
               ? {userId:input.telegramSenderId,chatId:input.externalChatId,messageId:input.externalId} : undefined,
             images: files.filter(f=>["image/png","image/jpeg","image/webp","image/gif"].includes(f.mimeType)).map(f=>f.path),
-            profile: [currentProfile ? `${currentProfile.name}\n${currentProfile.instructions}` : this.store.getSetting("main.soul"),
+            profile: [currentProfile ? `${currentProfile.name}\n${currentProfile.instructions}` : this.store.getSetting("main.soul"), homeRulesPrompt(this.store),
               currentProfile && !currentProfile.instructions.trim() && !groupContext && !input.scheduled
                 ? "This employee has already been created on the selected device. You are in its own setup conversation. When the user describes the desired name and ongoing role, including a request to create that employee, configure yourself with update_employee. Do not create a second employee or claim that creation is unavailable. A greeting or a one-off task alone does not define an ongoing role."
                 : undefined,
