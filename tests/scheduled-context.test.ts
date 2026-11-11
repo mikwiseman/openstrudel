@@ -61,15 +61,41 @@ it("brings the delivery group's current feedback into every scheduled run, with 
   expect(run.mock.calls[1]![0]).toContain("Please use the corrected name Elli.");
 });
 
-it("does not read another employee's group or retain the grant after reassignment",async()=>{
+it("does not read another employee's group or retain the grant after reassignment, and still prepares the report",async()=>{
   const {store,group,service,run,request}=setup();
+  store.addMessage({conversationId:group.conversationId!,channel:"telegram",direction:"inbound",author:"Alisa",text:"GROUP_ONLY_TALK"});
   await service.handle(request);
+  expect(run.mock.calls[0]![0]).toContain("GROUP_ONLY_TALK");
   const other=store.createProfile({name:"Other"});
   store.bindTelegramChat("-100",other.id);
   const tools=run.mock.calls[0]![1].tools;
-  await expect(tools.call("read_chat_history",{before:null})).rejects.toThrow();
-  await expect(service.handle(request)).rejects.toThrow();
+  expect(JSON.stringify(await tools.call("read_chat_history",{before:null}))).not.toContain("GROUP_ONLY_TALK");
+  await service.handle(request);
+  expect(run).toHaveBeenCalledTimes(2);
+  expect(run.mock.calls[1]![0]).not.toContain("GROUP_ONLY_TALK");
+  expect(run.mock.calls[1]![0]).not.toContain("Delivery group history");
+});
+
+it("reports to a shared group that belongs to the main assistant from the employee's own thread",async()=>{
+  const {store,employee,service,run}=setup();
+  const shared=store.linkTelegramChat({chatId:"-200",title:"Team",allowedSenders:["7"]});
+  const team=store.getOrCreateConversation({channel:"telegram",externalId:"-200",title:"Team"});
+  store.addMessage({conversationId:team.id,channel:"telegram",direction:"inbound",author:"Boris",text:"TEAM_ONLY_TALK"});
+  const own=store.profileConversation(employee.id);
+  store.addMessage({conversationId:own.id,channel:"telegram",direction:"inbound",author:"Boris",text:"Shorter next time, please."});
+  await service.handle({channel:"api",profile:employee.id,text:"Prepare the team report",scheduled:true,scheduleTelegramChatId:shared.chatId});
   expect(run).toHaveBeenCalledTimes(1);
+  expect(run.mock.calls[0]![0]).not.toContain("TEAM_ONLY_TALK");
+  const history=JSON.stringify(await run.mock.calls[0]![1].tools.call("read_chat_history",{before:null}));
+  expect(history).toContain("Shorter next time, please.");
+  expect(history).not.toContain("TEAM_ONLY_TALK");
+});
+
+it("refuses a report to a group the owner paused",async()=>{
+  const {store,service,run,request}=setup();
+  store.setSetting("telegram.paused.-100","true");
+  await expect(service.handle(request)).rejects.toThrow("Чат доставки изменился");
+  expect(run).not.toHaveBeenCalled();
 });
 
 it("gives a scheduled Grok run in its new session the group's comments, while its own posts stay with read_news",async()=>{

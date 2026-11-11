@@ -22,18 +22,28 @@ export function workingMemory(workspace:string):string {
   }catch(error){if((error as NodeJS.ErrnoException).code==="ENOENT")return "";throw error;}
 }
 
-/** A report reads feedback from its actual audience, not an employee's separate private thread. */
-export function historyConversation(store:Store,context:Pick<TelegramToolContext,"conversationId"|"scheduled"|"scheduleTelegramChatId"|"scope">):string {
+/**
+ * The delivery group's own conversation, when a scheduled report may read it: the group belongs to the reporting employee.
+ * Null for a private or app delivery, and for a group that belongs to another employee or to the main assistant: the report
+ * still goes there, its talk stays with its owner, and replies to the report come back to the reporter's own thread.
+ */
+export function audienceConversation(store:Store,context:Pick<TelegramToolContext,"conversationId"|"scheduled"|"scheduleTelegramChatId"|"scope">):string|null {
   const chatId=context.scheduled ? context.scheduleTelegramChatId : null;
-  if(!chatId || Number(chatId)>=0)return context.conversationId;
+  if(!chatId || Number(chatId)>=0)return null;
   const current=store.getConversation(context.conversationId),chat=store.getTelegramChat(chatId);
-  const group=chat?.conversationId ? store.getConversation(chat.conversationId)
-    : current?.channel==="telegram" && current.externalId?.split("::")[0]===chatId ? current : null;
-  const scope="group-"+createHash("sha256").update(store.getSetting("telegram.group_origin."+chatId) ?? chatId).digest("hex");
-  if(!current || !group || chat?.enabled===false || chat?.profileId!==current.profileId || group.profileId!==current.profileId
-    || isProtectedTelegramAudience(store,chatId) || context.scope?.startsWith("group-") && context.scope!==scope)
+  if(!current || !chat || chat.enabled===false || isProtectedTelegramAudience(store,chatId))
     throw new Error("Чат доставки изменился. Проверьте подключение расписания.");
-  return group.id;
+  const group=chat.conversationId ? store.getConversation(chat.conversationId)
+    : current.channel==="telegram" && current.externalId?.split("::")[0]===chatId ? current : null;
+  const scope="group-"+createHash("sha256").update(store.getSetting("telegram.group_origin."+chatId) ?? chatId).digest("hex");
+  const own=group && chat.profileId===current.profileId && group.profileId===current.profileId
+    && !(context.scope?.startsWith("group-") && context.scope!==scope);
+  return own ? group.id : null;
+}
+
+/** A report reads feedback from its actual audience when that audience is its own, otherwise from its own thread. */
+export function historyConversation(store:Store,context:Pick<TelegramToolContext,"conversationId"|"scheduled"|"scheduleTelegramChatId"|"scope">):string {
+  return audienceConversation(store,context) ?? context.conversationId;
 }
 
 /** Owner-only source map. Codex does retrieval; no second memory engine or copied document store. */
