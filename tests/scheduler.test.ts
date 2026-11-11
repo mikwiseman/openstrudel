@@ -111,6 +111,32 @@ describe("durable one-time reminders", () => {
     expect(scheduler.runs(own.id)[0]?.status).toBe("completed");
   });
 
+  it("lets the group that received another employee's report answer a plain message about it", async () => {
+    const store = new Store(":memory:"); stores.push(store);
+    const inputs: string[] = [];
+    const messages = new MessageService(store, { async run(input) {
+      inputs.push(input);
+      return { threadId: "t", response: /Scheduled request/.test(input) ? "Три конференции на неделе. Решите про вторую: да или нет?" : "Да, про вторую.", events: [] };
+    } });
+    const scheduler = new Scheduler(store, messages);
+    const writer = store.createProfile({ name: "Writer" }), own = store.profileConversation(writer.id);
+    store.linkTelegramChat({ chatId: "-300", title: "Team", allowedSenders: ["7"] });
+    const team = store.getConversation(store.bindTelegramChat("-300", store.createProfile({ name: "Host" }).id).conversationId!)!;
+    store.addMessage({ conversationId: team.id, channel: "telegram", direction: "inbound", author: "Boris", text: "TEAM_ONLY_TALK" });
+    const delivered: string[] = []; scheduler.deliver = async (_chat, text) => { delivered.push(text); };
+    scheduler.save({ ...request, conversationId: own.id, delivery: "telegram", telegramChatId: "-300" }, now);
+    await scheduler.tick(new Date("2030-01-15T06:01:04Z")); await scheduler.idle();
+    expect(delivered).toEqual(["**Writer**\n\nТри конференции на неделе. Решите про вторую: да или нет?"]);
+    // The group's own conversation now holds the post as it appeared there, from its author.
+    expect(store.listMessages(team.id).map(m => [m.direction, m.author, m.text])).toEqual([
+      ["inbound", "Boris", "TEAM_ONLY_TALK"], ["outbound", "Writer", delivered[0]]]);
+    // A plain message in the group, not a reply, reaches the group's assistant with the post in view.
+    await messages.handle({ channel: "telegram", externalChatId: "-300", telegramSenderId: "7", title: "Team", text: "А что со второй?" });
+    expect(inputs.at(-1)).toContain("Три конференции на неделе");
+    // The reporter still never read the group's talk.
+    expect(inputs[0]).not.toContain("TEAM_ONLY_TALK");
+  });
+
   it("disarms a claimed reminder on crash recovery without executing it again", async () => {
     const { store, scheduler, calls } = setup(), c = store.primaryConversation();
     const saved = scheduler.save({ ...request, conversationId: c.id }, now);
