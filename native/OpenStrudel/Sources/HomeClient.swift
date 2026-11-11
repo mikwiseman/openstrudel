@@ -1240,6 +1240,12 @@ final class HomeClient: ObservableObject, Identifiable {
 
     /// A reader's page or feed, through this connection, leaving the chat's selection and history alone.
     func read<T: Decodable>(_ path: String) async throws -> T { try await request(path) }
+    /// The same answer as the Home sent it, for a reader that keeps a copy to open with.
+    func readData(_ path: String) async throws -> Data { try await requestData(path) }
+    /// A change a reader's page asks its Home for: a post draft, its text, its removal.
+    func send<T: Decodable>(_ path: String, method: String = "POST", json: [String: Any] = [:]) async throws -> T {
+        try await request(path, method: method, body: method == "DELETE" ? nil : JSONSerialization.data(withJSONObject: json))
+    }
 
     /// Preserve HTTP capability/access refusals so an older Home never looks like an empty activity feed.
     func readActivity() async throws -> HomeActivity {

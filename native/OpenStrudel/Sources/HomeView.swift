@@ -24,22 +24,23 @@ struct HomeView: View {
 
     private var margin: CGFloat { split ? HomeMetrics.sidebarMargin : HomeMetrics.margin }
 
-    private var tiles: [ShelfTile] {
-        // The desks in the team's own order, so a tile and its row never disagree about who comes first.
-        let desks = library.team.filter(\.member.isDesk).map { desk -> Shelf.Desk in
-            let feed = newsroom.feed(desk.member.route, on: desk.source)
-            let page = feed.latest.page(read: feed.read)
-            return Shelf.Desk(route: desk.member.route, name: desk.member.profile.name, appearance: desk.member.profile.resolvedAppearance,
-                              story: (page.edition.first ?? page.fresh.first?.item ?? page.radar.first?.item)?.story,
-                              host: URL(string: desk.source.normalizedBaseURL)?.host, unseen: feed.unseen)
+    /// Each News desk's paper, in the team's own order: the way into the news, whichever Home the desk lives on.
+    private var papers: [NewsPaperShelf.Paper] {
+        library.team.filter(\.member.isDesk).map { desk in
+            NewsPaperShelf.Paper(route: desk.member.route, name: desk.member.profile.name, appearance: desk.member.profile.resolvedAppearance,
+                                 feed: newsroom.feed(desk.member.route, on: desk.source), host: URL(string: desk.source.normalizedBaseURL)?.host)
         }
+    }
+
+    private var tiles: [ShelfTile] {
+        // The desks stand above the shelf as papers of their own.
         let team = library.team.map { (route: $0.member.route, profile: $0.member.profile) }
-        return Shelf.tiles(desks: desks, activity: activity.scope == scope ? activity.activity : nil, next: Shelf.next(team),
+        return Shelf.tiles(desks: [], activity: activity.scope == scope ? activity.activity : nil, next: Shelf.next(team),
                            accounts: limits.scope == scope ? limits.accounts : [], results: Shelf.results(team))
     }
 
     var body: some View {
-        let tiles = tiles
+        let tiles = tiles, papers = papers
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 header
@@ -47,10 +48,13 @@ struct HomeView: View {
                 if !split, client.openAIAccount?.connected == false, !client.homeUnreachable, client.health != nil {
                     OpenAIRecoveryNotice().padding(.horizontal, margin).padding(.bottom, 16)
                 }
+                if !papers.isEmpty {
+                    NewsPaperShelf(papers: papers, margin: margin, zoom: zoom) { open(.reader($0), AnyHashable("tile:desk:" + $0.id)) }
+                }
                 if !tiles.isEmpty {
                     HomeShelf(tiles: tiles, margin: margin, source: { AnyHashable("tile:" + $0.id) }, zoom: zoom) { open($0.place, AnyHashable("tile:" + $0.id)) }
                 }
-                team.padding(.top, tiles.isEmpty ? 8 : 0)
+                team.padding(.top, tiles.isEmpty && papers.isEmpty ? 8 : 0)
             }
             .padding(.bottom, 16)
         }

@@ -12374,5 +12374,397 @@
     "es": "de 7",
     "he": "מתוך 7",
     "ru": "из 7"
+  },
+  "Найти в новостях": {
+    "en": "Search the news",
+    "fr": "Rechercher dans les actualités",
+    "es": "Buscar en las noticias",
+    "he": "חיפוש בחדשות",
+    "ru": "Найти в новостях"
+  },
+  "Посты": {
+    "en": "Posts",
+    "fr": "Posts",
+    "es": "Publicaciones",
+    "he": "פוסטים",
+    "ru": "Посты"
+  },
+  "Посты · {0}": {
+    "en": "Posts · {0}",
+    "fr": "Posts · {0}",
+    "es": "Publicaciones · {0}",
+    "he": "פוסטים · {0}",
+    "ru": "Посты · {0}"
+  },
+  "Главное": {
+    "en": "Top stories",
+    "fr": "À la une",
+    "es": "Lo principal",
+    "he": "העיקר",
+    "ru": "Главное"
+  },
+  "Разбор": {
+    "en": "Analysis",
+    "fr": "Analyse",
+    "es": "Análisis",
+    "he": "ניתוח",
+    "ru": "Разбор"
+  },
+  "Выпуски": {
+    "en": "Issues",
+    "fr": "Éditions",
+    "es": "Ediciones",
+    "he": "גיליונות",
+    "ru": "Выпуски"
+  },
+  "Спросить": {
+    "en": "Ask",
+    "fr": "Demander",
+    "es": "Preguntar",
+    "he": "לשאול",
+    "ru": "Спросить"
+  },
+  "Сделать пост": {
+    "en": "Make a post",
+    "fr": "Faire un post",
+    "es": "Crear publicación",
+    "he": "ליצור פוסט",
+    "ru": "Сделать пост"
+  },
+  "Раньше по теме": {
+    "en": "Earlier on this",
+    "fr": "Précédemment sur le sujet",
+    "es": "Antes sobre el tema",
+    "he": "קודם בנושא",
+    "ru": "Раньше по теме"
+  },
+  "{0} событие": {
+    "en": "{0} event",
+    "fr": "{0} événement",
+    "es": "{0} evento",
+    "he": "אירוע {0}",
+    "ru": "{0} событие"
+  },
+  "{0} события": {
+    "en": "{0} events",
+    "fr": "{0} événements",
+    "es": "{0} eventos",
+    "he": "{0} אירועים",
+    "ru": "{0} события"
+  },
+  "{0} событий": {
+    "en": "{0} events",
+    "fr": "{0} événements",
+    "es": "{0} eventos",
+    "he": "{0} אירועים",
+    "ru": "{0} событий"
+  },
+  "Семь дней по {0}": {
+    "en": "Seven days to {0}",
+    "fr": "Sept jours jusqu’au {0}",
+    "es": "Siete días hasta el {0}",
+    "he": "שבעה ימים עד {0}",
+    "ru": "Семь дней по {0}"
+  },
+  "Что движется": {
+    "en": "What is moving",
+    "fr": "Ce qui bouge",
+    "es": "Qué se mueve",
+    "he": "מה זז",
+    "ru": "Что движется"
+  },
+  "Компании и люди": {
+    "en": "Companies and people",
+    "fr": "Entreprises et personnes",
+    "es": "Empresas y personas",
+    "he": "חברות ואנשים",
+    "ru": "Компании и люди"
+  },
+  "Истории с продолжением": {
+    "en": "Stories that kept developing",
+    "fr": "Histoires qui ont évolué",
+    "es": "Historias que siguieron",
+    "he": "סיפורים שהמשיכו להתפתח",
+    "ru": "Истории с продолжением"
+  },
+  "Истории": {
+    "en": "Stories",
+    "fr": "Articles",
+    "es": "Noticias",
+    "he": "כתבות",
+    "ru": "Истории"
+  },
+  "неделей раньше: {0}": {
+    "en": "the week before: {0}",
+    "fr": "la semaine d’avant : {0}",
+    "es": "la semana anterior: {0}",
+    "he": "בשבוע הקודם: {0}",
+    "ru": "неделей раньше: {0}"
+  },
+  "срочных: {0}": {
+    "en": "must-know: {0}",
+    "fr": "urgents : {0}",
+    "es": "urgentes: {0}",
+    "he": "דחופות: {0}",
+    "ru": "срочных: {0}"
+  },
+  "на экране было: {0}": {
+    "en": "on screen: {0}",
+    "fr": "à l’écran : {0}",
+    "es": "en pantalla: {0}",
+    "he": "על המסך: {0}",
+    "ru": "на экране было: {0}"
+  },
+  "взято в работу: {0}": {
+    "en": "put to use: {0}",
+    "fr": "utilisés : {0}",
+    "es": "usadas: {0}",
+    "he": "נלקחו לשימוש: {0}",
+    "ru": "взято в работу: {0}"
+  },
+  "черновики": {
+    "en": "drafts",
+    "fr": "brouillons",
+    "es": "borradores",
+    "he": "טיוטות",
+    "ru": "черновики"
+  },
+  "Дней подряд": {
+    "en": "Days in a row",
+    "fr": "Jours d’affilée",
+    "es": "Días seguidos",
+    "he": "ימים ברצף",
+    "ru": "Дней подряд"
+  },
+  "с газетой": {
+    "en": "with the paper",
+    "fr": "avec le journal",
+    "es": "con el periódico",
+    "he": "עם העיתון",
+    "ru": "с газетой"
+  },
+  "за две недели": {
+    "en": "in two weeks",
+    "fr": "en deux semaines",
+    "es": "en dos semanas",
+    "he": "בשבועיים",
+    "ru": "за две недели"
+  },
+  "Компания, модель, слово": {
+    "en": "A company, a model, a word",
+    "fr": "Une entreprise, un modèle, un mot",
+    "es": "Una empresa, un modelo, una palabra",
+    "he": "חברה, מודל, מילה",
+    "ru": "Компания, модель, слово"
+  },
+  "Стереть": {
+    "en": "Clear",
+    "fr": "Effacer",
+    "es": "Borrar",
+    "he": "ניקוי",
+    "ru": "Стереть"
+  },
+  "Ищет в историях за последние две недели: в заголовках, текстах и источниках.": {
+    "en": "Searches the stories of the last two weeks: headlines, text and sources.",
+    "fr": "Recherche dans les articles des deux dernières semaines : titres, textes et sources.",
+    "es": "Busca en las noticias de las dos últimas semanas: titulares, textos y fuentes.",
+    "he": "מחפש בכתבות של השבועיים האחרונים: בכותרות, בטקסטים ובמקורות.",
+    "ru": "Ищет в историях за последние две недели: в заголовках, текстах и источниках."
+  },
+  "Ничего не нашлось.": {
+    "en": "Nothing found.",
+    "fr": "Rien trouvé.",
+    "es": "No se encontró nada.",
+    "he": "לא נמצא דבר.",
+    "ru": "Ничего не нашлось."
+  },
+  "Для чего пост": {
+    "en": "What the post is for",
+    "fr": "À quoi sert le post",
+    "es": "Para qué es la publicación",
+    "he": "למה הפוסט מיועד",
+    "ru": "Для чего пост"
+  },
+  "Пост": {
+    "en": "Post",
+    "fr": "Post",
+    "es": "Publicación",
+    "he": "פוסט",
+    "ru": "Пост"
+  },
+  "Пост не получился": {
+    "en": "The post did not work out",
+    "fr": "Le post n’a pas abouti",
+    "es": "La publicación no salió",
+    "he": "הפוסט לא הצליח",
+    "ru": "Пост не получился"
+  },
+  "Из историй": {
+    "en": "From the stories",
+    "fr": "À partir des articles",
+    "es": "A partir de las noticias",
+    "he": "מתוך הכתבות",
+    "ru": "Из историй"
+  },
+  "Добавить историю": {
+    "en": "Add a story",
+    "fr": "Ajouter un article",
+    "es": "Añadir noticia",
+    "he": "להוסיף כתבה",
+    "ru": "Добавить историю"
+  },
+  "Пост не получился. Попросите ещё раз.": {
+    "en": "The post did not work out. Ask again.",
+    "fr": "Le post n’a pas abouti. Redemandez.",
+    "es": "La publicación no salió. Pídela de nuevo.",
+    "he": "הפוסט לא הצליח. בקשו שוב.",
+    "ru": "Пост не получился. Попросите ещё раз."
+  },
+  "Попросить ещё раз": {
+    "en": "Ask again",
+    "fr": "Redemander",
+    "es": "Pedir de nuevo",
+    "he": "לבקש שוב",
+    "ru": "Попросить ещё раз"
+  },
+  "Переписать из выбранных историй": {
+    "en": "Rewrite from the chosen stories",
+    "fr": "Réécrire à partir des articles choisis",
+    "es": "Reescribir con las noticias elegidas",
+    "he": "לכתוב מחדש מהכתבות שנבחרו",
+    "ru": "Переписать из выбранных историй"
+  },
+  "Чтобы писать посты, обновите OpenStrudel на устройстве «{0}».": {
+    "en": "To write posts, update OpenStrudel on “{0}”.",
+    "fr": "Pour écrire des posts, mettez à jour OpenStrudel sur « {0} ».",
+    "es": "Para escribir publicaciones, actualiza OpenStrudel en «{0}».",
+    "he": "כדי לכתוב פוסטים, עדכנו את OpenStrudel במכשיר ”{0}“.",
+    "ru": "Чтобы писать посты, обновите OpenStrudel на устройстве «{0}»."
+  },
+  "{0} перепишет этот пост для LinkedIn: тот же смысл, другой формат.": {
+    "en": "{0} will rewrite this post for LinkedIn: the same point, another format.",
+    "fr": "{0} réécrira ce post pour LinkedIn : le même propos, un autre format.",
+    "es": "{0} reescribirá esta publicación para LinkedIn: la misma idea, otro formato.",
+    "he": "{0} יכתוב את הפוסט הזה מחדש ל-LinkedIn: אותו רעיון, פורמט אחר.",
+    "ru": "{0} перепишет этот пост для LinkedIn: тот же смысл, другой формат."
+  },
+  "Сделать версию для LinkedIn": {
+    "en": "Make a LinkedIn version",
+    "fr": "Faire une version LinkedIn",
+    "es": "Crear versión para LinkedIn",
+    "he": "ליצור גרסה ל-LinkedIn",
+    "ru": "Сделать версию для LinkedIn"
+  },
+  "Написать пост": {
+    "en": "Write the post",
+    "fr": "Écrire le post",
+    "es": "Escribir la publicación",
+    "he": "לכתוב את הפוסט",
+    "ru": "Написать пост"
+  },
+  "{0} пишет пост…": {
+    "en": "{0} is writing the post…",
+    "fr": "{0} écrit le post…",
+    "es": "{0} está escribiendo la publicación…",
+    "he": "{0} כותב את הפוסט…",
+    "ru": "{0} пишет пост…"
+  },
+  "Обычно это около минуты. Окно можно закрыть: черновик останется в «Постах».": {
+    "en": "This usually takes about a minute. You can close this: the draft stays in Posts.",
+    "fr": "Cela prend environ une minute. Vous pouvez fermer : le brouillon reste dans Posts.",
+    "es": "Suele tardar un minuto. Puedes cerrar: el borrador queda en Publicaciones.",
+    "he": "זה לוקח בדרך כלל כדקה. אפשר לסגור: הטיוטה תישאר ב”פוסטים“.",
+    "ru": "Обычно это около минуты. Окно можно закрыть: черновик останется в «Постах»."
+  },
+  "Что изменить? Например: короче и без цифр": {
+    "en": "What to change? For example: shorter, without figures",
+    "fr": "Que changer ? Par exemple : plus court, sans chiffres",
+    "es": "¿Qué cambiar? Por ejemplo: más corto y sin cifras",
+    "he": "מה לשנות? למשל: קצר יותר ובלי מספרים",
+    "ru": "Что изменить? Например: короче и без цифр"
+  },
+  "Переписать": {
+    "en": "Rewrite",
+    "fr": "Réécrire",
+    "es": "Reescribir",
+    "he": "לכתוב מחדש",
+    "ru": "Переписать"
+  },
+  "Скопировано": {
+    "en": "Copied",
+    "fr": "Copié",
+    "es": "Copiado",
+    "he": "הועתק",
+    "ru": "Скопировано"
+  },
+  "Поделиться": {
+    "en": "Share",
+    "fr": "Partager",
+    "es": "Compartir",
+    "he": "שיתוף",
+    "ru": "Поделиться"
+  },
+  "Ещё вариант": {
+    "en": "Another take",
+    "fr": "Une autre version",
+    "es": "Otra versión",
+    "he": "גרסה נוספת",
+    "ru": "Ещё вариант"
+  },
+  "Истории для поста": {
+    "en": "Stories for the post",
+    "fr": "Articles pour le post",
+    "es": "Noticias para la publicación",
+    "he": "כתבות לפוסט",
+    "ru": "Истории для поста"
+  },
+  "пишется…": {
+    "en": "being written…",
+    "fr": "en cours d’écriture…",
+    "es": "escribiéndose…",
+    "he": "בכתיבה…",
+    "ru": "пишется…"
+  },
+  "не получился": {
+    "en": "did not work out",
+    "fr": "n’a pas abouti",
+    "es": "no salió",
+    "he": "לא הצליח",
+    "ru": "не получился"
+  },
+  "взят в работу": {
+    "en": "put to use",
+    "fr": "utilisé",
+    "es": "usada",
+    "he": "נלקח לשימוש",
+    "ru": "взят в работу"
+  },
+  "Черновики для вашего канала. Публикуете вы сами.": {
+    "en": "Drafts for your channel. You publish them yourself.",
+    "fr": "Brouillons pour votre canal. Vous publiez vous-même.",
+    "es": "Borradores para tu canal. Publicas tú.",
+    "he": "טיוטות לערוץ שלכם. אתם מפרסמים בעצמכם.",
+    "ru": "Черновики для вашего канала. Публикуете вы сами."
+  },
+  "Постов пока нет": {
+    "en": "No posts yet",
+    "fr": "Pas encore de posts",
+    "es": "Aún no hay publicaciones",
+    "he": "אין עדיין פוסטים",
+    "ru": "Постов пока нет"
+  },
+  "Откройте историю и нажмите «Сделать пост».": {
+    "en": "Open a story and press Make a post.",
+    "fr": "Ouvrez un article et appuyez sur Faire un post.",
+    "es": "Abre una noticia y pulsa Crear publicación.",
+    "he": "פתחו כתבה ולחצו על ”ליצור פוסט“.",
+    "ru": "Откройте историю и нажмите «Сделать пост»."
+  },
+  "Сегодняшние новости появятся здесь": {
+    "en": "Today’s news will appear here",
+    "fr": "Les actualités du jour apparaîtront ici",
+    "es": "Las noticias de hoy aparecerán aquí",
+    "he": "חדשות היום יופיעו כאן",
+    "ru": "Сегодняшние новости появятся здесь"
   }
 }
