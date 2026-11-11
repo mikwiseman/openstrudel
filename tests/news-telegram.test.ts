@@ -8,7 +8,7 @@ import { Scheduler } from "../src/scheduler.js";
 import { employeeTools } from "../src/personality.js";
 import { TelegramAdapter } from "../src/telegram.js";
 import { newsFeed, newsStamp } from "../src/news.js";
-import { editionPost, storyCard } from "../src/news-telegram.js";
+import { buttonStory, draftReply, editionPost, storyCard } from "../src/news-telegram.js";
 import { saveOwnerTimezone } from "../src/timezone.js";
 import { telegramText } from "../src/telegram-format.js";
 import type { CodexEngine, NewsStory } from "../src/types.js";
@@ -306,4 +306,43 @@ it("parts a long text between paragraphs when it can", () => {
   const code = telegramText("```\n" + Array.from({ length: 20 }, () => paragraph).join("\n\n") + "\n```");
   expect(code.length).toBeGreaterThan(1);
   for (const chunk of code) expect(chunk.entities).toEqual([{ type: "pre", offset: 0, length: chunk.text.length }]);
+});
+
+describe("a post draft asked from a card", () => {
+  it("puts one «Пост» button under a story's first post, naming the story within Telegram's 64 bytes", async () => {
+    const { store, conversation, tools, calls } = desk();
+    const published = await tools().call("publish_story", story()) as { messageId: string };
+    const sent = calls.find(call => call.method === "sendMessage")!.body;
+    const button = sent.reply_markup.inline_keyboard[0][0];
+    expect(button.text).toBe("✍️ Пост");
+    expect(Buffer.byteLength(button.callback_data)).toBeLessThanOrEqual(64);
+    expect(buttonStory(store, button.callback_data, "-100")).toEqual({ conversationId: conversation.id, storyId: "voice-typing-free" });
+    expect(published.messageId).toBe(button.callback_data.slice(3));
+  });
+
+  it("answers a press only for a story the application posted to that chat", async () => {
+    const { store, tools, calls } = desk();
+    await tools().call("publish_story", story());
+    const data = calls.find(call => call.method === "sendMessage")!.body.reply_markup.inline_keyboard[0][0].callback_data;
+    expect(buttonStory(store, data, "-200")).toBeNull();
+    expect(buttonStory(store, "np:unknown", "-100")).toBeNull();
+    expect(buttonStory(store, "card:0:1", "-100")).toBeNull();
+  });
+
+  it("gives a development's reply and a picture card no button", async () => {
+    const { tools, calls } = desk();
+    await tools().call("publish_story", story());
+    await tools().call("publish_story", story({ change: "Диктовка появилась и на Windows.", status: "Обновление" }));
+    await tools().call("publish_story", story({ storyId: "chart-story", image: "https://example.com/chart.png", sources: [{ title: "отчёт", url: "https://example.com/report", role: "Первоисточник", publishedAt: null }] }));
+    const [, reply] = calls.filter(call => call.method === "sendMessage");
+    expect(reply!.body.reply_markup).toBeUndefined();
+    expect(calls.find(call => call.method === "sendRichMessage")!.body.reply_markup).toBeUndefined();
+  });
+
+  it("writes the draft's reply as the post, the note after it, or one line when it failed", () => {
+    const post = { id: "p", storyIds: ["a"], titles: ["A"], channel: "telegram" as const, text: "Текст поста.", note: "Канал уже писал об этом 3 ноября.", status: "ready" as const,
+      error: null, createdAt: "", updatedAt: "", usedAt: null };
+    expect(draftReply(post)).toBe("**Черновик поста**\n\nТекст поста.\n\n_Канал уже писал об этом 3 ноября\\._".replace("\\.", "."));
+    expect(draftReply({ ...post, status: "failed", error: "Закончился лимит модели." })).toBe("Черновик не получился: Закончился лимит модели.");
+  });
 });

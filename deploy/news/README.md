@@ -8,6 +8,8 @@ The analysis runs once a day at 13:30 (`razbor.md`). It takes the one or two sto
 
 The edition runs at 06:45. It reads the day's queue, the night's queue and the reference lane, includes every story that two or more reference sources carried, and publishes one selection with `publish_edition`. The application sends that day's edition once as one rich message: the lead stories in full, the rest under their sections, each opening to its summary.
 
+The owner can ask for a post draft for their own channel from a story, or a few: in the app's story page, or with the «✍️ Пост» button under a card in the desk's chat. The Home sends the desk's employee the stories and the rules as a turn of its own (`src/news-posts.ts`); the employee answers with the post text alone, in the owner's voice. The voice guide is private: name where it lives in the desk's profile on the Home, never in this repository. Nothing publishes a draft.
+
 `read_news` gives one line per story with stable story IDs, whether the application has posted it and what readers left on the post; with a `storyId` it gives the complete story. Telegram delivers reactions from a group only to a bot that is an administrator there. The collectors' claim commands are no longer part of the work.
 
 Apply only to the selected News profile and its existing schedules, with a snapshot and a comparison against the current values. Preserve the schedule IDs, time zone, delivery destination and enabled state. The runtime must expose `publish_story` with the `telegram` field before the prompts are applied. Keep the existing skill's scripts in place when replacing SKILL.md.

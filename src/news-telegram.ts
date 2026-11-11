@@ -3,6 +3,7 @@ import type { TelegramAdapter } from "./telegram.js";
 import type { NewsStory } from "./types.js";
 import { ownerTimezone } from "./timezone.js";
 import { latestStories, page, savedEdition, storyPost, telegramTimes, type EditionSelection } from "./news.js";
+import { requestPost, type NewsPost, type Submit } from "./news-posts.js";
 
 /** The desk's Telegram posts. The application writes each one from the stored story and sends it once, so the reader sees one shape
  * whichever model wrote the story, and a run that stops after publishing has still delivered. */
@@ -169,8 +170,9 @@ export async function deliverStory(desk: NewsDesk, messageId: string, now = new 
       const same = sameSource(desk, chatId, story, now);
       if (same) return { sent: false, sameSourceAs: same, reason: `Story ${same} with the same first source went out this week. Publish a development under that storyId, with change, instead.` };
       const alert = story.telegram === "alert" && loud(desk, chatId, zone, now);
+      // A rich message is not known to take a button, and a refused one would lose the picture, so a picture card goes without.
       return outcome(await desk.telegram!.sendToChat({ chatId, text: storyCard(story, zone), files: [], externalId: storyPost(chatId, desk.conversationId, story.id),
-        silent: !alert, preview: story.sources[0]!.url, ...story.image ? { rich: pictureCard(story, zone)! } : {} }), alert ? "alert" : "card");
+        silent: !alert, preview: story.sources[0]!.url, ...story.image ? { rich: pictureCard(story, zone)! } : { button: postButton(messageId) } }), alert ? "alert" : "card");
     }
     const parts = desk.store.db.prepare("SELECT status, message_id AS id FROM telegram_outbox WHERE key>=? AND key<? ORDER BY key")
       .all(`${chatId}:reply:${first.id}:`, `${chatId}:reply:${first.id}:￿`) as Array<{ status: string; id: string | null }>;
@@ -200,4 +202,29 @@ export async function deliverEdition(desk: NewsDesk, name: string, now = new Dat
   const post = editionPost(selection, selection.storyIds.flatMap(id => latest.get(id) ?? []), name, zone);
   try { return outcome(await desk.telegram!.sendToChat({ chatId, text: post.text, rich: post.html, files: [], externalId }), "edition"); }
   catch (error) { return { sent: false, reason: error instanceof Error ? error.message : String(error) }; }
+}
+
+/** «✍️ Пост» under a story's first post: a reader of the desk's chat asks for a draft of a post for the owner's channel from that
+ * story. The button names the story's message, which fits Telegram's 64 bytes; a story id may not. */
+const POST_BUTTON = "np:";
+export const postButton = (messageId: string) => ({ text: "✍️ Пост", callback_data: POST_BUTTON + messageId });
+
+/** The story a pressed button names, when the application itself posted that story to this chat. */
+export function buttonStory(store: Store, data: string, chatId: string): { conversationId: string; storyId: string } | null {
+  if (!data.startsWith(POST_BUTTON)) return null;
+  const row = store.db.prepare("SELECT conversation_id AS conversation, story_id AS story FROM messages WHERE id=? AND story_json IS NOT NULL").get(data.slice(POST_BUTTON.length)) as { conversation: string; story: string } | undefined;
+  return row && store.findMessageByExternal("telegram", storyPost(chatId, row.conversation, row.story)) ? { conversationId: row.conversation, storyId: row.story } : null;
+}
+
+/** A draft as the chat reads it under the story's card. Nothing here publishes it: the reader copies it. */
+export const draftReply = (post: NewsPost): string => post.status === "ready"
+  ? ["**Черновик поста**", post.text, ...post.note ? [`_${plain(oneLine(post.note))}_`] : []].join("\n\n")
+  : `Черновик не получился: ${plain(oneLine(post.error ?? "попросите ещё раз"))}`;
+
+/** Writes the draft a button asked for and answers with it once, silently, under the card it was asked from. */
+export async function draftFromCard(desk: { store: Store; telegram: TelegramAdapter; chatId: string; submit: Submit }, story: { conversationId: string; storyId: string }, cardMessageId: number | undefined, byOwner: boolean): Promise<void> {
+  const { post, completion } = await requestPost(desk.store, desk.submit, story.conversationId, { storyIds: [story.storyId], channel: "telegram" }, byOwner);
+  const written = await completion;
+  await desk.telegram.sendToChat({ chatId: desk.chatId, text: draftReply(written), files: [], externalId: `${desk.chatId}:news-post:${post.id}:${written.updatedAt}`, silent: true,
+    ...cardMessageId ? { replyTo: cardMessageId } : {} });
 }

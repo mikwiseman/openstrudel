@@ -8,7 +8,7 @@ const strict = (properties: Record<string, unknown>) => ({ type: "object", prope
 
 /** One event across its developments: the reader groups versions by storyId, and every version is a message in the employee's chat. */
 export const storyTool: DynamicTool = { type: "function", name: "publish_story",
-  description: "Publish one verified news story to your reader: the OpenStrudel app and, when telegram is set, your desk's Telegram chat. The application writes and sends the Telegram post itself from these fields, once: a bold title, summary, view after an arrow, the first three sources as links labelled with their titles, and a preview of the first source. telegram: \"card\" posts silently, \"alert\" with sound for what the reader must know now (the application allows two a day, in the daytime), null keeps the story for the app and the edition. Reuse the same storyId when the same event develops (price, availability, deal status, a correction) and say in change what changed: with telegram set, change goes out as a reply under the story's first post. A new storyId is a new event. image is the direct https link of one picture that proves the story (the chart, the table, a screenshot in a source you read), taken from the source's own page and not from a Telegram post, shown on top of the post, or null: never a logo or a stock picture. The result's telegram field says what was sent; never send the story yourself with send_telegram_message. title states the news in one line; summary is the post's text: two to four short paragraphs of plain text, no Markdown; view is the post's last line, your own conclusion or advice. section and status are short labels in the reader's language (for Russian: Вышло, Анонс, Обновление, Слух). edition and rank stay null: publish_edition makes the edition. body is the full account for the app, check what is still worth verifying, verification what you actually read and what you did not test. Every source is a page you read; its title is a short link label (the publisher or what the page is), role says what it adds (Первоисточник, Документация, Обсуждение, Перепечатка). A retry with identical content returns the same version and sends nothing again.",
+  description: "Publish one verified news story to your reader: the OpenStrudel app and, when telegram is set, your desk's Telegram chat. The application writes and sends the Telegram post itself from these fields, once: a bold title, summary, view after an arrow, the first three sources as links labelled with their titles, and a preview of the first source. telegram: \"card\" posts silently, \"alert\" with sound for what the reader must know now (the application allows two a day, in the daytime), null keeps the story for the app and the edition. Reuse the same storyId when the same event develops (price, availability, deal status, a correction) and say in change what changed: with telegram set, change goes out as a reply under the story's first post. A new storyId is a new event. image is the direct https link of one picture that proves the story (the chart, the table, a screenshot in a source you read), taken from the source's own page and not from a Telegram post, shown on top of the post, or null: never a logo or a stock picture. The result's telegram field says what was sent; never send the story yourself with send_telegram_message. title states the news in one line; summary is the post's text: two to four short paragraphs of plain text, no Markdown; view is the post's last line, your own conclusion or advice. section and status are short labels in the reader's language (for Russian: Вышло, Анонс, Обновление, Слух). edition and rank stay null: publish_edition makes the edition. body is the full account for the app, check what is still worth verifying, verification what you actually read and what you did not test. Every source is a page you read; its title is a short link label (the publisher or what the page is), role says what it adds (Первоисточник, Документация, Обсуждение, Перепечатка). numbers are the story's figures for the reader's eye, at most four and only ones you read in a source: value is short (\"30%\", \"$10 млрд\"), label says what it measures and against what (\"причинных вариантов найдено, было 16%\"); null when the story has no figure worth showing. topics are whom the story is about, at most five companies, products or people by their usual names (\"OpenAI\", \"Claude\"), spelled the same way every time, never themes; null when it names none. A retry with identical content returns the same version and sends nothing again.",
   inputSchema: strict({
     storyId: { type: "string", pattern: "^[a-z0-9][a-z0-9._-]{0,119}$" },
     edition: { type: ["string", "null"], pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
@@ -18,6 +18,8 @@ export const storyTool: DynamicTool = { type: "function", name: "publish_story",
     sources: { type: "array", minItems: 1, maxItems: 12, items: strict({ title: text(160), url: text(2000), role: text(40), publishedAt: maybe(40) }) },
     telegram: { type: ["string", "null"], enum: ["alert", "card", null] },
     image: maybe(2000),
+    numbers: { type: ["array", "null"], maxItems: 4, items: strict({ value: text(24), label: text(80) }) },
+    topics: { type: ["array", "null"], maxItems: 5, items: text(40) },
   }),
 };
 
@@ -56,6 +58,23 @@ const picture = (value: unknown): string | null => {
   return url.toString();
 };
 
+/** The figures that carry the story, each with what it measures. A caller that knows nothing of them sends none. */
+const figures = (value: unknown): NewsStory["numbers"] => {
+  if (value == null) return null;
+  if (!Array.isArray(value) || value.length > 4) throw new Error("numbers — до четырёх цифр истории или null.");
+  const list = value.map((figure: any) => ({ value: field(figure?.value, "цифру", 24)!, label: field(figure?.label, "подпись цифры", 80)! }));
+  return list.length ? list : null;
+};
+
+/** Whom the story is about, each name once as first written, so the reader can follow a company across stories. */
+const names = (value: unknown): string[] | null => {
+  if (value == null) return null;
+  if (!Array.isArray(value) || value.length > 5) throw new Error("topics — до пяти тем истории: имена компаний, продуктов, людей, или null.");
+  const seen = new Set<string>();
+  const list = value.flatMap(name => field(name, "тему", 40, false) ?? []).filter(name => name && !seen.has(name.toLowerCase()) && seen.add(name.toLowerCase()));
+  return list.length ? list : null;
+};
+
 export function parseStory(args: Record<string, unknown>): NewsStory {
   const id = field(args.storyId, "storyId", 120)!;
   if (!/^[a-z0-9][a-z0-9._-]*$/.test(id)) throw new Error("storyId — короткий латинский ключ события, например granola-voice-typing.");
@@ -73,7 +92,8 @@ export function parseStory(args: Record<string, unknown>): NewsStory {
   return { id, edition, rank, section: field(args.section, "рубрику", 60)!, status: field(args.status, "статус", 40)!, title: field(args.title, "заголовок", 200)!,
     summary: field(args.summary, "краткое содержание", 1000)!, body: field(args.body, "что произошло", 4000)!, view: field(args.view, "вывод", 1500, false),
     check: field(args.check, "что проверить", 1500, false), verification: field(args.verification, "что проверено", 800)!, eventAt: instant(args.eventAt, "время события"),
-    change: field(args.change, "изменение", 600, false), sources, telegram: delivery(args.telegram), image: picture(args.image) };
+    change: field(args.change, "изменение", 600, false), sources, telegram: delivery(args.telegram), image: picture(args.image),
+    numbers: figures(args.numbers), topics: names(args.topics) };
 }
 
 /** The same story as Markdown, for the chat, older clients and the model's own context. */
@@ -155,12 +175,12 @@ function storyMessages(store: Store, conversationId: string, days: number): Mess
   return rows.flatMap(r => store.getMessage(conversationId, r.id) ?? []);
 }
 
-/** Stories and their threads of the last two weeks, oldest first, with the name the desk gave its latest edition when it gave one.
- * Curation never deletes stored history. */
-export function newsFeed(store: Store, conversationId: string, days = 14): { messages: Message[]; stamp: string | null; status?: NewsStatus; edition?: { date: string; title: string } } {
+/** Stories and their threads of the last two weeks, oldest first, with the name the desk gave its latest edition when it gave one
+ * and the editor's words on that day. Curation never deletes stored history. */
+export function newsFeed(store: Store, conversationId: string, days = 14): { messages: Message[]; stamp: string | null; status?: NewsStatus; edition?: { date: string; title: string; intro?: string } } {
   const selection = savedEdition(store, conversationId), status = newsStatus(store, conversationId);
   const messages = storyMessages(store, conversationId, days).filter(m => !selection || !m.story || m.story.edition !== selection.edition || selection.storyIds.includes(m.story.id));
-  return { messages, stamp: newsStamp(store, conversationId), ...status ? { status } : {}, ...selection?.title ? { edition: { date: selection.edition, title: selection.title } } : {} };
+  return { messages, stamp: newsStamp(store, conversationId), ...status ? { status } : {}, ...selection?.title ? { edition: { date: selection.edition, title: selection.title, ...selection.intro ? { intro: selection.intro } : {} } } : {} };
 }
 
 /** Grok keeps the first 20,000 bytes of an MCP result, and a Russian letter takes two. */

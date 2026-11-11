@@ -1,7 +1,7 @@
 import { recordDiagnostic } from "./diagnostics.js";
 import { randomBytes, randomUUID } from "node:crypto";
 import { sha256, sleep } from "./util.js";
-import type { Attachment, Interaction, MessageInput, MessageResult, TelegramChat, TelegramLinkButton } from "./types.js";
+import type { Attachment, Interaction, MessageInput, MessageResult, TelegramActionButton, TelegramChat, TelegramLinkButton } from "./types.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -16,6 +16,7 @@ import { agentTransfer, assertAgentWritable } from "./agent-move.js";
 import { isEnabledScopedGroup, isProtectedTelegramAudience, isRestrictedChat, isRestrictedSubject, telegramAuthorization, migrateScopedChat, protectScopedTelegramTransport } from "./authorization.js";
 import { recordAnswer, type SchedulePoll } from "./check-ins.js";
 import { recordReaction } from "./news.js";
+import { buttonStory, draftFromCard } from "./news-telegram.js";
 
 export interface TelegramUpdate {
   update_id: number;
@@ -389,7 +390,7 @@ export class TelegramAdapter {
     return { messageId: reply.id };
   }
 
-  async sendMessage(chatId: string | number, text: string, deliveryKey: string = randomUUID(), replyToMessageId?: number, options: { silent?: boolean; linkPreview?: boolean; preview?: string; rich?: string; assertCurrent?: () => void; button?: TelegramLinkButton } = {}): Promise<void> {
+  async sendMessage(chatId: string | number, text: string, deliveryKey: string = randomUUID(), replyToMessageId?: number, options: { silent?: boolean; linkPreview?: boolean; preview?: string; rich?: string; assertCurrent?: () => void; button?: TelegramLinkButton | TelegramActionButton } = {}): Promise<void> {
     if (!this.token) throw new Error("Telegram не подключён");
     if (options.rich && await this.sendRich(chatId, options.rich, deliveryKey, replyToMessageId, options)) return;
     const chunks=telegramText(text);
@@ -520,7 +521,8 @@ export class TelegramAdapter {
 
   /** A requested cross-chat delivery uses the same durable outbox as ordinary replies. */
   async sendToChat(input: {chatId:string;text:string;files:Array<{name:string;mimeType?:string;contentBase64:string}>;externalId:string;silent?:boolean;linkPreview?:boolean;album?:boolean;scopedGroup?:boolean;
-    /** A page to show as a large preview under the text. */ preview?:string; /** The Telegram message this one answers. */ replyTo?:number; /** The same content as one rich message; text is sent if Telegram refuses it. */ rich?:string}) {
+    /** A page to show as a large preview under the text. */ preview?:string; /** The Telegram message this one answers. */ replyTo?:number; /** The same content as one rich message; text is sent if Telegram refuses it. */ rich?:string;
+    /** One button under the text; a rich message carries none. */ button?:TelegramActionButton}) {
     const {chat,conversation,previous} = this.deliveryTarget(input.chatId,input.externalId,{scopedGroup:input.scopedGroup});
     const receipt = (messageId:string) => {
       const message = this.store.getMessage(conversation.id,messageId)!;
@@ -709,6 +711,17 @@ export class TelegramAdapter {
     if (update.callback_query) {
       const query = update.callback_query;
       const chatId = String(query.message?.chat.id ?? "");
+      // «✍️ Пост» under a News card: a draft for the owner's channel, answered under that card. The button stays for another one.
+      const story = buttonStory(this.store, query.data ?? "", chatId);
+      if (story) {
+        const allowed = this.linkedChats().includes(chatId) && this.authorizedSender(chatId, query.from?.id);
+        await this.call("answerCallbackQuery", { callback_query_id: query.id, text: allowed ? "Пишу черновик…" : "Попросить пост может участник этого чата" });
+        this.store.markTelegramUpdate(update.update_id);
+        // The draft stays among the desk's posts in the app whether or not this answer reaches the chat.
+        if (allowed) void draftFromCard({ store: this.store, telegram: this, chatId, submit: input => this.messages.submit(input) }, story, query.message?.message_id,
+          Number(chatId) > 0 && this.isOwner(query.from?.id)).catch(() => undefined);
+        return;
+      }
       const [id, q, o] = (query.data ?? "").split(":");
       const card = id ? this.messages.interactions.get(id) : undefined;
       let feedback = "Этот запрос уже завершён";

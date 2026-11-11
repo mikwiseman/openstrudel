@@ -39,6 +39,7 @@ import { MAX_SPEECH_BYTES, isSpeechFile, saveSpeechSettings, speechSettings, tra
 import { diagnosticReport, recordDiagnostic, saveDiagnosticLevel } from "./diagnostics.js";
 import { runtimeIssues } from "./operations.js";
 import { newsFeed, newsStamp } from "./news.js";
+import { deletePost, listPosts, requestPost, updatePost } from "./news-posts.js";
 import { ClientsAdapter, ClientsError, clientSourceSchema, clientsRefusal, type ClientRef } from "./clients.js";
 import { resolveMessageContext } from "./message-context.js";
 import { Correspondence, choosesCorrespondenceModel, configureCorrespondence, correspondenceWebhook } from "./correspondence.js";
@@ -890,6 +891,20 @@ export class HttpApi {
       if (request.method === "GET" && stories) {
         if (!this.store.getConversation(stories[1]!)) throw new HomeError("Чат не найден", 404);
         this.send(response, 200, newsFeed(this.store, stories[1]!)); return;
+      }
+      const posts = path.match(/^\/v1\/conversations\/([^/]+)\/posts(?:\/([^/]+))?$/);
+      if (posts) {
+        // Drafts for the owner's own channel are written in the owner's voice and are the owner's alone.
+        if (!canManageAccount) throw new HomeError("Посты для канала готовит владелец устройства.", 403);
+        const conversationId = posts[1]!, postId = posts[2];
+        if (!this.store.getConversation(conversationId)) throw new HomeError("Чат не найден", 404);
+        if (request.method === "GET" && !postId) { this.send(response, 200, { posts: listPosts(this.store, conversationId) }); return; }
+        if (request.method === "POST" && !postId) {
+          const { post } = await requestPost(this.store, input => this.messages.submit(input), conversationId, await this.body(request));
+          this.send(response, 202, { post }); return;
+        }
+        if (request.method === "PATCH" && postId) { this.send(response, 200, { post: updatePost(this.store, conversationId, postId, await this.body(request)) }); return; }
+        if (request.method === "DELETE" && postId) { deletePost(this.store, conversationId, postId); this.send(response, 200, { ok: true }); return; }
       }
       const singleConversation=path.match(/^\/v1\/conversations\/([^/]+)$/);
       if(request.method==="GET" && singleConversation) {

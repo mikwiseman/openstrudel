@@ -107,6 +107,40 @@ describe("News stories", () => {
     store.close();
   });
 
+  it("keeps the figures and the names a story stands on, and reads a story published without them", async () => {
+    const { store, conversation, tools } = newsDesk();
+    const { messageId } = await tools().call("publish_story", story({ edition: null, rank: null,
+      numbers: [{ value: " 30% ", label: "причинных вариантов найдено, было 16%" }, { value: "107 млн", label: "клеточных профилей в обучении" }],
+      topics: [" Granola ", "granola", "Mac", ""] })) as { messageId: string };
+    const kept = store.getMessage(conversation.id, messageId)!.story!;
+    expect(kept.numbers).toEqual([{ value: "30%", label: "причинных вариантов найдено, было 16%" }, { value: "107 млн", label: "клеточных профилей в обучении" }]);
+    // Names once, as first written; an empty name is none.
+    expect(kept.topics).toEqual(["Granola", "Mac"]);
+    // An older caller sends neither key, and an editor with nothing to say sends null or an empty list.
+    const plain = await tools().call("publish_story", story({ storyId: "plain-story", edition: null, rank: null })) as { messageId: string };
+    expect(store.getMessage(conversation.id, plain.messageId)!.story).toMatchObject({ numbers: null, topics: null });
+    const empty = await tools().call("publish_story", story({ storyId: "empty-story", edition: null, rank: null, numbers: [], topics: ["  "] })) as { messageId: string };
+    expect(store.getMessage(conversation.id, empty.messageId)!.story).toMatchObject({ numbers: null, topics: null });
+    await expect(tools().call("publish_story", story({ storyId: "too-many", numbers: Array.from({ length: 5 }, (_, n) => ({ value: String(n), label: "число" })) }))).rejects.toThrow(/цифр/);
+    await expect(tools().call("publish_story", story({ storyId: "long-value", numbers: [{ value: "x".repeat(25), label: "число" }] }))).rejects.toThrow(/цифр/);
+    await expect(tools().call("publish_story", story({ storyId: "no-label", numbers: [{ value: "30%" }] }))).rejects.toThrow(/цифр/);
+    await expect(tools().call("publish_story", story({ storyId: "many-names", topics: ["a", "b", "c", "d", "e", "f"] }))).rejects.toThrow(/тем/);
+    await expect(tools().call("publish_story", story({ storyId: "long-name", topics: ["x".repeat(41)] }))).rejects.toThrow(/тем/);
+    // The edition republishes the story as it stands, figures and names included, and names its day with the editor's words.
+    await tools().call("publish_edition", { edition: "2026-11-01", storyIds: ["granola-voice-typing"], title: "Утро", intro: "Тихий день: одна большая история." });
+    const placed = newsFeed(store, conversation.id).messages.find(m => m.story?.edition === "2026-11-01")!.story!;
+    expect(placed.numbers).toEqual(kept.numbers);
+    expect(placed.topics).toEqual(["Granola", "Mac"]);
+    expect(newsFeed(store, conversation.id).edition).toEqual({ date: "2026-11-01", title: "Утро", intro: "Тихий день: одна большая история." });
+    // A story stored before the fields existed is read as it was.
+    store.db.prepare("UPDATE messages SET story_json=json_remove(story_json,'$.numbers','$.topics') WHERE id=?").run(messageId);
+    expect(store.getMessage(conversation.id, messageId)!.story!.title).toBe("Granola делает голосовой ввод бесплатным");
+    await tools().call("publish_edition", { edition: "2026-11-02", storyIds: ["plain-story"] });
+    // Without a title the feed names no edition: build 69 reads a title as required.
+    expect(newsFeed(store, conversation.id).edition).toBeUndefined();
+    store.close();
+  });
+
   it("refuses a story without a checkable source and is not offered to the main assistant", async () => {
     const { store, tools } = newsDesk();
     await expect(tools().call("publish_story", story({ sources: [] }))).rejects.toThrow(/источник/);
