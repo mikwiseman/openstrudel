@@ -349,3 +349,62 @@ it("accepts a narrow key through the remote HTTPS listener", async () => {
   const response = await homeRequest({ ...endpoint, url: url.toString() }, "/hooks/telegram", "drafts-secret", { method: "POST", body: requestJSON({ text: "Черновик" }) }, 5000, { "idempotency-key": "remote:draft:1" });
   expect(response.status).toBe(200); expect(resultJSON(response).sent).toBe(true); expect(sentTo(send)).toEqual(["42"]);
 });
+
+// Routes: the original credential puts a notification on an employee's page in the app and relays it only to the chats the route names.
+const routed = (store: Store, routes: unknown, chatIds = ["42", "-100"]) =>
+  store.setSetting("telegram.notification_hook", JSON.stringify({ chatIds, tokenHash: digest("notification-secret"), routes }));
+const page = (store: Store, profileId: string) => store.listMessages(store.profileConversation(profileId).id).map(m => ({ direction: m.direction, text: m.text }));
+
+it("puts a routed notification on its employee's page and relays it only to the route's chats", async () => {
+  const { post, store, send, engine } = await setup();
+  const meetings = store.createProfile({ name: "Встречи" });
+  routed(store, [{ keyPrefix: "meeting-card:", employee: meetings.id, chatIds: ["-100"] }]);
+  const first = await post({ text: "Встреча «Пилот» — итог" }, "meeting-card:one:v1");
+  expect(first.status).toBe(200);
+  expect(await first.json()).toMatchObject({ sent: true, status: "delivered", chatId: "-100", page: "Встречи" });
+  expect((await post({ text: "Встреча «Пилот» — итог" }, "meeting-card:one:v1")).status).toBe(200);
+  expect(sentTo(send)).toEqual(["-100"]);
+  expect(page(store, meetings.id)).toEqual([{ direction: "outbound", text: "Встреча «Пилот» — итог" }]);
+  expect(store.listProfiles().find(p => p.id === meetings.id)).toMatchObject({ preview: "Встреча «Пилот» — итог" });
+  expect(engine.run).not.toHaveBeenCalled();
+  // A notification no route matches still reaches every chat of the credential.
+  expect((await post({ text: "Нужно уточнить" }, "finance-review:1")).status).toBe(200);
+  expect(sentTo(send)).toEqual(["-100", "42", "-100"]);
+});
+
+it("keeps a notification on the page alone when its route names no chat", async () => {
+  const { post, store, send } = await setup();
+  const money = store.createProfile({ name: "Деньги" });
+  routed(store, [{ keyPrefix: "finance-recorded:", employee: "Деньги", chatIds: [] }]);
+  const response = await post({ text: "Записано: подписка 43,29 €" }, "finance-recorded:1");
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ sent: true, status: "stored", page: "Деньги" });
+  expect((await post({ text: "Записано: подписка 43,29 €" }, "finance-recorded:1")).status).toBe(200);
+  expect((await post({ text: "Записано: другое" }, "finance-recorded:1")).status).toBe(409);
+  expect(send).not.toHaveBeenCalled();
+  expect(page(store, money.id)).toEqual([{ direction: "outbound", text: "Записано: подписка 43,29 €" }]);
+});
+
+it("ignores routes that are malformed, name an unknown employee or a chat the credential does not have", async () => {
+  const { post, store, send } = await setup();
+  const meetings = store.createProfile({ name: "Встречи" });
+  const valid = { keyPrefix: "meeting-card:", employee: meetings.id, chatIds: ["-100"] };
+  const cases: unknown[] = ["routes", [{ ...valid, employee: "Нет такого" }], [{ ...valid, chatIds: ["-200"] }], [{ ...valid, keyPrefix: "" }],
+    [{ ...valid, chatIds: ["-100", "-100"] }], [valid, null], Array.from({ length: 21 }, () => valid)];
+  for (const [index, routes] of cases.entries()) {
+    routed(store, routes); send.mockClear();
+    expect((await post({ text: "Встреча" }, "meeting-card:" + index)).status, JSON.stringify(routes).slice(0, 80)).toBe(200);
+    expect(sentTo(send), JSON.stringify(routes).slice(0, 80)).toEqual(["42", "-100"]);
+  }
+  expect(page(store, meetings.id)).toEqual([]);
+});
+
+it("moves a route's chats to the supergroup when Telegram upgrades the group", async () => {
+  const { post, store, send } = await setup();
+  const meetings = store.createProfile({ name: "Встречи" });
+  routed(store, [{ keyPrefix: "meeting-card:", employee: meetings.id, chatIds: ["-100"] }], ["42", "-100"]);
+  store.migrateTelegramGroup("-100", "-100200");
+  expect(JSON.parse(store.getSetting("telegram.notification_hook")!).routes).toEqual([{ keyPrefix: "meeting-card:", employee: meetings.id, chatIds: ["-100200"] }]);
+  expect((await post({ text: "Встреча" }, "meeting-card:2")).status).toBe(200);
+  expect(sentTo(send)).toEqual(["-100200"]);
+});

@@ -67,6 +67,36 @@ repeated request sends the text there once it is available again.
 Inspect Telegram and the saved receipts before any manual recovery. Removing the
 setting disables the endpoint.
 
+## Routes to an employee's page
+
+A sender that tags its identities by kind, such as `meeting-card:…` or
+`finance-review:…`, can have each kind kept on its own employee's page in the
+app and relayed only to some of the credential's chats. The same setting lists
+the routes:
+
+```json
+{"chatIds":["<owner's private chat>","<team group>"],"tokenHash":"…",
+ "routes":[
+   {"keyPrefix":"meeting-card:","employee":"<employee id or name>","chatIds":["<team group>"]},
+   {"keyPrefix":"finance-recorded:","employee":"<employee id or name>","chatIds":[]}
+ ]}
+```
+
+- The first route whose `keyPrefix` starts the `Idempotency-Key` applies. A
+  notification no route matches goes to every chat of the credential, as before.
+- The Home stores the text once on the employee's page, where the app shows it
+  as the employee's latest message, and then relays it only to the route's
+  `chatIds`. An empty list keeps the notification on the page alone, and the
+  200 response then has `"status":"stored"`. Every receipt of a routed
+  notification names the page in `page`.
+- A route applies only while its employee exists and its chats are chats of the
+  credential itself, so a route can narrow where the text goes and never widen
+  it. Otherwise the notification goes to every chat of the credential.
+- Up to 20 routes. If any route is malformed, no route applies.
+- A repeated identity adds nothing to the page, and changed text returns 409
+  before anything is stored or sent.
+- When Telegram upgrades a group, the Home replaces its ID in the routes too.
+
 ## Narrow keys
 
 A service that sends approved material to one chat at a time, such as a school
