@@ -570,6 +570,11 @@ struct NewsWords {
         guard let date = page.editionDate, date != page.date else { return named.flatMap { $0.date == page.date ? $0.title : nil } ?? self("Выпуск") }
         return self("Выпуск за \(day(date, now: now))")
     }
+    /// The line over a day's lead when its desk made an edition: the name the desk gave it, or «Выпуск»; a paper
+    /// standing in for today's says whose day it is.
+    func paperTitle(_ front: NewsDesk.Front, named: NewsEditionTitle?, now: Date = .now) -> String {
+        front.standsIn ? self("Выпуск за \(day(front.date, now: now))") : named.flatMap { $0.date == front.date ? $0.title : nil } ?? self("Выпуск")
+    }
     /// «8 историй», or what an earlier day had instead of an edition.
     func summary(_ day: NewsDesk.Day) -> String {
         if !day.edition.isEmpty { return stories(day.edition.count) }

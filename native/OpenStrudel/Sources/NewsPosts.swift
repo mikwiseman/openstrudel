@@ -205,6 +205,8 @@ struct NewsPostSheet: View {
             .buttonStyle(.plain).foregroundStyle(.primary)
             .accessibilityLabel(words("Ещё вариант")).accessibilityIdentifier("postAgain")
         }
+        // A bar of controls grows only as far as a bar can: its words stay whole and on one line.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
         .padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 12)
         .frame(maxWidth: 640).frame(maxWidth: .infinity)
         .background(.bar)
@@ -276,6 +278,8 @@ struct InkCapsuleStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(AppTypography.reading.weight(.medium)).foregroundStyle(AppTheme.canvas)
+            // An action's name is never broken across lines or hyphenated: it steps down a little, then ends in an ellipsis.
+            .lineLimit(1).minimumScaleFactor(0.75)
             .padding(.horizontal, 22).frame(minHeight: 48)
             .background(AppTheme.accentText, in: Capsule())
             .opacity(enabled ? (configuration.isPressed ? 0.75 : 1) : 0.35)

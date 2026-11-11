@@ -625,3 +625,15 @@ extension NewsDeskTests {
         #expect(!other.loaded && other.lead == nil)
     }
 }
+
+extension NewsDeskTests {
+    @Test func anEditionReadsUnderTheNameItsDeskGaveIt() {
+        let words = NewsWords(language: .russian, calendar: Self.moscow)
+        let edition = desk([version("a", story: "kettle", at: "2026-11-10T04:04:00.000Z", edition: "2026-11-10", rank: 1)]).front(now: Self.now)
+        #expect(words.paperTitle(edition, named: NewsEditionTitle(date: "2026-11-10", title: "Стартапы дня"), now: Self.now) == "Стартапы дня")
+        #expect(words.paperTitle(edition, named: NewsEditionTitle(date: "2026-11-09", title: "Вчерашнее"), now: Self.now) == "Выпуск")
+        #expect(words.paperTitle(edition, named: nil, now: Self.now) == "Выпуск")
+        let standIn = desk([version("b", story: "lantern", at: "2026-11-09T04:04:00.000Z", edition: "2026-11-09", rank: 1)]).front(now: Self.now)
+        #expect(words.paperTitle(standIn, named: nil, now: Self.now) == "Выпуск за 9 ноября")
+    }
+}

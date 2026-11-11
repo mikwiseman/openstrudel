@@ -516,6 +516,8 @@ struct NewsDayPage: View {
 
     @ViewBuilder private func sections(_ front: NewsDesk.Front, words: NewsWords, now: Date) -> some View {
         if let lead = front.lead {
+            // An edition reads under the name its desk gave it; a day the radar made alone needs no name.
+            if front.published != nil || front.standsIn { head(words.paperTitle(front, named: feed.edition, now: now)).padding(.bottom, 6).id("edition") }
             NewsLeadStory(item: lead, developed: lead.developed(since: feed.visit), tint: AgentAppearance.tint(chrome.profile?.resolvedAppearance, dark: scheme == .dark)) { open(lead.id) }
                 .onScrollVisibilityChange(threshold: 0.5) { dwell.rest("lead:" + lead.id, $0) }
                 .id("lead:" + lead.id)
@@ -850,7 +852,9 @@ struct NewsStoryPage: View {
     }
 }
 
-/// The story's dock: a glass capsule that takes it to the chat, and the ink capsule that makes a post of it.
+/// The story's dock: a glass capsule that takes it to the chat, and the ink capsule that makes a post of it. Where
+/// both names do not fit side by side (a large text size, a narrow window), asking becomes a round «+» and keeps its
+/// name for VoiceOver: an action is never left as an ellipsis.
 struct NewsDock: View {
     @Environment(\.zoomNamespace) private var zoom
     let ask: String
@@ -859,35 +863,9 @@ struct NewsDock: View {
     let onPost: () -> Void
 
     var body: some View {
-        let asking = Button(action: onAsk) {
-            HStack(spacing: 12) {
-                Image(systemName: "plus").font(.system(size: AskCapsule.height * 0.35, weight: .regular)).foregroundStyle(.primary)
-                Text(ask).font(AppTypography.reading).foregroundStyle(AppTheme.secondaryText).lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 18).frame(minHeight: AskCapsule.height)
-            .contentShape(Capsule())
-            .dockGlass()
-        }
-        .buttonStyle(TilePressStyle())
-        .accessibilityIdentifier("discussStory")
-        HStack(spacing: 10) {
-            if let zoom { asking.zoomSource(AnyHashable("ask"), in: zoom) } else { asking }
-            Button(action: onPost) {
-                HStack(spacing: 8) {
-                    Image(systemName: "square.and.pencil").font(.system(size: AskCapsule.height * 0.33, weight: .medium))
-                    Text(post).font(AppTypography.reading.weight(.medium)).lineLimit(1)
-                }
-                .foregroundStyle(AppTheme.canvas)
-                .padding(.horizontal, 20).frame(minHeight: AskCapsule.height)
-                .background(AppTheme.accentText, in: Capsule())
-                .contentShape(Capsule())
-                // The action keeps its whole name; the capsule beside it gives up the room.
-                .fixedSize()
-            }
-            .buttonStyle(TilePressStyle())
-            .layoutPriority(1)
-            .accessibilityIdentifier("makePost")
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) { asking(named: true); posting }
+            HStack(spacing: 10) { asking(named: false); Spacer(minLength: 0); posting }
         }
         .dynamicTypeSize(...DynamicTypeSize.accessibility1)
         .frame(maxWidth: Layout.column)
@@ -896,6 +874,48 @@ struct NewsDock: View {
         .padding(.bottom, Layout.belowComposer)
         .frame(maxWidth: .infinity)
         .dockFade()
+    }
+
+    @ViewBuilder private func asking(named: Bool) -> some View {
+        let button = Button(action: onAsk) {
+            Group {
+                if named {
+                    HStack(spacing: 12) {
+                        Image(systemName: "plus").font(.system(size: AskCapsule.height * 0.35, weight: .regular)).foregroundStyle(.primary)
+                        // The whole word or the round button: never a cut one.
+                        Text(ask).font(AppTypography.reading).foregroundStyle(AppTheme.secondaryText).lineLimit(1).fixedSize()
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 18).frame(minHeight: AskCapsule.height)
+                } else {
+                    Image(systemName: "plus").font(.system(size: AskCapsule.height * 0.35, weight: .regular)).foregroundStyle(.primary)
+                        .frame(width: AskCapsule.height, height: AskCapsule.height)
+                }
+            }
+            .contentShape(Capsule())
+            .dockGlass()
+        }
+        .buttonStyle(TilePressStyle())
+        .accessibilityLabel(ask)
+        .accessibilityIdentifier("discussStory")
+        if let zoom { button.zoomSource(AnyHashable("ask"), in: zoom) } else { button }
+    }
+
+    private var posting: some View {
+        Button(action: onPost) {
+            HStack(spacing: 8) {
+                Image(systemName: "square.and.pencil").font(.system(size: AskCapsule.height * 0.33, weight: .medium))
+                Text(post).font(AppTypography.reading.weight(.medium)).lineLimit(1)
+            }
+            .foregroundStyle(AppTheme.canvas)
+            .padding(.horizontal, 20).frame(minHeight: AskCapsule.height)
+            .background(AppTheme.accentText, in: Capsule())
+            .contentShape(Capsule())
+            // The action keeps its whole name.
+            .fixedSize()
+        }
+        .buttonStyle(TilePressStyle())
+        .accessibilityIdentifier("makePost")
     }
 }
 

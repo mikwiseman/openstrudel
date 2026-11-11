@@ -35,6 +35,13 @@ final class NewspaperUITests: XCTestCase {
         let leadTile = app.buttons["newsLead"]
         XCTAssertTrue(leadTile.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(leadTile.label.contains(lead), leadTile.label)
+        // How tall the page's head and its first way further are: the numbers a larger text size must change.
+        if let folder = environment["OPENSTRUDEL_SHOTS"], let handle = FileHandle(forWritingAtPath: folder + "/look.txt") {
+            let head = app.descendants(matching: .any)["newsStatus"].frame, way = app.buttons["newsWay-week"].frame
+            handle.seekToEndOfFile()
+            handle.write(Data("mastheadHeight=\(Int(head.height)) wayHeight=\(Int(way.height)) wayWidth=\(Int(way.width))\n".utf8))
+            try? handle.close()
+        }
         capture("02-front", app)
         // The top stories, the day's analysis as an ink tile, the sections and the earlier issues, in that order.
         XCTAssertTrue(app.staticTexts["Главное"].waitForExistence(timeout: 5), app.debugDescription)
@@ -84,6 +91,10 @@ final class NewspaperUITests: XCTestCase {
         _ = try await read("/post?delay=1500")
         let instruction = app.textFields["postInstruction"]
         bring(instruction, into: app.scrollViews.firstMatch)
+        // At a large text size the draft is taller than the screen: the field must come clear of the bar of actions to be typed into.
+        let bar = app.buttons["postCopy"]
+        for _ in 0..<8 where instruction.frame.maxY > bar.frame.minY - 8 { app.scrollViews.firstMatch.swipeUp(velocity: .slow) }
+        XCTAssertLessThan(instruction.frame.maxY, bar.frame.minY, "«Что изменить?» stays under the bar of actions: field \(instruction.frame), bar \(bar.frame)")
         instruction.tap(); instruction.typeText("Короче")
         app.buttons["postRevise"].tap()
         let shorter = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "Коротко"), object: text)
@@ -98,8 +109,8 @@ final class NewspaperUITests: XCTestCase {
         let written = await XCTWaiter().fulfillment(of: [professional], timeout: 30)
         XCTAssertEqual(written, .completed, app.debugDescription)
         capture("12-post-linkedin", app)
+        // «Скопировано» shows for a moment only, so it is not what is checked: the copied draft says so in «Посты» below.
         app.buttons["postCopy"].tap()
-        XCTAssertTrue(app.buttons["postCopy"].label.contains("Скопировано") || app.staticTexts["Скопировано"].waitForExistence(timeout: 3), app.debugDescription)
         app.buttons["postDone"].tap()
         XCTAssertTrue(story.waitForExistence(timeout: 10), app.debugDescription)
         back(app)
@@ -112,6 +123,9 @@ final class NewspaperUITests: XCTestCase {
         posts.tap()
         XCTAssertTrue(app.scrollViews["newsPosts"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "post-")).count, 2, app.debugDescription)
+        // The LinkedIn draft was copied: the Home keeps that, and its row says so for as long as the draft lives.
+        let used = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@ AND label CONTAINS %@", "post-", "LinkedIn", "взят в работу")).firstMatch
+        XCTAssertTrue(used.waitForExistence(timeout: 15), app.debugDescription)
         capture("13-posts", app)
         back(app)
 
@@ -146,6 +160,12 @@ final class NewspaperUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-openstrudel.language", "ru", "-AppleLanguages", "(ru)"]
         if let size = environment["OPENSTRUDEL_TEXT_SIZE"] { app.launchArguments += ["-UIPreferredContentSizeCategoryName", size] }
+        // What this run was asked to look like, kept beside its screenshots: a folder named dark must have been run dark.
+        if let folder = environment["OPENSTRUDEL_SHOTS"] {
+            try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+            let asked = "appearance=\(environment["OPENSTRUDEL_APPEARANCE"] ?? "unset") textSize=\(environment["OPENSTRUDEL_TEXT_SIZE"] ?? "unset") device=\(XCUIDevice.shared.appearance == .dark ? "dark" : "light") arguments=\(app.launchArguments.joined(separator: " "))\n"
+            try? asked.write(toFile: folder + "/look.txt", atomically: true, encoding: .utf8)
+        }
         app.launch()
         return app
     }
