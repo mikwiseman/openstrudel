@@ -6,7 +6,7 @@ import type { MessageService } from "./messages.js";
 import type { Attachment, TelegramLinkButton } from "./types.js";
 import { agentTransfer } from "./agent-move.js";
 import { scheduleTiming } from "./schedule-timing.js";
-import { errorProblem, failedRun, quietReply } from "./operations.js";
+import { errorProblem, failedRun, quietReply, type ProblemCode } from "./operations.js";
 import { privateSourceSchedule } from "./private-sources.js";
 import { checkInSummary, ensureCheckInTables, localDate, markPollClosed, openPolls, parsePoll, recordPoll, type SchedulePoll } from "./check-ins.js";
 import { dailyMetricsSummary, dailyMetricsReportConfig, dailyMetricsLaunchButton, readDailyMetrics } from "./daily-metrics.js";
@@ -25,6 +25,13 @@ export interface Schedule extends ScheduleInput { id: string; enabled: boolean; 
 type Row = Record<string, any>;
 /** The longest a scheduled turn may run. */
 const RUN_LIMIT_MINUTES = 30;
+/** What a chat hears when the edition it waits for fails: the Home's own words, never the run's text or a raw error. */
+const failureWords: Partial<Record<ProblemCode, string>> = {
+  account: "Модель сейчас недоступна.", connection: "Прервалась связь с моделью.", resources: "Серверу не хватило ресурсов.",
+  tools: "Не запустился нужный инструмент.", connector: "Не ответил подключённый сервис.",
+};
+/** The owner stopped the run himself: nobody waits for a notice about it. */
+const stopped = (reason: string) => reason === "Ответ остановлен" || reason === "Сообщение отменено.";
 
 /** The clock only wakes the existing chat. Codex still owns the work. */
 export class Scheduler {
@@ -271,7 +278,7 @@ export class Scheduler {
     const sent = await this.sendPoll(destination, schedule.poll!, `schedule:${runId}`);
     recordPoll(this.store, { pollId: sent.pollId, scheduleId: schedule.id, conversationId: schedule.conversationId, chatId: destination, messageId: sent.messageId,
       localDate: localDate(scheduledFor, schedule.timezone), question: schedule.poll!.question, options: schedule.poll!.options, createdAt: new Date().toISOString() });
-    this.store.db.prepare("UPDATE schedule_runs SET status='completed',error=NULL WHERE id=?").run(runId);
+    this.store.db.prepare("UPDATE schedule_runs SET status='completed',error=NULL WHERE id=?").run(runId); this.recovered(runId);
   }
   private async finish(runId: string, conversationId: string, messageId: string, chatId?: string | null, delivery = "app"): Promise<void> {
     let deliveryAttempted = false;
@@ -279,12 +286,13 @@ export class Scheduler {
       const reply = this.store.db.prepare("SELECT text,attachments_json FROM messages WHERE id=? AND conversation_id=?").get(messageId,conversationId) as Row | undefined;
       if (!reply) throw new Error("Ответ не найден");
       if (quietReply(reply.text)) {
-        this.store.db.prepare("UPDATE schedule_runs SET status='quiet',error=NULL WHERE id=?").run(runId); return;
+        this.store.db.prepare("UPDATE schedule_runs SET status='quiet',error=NULL WHERE id=?").run(runId); this.recovered(runId); return;
       }
       const reason = failedRun(reply.text);
       if (reason) {
         this.store.db.prepare("UPDATE schedule_runs SET status='failed',error=? WHERE id=?").run(reason,runId);
-        await this.messages.reportProblem(conversationId,messageId,"execution",undefined,reason); return;
+        const told = await this.tellChat(runId,"execution",reason);
+        await this.messages.reportProblem(conversationId,messageId,"execution",told,reason); return;
       }
       const assertPrivateSources = this.privateSourceDeliveryGuard(runId, conversationId);
       assertPrivateSources?.();
@@ -301,7 +309,7 @@ export class Scheduler {
         if (metrics && metrics.chatId !== destination) throw new Error("Чат сводки Выдоха изменился. Проверьте расписание.");
         await this.deliver(destination,name ? `**${name.replace(/[*_`]/g,"")}**\n\n${reply.text}` : reply.text,`schedule:${runId}`,JSON.parse(reply.attachments_json ?? "[]") as Attachment[],assertPrivateSources,metrics ? dailyMetricsLaunchButton(this.store) : undefined);
       }
-      this.store.db.prepare("UPDATE schedule_runs SET status='completed',error=NULL WHERE id=?").run(runId);
+      this.store.db.prepare("UPDATE schedule_runs SET status='completed',error=NULL WHERE id=?").run(runId); this.recovered(runId);
     } catch (error) {
       if (deliveryAttempted) {
         this.store.db.prepare("UPDATE schedule_runs SET status='uncertain',error=? WHERE id=?").run("Ответ сохранён. Подтверждение Telegram не получено; проверьте чат перед повтором.",runId);
@@ -329,11 +337,47 @@ export class Scheduler {
     return chat && chat.enabled !== false && this.store.getSetting("telegram.paused." + chat.chatId) !== "true" ? chat.chatId : null;
   }
   private async fail(id: string, error: unknown): Promise<void> {
-    this.store.db.prepare("UPDATE schedule_runs SET status='failed',error=? WHERE id=?").run(error instanceof Error ? error.message : String(error),id);
+    const reason = error instanceof Error ? error.message : String(error), code = errorProblem(error);
+    this.store.db.prepare("UPDATE schedule_runs SET status='failed',error=? WHERE id=?").run(reason,id);
     const run=this.store.db.prepare("SELECT conversation_id,message_id FROM schedule_runs WHERE id=?").get(id);
+    const told = stopped(reason) ? undefined : await this.tellChat(id,code,reason);
     // Accepted turns already report their failures and suppress owner cancellations.
     if(run && (run.message_id || !this.store.findMessageByExternal("api","schedule:"+id))) {
-      await this.messages.reportProblem(String(run.conversation_id),String(run.message_id ?? id),errorProblem(error));
+      await this.messages.reportProblem(String(run.conversation_id),String(run.message_id ?? id),code,told,reason);
     }
   }
+  /**
+   * One line in the Telegram chat a failed edition was meant for: what did not come, why, and when the next try is.
+   * Once a day per schedule while it keeps failing, again after it recovers. A group or another person hears only the
+   * Home's own words; the owner's own private chat hears the reason his notice would carry, and so returns that chat.
+   */
+  private async tellChat(runId: string, code: ProblemCode, reason: string): Promise<string | undefined> {
+    const run = this.store.db.prepare("SELECT s.id,s.name,s.conversation_id,s.telegram_chat_id,s.delivery,s.timezone,r.scheduled_for,r.private_source_fingerprint FROM schedule_runs r JOIN schedules s ON s.id=r.schedule_id WHERE r.id=?").get(runId) as Row | undefined;
+    const chat = run && this.destination(run.conversation_id, run.telegram_chat_id, run.delivery);
+    // A private edition's chat gets only what its approval delivers: a stopped approval stops every automatic message.
+    if (!run || !chat || !this.deliver || run.private_source_fingerprint != null || isRestrictedChat(this.store, chat) || isRestrictedSubject(this.store, chat)) return;
+    // The edition's own time decides its day: one line for each day's editions.
+    const now = new Date(run.scheduled_for), key = "schedule.failure_told." + run.id, today = localDate(now, run.timezone);
+    if (this.store.getSetting(key) === today) return;
+    const owner = accessOwners(this.store).includes(chat);
+    const why = owner ? reason.trim().slice(0, 300).replace(/([^.!?])$/, "$1.")
+      : code === "account" && /лимит/i.test(reason) ? "Закончился лимит модели." : failureWords[code] ?? "Задача завершилась с ошибкой.";
+    const next = (this.store.db.prepare("SELECT MIN(next_run_at) AS at FROM schedules WHERE enabled=1 AND (id=? OR backup_of=?)").get(run.id, run.id) as { at: string | null }).at;
+    this.store.setSetting(key, today);
+    try { await this.deliver(chat, `Не получилось подготовить «${run.name}». ${why} ${next ? `Следующая попытка ${nextTry(next, now, run.timezone)}.` : "Повтора по расписанию не будет."}`, "schedule-failure:" + runId); }
+    catch { return; /* the owner's notice still carries the reason */ }
+    return owner ? chat : undefined;
+  }
+  private recovered(runId: string): void {
+    const run = this.store.db.prepare("SELECT schedule_id FROM schedule_runs WHERE id=?").get(runId);
+    if (run) this.store.deleteSetting("schedule.failure_told." + run.schedule_id);
+  }
+}
+
+/** «сегодня в 10:00», «завтра в 07:00» or «30 сентября в 09:00», in the schedule's own time zone. */
+function nextTry(at: string, now: Date, timezone: string): string {
+  const time = new Intl.DateTimeFormat("ru-RU", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(at));
+  const day = localDate(at, timezone), today = localDate(now, timezone), tomorrow = localDate(new Date(now.getTime() + 86_400_000), timezone);
+  const date = day === today ? "сегодня" : day === tomorrow ? "завтра" : new Intl.DateTimeFormat("ru-RU", { timeZone: timezone, day: "numeric", month: "long" }).format(new Date(at));
+  return `${date} в ${time}`;
 }

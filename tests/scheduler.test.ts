@@ -4,6 +4,7 @@ import { MessageService } from "../src/messages.js";
 import { Scheduler } from "../src/scheduler.js";
 import { scheduleTiming } from "../src/schedule-timing.js";
 import { saveTelegramAuthorization } from "../src/authorization.js";
+import { HomeError } from "../src/home.js";
 
 const stores: Store[] = [];
 afterEach(() => { for (const store of stores.splice(0)) store.close(); });
@@ -225,7 +226,7 @@ describe("durable cron", () => {
     expect(store.listMessages(c.id)).toEqual([]);
     expect(scheduler.runs(c.id)[0]?.status).toBe("quiet");
   });
-  it("tells the owner why a run could not do its work and keeps the failure out of the chat", async () => {
+  it("tells the owner why a run could not do its work and keeps that reason out of the chat", async () => {
     const store = new Store(":memory:"); stores.push(store);
     let reason = "правила публикации не открылись";
     const messages = new MessageService(store,{async run(){return {threadId:"failed",response:`FAILED: ${reason}`,events:[]};}});
@@ -237,7 +238,7 @@ describe("durable cron", () => {
     const sent:string[]=[]; scheduler.deliver=async(_,text)=>{sent.push(text);};
     scheduler.save({conversationId:dates.id,name:"Важные даты",prompt:"Поздравь",cron:"0 9 * * *",timezone:"Europe/Moscow",delivery:"telegram",telegramChatId:"-100"},new Date("2026-09-26T10:00:00Z"));
     await scheduler.tick(new Date("2026-09-27T06:00:01Z")); await scheduler.idle();
-    expect(sent).toEqual([]);
+    expect(sent).toEqual(["Не получилось подготовить «Важные даты». Задача завершилась с ошибкой. Следующая попытка завтра в 09:00."]);
     expect(store.listMessages(dates.id)).toEqual([]);
     expect(scheduler.runs(dates.id)[0]).toMatchObject({status:"failed",error:reason});
     expect(store.listMessages(root.id).map(m=>m.text)).toEqual([`Требует внимания · С днем рождения\nРасписание: Важные даты\nЗадача не выполнена: ${reason}`]);
@@ -506,5 +507,109 @@ describe("durable cron", () => {
     await scheduler.tick(new Date("2026-09-27T04:00:00Z")); await scheduler.idle();
     expect(calls()).toBe(0);
     expect(scheduler.runs(c.id)[0]?.status).toBe("uncertain");
+  });
+});
+describe("a failed edition says so in the chat it was meant for", () => {
+  // 2026-09-27 is a Sunday; the clock reads Moscow time.
+  const saved = new Date("2026-09-26T10:00:00Z");
+  function failing(reply: (name: string) => string | Error) {
+    const store = new Store(":memory:"); stores.push(store);
+    const messages = new MessageService(store, { async run(input) {
+      const answer = reply(input.match(/^Scheduled request: (.+)$/m)![1]!);
+      if (answer instanceof Error) throw answer;
+      return { threadId: "t", response: answer, events: [] };
+    } });
+    const owner: Array<[string, string | undefined]> = [];
+    messages.telegram = { notifyOwner: async (notice: { text: string }, except?: string) => { owner.push([notice.text, except]); } } as never;
+    const scheduler = new Scheduler(store, messages), sent: Array<[string, string]> = [];
+    scheduler.deliver = async (chat, text) => { sent.push([chat, text]); };
+    store.linkTelegramChat({ chatId: "-100", title: "Team", allowedSenders: ["1"] });
+    store.linkTelegramChat({ chatId: "123", title: "Owner", allowedSenders: ["123"] });
+    const team = store.getOrCreateConversation({ channel: "telegram", externalId: "-100", title: "Team" });
+    store.db.prepare("UPDATE telegram_chats SET conversation_id=? WHERE chat_id='-100'").run(team.id);
+    const run = async (at: string) => { await scheduler.tick(new Date(at)); await scheduler.idle(); };
+    return { store, scheduler, sent, owner, team, run, root: store.primaryConversation() };
+  }
+
+  it("tells a group in plain words, with the next try, and never the run's own reason", async () => {
+    const { scheduler, sent, owner, team, run, root, store } = failing(() => "FAILED: счёт клиента Ромашки на 70 000 не найден");
+    scheduler.save({ conversationId: team.id, name: "Важные даты", prompt: "Поздравь", cron: "0 9 * * *", timezone: "Europe/Moscow", delivery: "telegram", telegramChatId: "-100" }, saved);
+    await run("2026-09-27T06:00:01Z");
+    expect(sent).toEqual([["-100", "Не получилось подготовить «Важные даты». Задача завершилась с ошибкой. Следующая попытка завтра в 09:00."]]);
+    // The owner still learns the run's own reason, in the app and in his private chat.
+    expect(store.listMessages(root.id).map(m => m.text)).toEqual(["Требует внимания · Team\nРасписание: Важные даты\nЗадача не выполнена: счёт клиента Ромашки на 70 000 не найден"]);
+    expect(owner.map(([text]) => text)).toEqual(store.listMessages(root.id).map(m => m.text));
+  });
+
+  it("speaks once a day while a schedule keeps failing, and again after it recovers", async () => {
+    let answer = "FAILED: источник недоступен";
+    const { scheduler, sent, team, run } = failing(() => answer);
+    scheduler.save({ conversationId: team.id, name: "Проверка", prompt: "Проверь", cron: "0 * * * *", timezone: "Europe/Moscow", delivery: "telegram", telegramChatId: "-100" }, saved);
+    for (const hour of ["06", "07", "08"]) await run(`2026-09-27T${hour}:00:01Z`);
+    expect(sent.map(([, text]) => text)).toEqual(["Не получилось подготовить «Проверка». Задача завершилась с ошибкой. Следующая попытка сегодня в 10:00."]);
+    // The next Moscow day it is said again, once.
+    for (const hour of ["21", "22"]) await run(`2026-09-27T${hour}:00:01Z`);
+    expect(sent).toHaveLength(2);
+    expect(sent[1]![1]).toContain("Следующая попытка сегодня в 01:00.");
+    // A run that works closes the outage; the next failure the same day is news again.
+    answer = "NO_REPLY"; await run("2026-09-27T23:00:01Z");
+    answer = "FAILED: источник недоступен"; await run("2026-09-28T00:00:01Z");
+    expect(sent).toHaveLength(3);
+  });
+
+  it("gives the owner's own private chat the reason instead of a second notice", async () => {
+    const { scheduler, sent, owner, run, store, root } = failing(() => new HomeError("Лимиты основной и резервных моделей исчерпаны. Запрос сохранён; повторите его после восстановления лимита.", 429));
+    const dm = store.getOrCreateConversation({ channel: "telegram", externalId: "123", title: "Telegram 123" });
+    scheduler.save({ conversationId: dm.id, name: "Сводка дня", prompt: "Собери день", cron: "0 7 * * *", timezone: "Europe/Moscow", delivery: "telegram", telegramChatId: "123" }, saved);
+    scheduler.save({ conversationId: dm.id, name: "Неделя", prompt: "Итоги", cron: "0 9 * * 0,3", timezone: "Europe/Moscow", delivery: "telegram", telegramChatId: "-100" }, saved);
+    await run("2026-09-27T04:00:01Z"); await run("2026-09-27T06:00:01Z");
+    expect(sent).toEqual([
+      ["123", "Не получилось подготовить «Сводка дня». Лимиты основной и резервных моделей исчерпаны. Запрос сохранён; повторите его после восстановления лимита. Следующая попытка завтра в 07:00."],
+      ["-100", "Не получилось подготовить «Неделя». Закончился лимит модели. Следующая попытка 30 сентября в 09:00."],
+    ]);
+    // The app notice carries the same reason; the private chat that was told is not told twice.
+    expect(store.listMessages(root.id)[0]?.text).toBe("Требует внимания · Telegram 123\nРасписание: Сводка дня\nЗадача не выполнена: Лимиты основной и резервных моделей исчерпаны. Запрос сохранён; повторите его после восстановления лимита.");
+    expect(owner[0]?.[1]).toBe("123");
+  });
+
+  it("names the reason of a run that failed before it started, and says when nothing will retry it", async () => {
+    const { scheduler, sent, run, store, root, team } = failing(() => "Готово");
+    const once = scheduler.save({ conversationId: team.id, name: "Карточка", prompt: "Нарисуй", cron: "@once 2026-09-27T09:00:00+03:00", timezone: "Europe/Moscow", delivery: "telegram", telegramChatId: "-100" }, saved);
+    store.setSetting("statistics.cardScheduleId", once.id);
+    await run("2026-09-27T06:00:01Z");
+    expect(sent).toEqual([["-100", "Не получилось подготовить «Карточка». Задача завершилась с ошибкой. Повтора по расписанию не будет."]]);
+    expect(store.listMessages(root.id).map(m => m.text)).toEqual(["Требует внимания · Team\nРасписание: Карточка\nЗадача не выполнена: Карточка статистики приходит только в личный чат владельца."]);
+  });
+
+  it("stays silent in a paused or protected chat, in the app, and after the owner stops a run", async () => {
+    const { scheduler, sent, run, store, team } = failing(() => "FAILED: нет данных");
+    store.setSetting("telegram.paused.-100", "true");
+    scheduler.save({ conversationId: team.id, name: "Пауза", prompt: "Проверь", cron: "0 9 * * *", timezone: "Europe/Moscow", delivery: "telegram", telegramChatId: "-100" }, saved);
+    scheduler.save({ conversationId: team.id, name: "В приложении", prompt: "Проверь", cron: "0 9 * * *", timezone: "Europe/Moscow", delivery: "app" }, saved);
+    await run("2026-09-27T06:00:01Z");
+    store.deleteSetting("telegram.paused.-100");
+    saveTelegramAuthorization(store, { version: 1, revision: 0, connectors: { school: { url: "https://school.invalid/api/mcp/company", headers: {} } },
+      policies: { school: { connectorId: "school", tools: [] } }, subjects: {}, chats: { "-100": { enabled: true, policyId: "school", defaultCapabilities: [], members: {} } } });
+    await run("2026-09-28T06:00:01Z");
+    expect(scheduler.runs(team.id).filter(r => r.status === "failed")).toHaveLength(4);
+    expect(sent).toEqual([]);
+  });
+
+  it("says nothing when the owner stops a scheduled run himself", async () => {
+    const store = new Store(":memory:"); stores.push(store);
+    let started!: () => void; const begun = new Promise<void>(resolve => { started = resolve; });
+    const messages = new MessageService(store, { run: (_input, options) => new Promise((_, reject) => {
+      started(); options?.signal?.addEventListener("abort", () => reject(new Error("Ответ остановлен")));
+    }) });
+    const scheduler = new Scheduler(store, messages), sent: string[] = [];
+    scheduler.deliver = async (_chat, text) => { sent.push(text); };
+    store.linkTelegramChat({ chatId: "-100", title: "Team", allowedSenders: ["1"] });
+    const team = store.getOrCreateConversation({ channel: "telegram", externalId: "-100", title: "Team" });
+    scheduler.save({ conversationId: team.id, name: "Долгая", prompt: "Проверь", cron: "0 9 * * *", timezone: "Europe/Moscow", delivery: "telegram", telegramChatId: "-100" }, saved);
+    await scheduler.tick(new Date("2026-09-27T06:00:01Z")); await begun;
+    const request = store.findMessageByExternal("api", "schedule:" + scheduler.runs(team.id)[0]!.id)!;
+    messages.cancel(team.id, request.id); await scheduler.idle();
+    expect(scheduler.runs(team.id)[0]?.status).toBe("failed");
+    expect(sent).toEqual([]);
   });
 });

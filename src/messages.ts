@@ -347,8 +347,10 @@ export class MessageService {
         if (isOpenAIAuthenticationError(error)) this.onAuthenticationError?.();
         const message = friendlyError(error);
         this.store.setMessageStatus(inbound.id, "failed", message);
-        if (!this.active.get(conversation.id)?.abort.signal.aborted) await this.reportProblem(conversation.id,inbound.id,problem ?? (error instanceof AcpRefusal ? "execution" : errorProblem(error)),input.channel==="telegram" ? input.externalChatId : undefined,
-          error instanceof ProviderIncident || error instanceof AccountUnavailableError ? error.message : undefined);
+        // A schedule's failure is said in the chat it was meant for, so an owner's private chat is not told twice,
+        // and nobody saw the run, so its notice names the reason. A refusal quotes the model's path, not a cause.
+        if (!this.active.get(conversation.id)?.abort.signal.aborted) await this.reportProblem(conversation.id,inbound.id,problem ?? (error instanceof AcpRefusal ? "execution" : errorProblem(error)),input.channel==="telegram" ? input.externalChatId : input.scheduleTelegramChatId ?? undefined,
+          error instanceof ProviderIncident || error instanceof AccountUnavailableError ? error.message : input.scheduled && !(error instanceof AcpRefusal) ? message : undefined);
         if (error instanceof HomeError || error instanceof AccountUnavailableError || error instanceof ProviderIncident) throw error;
         if (isOpenAIAuthenticationError(error)) throw new AccountUnavailableError("sign_in_required");
         throw new Error(message);
