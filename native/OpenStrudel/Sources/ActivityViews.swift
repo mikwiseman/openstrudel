@@ -100,6 +100,7 @@ struct InsightDetail: View {
         }
         .scrollIndicators(.hidden)
         .background(AppTheme.canvas)
+        .paperTop()
         .safeAreaBar(edge: .bottom, spacing: 0) {
             if let context = item.context {
                 AskCapsule(title: L("Обсудить в чате")) { discuss(context) }.accessibilityIdentifier("discussInsight")
@@ -130,14 +131,19 @@ struct ProgressPage: View {
         ActivityColumn {
             ActivityStatus(model: model, scope: scope, openChat: openChat)
             if let activity {
+                // The page opens as the home does, with tiles: what was done, the fullest limit, the days with work.
+                DataShelf {
+                    NumberTile(label: L("Сделано"), value: (activity.progress.completedRequests + activity.progress.completedRuns).formatted(), caption: L("за 7 дней"),
+                               skin: .paper(AgentAppearance.tint(AgentAppearance(kind: "coil", tone: 1), dark: scheme == .dark)))
+                    if limits.scope == scope, let limit = Shelf.limit(limits.accounts) { LimitTile(used: limit.used, weekly: limit.weekly) }
+                    NumberTile(label: L("Active days"), value: activity.progress.activeDays.formatted(), caption: L("из 7"),
+                               skin: .paper(AgentAppearance.tint(AgentAppearance(kind: "coil", tone: 3), dark: scheme == .dark)))
+                }
+                .padding(.bottom, -26)
                 ProgressCharacter(progress: activity.progress)
                 ActivitySection(title: L("Last 7 days")) {
-                    let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: TileMetrics.gap)) : AnyLayout(HStackLayout(spacing: TileMetrics.gap))
-                    layout {
-                        figure(L("Answered requests"), activity.progress.completedRequests, tone: 3)
-                        figure(L("Automation results"), activity.progress.completedRuns, tone: 6)
-                        figure(L("Active days"), activity.progress.activeDays, tone: 1)
-                    }
+                    count(L("Answered requests"), activity.progress.completedRequests)
+                    count(L("Automation results"), activity.progress.completedRuns)
                     Text(L("Replies and scheduled results from this Home.")).font(ReaderLine.font).foregroundStyle(AppTheme.secondaryText)
                 }
                 if !activity.rituals.isEmpty {
@@ -194,21 +200,6 @@ struct ProgressPage: View {
         .accessibilityIdentifier("progressRoot")
     }
 
-    /// One number of the week as a small paper tile.
-    private func figure(_ title: String, _ value: Int, tone: Int) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(value.formatted()).font(.system(size: 34, weight: .semibold)).tracking(-1.2).monospacedDigit()
-                .contentTransition(.numericText(value: Double(value))).lineLimit(1).minimumScaleFactor(0.6)
-            Text(title).font(AppTypography.label.weight(.regular)).opacity(0.66).lineLimit(2, reservesSpace: !typeSize.isAccessibilitySize)
-                .minimumScaleFactor(0.8).multilineTextAlignment(.leading)
-        }
-        .padding(TileMetrics.padding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AgentAppearance.tint(AgentAppearance(kind: "coil", tone: tone), dark: scheme == .dark), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .tileShadow(0.7)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title).accessibilityValue(value.formatted())
-    }
     private func count(_ title: String, _ value: Int) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(title)
@@ -401,6 +392,7 @@ private struct ActivityColumn<Content: View>: View {
                 .frame(maxWidth: .infinity)
         }
         .scrollIndicators(.hidden)
+        .paperTop()
     }
 }
 

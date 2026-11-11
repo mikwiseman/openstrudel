@@ -26,7 +26,7 @@ final class TeamUITests: XCTestCase {
         // The second Home first: the Home paired last is the chat's.
         try await pair(app, "/invite2")
         let consent = app.buttons["acceptAIDataSharing"]
-        if consent.waitForExistence(timeout: 5) { consent.tap() }
+        if consent.waitForExistence(timeout: 5) { capture("consent", app); consent.tap() }
         try await pair(app, "/invite")
         let state = try await read("/")
         let id: (String) throws -> String = { key in try XCTUnwrap(state[key] as? String) }
@@ -64,6 +64,10 @@ final class TeamUITests: XCTestCase {
         // The picture comes from the fixture itself; give it a moment before the first look.
         try await Task.sleep(for: .seconds(2))
         capture("home", app)
+        // What scrolls up closes into the paper before it reaches the clock.
+        home.swipeUp(velocity: .slow)
+        capture("home-scrolled", app)
+        home.swipeDown()
 
         // 4. A result lands while the home is in sight: its row says so within a few seconds.
         _ = try await read("/arrive")
@@ -76,7 +80,9 @@ final class TeamUITests: XCTestCase {
         let rhythm = app.buttons["employeeRhythm"]
         XCTAssertTrue(rhythm.waitForExistence(timeout: 15), app.debugDescription)
         try await expectLabel(rhythm, says: "Каждый день в")
-        XCTAssertTrue(rhythm.label.contains("следующий запуск") && rhythm.label.contains("и ещё 1"), rhythm.label)
+        // One line that never wraps: the rhythm and the next run's day; «и ещё 1» is always spoken, shown when it fits.
+        XCTAssertTrue(rhythm.label.contains("следующий") && rhythm.label.contains("и ещё 1") && !rhythm.label.contains("ноября"), rhythm.label)
+        if environment["OPENSTRUDEL_TEXT_SIZE"] == nil { XCTAssertLessThan(rhythm.frame.height, 60, "The page's head is one line") }
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "памятке о приседаниях")).firstMatch.waitForExistence(timeout: 15), app.debugDescription)
         XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "](<")).firstMatch.exists, "A link written with an angle-bracket address reads as a link")
         XCTAssertFalse(app.textFields["Сообщение"].exists)
@@ -173,6 +179,9 @@ final class TeamUITests: XCTestCase {
         _ = try await read("/ask")
         let decline = app.buttons["Отказать"], allow = app.buttons["Разрешить"]
         XCTAssertTrue(allow.waitForExistence(timeout: 20) && decline.exists, app.debugDescription)
+        // The action's arguments read as rows of name and value, not as JSON.
+        XCTAssertTrue(app.staticTexts["partners@lodka.example"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "\"to\":")).firstMatch.exists, app.debugDescription)
         try await Task.sleep(for: .seconds(1))
         capture("chat-card", app)
         decline.tap()

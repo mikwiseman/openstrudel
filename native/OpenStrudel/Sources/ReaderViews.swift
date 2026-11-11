@@ -51,6 +51,7 @@ private struct ReaderView: View {
     @State private var details: EmployeeProfile?
     @State private var unavailable: String?
     @State private var onScreen = false
+    @Environment(\.dynamicTypeSize) private var typeSize
     #if os(macOS)
     @Environment(\.appearsActive) private var appearsActive
     #else
@@ -95,7 +96,8 @@ private struct ReaderView: View {
         // Named before the bars join it, so their lines and the capsule keep their own names.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("reader")
-        .safeAreaBar(edge: .top, spacing: 0) { topBar }
+        .safeAreaBar(edge: .top, spacing: 0) { VStack(spacing: 0) { topBar }.frame(maxWidth: .infinity).topFade() }
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .safeAreaBar(edge: .bottom, spacing: 0) {
             // The page's one way to the composer: the employee's latest words go to the chat as context.
             if profile != nil, let latest {
@@ -157,7 +159,7 @@ private struct ReaderView: View {
         discuss(make(home))
     }
 
-    /// Under the capsule, wherever the page is scrolled: the day and the employee's rhythm in one quiet line, and
+    /// Under the capsule, wherever the page is scrolled: the employee's rhythm in one quiet line (two at accessibility text sizes), and
     /// what the reader must know now: the device is out of reach, or the employee's runs fail.
     @ViewBuilder private var topBar: some View {
         let offline = client.homeUnreachable || client.connectionNeedsPairing
@@ -166,13 +168,21 @@ private struct ReaderView: View {
                 if let profile {
                     // "Tomorrow" becomes "today" by itself.
                     TimelineView(.everyMinute) { timeline in
+                        let line = EmployeeLine(profile, schedules: reader.schedules, now: timeline.date)
                         Button { details = profile } label: {
-                            Text(EmployeeLine.text(profile, schedules: reader.schedules, now: timeline.date))
-                                .monospacedDigit().multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: .infinity, minHeight: controlTarget, alignment: .leading).contentShape(Rectangle())
+                            // «и ещё N» is said only when the line has room for it.
+                            ViewThatFits(in: .horizontal) {
+                                Text(line.whole).lineLimit(1).fixedSize()
+                                Text(line.text).lineLimit(1).fixedSize()
+                                // Large text takes a second line rather than losing the next run.
+                                Text(line.text).lineLimit(typeSize.isAccessibilitySize ? 2 : 1).truncationMode(.tail).multilineTextAlignment(.leading)
+                            }
+                            .monospacedDigit()
+                            .frame(maxWidth: .infinity, minHeight: controlTarget, alignment: .leading).contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(AppTheme.secondaryText)
+                        .accessibilityLabel(line.whole)
                         .accessibilityHint(L("Открыть расписание"))
                         .accessibilityIdentifier("employeeRhythm")
                     }
@@ -219,13 +229,17 @@ enum ReaderLine {
     }
 }
 
-/// «Вторник, 10 ноября · Каждый день в 07:15 · следующий запуск завтра в 07:15». An employee without a schedule
-/// says what it is for instead.
-enum EmployeeLine {
-    static func text(_ profile: EmployeeProfile, schedules: [ChatSchedule], now: Date) -> String {
-        let day = now.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(L10n.locale))
-        let rest = TeamWords().rhythm(schedules, now: now) ?? profile.roleText
-        return [day.prefix(1).uppercased(with: L10n.locale) + day.dropFirst(), rest].filter { !$0.isEmpty }.joined(separator: " · ")
+/// «Каждый день в 07:15 · следующий завтра», with «и ещё 2» kept apart for when there is room. No date: each entry
+/// carries its own. An employee without a schedule says what it is for instead.
+struct EmployeeLine {
+    let text: String
+    let more: String?
+    var whole: String { [text, more].compactMap { $0 }.joined(separator: " · ") }
+
+    init(_ profile: EmployeeProfile, schedules: [ChatSchedule], now: Date) {
+        let rhythm = TeamWords().rhythm(schedules, now: now)
+        text = rhythm?.line ?? profile.roleText
+        more = rhythm?.more
     }
 }
 

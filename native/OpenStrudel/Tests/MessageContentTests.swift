@@ -232,6 +232,21 @@ struct MessageContentTests {
         for (width, value) in zip(widths, expected) { #expect(abs(width - value) < 0.01, "\(widths)", sourceLocation: sourceLocation) }
     }
 
+    @Test func aCardShowsFlatArgumentsAsRowsAndKeepsNestedOnesAsTheyCame() {
+        let flat = InteractionDetail("The «mail» service will run «send_letter».\n\n{\n  \"to\": \"partners@boat.example\",\n  \"subject\": \"Terms, version 4\",\n  \"copies\": 2,\n  \"urgent\": true\n}")
+        #expect(flat.text == "The «mail» service will run «send_letter».")
+        #expect(flat.rows.map(\.key) == ["to", "subject", "copies", "urgent"])
+        #expect(flat.rows.map(\.value) == ["partners@boat.example", "Terms, version 4", "2", "true"])
+        #expect(flat.raw == nil)
+        let nested = InteractionDetail("Run it?\n\n{\n  \"to\": [\"a@boat.example\"],\n  \"body\": { \"text\": \"Hello\" }\n}")
+        #expect(nested.text == "Run it?" && nested.rows.isEmpty)
+        #expect(nested.raw?.hasPrefix("{") == true && nested.raw?.contains("a@boat.example") == true)
+        // A reason, a command and a folder are words, not arguments.
+        let words = InteractionDetail("Clean the folder\nrm -r build\n/work/app")
+        #expect(words.text == "Clean the folder\nrm -r build\n/work/app" && words.rows.isEmpty && words.raw == nil)
+        #expect(InteractionDetail("Braces in {words} stay words").rows.isEmpty)
+    }
+
     @Test func blocksKeepTheReadingRhythm() {
         let blocks = MessageContent(source: "Intro\n\nSecond\n\n## Heading\n\n- One\n- Two\n\nAfter\n\n```\ncode\n```").blocks
         #expect(blocks.map(\.kind) == ["paragraph", "paragraph", "heading", "list", "list", "paragraph", "code"])

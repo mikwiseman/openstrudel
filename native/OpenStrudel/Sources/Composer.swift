@@ -274,7 +274,7 @@ struct Composer: View {
 
     /// In a draft the composer is the screen's only action, so it asks for the role like the sidebar row.
     private var placeholder: String {
-        client.isEmployeeDraft ? L("Опишите его задачу") : L("Message \(client.activeAgentName)")
+        client.isEmployeeDraft ? L("Опишите его задачу") : L("Сообщение")
     }
 
     @ViewBuilder private var draftField: some View {

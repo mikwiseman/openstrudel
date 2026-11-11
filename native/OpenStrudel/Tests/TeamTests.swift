@@ -106,14 +106,21 @@ import Testing
     @Test func anEmployeesRhythmNamesItsNearestScheduleItsNextRunAndHowManyMore() throws {
         let words = russian, now = Self.now
         let morning = try schedule("morning", cron: "15 4 * * *", next: "2026-11-11T04:15:00.000Z")
-        #expect(words.rhythm([morning], now: now) == "Каждый день в 07:15 · следующий запуск завтра в 07:15")
+        // The rhythm names its hour, so the next run needs only its day; nothing more to add.
+        #expect(words.rhythm([morning], now: now)?.line == "Каждый день в 07:15 · следующий завтра")
+        #expect(words.rhythm([morning], now: now)?.more == nil)
         let radar = try schedule("radar", cron: "*/15 * * * *", next: "2026-11-10T12:00:00.000Z")
         let weekly = try schedule("weekly", cron: "30 15 * * 6", next: "2026-11-14T15:30:00.000Z")
         // The nearest one speaks; a paused one, a one-time reminder and a backup are not rhythms of their own.
         let others = [try schedule("paused", cron: "0 9 * * *", next: "2026-11-10T12:30:00.000Z", enabled: false),
                       try schedule("once", cron: "@once 2026-11-10T12:10:00Z", next: "2026-11-10T12:10:00.000Z"),
                       try schedule("backup", cron: "15 5 * * *", next: "2026-11-10T12:05:00.000Z", backupOf: "morning")]
-        #expect(words.rhythm([morning, weekly, radar] + others, now: now) == "Раз в 15 мин · следующий запуск сегодня в 15:00 · и ещё 2")
+        // A rhythm without an hour says the hour of its next run; how many more there are is kept apart.
+        let busy = try #require(words.rhythm([morning, weekly, radar] + others, now: now))
+        #expect(busy.line == "Раз в 15 мин · следующий в 15:00" && busy.more == "и ещё 2")
+        #expect(words.rhythm([weekly], now: now)?.line == "По субботам в 18:30 · следующий 14 нояб.")
+        let overnight = try schedule("hours", cron: "0 */3 * * *", next: "2026-11-11T00:00:00.000Z")
+        #expect(words.rhythm([overnight], now: now)?.line == "Раз в 3 ч · следующий завтра в 03:00")
         #expect(words.rhythm(weekly) == "По субботам в 18:30")
         #expect(words.rhythm(try schedule("workdays", cron: "0 6 * * 1-5", next: "2026-11-11T06:00:00.000Z")) == "По будням в 09:00")
         #expect(words.rhythm(try schedule("hourly", cron: "5 * * * *", next: "2026-11-10T12:05:00.000Z")) == "Каждый час")
@@ -121,11 +128,11 @@ import Testing
         // A cron with no simpler words is known by its next run alone.
         let monthly = try schedule("monthly", cron: "0 9 1 * *", next: "2026-12-01T09:00:00.000Z")
         #expect(words.rhythm(monthly) == nil)
-        #expect(words.rhythm([monthly], now: now) == "Следующий запуск 1 декабря в 12:00")
-        #expect(words.rhythm([others[0]], now: now) == "Расписание на паузе")
+        #expect(words.rhythm([monthly], now: now)?.line == "Следующий запуск 1 декабря в 12:00")
+        #expect(words.rhythm([others[0]], now: now)?.line == "Расписание на паузе")
         #expect(words.rhythm([others[1]], now: now) == nil)
         #expect(words.rhythm([], now: now) == nil)
-        #expect(english.rhythm([morning], now: now)?.hasPrefix("Every day at ") == true)
+        #expect(english.rhythm([morning], now: now)?.line.hasPrefix("Every day at ") == true)
     }
 
     @Test func aFailureIsDatedByTheFirstRunThatDidNotWorkSinceTheLastThatDid() throws {
@@ -228,6 +235,25 @@ import Testing
         #expect(russian.day(Self.instant("2026-11-11T03:45:00.000Z"), now: Self.now) == "завтра")
         #expect(russian.day(Self.instant("2026-11-14T03:45:00.000Z"), now: Self.now) == "14 нояб.")
         #expect(english.day(Self.instant("2026-11-11T03:45:00.000Z"), now: Self.now) == "tomorrow")
+    }
+
+    @Test func aTitleThatOpensWithANameShowsTheNameFirstAndAHeadlineDoesNot() {
+        let boat = Shelf.named("Лодка: аренда катеров на час, без капитана")
+        #expect(boat?.name == "Лодка" && boat?.rest == "аренда катеров на час, без капитана")
+        #expect(Shelf.named("Co-Review: the whole repository as one review")?.name == "Co-Review")
+        // An ordinary headline, a clock, a clause before the colon and a lone letter are not names.
+        #expect(Shelf.named("«Северный мост» открыл веса модели «Клён 3»") == nil)
+        #expect(Shelf.named("Встреча в 12:30 на причале") == nil)
+        #expect(Shelf.named("Сегодня, в полдень: совет собрался снова") == nil)
+        #expect(Shelf.named("Совет по открытым моделям предложил: метка для текста") == nil)
+        #expect(Shelf.named("A: b") == nil)
+        #expect(Shelf.named("Лодка: ") == nil)
+        // A rumour's mark is not a name.
+        #expect(Shelf.named("Слух: «Северный мост» готовит версию для телефонов") == nil)
+        // The small line under a name ends between words.
+        #expect(Shelf.clipped("аренда катеров на час, без капитана", to: 38) == "аренда катеров на час, без капитана")
+        #expect(Shelf.clipped("агент сам чинит ошибки в проекте и перезапускает проверку", to: 38) == "агент сам чинит ошибки в проекте и…")
+        #expect(Shelf.clipped("безостановочноедлинноесловобезпробеловвообще", to: 10) == "безостанов…")
     }
 
     @Test func aPreviewOfSeveralLinesIsPlainWords() {

@@ -409,7 +409,26 @@ struct InteractionCard: View {
                 if let source = interaction.sourceTitle { Text("Telegram · " + source).modifier(MetaLine()) }
                 Text(L10n.text(interaction.title)).font(AppTypography.interface.weight(.semibold))
                 if let detail = interaction.detail, !detail.isEmpty {
-                    Text(detail).font(AppTypography.interface).foregroundStyle(AppTheme.secondaryText).textSelection(.enabled)
+                    let parts = InteractionDetail(detail)
+                    if !parts.text.isEmpty {
+                        Text(parts.text).font(AppTypography.interface).foregroundStyle(AppTheme.secondaryText).textSelection(.enabled)
+                    }
+                    if !parts.rows.isEmpty {
+                        // What the action will be done with: the name quiet, the value plain.
+                        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 6) {
+                            ForEach(parts.rows) { row in
+                                GridRow {
+                                    Text(row.key).foregroundStyle(AppTheme.secondaryText).gridColumnAlignment(.leading)
+                                    Text(row.value).foregroundStyle(.primary).textSelection(.enabled).gridColumnAlignment(.leading)
+                                }
+                            }
+                        }
+                        .font(.subheadline).padding(.top, 8)
+                        .accessibilityIdentifier("interactionArguments")
+                    }
+                    if let raw = parts.raw {
+                        Text(raw).font(.caption.monospaced()).foregroundStyle(AppTheme.secondaryText).textSelection(.enabled).padding(.top, 8)
+                    }
                 }
             }
             .fixedSize(horizontal: false, vertical: true)

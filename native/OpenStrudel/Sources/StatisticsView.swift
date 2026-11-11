@@ -5,8 +5,9 @@ import SwiftUI
 struct StatisticsScreen: View {
     @EnvironmentObject private var library: DeviceLibrary
     @Environment(\.dynamicTypeSize) private var typeSize
-    /// 64 on the Mac; on iOS it grows with the reader's text size and shrinks to keep one line.
-    @ScaledMetric(relativeTo: .largeTitle) private var heroSize: CGFloat = 64
+    @Environment(\.colorScheme) private var scheme
+    /// The fullest limit the chat's Home reports, when the page was opened from the home.
+    var limit: (used: Double, weekly: Bool)? = nil
     @StateObject private var model = StatisticsModel()
     @AppStorage("openstrudel.statistics.period") private var period = UsagePeriod.day
     /// "all", or one connection's id.
@@ -75,9 +76,9 @@ struct StatisticsScreen: View {
             if let slice, let current {
                 VStack(alignment: .leading, spacing: 0) {
                     if clients.count > 1 { scopePicker }
-                    hero(slice, in: all)
+                    tiles(slice, in: all)
                     UsageBars(slices: all, period: period, highlighted: slice.id, chosen: $chosen, previewed: $previewed)
-                        .padding(.top, 32)
+                        .padding(.top, 12)
                     if scope == "all" && current.homes.count > 1 { homeSplit(current).padding(.top, 48) }
                     rows(L("Где работали"), current.chats, key: "chats")
                     rows(L("Расписания"), current.schedules, key: "schedules", schedule: true)
@@ -94,9 +95,8 @@ struct StatisticsScreen: View {
             }
         }
         .scrollIndicators(.hidden)
-        #if os(macOS)
-        .scrollEdgeEffectStyle(.hard, for: .top)
-        #else
+        .paperTop()
+        #if os(iOS)
         .refreshable { await refresh() }
         #endif
         .accessibilityIdentifier("statisticsReport")
@@ -124,23 +124,34 @@ struct StatisticsScreen: View {
         .accessibilityIdentifier("statisticsScope")
     }
 
-    private func hero(_ slice: UsageSlice, in all: [UsageSlice]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(periodTitle(slice, in: all))
-                .font(AppTypography.label).foregroundStyle(AppTheme.secondaryText)
-                .accessibilityAddTraits(.isHeader)
-            Text(slice.requests.formatted(.number.locale(L10n.locale)))
-                .font(.system(size: heroSize, weight: .semibold)).tracking(-heroSize * 0.035)
-                .lineLimit(1).minimumScaleFactor(0.4)
-                .contentTransition(.numericText(value: Double(slice.requests)))
-                .accessibilityLabel(L("Запросы: \(slice.requests.formatted(.number.locale(L10n.locale)))"))
-                .accessibilityIdentifier("statisticsRequests")
-            if let comparison = comparison(slice, in: all) {
-                Text(comparison).font(AppTypography.interface).foregroundStyle(AppTheme.secondaryText)
+    /// The page opens as the home does, with tiles: the requests of the day or week shown, twice as wide as the
+    /// others; the fullest limit; what the period cost at API prices; the tokens it took.
+    private func tiles(_ slice: UsageSlice, in all: [UsageSlice]) -> some View {
+        DataShelf {
+            Tile(label: periodTitle(slice, in: all), shortLabel: L("Запросы"), skin: .ink, side: TileMetrics.side * 2 + TileMetrics.gap, height: TileMetrics.side) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(slice.requests.formatted(.number.locale(L10n.locale)))
+                        .font(.system(size: TileMetrics.side * 0.4, weight: .semibold)).tracking(-TileMetrics.side * 0.014)
+                        .lineLimit(1).minimumScaleFactor(0.4)
+                        .contentTransition(.numericText(value: Double(slice.requests)))
+                        .accessibilityLabel(L("Запросы: \(slice.requests.formatted(.number.locale(L10n.locale)))"))
+                        .accessibilityIdentifier("statisticsRequests")
+                    if let comparison = comparison(slice, in: all) {
+                        Text(comparison).font(AppTypography.label.weight(.regular)).opacity(0.62).lineLimit(1).minimumScaleFactor(0.8)
+                    }
+                }
+                .padding(.top, TileMetrics.side * 0.06)
+                .accessibilityElement(children: .contain)
             }
-            if let spend = spend(slice) {
-                Text(spend).font(AppTypography.interface).foregroundStyle(.primary)
+            if let limit { LimitTile(used: limit.used, weekly: limit.weekly) }
+            if let cost = slice.costUsd {
+                NumberTile(label: L("Стоимость"), value: "≈ " + Self.money(cost), caption: L("по ценам API"),
+                           skin: .paper(AgentAppearance.tint(AgentAppearance(kind: "coil", tone: 6), dark: scheme == .dark)))
                     .accessibilityIdentifier("statisticsSpend")
+            }
+            if slice.measured > 0 {
+                NumberTile(label: L("Токены"), value: Self.compact(slice.totalTokens),
+                           skin: .paper(AgentAppearance.tint(AgentAppearance(kind: "coil", tone: 1), dark: scheme == .dark)))
             }
         }
         .animation(.smooth(duration: 0.25), value: slice.id)
@@ -292,13 +303,6 @@ struct StatisticsScreen: View {
         guard let index = all.firstIndex(where: { $0.id == slice.id }), index > 0 else { return nil }
         let previous = all[index - 1].requests
         return period == .day ? L("Днём раньше: \(n(previous))") : L("Неделей раньше: \(n(previous))")
-    }
-
-    private func spend(_ slice: UsageSlice) -> String? {
-        var parts: [String] = []
-        if let cost = slice.costUsd { parts.append(L("≈ \(Self.money(cost)) по ценам API")) }
-        if slice.measured > 0 { parts.append(L("токены \(Self.compact(slice.totalTokens))")) }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     static func money(_ value: Double) -> String {

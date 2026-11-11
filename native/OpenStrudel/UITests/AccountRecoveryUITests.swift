@@ -150,8 +150,13 @@ final class AccountRecoveryUITests: XCTestCase {
         let (data, _) = try await URLSession.shared.data(from: XCTUnwrap(URL(string: value)))
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
+    /// A screenshot kept with the test, and beside the others when a folder is named for them.
     @MainActor private func capture(_ name: String, _ app: XCUIApplication) {
-        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = name; shot.lifetime = .keepAlways; add(shot)
+        let screenshot = XCUIScreen.main.screenshot()
+        let shot = XCTAttachment(screenshot: screenshot); shot.name = name; shot.lifetime = .keepAlways; add(shot)
+        guard let folder = ProcessInfo.processInfo.environment["OPENSTRUDEL_SHOTS"] else { return }
+        try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        try? screenshot.pngRepresentation.write(to: URL(fileURLWithPath: folder).appendingPathComponent("account-" + name + ".png"))
     }
 
     @MainActor private func scrollPresentedContent(_ app: XCUIApplication, back: Bool = false) {

@@ -15,6 +15,75 @@ enum TileMetrics {
     static let padding: CGFloat = 16
     static let gap: CGFloat = 12
     #endif
+
+    /// How wide a label of the given size is, so the shelf can decide once whether every tile's long label fits.
+    static func labelWidth(_ text: String, size: CGFloat) -> CGFloat {
+        #if os(macOS)
+        let font = NSFont.systemFont(ofSize: size, weight: .semibold)
+        #else
+        let font = UIFont.systemFont(ofSize: size, weight: .semibold)
+        #endif
+        return (text as NSString).size(withAttributes: [.font: font]).width
+    }
+}
+
+extension EnvironmentValues {
+    /// Every desk's tile says «News · 5» instead of «News · 5 новых»: when one long label would not fit, all are short.
+    @Entry var compactTileLabels = false
+}
+
+/// A title that steps its size down until it fits its lines, instead of being cut in the middle of a word. Only a
+/// title too long for the smallest size is cut.
+struct FittedTitle: View {
+    let text: String
+    let sizes: [CGFloat]
+    var lines = 4
+    /// How many lines the smallest size may take when even it does not fit `lines`.
+    var most: Int? = nil
+    var tracking: CGFloat = 0
+
+    var body: some View {
+        FirstFit(lines: lines) {
+            ForEach(Array(sizes.enumerated()), id: \.offset) { index, size in
+                Text(text).font(.system(size: size, weight: .medium, design: .serif)).tracking(tracking).lineSpacing(-1).multilineTextAlignment(.leading)
+            }
+            // The last resort: the smallest size, cut only when it must be.
+            Text(text).font(.system(size: sizes.last ?? 12, weight: .medium, design: .serif)).tracking(tracking).lineSpacing(-1)
+                .lineLimit(most ?? lines).multilineTextAlignment(.leading)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
+    }
+}
+
+/// Shows the first of its candidates that takes no more than `lines` lines at the width it is given; the others wait
+/// out of sight, where the tile's shape clips them.
+private struct FirstFit: SwiftUI.Layout {
+    let lines: Int
+
+    private func choice(_ subviews: Subviews, width: CGFloat?) -> Int {
+        for (index, view) in subviews.enumerated() {
+            let line = view.sizeThatFits(.init(width: .infinity, height: nil)).height
+            let whole = view.sizeThatFits(.init(width: width, height: nil)).height
+            if line > 0, whole <= line * CGFloat(lines) + 1 { return index }
+        }
+        return subviews.count - 1
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard !subviews.isEmpty else { return .zero }
+        let size = subviews[choice(subviews, width: proposal.width)].sizeThatFits(.init(width: proposal.width, height: nil))
+        return CGSize(width: proposal.width ?? size.width, height: size.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard !subviews.isEmpty else { return }
+        let chosen = choice(subviews, width: bounds.width)
+        for (index, view) in subviews.enumerated() {
+            view.place(at: CGPoint(x: bounds.minX, y: index == chosen ? bounds.minY : bounds.minY - 20_000), anchor: .topLeading,
+                       proposal: .init(width: bounds.width, height: nil))
+        }
+    }
 }
 
 enum TileSkin {
@@ -79,10 +148,12 @@ struct Tile<Content: View>: View {
         case .plain: AppTheme.tile
         case .picture(let image):
             Image(decorative: image, scale: 1).resizable().scaledToFill()
-                // The label and the title stay readable over any picture.
-                .overlay { LinearGradient(stops: [.init(color: .black.opacity(0.56), location: 0), .init(color: .black.opacity(0.10), location: 0.27),
-                                                   .init(color: .black.opacity(0.14), location: 0.40), .init(color: .black.opacity(0.74), location: 0.70),
-                                                   .init(color: .black.opacity(0.88), location: 1)], startPoint: .top, endPoint: .bottom) }
+                // The label reads over a darkened top. The title brings its own scrim (`pictureScrim`), which starts
+                // just above its first line, so the picture shows in everything the words leave free.
+                .overlay(alignment: .top) {
+                    LinearGradient(colors: [.black.opacity(0.5), .black.opacity(0)], startPoint: .top, endPoint: .bottom).frame(height: (height ?? side) * 0.3)
+                }
+                .overlay { Color.black.opacity(0.04) }
         }
     }
 }
@@ -132,6 +203,16 @@ struct HomeShelf: View {
     let source: (ShelfTile) -> AnyHashable
     let zoom: Namespace.ID
     let open: (ShelfTile) -> Void
+    @ScaledMetric(relativeTo: .caption) private var labelSize: CGFloat = 12
+
+    /// One desk's long label does not fit: then every desk's label is the short one, so they read alike.
+    private var compact: Bool {
+        let room = TileMetrics.side - 2 * TileMetrics.padding - 1
+        return tiles.contains { tile in
+            guard case .desk(_, let name, _, _, _, _, let unseen) = tile, unseen > 0 else { return false }
+            return TileMetrics.labelWidth(name + " · " + NewsWords().fresh(unseen), size: labelSize) > room
+        }
+    }
 
     var body: some View {
         ScrollView(.horizontal) {
@@ -155,6 +236,7 @@ struct HomeShelf: View {
         .scrollTargetBehavior(.viewAligned)
         .scrollIndicators(.hidden)
         .scrollClipDisabled()
+        .environment(\.compactTileLabels, compact)
         .animation(.smooth(duration: 0.25), value: tiles.map(\.id))
     }
 }
@@ -205,12 +287,7 @@ private struct ShelfTileView: View {
             .accessibilityLabel(L("Дальше"))
             .accessibilityValue(name + ", " + TeamWords().moment(at))
         case .limit(let used, let weekly):
-            Tile(label: weekly ? L("Лимит недели") : L("Лимит"), skin: .plain) {
-                UsageRing(used: used).frame(maxWidth: .infinity, maxHeight: .infinity).padding(.top, 8)
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(weekly ? L("Лимит недели") : L("Лимит"))
-            .accessibilityValue(used.formatted(.percent.precision(.fractionLength(0))))
+            LimitTile(used: used, weekly: weekly)
         case .progress(let done):
             Tile(label: L("Прогресс"), skin: .paper(AgentAppearance.tint(AgentAppearance(kind: "coil", tone: 1), dark: scheme == .dark))) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -238,9 +315,11 @@ private struct ShelfTileView: View {
     }
 }
 
-/// A desk's lead story: its picture when it has one, otherwise the desk's own paper.
+/// A desk's lead story: its picture when it has one, otherwise the desk's own paper. On paper a title that starts
+/// with a name («Имя: что это») shows the name large and the rest small under it.
 private struct DeskTile: View {
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.compactTileLabels) private var compact
     let name: String
     let appearance: AgentAppearance
     let title: String
@@ -249,16 +328,25 @@ private struct DeskTile: View {
     let unseen: Int
     @State private var picture: CGImage?
 
-    private var label: String { unseen > 0 ? name + " · " + NewsWords().fresh(unseen) : name }
+    private var short: String { unseen > 0 ? name + " · " + unseen.formatted() : name }
+    private var label: String { unseen > 0 && !compact ? name + " · " + NewsWords().fresh(unseen) : short }
 
     var body: some View {
         let shown = picture ?? StoryPictures.cached(image)
-        Tile(label: label, shortLabel: unseen > 0 ? name + " · " + unseen.formatted() : nil,
-             skin: shown.map { .picture($0) } ?? .paper(AgentAppearance.tint(appearance, dark: scheme == .dark))) {
-            Spacer(minLength: 6)
-            Text(title).font(.system(size: shown == nil ? 17 : 15.5, weight: .medium, design: .serif)).lineSpacing(-1)
-                .lineLimit(shown == nil ? 5 : 4).minimumScaleFactor(0.85).multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        Tile(label: label, shortLabel: short, skin: shown.map { .picture($0) } ?? .paper(AgentAppearance.tint(appearance, dark: scheme == .dark))) {
+            if shown == nil, let named = Shelf.named(title) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(named.name).font(.system(size: TileMetrics.side * 0.175, weight: .medium, design: .serif)).tracking(-0.4)
+                        .lineLimit(2).minimumScaleFactor(0.7)
+                    Text(Shelf.clipped(named.rest, to: 38)).font(.system(size: TileMetrics.side * 0.082)).opacity(0.7).lineSpacing(0.5).lineLimit(2)
+                }
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(.top, TileMetrics.side * 0.09)
+            } else {
+                Spacer(minLength: 6)
+                TileTitle(text: title, picture: shown != nil)
+            }
         }
         .animation(.smooth(duration: 0.3), value: shown != nil)
         .task(id: image) {
@@ -268,6 +356,37 @@ private struct DeskTile: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .accessibilityValue(title)
+    }
+}
+
+/// A tile's serif title: at most four lines, a step smaller rather than cut. Over a picture it starts a size down
+/// and stands on its own scrim.
+private struct TileTitle: View {
+    let text: String
+    let picture: Bool
+    var body: some View {
+        // Over a picture the title keeps to three lines while it can, so the picture has the top of the tile.
+        let scale = max(TileMetrics.side / 150, 0.92)
+        FittedTitle(text: text, sizes: (picture ? [15.5, 14.5, 13.5, 12.5] : [17, 15.5, 14, 13, 12.5]).map { $0 * scale }, lines: picture ? 3 : 4, most: 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .pictureScrim(picture)
+    }
+}
+
+extension View {
+    /// Under a title that stands on a picture: the picture darkens to near ink just above the first line and stays
+    /// so to the tile's edges, however many lines the title takes. No detail of the picture runs through the words.
+    func pictureScrim(_ on: Bool = true) -> some View {
+        background {
+            if on {
+                VStack(spacing: 0) {
+                    LinearGradient(colors: [.black.opacity(0), .black.opacity(0.86)], startPoint: .top, endPoint: .bottom).frame(height: 28)
+                    Color.black.opacity(0.86)
+                }
+                .padding(.top, -32).padding(.horizontal, -TileMetrics.padding).padding(.bottom, -TileMetrics.padding)
+                .allowsHitTesting(false)
+            }
+        }
     }
 }
 
@@ -287,9 +406,7 @@ private struct ResultTile: View {
         let shown = picture ?? ResultPictures.cached(file)
         Tile(label: name, skin: shown.map { .picture($0) } ?? .paper(AgentAppearance.tint(appearance, dark: scheme == .dark))) {
             Spacer(minLength: 6)
-            Text(text).font(.system(size: shown == nil ? 17 : 15.5, weight: .medium, design: .serif)).lineSpacing(-1)
-                .lineLimit(shown == nil ? 5 : 3).minimumScaleFactor(0.85).multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            TileTitle(text: text, picture: shown != nil)
         }
         .animation(.smooth(duration: 0.3), value: shown != nil)
         .task(id: file.id) {
@@ -299,6 +416,58 @@ private struct ResultTile: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(name)
         .accessibilityValue(text)
+    }
+}
+
+/// A row of data tiles at the top of a page behind a tile: the same squares as the home's shelf, scrolling sideways
+/// when the page is narrower than they are.
+struct DataShelf<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        ScrollView(.horizontal) {
+            HStack(alignment: .top, spacing: TileMetrics.gap) { content }
+                .scrollTargetLayout()
+                // Room for the shadows, which the scroll view would otherwise cut.
+                .padding(.top, 6).padding(.bottom, 26)
+        }
+        .scrollTargetBehavior(.viewAligned)
+        .scrollIndicators(.hidden)
+        .scrollClipDisabled()
+    }
+}
+
+/// One number as a tile: its name, the figure, and a quiet word about it.
+struct NumberTile: View {
+    let label: String
+    let value: String
+    var caption: String? = nil
+    var skin: TileSkin = .plain
+    var body: some View {
+        Tile(label: label, skin: skin) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(value).font(.system(size: TileMetrics.side * 0.26, weight: .semibold)).tracking(-1.6).monospacedDigit()
+                    .contentTransition(.numericText()).lineLimit(1).minimumScaleFactor(0.5)
+                if let caption { Text(caption).font(AppTypography.label.weight(.regular)).opacity(0.62).lineLimit(2).minimumScaleFactor(0.8) }
+            }
+            .padding(.top, TileMetrics.side * 0.13)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue([value, caption].compactMap { $0 }.joined(separator: ", "))
+    }
+}
+
+/// The fullest limit as a tile, as on the home.
+struct LimitTile: View {
+    let used: Double
+    let weekly: Bool
+    var body: some View {
+        Tile(label: weekly ? L("Лимит недели") : L("Лимит"), skin: .plain) {
+            UsageRing(used: used).frame(maxWidth: .infinity, maxHeight: .infinity).padding(.top, 8)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(weekly ? L("Лимит недели") : L("Лимит"))
+        .accessibilityValue(used.formatted(.percent.precision(.fractionLength(0))))
     }
 }
 

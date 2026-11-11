@@ -11717,13 +11717,6 @@
     "he": "שבוע קודם: {0}",
     "ru": "Неделей раньше: {0}"
   },
-  "≈ {0} по ценам API": {
-    "en": "≈ {0} at API prices",
-    "fr": "≈ {0} aux tarifs de l’API",
-    "es": "≈ {0} a precios de la API",
-    "he": "≈ {0} לפי מחירי API",
-    "ru": "≈ {0} по ценам API"
-  },
   "Нет подключённых устройств": {
     "en": "No connected devices",
     "fr": "Aucun appareil connecté",
@@ -11864,12 +11857,12 @@
     "he": "מהדורה {0}",
     "ru": "Выпуск {0}"
   },
-  "радар проверил {0}": {
-    "en": "radar checked {0}",
-    "fr": "radar vérifié {0}",
-    "es": "radar revisado {0}",
-    "he": "הרדאר נבדק {0}",
-    "ru": "радар проверил {0}"
+  "радар {0}": {
+    "en": "radar {0}",
+    "fr": "radar {0}",
+    "es": "radar {0}",
+    "he": "רדאר {0}",
+    "ru": "радар {0}"
   },
   "{0} проверяет источники…": {
     "en": "{0} is checking sources…",
@@ -12137,12 +12130,19 @@
     "he": "ההרצה הבאה {0}",
     "ru": "Следующий запуск {0}"
   },
-  "следующий запуск {0}": {
-    "en": "next run {0}",
-    "fr": "prochaine exécution {0}",
-    "es": "próxima ejecución {0}",
-    "he": "ההרצה הבאה {0}",
-    "ru": "следующий запуск {0}"
+  "следующий {0}": {
+    "en": "next: {0}",
+    "fr": "prochain : {0}",
+    "es": "siguiente: {0}",
+    "he": "הבא: {0}",
+    "ru": "следующий {0}"
+  },
+  "следующий в {0}": {
+    "en": "next at {0}",
+    "fr": "prochain à {0}",
+    "es": "siguiente a las {0}",
+    "he": "הבא ב־{0}",
+    "ru": "следующий в {0}"
   },
   "Раз в {0} мин": {
     "en": "Every {0} min",
@@ -12325,5 +12325,54 @@
     "es": "Preguntar sobre esta noticia",
     "he": "לשאול על הידיעה",
     "ru": "Спросить про историю"
+  },
+  "Запросы": {
+    "en": "Requests",
+    "fr": "Requêtes",
+    "es": "Solicitudes",
+    "he": "בקשות",
+    "ru": "Запросы"
+  },
+  "Стоимость": {
+    "en": "Cost",
+    "fr": "Coût",
+    "es": "Coste",
+    "he": "עלות",
+    "ru": "Стоимость"
+  },
+  "по ценам API": {
+    "en": "at API prices",
+    "fr": "aux tarifs de l’API",
+    "es": "a precios de la API",
+    "he": "במחירי ה־API",
+    "ru": "по ценам API"
+  },
+  "Токены": {
+    "en": "Tokens",
+    "fr": "Jetons",
+    "es": "Tokens",
+    "he": "טוקנים",
+    "ru": "Токены"
+  },
+  "Сделано": {
+    "en": "Done",
+    "fr": "Fait",
+    "es": "Hecho",
+    "he": "בוצע",
+    "ru": "Сделано"
+  },
+  "за 7 дней": {
+    "en": "in 7 days",
+    "fr": "en 7 jours",
+    "es": "en 7 días",
+    "he": "ב־7 ימים",
+    "ru": "за 7 дней"
+  },
+  "из 7": {
+    "en": "of 7",
+    "fr": "sur 7",
+    "es": "de 7",
+    "he": "מתוך 7",
+    "ru": "из 7"
   }
 }

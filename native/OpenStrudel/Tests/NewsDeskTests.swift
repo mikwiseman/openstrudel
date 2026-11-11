@@ -241,9 +241,9 @@ import Testing
         func text(_ status: NewsStatus?) -> String { words.status(line(status), name: "News", now: Self.now) }
         let next = "2026-11-10T12:05:00.000Z"
 
-        #expect(text(NewsStatus(checkedAt: "2026-11-10T11:35:00.000Z", nextRunAt: next)) == "Выпуск 07:04 · 1 история · радар проверил 14:35")
+        #expect(text(NewsStatus(checkedAt: "2026-11-10T11:35:00.000Z", nextRunAt: next)) == "Выпуск 07:04 · 1 история · радар 14:35")
         // A check on another day carries its date.
-        #expect(text(NewsStatus(checkedAt: "2026-11-09T20:35:00.000Z", nextRunAt: next)) == "Выпуск 07:04 · 1 история · радар проверил 9 ноября, 23:35")
+        #expect(text(NewsStatus(checkedAt: "2026-11-09T20:35:00.000Z", nextRunAt: next)) == "Выпуск 07:04 · 1 история · радар 9 ноября, 23:35")
         // An older Home says nothing about its runs; the stories still do.
         #expect(text(nil) == "Выпуск 07:04 · 1 история")
         #expect(text(NewsStatus(running: true, checkedAt: "2026-11-10T11:35:00.000Z", failedAt: "2026-11-10T07:20:00.000Z", failure: "x", nextRunAt: next)) == "News проверяет источники…")

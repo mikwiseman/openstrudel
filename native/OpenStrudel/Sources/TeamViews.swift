@@ -104,9 +104,10 @@ struct TeamRow: View {
     }
 
     private var character: some View {
-        // It proofs inside a signal ring while its employee works; out of reach, or while its runs fail, it rests in grey.
+        // It proofs inside a signal ring while its employee works. Grey means out of reach and nothing else: a failed
+        // run keeps the character's colours, and the mark and the words say what happened.
         ToneAvatar(appearance: content.appearance, size: AvatarSize.team, working: content.state == .working, landings: landings,
-                   offline: content.state == .offline || content.state == .failing)
+                   offline: content.state == .offline)
             .overlay(alignment: .bottomTrailing) {
                 if content.state == .failing {
                     Image(systemName: "exclamationmark.circle.fill").font(.system(size: AvatarSize.team * 0.36))
@@ -132,7 +133,7 @@ struct TeamRow: View {
     @ViewBuilder private var second: some View {
         if !line.isEmpty {
             Text(line).font(RowMetrics.preview).tracking(-0.15)
-                .foregroundStyle(content.state == .working ? AnyShapeStyle(AppTheme.signal) : content.state == .failing ? AnyShapeStyle(AppTheme.warning) : AnyShapeStyle(AppTheme.secondaryText))
+                .foregroundStyle(content.state == .working ? AnyShapeStyle(AppTheme.signalText) : content.state == .failing ? AnyShapeStyle(AppTheme.warning) : AnyShapeStyle(AppTheme.secondaryText))
                 .lineLimit(textSize.isAccessibilitySize ? 3 : 1)
                 .id(content.state == .resting ? "preview" : String(describing: content.state))
                 .transition(.opacity)

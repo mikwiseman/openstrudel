@@ -275,7 +275,7 @@ struct OpenStrudelRootView: View {
         case .insight(let item): InsightDetail(item: item, discuss: discuss)
         case .progress:
             ProgressPage(model: activity, limits: limits, scope: activityScope, refresh: { await refreshActivity(includeLimits: true, force: true) }, openChat: { open(.chat) })
-        case .statistics: StatisticsScreen()
+        case .statistics: StatisticsScreen(limit: limits.scope == activityScope ? Shelf.limit(limits.accounts) : nil)
         }
     }
 

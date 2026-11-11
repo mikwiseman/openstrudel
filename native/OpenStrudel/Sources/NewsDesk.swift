@@ -344,7 +344,7 @@ struct NewsWords {
     func status(_ line: NewsStatusLine, name: String, now: Date = .now) -> String {
         switch line {
         case .edition(let published, let stories, let checked):
-            return [published.map { self("Выпуск \(time($0))") }, self.stories(stories), checked.map { self("радар проверил \(moment($0, now: now))") }]
+            return [published.map { self("Выпуск \(time($0))") }, self.stories(stories), checked.map { self("радар \(moment($0, now: now))") }]
                 .compactMap { $0 }.joined(separator: " · ")
         case .running: return self("\(name) проверяет источники…")
         case .failing(let since, let reason):

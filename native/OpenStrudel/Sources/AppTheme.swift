@@ -21,6 +21,8 @@ enum AppTheme {
     static let faint = Color("FaintText")
     /// The one signal colour: something new, someone working, the arrow of a story's view.
     static let signal = Color("SignalColor")
+    /// The signal as words or a glyph: a darker step in light, so it reads at 4.5 : 1 on the paper. Dots and rings keep `signal`.
+    static let signalText = Color("SignalText")
     static let warning = Color("WarningText")
     static let destructive = Color("DestructiveText")
 }
@@ -155,6 +157,24 @@ enum AvatarSize {
 extension View {
     /// Display type is set tight; the larger the type, the tighter.
     func displayTracking(_ amount: CGFloat = -0.6) -> some View { tracking(amount) }
+
+    /// The paper closing over what scrolls up under the bar at the top of a page. Content dissolves into it before it
+    /// reaches the capsules that float there: no rule under the bar, no blurred shapes behind the clock.
+    func topFade() -> some View {
+        background {
+            VStack(spacing: 0) {
+                AppTheme.canvas
+                LinearGradient(colors: [AppTheme.canvas, AppTheme.canvas.opacity(0)], startPoint: .top, endPoint: .bottom).frame(height: 22)
+            }
+            .padding(.bottom, -22).ignoresSafeArea(edges: .top).allowsHitTesting(false)
+        }
+    }
+
+    /// A page with nothing of its own pinned at the top still closes into the paper there.
+    func paperTop() -> some View {
+        safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(maxWidth: .infinity).frame(height: 0).topFade() }
+            .scrollEdgeEffectStyle(.soft, for: .top)
+    }
 
     /// The paper rising softly behind a floating control at the bottom, so what scrolls under it fades instead of
     /// showing through. Glass stays glass; this is the page under it.

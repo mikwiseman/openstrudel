@@ -847,6 +847,38 @@ struct ChatInteraction: Decodable, Identifiable, Equatable {
     let questions: [ChatQuestion]
     var sourceTitle: String? = nil
 }
+/// What a card says under its title, split for reading: the sentence, then the arguments the Home appended as JSON.
+/// A flat object reads as rows of name and value, in the order the Home wrote them; a nested one stays as it came.
+struct InteractionDetail: Equatable {
+    struct Row: Equatable, Identifiable { let key: String; let value: String; var id: String { key } }
+    let text: String
+    var rows: [Row] = []
+    var raw: String? = nil
+
+    init(_ detail: String) {
+        let start = detail.hasPrefix("{") ? detail.startIndex : detail.range(of: "\n\n{").map { detail.index($0.lowerBound, offsetBy: 2) }
+        guard let start, detail.hasSuffix("}"), let object = try? JSONSerialization.jsonObject(with: Data(detail[start...].utf8)) as? [String: Any], !object.isEmpty else {
+            text = detail; return
+        }
+        let json = String(detail[start...])
+        text = detail[..<start].trimmingCharacters(in: .whitespacesAndNewlines)
+        let values = object.compactMapValues(Self.plain)
+        guard values.count == object.count else { raw = json; return }
+        let place = { (key: String) in json.range(of: "\"" + key + "\":")?.lowerBound ?? json.endIndex }
+        rows = values.keys.sorted { place($0) < place($1) }.map { Row(key: $0, value: values[$0] ?? "") }
+    }
+
+    /// A value a row can show: words, a number, yes or no. An object or a list is not one.
+    private static func plain(_ value: Any) -> String? {
+        switch value {
+        case let text as String: text
+        case let number as NSNumber: CFGetTypeID(number) == CFBooleanGetTypeID() ? (number.boolValue ? "true" : "false") : number.stringValue
+        case is NSNull: "—"
+        default: nil
+        }
+    }
+}
+
 struct ChatQuestion: Decodable, Identifiable, Equatable {
     let id: String
     let question: String

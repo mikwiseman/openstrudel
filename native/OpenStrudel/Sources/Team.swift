@@ -157,6 +157,25 @@ enum Shelf {
         }
     }
 
+    /// «Имя: что это»: a title that opens with a short name before a colon, the way a desk of launches writes them.
+    /// The name stands large on its tile and the rest small under it. Nil for an ordinary headline.
+    static func named(_ title: String) -> (name: String, rest: String)? {
+        guard let colon = title.range(of: ": ") else { return nil }
+        let name = title[..<colon.lowerBound].trimmingCharacters(in: .whitespaces), rest = title[colon.upperBound...].trimmingCharacters(in: .whitespaces)
+        guard (2...24).contains(name.count), name.split(separator: " ").count <= 3, !rest.isEmpty, name.rangeOfCharacter(from: CharacterSet(charactersIn: ".!?,;")) == nil,
+              // «Слух: …» marks a rumour; what follows is the headline, not what a thing named Слух is.
+              !["слух", "rumor", "rumour"].contains(name.lowercased()) else { return nil }
+        return (name, rest)
+    }
+
+    /// Words cut to a length between words, with an ellipsis, so a short line under a name never ends mid-word.
+    static func clipped(_ text: String, to limit: Int) -> String {
+        guard text.count > limit else { return text }
+        let head = text.prefix(limit)
+        let cut = head.lastIndex(of: " ").map { head[..<$0] } ?? head
+        return cut.trimmingCharacters(in: CharacterSet(charactersIn: " ,;:—-")) + "…"
+    }
+
     /// The fullest window the subscriptions report: the week's when there is one, otherwise any.
     static func limit(_ accounts: [ManagedCodexAccount]) -> (used: Double, weekly: Bool)? {
         let windows = accounts.flatMap(\.usage.windows).compactMap { window in window.remainingPercent.map { (used: min(1, max(0, 1 - $0 / 100)), weekly: window.windowDurationMins == 10080) } }
@@ -247,16 +266,20 @@ struct TeamWords {
         return self("\(self(names[calendar.component(.weekday, from: next) - 1])) в \(time(next))")
     }
 
-    /// The employee page's one line of rhythm: the nearest schedule in words, its next run, and how many more there are.
-    /// «Каждый день в 07:15 · следующий запуск завтра в 07:15 · и ещё 2». Nil when it has no recurring schedule at all.
-    func rhythm(_ schedules: [ChatSchedule], now: Date = .now) -> String? {
+    /// The employee page's one line of rhythm: the nearest schedule in words and when it runs next, «Каждый день в
+    /// 07:15 · следующий завтра». How many more there are, «и ещё 2», is kept apart: the page says it only when the
+    /// line has room. Nil when it has no recurring schedule at all.
+    func rhythm(_ schedules: [ChatSchedule], now: Date = .now) -> (line: String, more: String?)? {
         // A backup stands in for its main schedule; it is not a rhythm of its own.
         let recurring = schedules.filter { !$0.isOneTime && $0.backupOf == nil }
         let running = recurring.filter(\.enabled).compactMap { schedule in Team.date(schedule.nextRunAt).map { (schedule: schedule, next: $0) } }.sorted { $0.next < $1.next }
-        guard let nearest = running.first else { return recurring.isEmpty ? nil : self("Расписание на паузе") }
+        guard let nearest = running.first else { return recurring.isEmpty ? nil : (self("Расписание на паузе"), nil) }
         let more = running.count > 1 ? self("и ещё \(running.count - 1)") : nil
-        guard let rhythm = rhythm(nearest.schedule) else { return [nextRun(nearest.next, now: now), more].compactMap { $0 }.joined(separator: " · ") }
-        return [rhythm, self("следующий запуск \(moment(nearest.next, now: now))"), more].compactMap { $0 }.joined(separator: " · ")
+        guard let rhythm = rhythm(nearest.schedule) else { return (nextRun(nearest.next, now: now), more) }
+        // A rhythm that names its hour needs only the day of the next run; one that does not, the hour.
+        let next = rhythm.hasSuffix(time(nearest.next)) ? self("следующий \(day(nearest.next, now: now))")
+            : calendar.isDate(nearest.next, inSameDayAs: now) ? self("следующий в \(time(nearest.next))") : self("следующий \(moment(nearest.next, now: now))")
+        return (rhythm + " · " + next, more)
     }
 
     /// «Не получается с 07:15: закончился лимит модели.» The day is named when it is not today.

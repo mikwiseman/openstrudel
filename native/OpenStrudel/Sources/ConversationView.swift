@@ -28,6 +28,14 @@ struct ConversationView: View {
     @State private var startedWriting = false
     /// The count of `writes` this chat has already answered; nil until it has seen the one it was opened with.
     @State private var opened: Int?
+    /// The composer was asked to take the keyboard, and has not yet.
+    @State private var wantsKeyboard = false
+    /// The page stands still on screen. On a phone UIKit says when; a Mac window has no transition to wait for.
+    #if os(iOS)
+    @State private var arrived = false
+    #else
+    @State private var arrived = true
+    #endif
     @State private var draft = ""
     @State private var pickedFiles: [PickedFile] = []
     @State private var context: ChatContext?
@@ -43,7 +51,7 @@ struct ConversationView: View {
             #if os(macOS)
             // The transcript runs under the toolbar and the composer; the system draws the scroll edges.
             transcript(proxy)
-                .safeAreaBar(edge: .top, spacing: 0) { topBar }
+                .safeAreaBar(edge: .top, spacing: 0) { VStack(spacing: 0) { topBar }.frame(maxWidth: .infinity).topFade() }
                 .safeAreaBar(edge: .bottom, spacing: 0) { bottomBar(proxy) }
             #else
             // The transcript runs under the title capsule and the composer, as on the Mac; what must be said about
@@ -62,6 +70,7 @@ struct ConversationView: View {
                                 .padding(.horizontal, Layout.edge).padding(.vertical, 8)
                         }
                     }
+                    .frame(maxWidth: .infinity).topFade()
                 }
                 .safeAreaBar(edge: .bottom, spacing: 0) { bottomBar(proxy) }
             #endif
@@ -71,20 +80,28 @@ struct ConversationView: View {
             // Once: coming back from a page the chat led to does not raise the keyboard again.
             guard startsWriting, !startedWriting else { return }
             startedWriting = true
-            // After the page has grown out of the capsule, so the keyboard does not fight the zoom.
-            try? await Task.sleep(for: .milliseconds(350))
-            focused = true
+            wantsKeyboard = true
         }
-        // «Спросить про…» from a page over the chat: the keyboard waits until the chat is back in place, or the
-        // composer would stay under it.
+        // «Спросить про…» from a page over the chat asks for the keyboard as well.
         .task(id: writes) {
             guard let answered = opened, writes > answered else { opened = writes; return }
             opened = writes
-            try? await Task.sleep(for: .milliseconds(500))
-            if !Task.isCancelled { focused = true }
+            wantsKeyboard = true
         }
+        // The keyboard comes up only once the page has really arrived: raised while the chat is still growing out of
+        // a capsule, or still coming back from under another page, it left the composer underneath it.
+        #if os(iOS)
+        .background { Arrival { arrived = true }.frame(width: 0, height: 0).accessibilityHidden(true) }
+        #endif
+        .onChange(of: arrived) { _, _ in raiseKeyboard() }
+        .onChange(of: wantsKeyboard) { _, _ in raiseKeyboard() }
         // A page over the chat, or the way back home, takes the keyboard down with it.
-        .onDisappear { focused = false }
+        .onDisappear {
+            focused = false
+            #if os(iOS)
+            arrived = false
+            #endif
+        }
         // A menu hands the keyboard back to the field it took it from, even when its item opened a sheet over the chat.
         .onChange(of: focused) { _, now in if now && (covered || details != nil) { focused = false } }
         .onChange(of: client.openAIAccount?.connected) { _, connected in
@@ -164,6 +181,12 @@ struct ConversationView: View {
         details = EmployeeDetailsPresentation(profile: client.activeProfile)
     }
 
+    private func raiseKeyboard() {
+        guard wantsKeyboard, arrived, !covered, details == nil else { return }
+        wantsKeyboard = false
+        focused = true
+    }
+
     private func transcript(_ proxy: ScrollViewProxy) -> some View {
         ScrollView {
             if client.feedMessages.isEmpty && client.visiblePendingMessages.isEmpty {
@@ -187,10 +210,8 @@ struct ConversationView: View {
             }
         }
         .scrollIndicators(.hidden)
-        #if os(macOS)
-        // Under a Mac toolbar the soft style draws nothing visible; the hard one blurs and edges it like Settings.
-        .scrollEdgeEffectStyle(.hard, for: .top)
-        #endif
+        // The paper closes over the transcript at the top (`topFade`); the system adds only its soft edge, never a rule.
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         #if os(iOS)
         // Attachments settle after the initial scroll. Keep the end
@@ -490,3 +511,20 @@ extension Layout {
     static let belowComposer: CGFloat = 8
     #endif
 }
+
+#if os(iOS)
+/// Tells when a page has really arrived: UIKit's own word that the transition is over. SwiftUI's `onAppear` comes at
+/// its start.
+private struct Arrival: UIViewControllerRepresentable {
+    let arrived: () -> Void
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+    func updateUIViewController(_ controller: Controller, context: Context) { controller.arrived = arrived }
+    final class Controller: UIViewController {
+        var arrived: () -> Void = {}
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            arrived()
+        }
+    }
+}
+#endif

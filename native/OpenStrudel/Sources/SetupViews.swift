@@ -448,6 +448,7 @@ struct AIDataConsentView: View {
             InkLink(L("Подробнее о данных"), destination: URL(string: "https://waiwai.is/openstrudel/privacy")!)
                 .font(AppTypography.interface)
                 .padding(.top, 12 - TextAction.inset)
+        } actions: {
             Button(action: accept) {
                 SetupActionLabel(title: textSize.isAccessibilitySize ? L("Разрешить") : L("Разрешить и продолжить"))
             }

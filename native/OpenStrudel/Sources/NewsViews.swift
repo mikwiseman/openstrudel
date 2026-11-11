@@ -11,6 +11,14 @@ private enum NewsType {
     static var quiet: Font { ReaderLine.font }
     /// The small name over a group of stories.
     static var head: Font { ReaderLine.font.weight(.semibold) }
+    /// The day at the top of a desk's page.
+    static var dayTitle: Font {
+        #if os(macOS)
+        .system(size: 28, weight: .semibold)
+        #else
+        .system(.title, weight: .semibold)
+        #endif
+    }
 }
 
 private enum NewsLayout {
@@ -22,6 +30,14 @@ private enum NewsLayout {
         300
         #else
         236
+        #endif
+    }
+    /// The lead headline's sizes, largest first.
+    static var leadSizes: [CGFloat] {
+        #if os(macOS)
+        [30, 27, 24, 21]
+        #else
+        [24, 22, 20, 18]
         #endif
     }
 }
@@ -63,7 +79,7 @@ private struct QuietLine: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            if developed { Text("↻").foregroundStyle(AppTheme.signal).fontWeight(.semibold).accessibilityLabel(words("Развитие истории")) }
+            if developed { Text("↻").foregroundStyle(AppTheme.signalText).fontWeight(.semibold).accessibilityLabel(words("Развитие истории")) }
             Text(text).foregroundStyle(AppTheme.secondaryText)
         }
         .font(NewsType.quiet).monospacedDigit()
@@ -81,7 +97,7 @@ private struct ViewLine: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             // A symbol, so it points the other way in a language that reads from the right.
-            Image(systemName: "arrow.forward").imageScale(.small).fontWeight(.semibold).foregroundStyle(AppTheme.signal).accessibilityHidden(true)
+            Image(systemName: "arrow.forward").imageScale(.small).fontWeight(.semibold).foregroundStyle(AppTheme.signalText).accessibilityHidden(true)
             Text(text).lineLimit(limit).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
         }
         .font(AppTypography.reading).lineSpacing(AppTypography.readingLineSpacing)
@@ -325,6 +341,7 @@ private struct NewsDayPage: View {
     @EnvironmentObject private var client: HomeClient
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var dwell = NewsDwell()
 
     /// Nothing is pushed over this page.
@@ -370,8 +387,9 @@ private struct NewsDayPage: View {
                 .onChange(of: feed.place.top) { if date == nil { proxy.scrollTo("top", anchor: .top) } }
             }
             .environment(\.newsWords, words)
-            .newsToolbar(feed, chrome, title: date.map { feed.words.day($0) } ?? feed.words("Сегодня"), working: line.isRunning && !offline, offline: offline || line.isFailing)
+            .newsToolbar(feed, chrome, title: date.map { feed.words.day($0) } ?? feed.words("Сегодня"), working: line.isRunning && !offline, offline: offline)
         }
+        .paperTop()
         .safeAreaBar(edge: .bottom, spacing: 0) {
             // The page's way to the composer: its first story goes to the chat as context.
             if let lead {
@@ -404,30 +422,37 @@ private struct NewsDayPage: View {
 
     // MARK: Masthead
 
-    /// One quiet line: the day, then what the desk's runs say. It always tells the truth about the feed.
+    /// The page's head: the day as its title, then what the desk's runs say in one quiet line. It always tells the
+    /// truth about the feed, and it does not wrap: an edition's line is short, a sentence may take a second line.
     private func masthead(_ page: NewsDesk.Page, line: NewsStatusLine?, words: NewsWords, now: Date) -> some View {
-        let day = Text(words.weekday(page.date, now: now))
         let status = line.map { offline ? words("«\(client.displayName)» не на связи. Показано, что уже прочитано.") : words.status($0, name: feed.route.title, now: now) }
-        return Group {
+        var isEdition = false
+        if case .edition? = line, !offline { isEdition = true }
+        return VStack(alignment: .leading, spacing: 5) {
+            Text(words.weekday(page.date, now: now))
+                .font(NewsType.dayTitle).displayTracking(-0.7).foregroundStyle(.primary)
+                .lineLimit(1).minimumScaleFactor(0.6)
+                .accessibilityAddTraits(.isHeader)
             if let status, let line {
-                Text("\(day) · \(Text(status).foregroundStyle(line.isFailing && !offline ? AppTheme.warning : AppTheme.secondaryText))")
+                Text(status).font(NewsType.quiet).monospacedDigit()
+                    .foregroundStyle(line.isFailing && !offline ? AppTheme.warning : AppTheme.secondaryText)
+                    // One line; at the largest text sizes, where one line cannot hold it, two.
+                    .lineLimit(isEdition && !typeSize.isAccessibilitySize ? 1 : 2).minimumScaleFactor(isEdition ? 0.85 : 1).multilineTextAlignment(.leading)
                     .contentTransition(.opacity)
                     .animation(.easeInOut(duration: 0.15), value: line)
-            } else { day }
+            }
         }
-        .font(NewsType.quiet).monospacedDigit().foregroundStyle(AppTheme.secondaryText)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
         // The space under the bar belongs to this first row, so scrolling to it shows the page's very top.
-        .padding(.top, 14).padding(.bottom, 14)
+        .padding(.top, 10).padding(.bottom, 18)
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
         .accessibilityIdentifier("newsStatus")
     }
 
     /// No story in two weeks: the character, the truth in one sentence, and nothing to press.
     private func empty(_ line: NewsStatusLine, words: NewsWords, now: Date) -> some View {
         VStack(spacing: 16) {
-            ToneAvatar(appearance: chrome.profile?.resolvedAppearance, size: AvatarSize.hero + 16, working: line.isRunning && !offline, offline: offline || line.isFailing)
+            ToneAvatar(appearance: chrome.profile?.resolvedAppearance, size: AvatarSize.hero + 16, working: line.isRunning && !offline, offline: offline)
             Text(offline ? words("«\(client.displayName)» не на связи. Показано, что уже прочитано.") : words.status(line, name: feed.route.title, now: now))
                 .font(NewsType.headline(24, .title2)).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             Text(words("Истории за последние две недели появятся здесь.")).font(AppTypography.interface).foregroundStyle(AppTheme.secondaryText)
@@ -506,7 +531,7 @@ private struct NewsDayPage: View {
     /// A group of stories opens under its own small name; what is new wears the signal colour.
     private func head(_ title: String, accent: Bool = false) -> some View {
         Text(title).font(NewsType.head).monospacedDigit()
-            .foregroundStyle(accent ? AppTheme.signal : AppTheme.secondaryText)
+            .foregroundStyle(accent ? AppTheme.signalText : AppTheme.secondaryText)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.bottom, 4)
             .accessibilityAddTraits(.isHeader)
@@ -572,15 +597,17 @@ private struct NewsLeadStory: View {
                 Tile(label: (developed ? "↻ " : "") + newsLine(story, locale: words.language.locale), skin: shown.map { .picture($0) } ?? .paper(tint),
                      side: .infinity, height: NewsLayout.lead, radius: 40) {
                     Spacer(minLength: 8)
-                    Text(story.title).font(NewsType.headline(30, .title2)).lineSpacing(1).tracking(-0.3)
-                        .lineLimit(5).minimumScaleFactor(0.8).multilineTextAlignment(.leading)
+                    // At most three lines, a step smaller rather than cut; over a picture the headline stands on its scrim.
+                    FittedTitle(text: story.title, sizes: NewsLayout.leadSizes, lines: 3, tracking: -0.3)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .pictureScrim(shown != nil)
                 }
                 .animation(.smooth(duration: 0.3), value: shown != nil)
+                // The lead's first paragraph and the desk's view are read here in full; the rest is one press away.
                 Text(story.summary).font(AppTypography.reading).lineSpacing(AppTypography.readingLineSpacing)
-                    .lineLimit(4).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 18)
-                if let view = story.view { ViewLine(text: view, limit: 3).padding(.top, 12) }
+                if let view = story.view { ViewLine(text: view).padding(.top, 12) }
                 if !story.domains.isEmpty {
                     Capsules { ForEach(story.domains.prefix(4), id: \.self) { SourceCapsule(title: $0) } }.padding(.top, 16)
                 }
@@ -662,6 +689,7 @@ private struct NewsStoryPage: View {
                 feed.place.story = nil; feed.place.day = nil
             }
         }
+        .paperTop()
         .safeAreaBar(edge: .bottom, spacing: 0) {
             // Takes this story to the chat as context; the discussion happens there, with everything else.
             if let item {
@@ -831,7 +859,7 @@ private struct NewsArticle: View {
     private func development(_ version: HomeMessage, _ change: String) -> some View {
         let when = version.sentAt.map { words.moment($0) } ?? ""
         // No text selection here: on the Mac a selectable text with its own accessibility label never finishes resolving it.
-        return Text("\(Text("↻ " + when).foregroundStyle(AppTheme.signal).fontWeight(.medium)) — \(change)")
+        return Text("\(Text("↻ " + when).foregroundStyle(AppTheme.signalText).fontWeight(.medium)) — \(change)")
             .font(AppTypography.reading).lineSpacing(AppTypography.readingLineSpacing)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityLabel(words("Развитие истории") + ", " + when + ". " + change)

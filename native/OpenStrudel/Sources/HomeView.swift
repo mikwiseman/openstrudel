@@ -59,8 +59,12 @@ struct HomeView: View {
         .accessibilityIdentifier("homeRoot")
         .safeAreaBar(edge: .bottom, spacing: 0) { dock }
         // Beside an open place the rows end at the search capsule instead of showing through it, and the shelf goes
-        // under the window's top edge cleanly.
-        .scrollEdgeEffectStyle(split ? .hard : .automatic, for: .vertical)
+        // under the window's top edge cleanly. On a phone the home closes into the paper at the top like every page.
+        #if os(macOS)
+        .scrollEdgeEffectStyle(.hard, for: .bottom)
+        #else
+        .modifier(HomeEdges(split: split))
+        #endif
         // Nothing is typed here: a keyboard leaving the chat must not carry the dock with it.
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .sheet(item: $moving) { EmployeeMoveView(request: $0) }
@@ -225,6 +229,17 @@ enum HomeMetrics {
     /// How far a selected row's plate reaches past its content.
     static let plate: CGFloat = 10
 }
+
+#if os(iOS)
+/// The home's scroll edges: hard beside an open place; on a phone the paper closes over what scrolls up under the
+/// clock, which also leaves no rule there when the reader has asked for less transparency.
+private struct HomeEdges: ViewModifier {
+    let split: Bool
+    func body(content: Content) -> some View {
+        if split { content.scrollEdgeEffectStyle(.hard, for: .vertical) } else { content.paperTop() }
+    }
+}
+#endif
 
 /// A row answers a press at once and settles with a spring.
 private struct RowPressStyle: ButtonStyle {
