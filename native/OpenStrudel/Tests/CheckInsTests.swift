@@ -91,23 +91,59 @@ import Testing
         #expect(words.title(apart) == "Спокойствие" && words.text(apart) == "За неделю: Аня 7 · М. К. 4,5")
     }
 
-    @Test func theHomeShowsABoardOnlyOnceSomeoneHasAnswered() throws {
-        func activity(_ answers: [Int?], kind: String = "result") throws -> HomeActivity {
-            let item = poll("calm", "Пульс · спокойствие", ["42": answers])
+    /// A Home's activity with one result, and the polls of one chat when answers are given.
+    private func activity(_ answers: [Int?]?, chat: String = "circle", kind: String = "result") throws -> HomeActivity {
+        var polls = "[]"
+        if let answers {
+            let item = poll("calm", "Пульс · спокойствие", chat: chat, ["42": answers])
             let days = item.days.map { "{\"date\":\"\($0.date)\",\"values\":{\($0.values.map { "\"\($0.key)\":\($0.value)" }.joined(separator: ","))}}" }.joined(separator: ",")
-            return try JSONDecoder().decode(HomeActivity.self, from: Data("""
-            {"checkedAt":"2026-11-14T17:00:00.000Z","period":{"start":"2026-11-08T00:00:00.000Z","end":"2026-11-14T17:00:00.000Z","timeZone":"Europe/Moscow"},
-             "insights":[{"id":"r","kind":"\(kind)","title":"План на утро","text":"Готово","occurredAt":"2026-11-14T10:00:00.000Z","conversationId":"c","profileId":"p","employeeName":"Тренер","messageId":"m","status":"completed"}],
-             "checkIns":[{"id":"calm","name":"Пульс · спокойствие","question":"Вопрос","conversationId":"circle","chat":"Вечерний круг","scale":10,"today":"2026-11-14","days":[\(days)],
-               "participants":[{"id":"42","name":"Аня","streak":2,"latest":null,"average":null}]}],
-             "progress":{"activeDays":1,"completedRequests":0,"completedRuns":0,"quietRuns":0,"failedRuns":0,"activeSchedules":1,"milestones":[]}}
-            """.utf8))
+            polls = """
+            [{"id":"calm","name":"Пульс · спокойствие","question":"Вопрос","conversationId":"\(chat)","chat":"Вечерний круг","scale":10,"today":"2026-11-14","days":[\(days)],
+              "participants":[{"id":"42","name":"Аня","streak":2,"latest":null,"average":null}]}]
+            """
         }
+        return try JSONDecoder().decode(HomeActivity.self, from: Data("""
+        {"checkedAt":"2026-11-14T17:00:00.000Z","period":{"start":"2026-11-08T00:00:00.000Z","end":"2026-11-14T17:00:00.000Z","timeZone":"Europe/Moscow"},
+         "insights":[{"id":"r","kind":"\(kind)","title":"План на утро","text":"Готово","occurredAt":"2026-11-14T10:00:00.000Z","conversationId":"c","profileId":"p","employeeName":"Тренер","messageId":"m","status":"completed"}],
+         "checkIns":\(polls),
+         "progress":{"activeDays":1,"completedRequests":0,"completedRuns":0,"quietRuns":0,"failedRuns":0,"activeSchedules":1,"milestones":[]}}
+        """.utf8))
+    }
+
+    @Test func theHomeShowsABoardOnlyOnceSomeoneHasAnswered() throws {
+        let homes = CheckInHomes(), office = CheckInHomes.Home(id: "office", name: "Офис", primary: true)
+        let boards = { (activity: HomeActivity) in homes.take(activity, from: "office"); return homes.boards([office]) }
         // The day's answers are a tile; what was done and what needs the owner are not: they lead the home as cards.
-        let tiles = Shelf.tiles(desks: [], activity: try activity(steady(6)), next: nil)
+        let tiles = Shelf.tiles(desks: [], boards: try boards(activity(steady(6))), next: nil)
         #expect(tiles.map(\.id) == ["checkIns"])
         #expect(tiles.first?.place == .checkIns)
-        #expect(Shelf.tiles(desks: [], activity: try activity(steady(6), kind: "attention"), next: nil).map(\.id) == ["checkIns"])
-        #expect(Shelf.tiles(desks: [], activity: try activity([]), next: nil).isEmpty)
+        #expect(Shelf.tiles(desks: [], boards: try boards(activity(steady(6), kind: "attention")), next: nil).map(\.id) == ["checkIns"])
+        #expect(Shelf.tiles(desks: [], boards: try boards(activity([])), next: nil).isEmpty)
+    }
+
+    @Test func pollsOnAnotherHomeThanTheChatsStillHaveTheirTileAndPage() throws {
+        // The chat's Home asks no polls; the team's polls live on a second Home.
+        let homes = CheckInHomes()
+        let office = CheckInHomes.Home(id: "office", name: "Офис", primary: true), cabin = CheckInHomes.Home(id: "cabin", name: "Дача", primary: false)
+        homes.take(try activity(nil), from: "office")
+        homes.take(try activity(steady(6)), from: "cabin")
+        let boards = homes.boards([office, cabin])
+        // The board is shown, says which Home it lives on, and its page reads that Home.
+        #expect(boards.map(\.id) == ["circle"])
+        #expect(boards.first?.home == "cabin" && boards.first?.homeName == "Дача")
+        let tiles = Shelf.tiles(desks: [], boards: boards, next: nil)
+        #expect(tiles.map(\.id) == ["checkIns"] && tiles.first?.place == .checkIns)
+        #expect(homes.checked([office, cabin]).map(\.home) == ["cabin"])
+        // When the chat's own Home has polls too, they come first and go without its name.
+        homes.take(try activity(steady(7), chat: "own"), from: "office")
+        #expect(homes.boards([office, cabin]).map(\.homeName) == [nil, "Дача"])
+        #expect(homes.boards([office, cabin]).map(\.home) == ["office", "cabin"])
+        // A Home that stops giving its activity takes its boards with it, and one no longer connected is not shown.
+        homes.take(nil, from: "cabin")
+        #expect(homes.boards([office, cabin]).map(\.home) == ["office"])
+        #expect(homes.boards([cabin]).isEmpty)
+        // With one Home connected nothing is named.
+        homes.take(try activity(steady(6)), from: "cabin")
+        #expect(homes.boards([CheckInHomes.Home(id: "cabin", name: "Дача", primary: true)]).map(\.homeName) == [nil])
     }
 }

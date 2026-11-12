@@ -11,6 +11,7 @@ struct HomeView: View {
     @EnvironmentObject private var arrangement: TeamArrangement
     @EnvironmentObject private var needs: NeedsYouModel
     @EnvironmentObject private var failures: TeamFailures
+    @EnvironmentObject private var polls: CheckInHomes
     @ObservedObject var activity: ActivityModel
     @ObservedObject var limits: ActivityLimitsModel
     /// The Home whose activity and limits are shown; older answers for another Home are not.
@@ -44,7 +45,7 @@ struct HomeView: View {
     private var tiles: [ShelfTile] {
         // The desks stand above the shelf as papers of their own.
         let team = library.team.map { (route: $0.member.route, profile: $0.member.profile) }
-        return Shelf.tiles(desks: [], activity: known, next: Shelf.next(team), results: Shelf.results(team))
+        return Shelf.tiles(desks: [], boards: polls.boards(library.pollHomes), next: Shelf.next(team), results: Shelf.results(team))
     }
 
     private var known: HomeActivity? { activity.scope == scope ? activity.activity : nil }

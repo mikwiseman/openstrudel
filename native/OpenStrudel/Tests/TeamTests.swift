@@ -186,9 +186,9 @@ import Testing
         let limits = [try account(#"{"name":"5h","remainingPercent":81,"windowDurationMins":300,"resetsAt":1},{"name":"weekly","remainingPercent":32,"windowDurationMins":10080,"resetsAt":1}"#)]
         let picture = ShelfTile.result(route: route("cook"), name: "Cook", appearance: AgentAppearance(kind: "pillow", tone: 7), text: "Dinner", file: file)
         // A desk without a story and a Home without activity put nothing on the shelf.
-        #expect(Shelf.tiles(desks: [silent], activity: nil, next: nil).isEmpty)
+        #expect(Shelf.tiles(desks: [silent], boards: [], next: nil).isEmpty)
         // A tile holds an answer. The limit is a figure at the foot of the home and on Statistics, never a gauge here.
-        let tiles = Shelf.tiles(desks: [desk, silent], activity: nil, next: next, results: [picture])
+        let tiles = Shelf.tiles(desks: [desk, silent], boards: [], next: next, results: [picture])
         #expect(tiles.map(\.id) == ["desk:" + desk.route.id, "next", "result:" + route("cook").id])
         #expect(tiles.map(\.place) == [.reader(desk.route), .reader(next.route), .reader(route("cook"))])
         // The fullest week decides the figure; without a weekly window, the fullest of the others.
