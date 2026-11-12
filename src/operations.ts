@@ -112,6 +112,18 @@ export function failedRun(text:string):string|undefined {
   const match=text.trim().match(/^FAILED:[ \t]*(.*)/);
   return match ? match[1]!.trim().slice(0,300) || "причина не указана" : undefined;
 }
+/** A scheduled result opens with "OUTCOME: " and what is now true. The line stays the result's first line, without its marker,
+ * and is kept apart, in at most 60 characters, for lists and notifications. A quiet or failed run has none. */
+export function splitOutcome(text:string):{text:string;outcome:string|null} {
+  const marker=/^\s*OUTCOME:[ \t]*/.exec(text);
+  if(!marker)return {text,outcome:null};
+  const body=text.slice(marker[0].length),end=body.indexOf("\n");
+  const line=(end<0?body:body.slice(0,end)).trim(),rest=end<0?"":body.slice(end+1);
+  if(!line||quietReply(rest)||failedRun(rest))return {text:rest.trim()?rest:body,outcome:null};
+  if(line.length<=60)return {text:body,outcome:line};
+  const cut=line.slice(0,59),space=cut.lastIndexOf(" ");
+  return {text:body,outcome:(space>0?cut.slice(0,space):cut).replace(/[\s,;:.—–-]+$/,"")+"…"};
+}
 
 /** Different scheduled jobs can share a conversation. Their successes do not prove each other's recovery. */
 function issueTask(store:Store,conversationId:string,messageId?:string):{scope?:string;taskName?:string} {

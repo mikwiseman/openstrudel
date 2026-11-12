@@ -18,7 +18,7 @@ import { AcpRefusal } from "./acp.js";
 import type { TelegramAdapter } from "./telegram.js";
 import { readFile } from "node:fs/promises";
 import { isSpeechFile, transcribeRecording } from "./speech.js";
-import { connectorOutcome, reportConnectorIssues, errorProblem, failedRun, quietReply, problemText, reportIssue, resolveIssue, resolveVoiceIssue, runtimeIssues, toolProblem, toolRecovered, type ProblemCode, type ConnectorOutcome } from "./operations.js";
+import { connectorOutcome, reportConnectorIssues, errorProblem, failedRun, quietReply, splitOutcome, problemText, reportIssue, resolveIssue, resolveVoiceIssue, runtimeIssues, toolProblem, toolRecovered, type ProblemCode, type ConnectorOutcome } from "./operations.js";
 import { ownerKnowledge, audienceConversation, workingMemory } from "./knowledge.js";
 import { privateSourceAudience } from "./private-sources.js";
 import { correspondenceAudience, correspondenceModel } from "./correspondence.js";
@@ -332,15 +332,17 @@ export class MessageService {
           scheduled: input.scheduled, scheduleTelegramChatId: input.scheduleTelegramChatId, access,
         })) throw new HomeError("Correspondence authorization changed before publishing its result.", 403);
         if (text !== "/help" && !fresh) this.store.advanceContextCheckpoint(current.id, inbound.id);
-        const outbound = this.store.addMessage({ conversationId: current.id, channel: input.channel, direction: "outbound", replyToId: inbound.id, text: result.response,attachments:tools.attachments, ...question ? { storyId: question.story.id } : {} });
-        const hidden = (input.scheduled || groupContext && input.channel === "telegram") && quietReply(result.response) || input.scheduled && failedRun(result.response);
+        // A scheduled result opens with its one line of what is now true.
+        const answer = input.scheduled ? splitOutcome(result.response) : { text: result.response, outcome: null };
+        const outbound = this.store.addMessage({ conversationId: current.id, channel: input.channel, direction: "outbound", replyToId: inbound.id, text: answer.text, outcome: answer.outcome, attachments:tools.attachments, ...question ? { storyId: question.story.id } : {} });
+        const hidden = (input.scheduled || groupContext && input.channel === "telegram") && quietReply(answer.text) || input.scheduled && failedRun(answer.text);
         if (hidden) this.store.db.prepare("UPDATE messages SET hidden=1 WHERE id=?").run(outbound.id);
         this.store.setMessageStatus(inbound.id, "completed");
         // The owner reads the shown answer to his own request; only a failure no owner saw opens an incident.
         const seen=!hidden && ownerTurn(this.store,{conversationId:current.id,messageId:inbound.id,channel:input.channel,scheduled,byOwner:input.byOwner,telegramSenderId:input.telegramSenderId});
         const connectorNotice=reportConnectorIssues(this.store,current.id,inbound.id,seen?connectors.filter(outcome=>!outcome.failed):connectors);
         if(connectorNotice)await this.telegram?.notifyOwner(connectorNotice);
-        if(text!=="/help" && !(input.scheduled && failedRun(result.response)) && (!quietReply(result.response) || scheduled)) {
+        if(text!=="/help" && !(input.scheduled && failedRun(answer.text)) && (!quietReply(answer.text) || scheduled)) {
           const notice=resolveIssue(this.store,current.id,inbound.id);
           if(notice)await this.telegram?.notifyOwner(notice);
         }

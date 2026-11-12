@@ -7,6 +7,8 @@ import { readCheckIns, type CheckIn } from "./check-ins.js";
 
 export interface ActivityInsight {
   id: string; kind: "result" | "attention"; title: string; text: string; occurredAt: string;
+  /** A result's one line of what is now true; null when it wrote none, and for attention. */
+  outcome: string | null;
   conversationId: string; profileId: string | null; employeeName: string; messageId: string | null; status: string;
 }
 export interface Activity {
@@ -134,7 +136,7 @@ function attention(store: Store, start: string, end: string, scheduler: boolean)
     ORDER BY issues.time DESC,issues.key DESC LIMIT ${limit}`).all({ start, end }) as Row[];
   return rows.map(row => ({
     id: "issue:" + createHash("sha256").update(String(row.key)).digest("hex").slice(0, 24), kind: "attention",
-    title: "Требует внимания", text: problemText[row.code as ProblemCode], occurredAt: String(row.time),
+    title: "Требует внимания", text: problemText[row.code as ProblemCode], outcome: null, occurredAt: String(row.time),
     conversationId: String(row.conversation_id), profileId: row.profile_id == null ? null : String(row.profile_id),
     employeeName: excerpt(row.employee_name ?? "OpenStrudel", 200),
     messageId: row.message_id == null ? null : String(row.message_id), status: "unresolved",
@@ -169,13 +171,13 @@ export function readActivity(store: Store, owner: boolean, now = new Date()): Ac
       FROM runs`).get({ start, end })!;
     completedRuns = Number(totals.completed); quietRuns = Number(totals.quiet); failedRuns = Number(totals.failed);
     firstAutomation = store.db.prepare(`${runReceipts} SELECT EXISTS(SELECT 1 FROM runs WHERE status='completed' AND shown_output LIMIT 1) AS reached`).get({ end })!.reached === 1;
-    const rows = store.db.prepare(`${runReceipts} SELECT runs.id,name,substr(m.text,1,${textLimit}) AS output_text,output_at,
+    const rows = store.db.prepare(`${runReceipts} SELECT runs.id,name,substr(m.text,1,${textLimit}) AS output_text,m.outcome,output_at,
       runs.conversation_id,profile_id,employee_name,output_id
       FROM runs JOIN messages m ON m.id=runs.output_id
       WHERE runs.status='completed' AND shown_output AND julianday(output_at)>=julianday(:start)
       ORDER BY output_at DESC,runs.id DESC LIMIT ${limit}`).all({ start: insightStart, end }) as Row[];
     insights = rows.map(row => ({ id: "run:" + row.id, kind: "result", title: excerpt(row.name, 200),
-      text: excerpt(row.output_text, textLimit), occurredAt: String(row.output_at), conversationId: String(row.conversation_id),
+      text: excerpt(row.output_text, textLimit), outcome: row.outcome == null ? null : String(row.outcome), occurredAt: String(row.output_at), conversationId: String(row.conversation_id),
       profileId: row.profile_id == null ? null : String(row.profile_id), employeeName: excerpt(row.employee_name ?? "OpenStrudel", 200),
       messageId: String(row.output_id), status: "completed" }));
   }

@@ -128,6 +128,7 @@ export class Store {
     this.db.exec("CREATE INDEX IF NOT EXISTS messages_active_idx ON messages(conversation_id) WHERE status IN ('queued','running')");
     if (!columns.has("story_id")) this.db.exec("ALTER TABLE messages ADD COLUMN story_id TEXT");
     if (!columns.has("story_json")) this.db.exec("ALTER TABLE messages ADD COLUMN story_json TEXT");
+    if (!columns.has("outcome")) this.db.exec("ALTER TABLE messages ADD COLUMN outcome TEXT");
     if (!columns.has("context_json")) this.db.exec("ALTER TABLE messages ADD COLUMN context_json TEXT");
     this.db.exec("CREATE INDEX IF NOT EXISTS messages_story_idx ON messages(conversation_id, story_id) WHERE story_id IS NOT NULL");
     const conversationColumns = new Set((this.db.prepare("PRAGMA table_info(conversations)").all() as Row[]).map(r => String(r.name)));
@@ -383,6 +384,7 @@ export class Store {
     story?: NewsStory;
     storyId?: string;
     context?: MessageContext;
+    outcome?: string | null;
   }): Message {
     if (input.externalId) {
       const duplicate = this.db.prepare("SELECT * FROM messages WHERE channel = ? AND external_id = ?").get(input.channel, input.externalId) as Row | undefined;
@@ -408,7 +410,8 @@ export class Store {
     const storyId = input.story?.id ?? input.storyId;
     if (storyId) this.db.prepare("UPDATE messages SET story_id=?, story_json=? WHERE id=?").run(storyId, input.story ? JSON.stringify(input.story) : null, message.id);
     if (input.context) this.db.prepare("UPDATE messages SET context_json=? WHERE id=?").run(JSON.stringify(input.context), message.id);
-    return { ...message, kind: input.kind ?? "text", status: "completed", attachments: input.attachments ?? [], ...input.story ? { story: input.story } : {}, ...storyId ? { storyId } : {}, ...input.context ? { context: input.context } : {} };
+    if (input.outcome) this.db.prepare("UPDATE messages SET outcome=? WHERE id=?").run(input.outcome, message.id);
+    return { ...message, kind: input.kind ?? "text", status: "completed", attachments: input.attachments ?? [], ...input.story ? { story: input.story } : {}, ...storyId ? { storyId } : {}, ...input.context ? { context: input.context } : {}, ...input.outcome ? { outcome: input.outcome } : {} };
   }
 
   setMessageStatus(messageId: string, status: NonNullable<Message["status"]>, error?: string): void {
@@ -612,7 +615,7 @@ export class Store {
 
   listProfiles(): EmployeeProfile[] {
     // The preview and its time come from one message: the employee's latest answer in any of its chats.
-    const rows = this.db.prepare(`SELECT p.*, substr(m.text,1,240) AS preview, m.created_at AS preview_at, EXISTS (
+    const rows = this.db.prepare(`SELECT p.*, substr(m.text,1,240) AS preview, m.created_at AS preview_at, m.outcome AS outcome, EXISTS (
       SELECT 1 FROM messages m JOIN conversations c ON c.id=m.conversation_id
       WHERE c.profile_id=p.id AND m.story_id IS NOT NULL AND m.hidden=0
     ) AS news FROM employee_profiles p LEFT JOIN messages m ON m.rowid=(
@@ -621,7 +624,7 @@ export class Store {
       ORDER BY m.created_at DESC,m.rowid DESC LIMIT 1
     ) ORDER BY p.name ASC`).all() as Row[];
     // An employee with stories is a reader the app lists under its feeds, before anyone opens it.
-    return rows.map((row) => ({ ...this.mapProfile(row), previewAt: row.preview_at == null ? null : String(row.preview_at), news: row.news === 1 }));
+    return rows.map((row) => ({ ...this.mapProfile(row), previewAt: row.preview_at == null ? null : String(row.preview_at), outcome: row.outcome == null ? null : String(row.outcome), news: row.news === 1 }));
   }
 
   /** The employees as the app's team list shows them: each with whether a request of one of its chats is waiting or running now, the
@@ -721,6 +724,7 @@ export class Store {
       ...row.story_json ? { story: JSON.parse(String(row.story_json)) as NewsStory } : {},
       ...row.story_id ? { storyId: String(row.story_id) } : {},
       ...row.context_json ? { context: JSON.parse(String(row.context_json)) as MessageContext } : {},
+      ...row.outcome ? { outcome: String(row.outcome) } : {},
     };
   }
 

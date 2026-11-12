@@ -41,6 +41,8 @@ export interface Message {
   storyId?: string;
   /** What the owner attached from the app: a business client, or a quoted message or story. Shown with the request. */
   context?: MessageContext;
+  /** A scheduled result's one line of what is now true, at most 60 characters: its first line, shown in lists and notifications. */
+  outcome?: string;
 }
 
 export interface NewsStory {
@@ -78,6 +80,8 @@ export interface EmployeeProfile {
   preview?: string | null;
   /** When the message the preview is taken from was written. */
   previewAt?: string | null;
+  /** That message's one line of what is now true, when it is a scheduled result that wrote one. */
+  outcome?: string | null;
   /** The team list only (`listTeam`): a request in one of its chats is waiting or running now. */
   working?: boolean;
   /** The team list only: the earliest next run of its enabled recurring schedules; null when it has none. */
