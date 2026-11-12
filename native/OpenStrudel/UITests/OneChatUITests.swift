@@ -131,7 +131,9 @@ final class OneChatUITests: XCTestCase {
         // The results and Progress open from the home; neither takes ownership of the main draft or sends a message.
         back(app)
         XCTAssertTrue(calm.waitForExistence(timeout: 20), app.debugDescription)
-        XCTAssertTrue(calm.label.contains("Ничего не ждёт вас") && calm.label.contains("Сегодня готово: 1"), calm.debugDescription)
+        // The fixture's result is the day's when the test runs by day; across midnight it is yesterday's, and the line
+        // under the sentence is then left out. The sentence and its door are what this checks.
+        XCTAssertTrue(calm.label.contains("Ничего не ждёт вас"), calm.debugDescription)
         calm.tap()
         XCTAssertTrue(app.descendants(matching: .any)["insightsRoot"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.textFields["Сообщение"].exists)
