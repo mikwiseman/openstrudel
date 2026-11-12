@@ -186,7 +186,7 @@ struct AgentTransferSettings: View {
         }
         .sheet(item: $pending) { item in
             AgentImportReview(pending: item) { result in
-                notice = result.preview.alreadyImported ? L("Эта копия уже восстановлена. Дубликатов нет.") : L("Восстановлено сотрудников: \(result.profileIds.count). Они появились в списке чатов.")
+                notice = result.preview.alreadyImported ? L("Эта копия уже восстановлена. Дубликатов нет.") : L("Восстановлено сотрудников: \(result.profileIds.count). Они появились в команде.")
                 pending = nil
             }.environmentObject(client)
         }

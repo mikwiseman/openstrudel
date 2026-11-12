@@ -1846,8 +1846,9 @@ final class HomeClient: ObservableObject, Identifiable {
         try await request(path, method: method, body: payload.map { try JSONSerialization.data(withJSONObject: $0) })
     }
 
-    func managementFile(_ path: String, method: String = "GET", payload: [String: Any]? = nil) async throws -> Data {
-        try await requestData(path, method: method, body: payload.map { try JSONSerialization.data(withJSONObject: $0) })
+    /// `refused` hears the Home's own refusal, so an older Home (404) is told from one out of reach.
+    func managementFile(_ path: String, method: String = "GET", payload: [String: Any]? = nil, refused: ((Int) -> Void)? = nil) async throws -> Data {
+        try await requestData(path, method: method, body: payload.map { try JSONSerialization.data(withJSONObject: $0) }, refused: refused)
     }
 
     private var actionStorageKey: String { "openstrudel.controlActions." + (health?.homeId ?? normalizedBaseURL) }

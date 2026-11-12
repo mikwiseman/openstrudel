@@ -12836,5 +12836,222 @@
     "es": "Las noticias de hoy aparecerán aquí",
     "he": "חדשות היום יופיעו כאן",
     "ru": "Сегодняшние новости появятся здесь"
+  },
+  "Пока нет ответов": {
+    "en": "No answers yet",
+    "fr": "Pas encore de réponses",
+    "es": "Aún no hay respuestas",
+    "he": "עדיין אין תשובות",
+    "ru": "Пока нет ответов"
+  },
+  "Когда в чате появится ежедневный опрос, ответы соберутся здесь.": {
+    "en": "When a chat gets a daily poll, its answers gather here.",
+    "fr": "Quand une discussion aura un sondage quotidien, ses réponses se rassembleront ici.",
+    "es": "Cuando un chat tenga una encuesta diaria, sus respuestas se reunirán aquí.",
+    "he": "כשיופיע בצ׳אט סקר יומי, התשובות ייאספו כאן.",
+    "ru": "Когда в чате появится ежедневный опрос, ответы соберутся здесь."
+  },
+  "Что заметно": {
+    "en": "What stands out",
+    "fr": "Ce qui ressort",
+    "es": "Lo que destaca",
+    "he": "מה בולט",
+    "ru": "Что заметно"
+  },
+  "Неделя к прошлой": {
+    "en": "This week against the last",
+    "fr": "Cette semaine face à la précédente",
+    "es": "Esta semana frente a la anterior",
+    "he": "השבוע מול הקודם",
+    "ru": "Неделя к прошлой"
+  },
+  "Нет ответа": {
+    "en": "No answer",
+    "fr": "Pas de réponse",
+    "es": "Sin respuesta",
+    "he": "אין תשובה",
+    "ru": "Нет ответа"
+  },
+  "Пока без ответа": {
+    "en": "No answer yet",
+    "fr": "Pas encore de réponse",
+    "es": "Aún sin respuesta",
+    "he": "עדיין אין תשובה",
+    "ru": "Пока без ответа"
+  },
+  "За неделю {0}, неделей раньше {1}": {
+    "en": "{0} this week, {1} the week before",
+    "fr": "{0} cette semaine, {1} la semaine d’avant",
+    "es": "{0} esta semana, {1} la semana anterior",
+    "he": "{0} השבוע, {1} בשבוע שלפניו",
+    "ru": "За неделю {0}, неделей раньше {1}"
+  },
+  "{0}, обычно около {1}": {
+    "en": "{0}, usually around {1}",
+    "fr": "{0}, d’habitude autour de {1}",
+    "es": "{0}, normalmente cerca de {1}",
+    "he": "{0}, בדרך כלל בסביבות {1}",
+    "ru": "{0}, обычно около {1}"
+  },
+  "За неделю: {0} {1} · {2} {3}": {
+    "en": "This week: {0} {1} · {2} {3}",
+    "fr": "Cette semaine : {0} {1} · {2} {3}",
+    "es": "Esta semana: {0} {1} · {2} {3}",
+    "he": "השבוע: {0} {1} · {2} {3}",
+    "ru": "За неделю: {0} {1} · {2} {3}"
+  },
+  "Сотрудники этого устройства теперь в вашей команде.": {
+    "en": "This device’s assistants are now in your team.",
+    "fr": "Les assistants de cet appareil font maintenant partie de votre équipe.",
+    "es": "Los asistentes de este dispositivo ya están en tu equipo.",
+    "he": "העוזרים של המכשיר הזה נמצאים עכשיו בצוות שלך.",
+    "ru": "Сотрудники этого устройства теперь в вашей команде."
+  },
+  "Восстановлено сотрудников: {0}. Они появились в команде.": {
+    "en": "Assistants restored: {0}. They are now in your team.",
+    "fr": "Assistants restaurés : {0}. Ils font maintenant partie de votre équipe.",
+    "es": "Asistentes restaurados: {0}. Ya están en tu equipo.",
+    "he": "עוזרים ששוחזרו: {0}. הם נמצאים עכשיו בצוות שלך.",
+    "ru": "Восстановлено сотрудников: {0}. Они появились в команде."
+  },
+  "Закрепить": {
+    "en": "Pin",
+    "fr": "Épingler",
+    "es": "Fijar",
+    "he": "הצמדה",
+    "ru": "Закрепить"
+  },
+  "Открепить": {
+    "en": "Unpin",
+    "fr": "Désépingler",
+    "es": "Desfijar",
+    "he": "ביטול הצמדה",
+    "ru": "Открепить"
+  },
+  "Закреплено": {
+    "en": "Pinned",
+    "fr": "Épinglé",
+    "es": "Fijado",
+    "he": "מוצמד",
+    "ru": "Закреплено"
+  },
+  "Не получилось: {0}": {
+    "en": "Did not work: {0}",
+    "fr": "Échec : {0}",
+    "es": "No funcionó: {0}",
+    "he": "לא הצליח: {0}",
+    "ru": "Не получилось: {0}"
+  },
+  "Давно молчат": {
+    "en": "Quiet for a while",
+    "fr": "Silencieux depuis longtemps",
+    "es": "Llevan tiempo en silencio",
+    "he": "שקטים כבר זמן רב",
+    "ru": "Давно молчат"
+  },
+  "За неделю {0}, остальное около {1}": {
+    "en": "{0} this week, the rest around {1}",
+    "fr": "{0} cette semaine, le reste autour de {1}",
+    "es": "{0} esta semana, lo demás cerca de {1}",
+    "he": "{0} השבוע, השאר בסביבות {1}",
+    "ru": "За неделю {0}, остальное около {1}"
+  },
+  "Ждёт вас": {
+    "en": "Needs you",
+    "fr": "Vous attend",
+    "es": "Le espera",
+    "he": "מחכה לך",
+    "ru": "Ждёт вас"
+  },
+  "Ничего не ждёт вас": {
+    "en": "Nothing needs you",
+    "fr": "Rien ne vous attend",
+    "es": "Nada le espera",
+    "he": "שום דבר לא מחכה לך",
+    "ru": "Ничего не ждёт вас"
+  },
+  "Сегодня готово: {0}": {
+    "en": "Done today: {0}",
+    "fr": "Fait aujourd’hui : {0}",
+    "es": "Hecho hoy: {0}",
+    "he": "הושלמו היום: {0}",
+    "ru": "Сегодня готово: {0}"
+  },
+  "Прочитать и отправить": {
+    "en": "Read and send",
+    "fr": "Lire et envoyer",
+    "es": "Leer y enviar",
+    "he": "לקרוא ולשלוח",
+    "ru": "Прочитать и отправить"
+  },
+  "Завтра": {
+    "en": "Tomorrow",
+    "fr": "Demain",
+    "es": "Mañana",
+    "he": "מחר",
+    "ru": "Завтра"
+  },
+  "Ответить": {
+    "en": "Answer",
+    "fr": "Répondre",
+    "es": "Responder",
+    "he": "לענות",
+    "ru": "Ответить"
+  },
+  "Ещё {0}": {
+    "en": "{0} more",
+    "fr": "{0} de plus",
+    "es": "{0} más",
+    "he": "עוד {0}",
+    "ru": "Ещё {0}"
+  },
+  "Все": {
+    "en": "All",
+    "fr": "Tous",
+    "es": "Todos",
+    "he": "הכול",
+    "ru": "Все"
+  },
+  "Кому": {
+    "en": "To",
+    "fr": "À",
+    "es": "Para",
+    "he": "אל",
+    "ru": "Кому"
+  },
+  "Тема": {
+    "en": "Subject",
+    "fr": "Objet",
+    "es": "Asunto",
+    "he": "נושא",
+    "ru": "Тема"
+  },
+  "Изменить": {
+    "en": "Edit",
+    "fr": "Modifier",
+    "es": "Editar",
+    "he": "לערוך",
+    "ru": "Изменить"
+  },
+  "Отвечает {0}": {
+    "en": "Waiting for {0}",
+    "fr": "En attente de {0}",
+    "es": "A la espera de {0}",
+    "he": "ממתין לתשובה של {0}",
+    "ru": "Отвечает {0}"
+  },
+  "Следующая попытка {0}": {
+    "en": "Next try {0}",
+    "fr": "Prochain essai {0}",
+    "es": "Próximo intento {0}",
+    "he": "הניסיון הבא {0}",
+    "ru": "Следующая попытка {0}"
+  },
+  "Решено": {
+    "en": "Decided",
+    "fr": "Décidé",
+    "es": "Decidido",
+    "he": "הוחלט",
+    "ru": "Решено"
   }
 }

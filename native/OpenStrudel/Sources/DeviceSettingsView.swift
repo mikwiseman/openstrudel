@@ -747,6 +747,8 @@ struct AddDeviceConfirmation: View {
         #if os(macOS)
         .presentationSizing(.fitted)
         #else
+        // One question and one button: half a screen, not a whole one.
+        .presentationDetents([.medium, .large])
         .presentationSizing(.form)
         #endif
     }
@@ -759,14 +761,14 @@ struct AddDeviceConfirmation: View {
                 .accessibilityHidden(true)
             Text(connected ? L("Устройство подключено") : L("Подключить «\(pairing.name)»?"))
                 .font(AppTypography.title)
-            Text(connected ? (candidate?.homeUnreachable == true ? L("Подключение сохранено. Ждём ответа устройства — сотрудники появятся, когда оно выйдет на связь.") : L("Сотрудники этого устройства теперь доступны в списке чатов.")) : L("Вы сможете общаться с его сотрудниками и создавать новых. Они продолжат работать на «\(pairing.name)»."))
+            Text(connected ? (candidate?.homeUnreachable == true ? L("Подключение сохранено. Ждём ответа устройства — сотрудники появятся, когда оно выйдет на связь.") : L("Сотрудники этого устройства теперь в вашей команде.")) : L("Вы сможете общаться с его сотрудниками и создавать новых. Они продолжат работать на «\(pairing.name)»."))
                 .foregroundStyle(AppTheme.secondaryText)
             if busy { ProgressView(L("Проверяем подключение…")).controlSize(.small) }
             if let error {
                 Text(L10n.serviceText(error)).foregroundStyle(AppTheme.warning).accessibilityIdentifier("pairingError")
             }
             #if os(iOS)
-            continueButton.buttonStyle(.borderedProminent).controlSize(.large)
+            continueButton.inkButton()
                 .padding(.top, 12)
             #endif
         }
@@ -804,7 +806,7 @@ struct AddDeviceConfirmation: View {
                 busy = false
             }
         } label: {
-            Text(connected ? L("Открыть сотрудников") : L("Подключить"))
+            Text(connected ? L("Продолжить") : L("Подключить"))
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
         }

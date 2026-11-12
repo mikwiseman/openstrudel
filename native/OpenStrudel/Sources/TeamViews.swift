@@ -17,6 +17,14 @@ struct TeamRowContent: Equatable {
     /// A News desk's stories not yet seen.
     var count = 0
     var nextRun: Date?
+    /// Why its latest run failed, when its Home says.
+    var reason: String?
+    /// Pinned to the top of the list on this device.
+    var pinned = false
+    /// The Home an employee lives on, said when the list holds several Homes and this is not the chat's own.
+    var home: String?
+    /// One of its cards waits for the owner.
+    var waits = false
 }
 
 /// A character on a soft circle of its own tone. While its employee works, the existing proofing motion and a
@@ -61,13 +69,13 @@ struct TeamRow: View {
 
     /// The character spring: state changes use it, as a character returning from grey does.
     private static let spring = Animation.spring(response: 0.4, dampingFraction: 0.8)
-    private var isNew: Bool { content.unread || content.count > 0 }
+    private var isNew: Bool { content.unread || content.count > 0 || content.waits }
 
     private var line: String {
         switch content.state {
         case .offline: L("Нет связи")
         case .working: L("Работает…")
-        case .failing: L("Не получилось")
+        case .failing: content.reason.map { L("Не получилось: \($0)") } ?? L("Не получилось")
         case .resting: content.preview
         }
     }
@@ -80,12 +88,20 @@ struct TeamRow: View {
                 VStack(alignment: .leading, spacing: 4) {
                     name
                     second
-                    HStack(spacing: 7) { mark; time }
+                    HStack(spacing: 7) { mark; time; pin; home }
                 }
             } else {
-                VStack(alignment: .leading, spacing: 2) { name; second }
-                Spacer(minLength: 0)
-                HStack(spacing: 7) { mark; time }
+                // The time stands on the name's line, as in every list of conversations, so the answer under it has
+                // the row's whole width.
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        name.layoutPriority(1)
+                        home
+                        Spacer(minLength: 0)
+                        HStack(spacing: 7) { mark; time; pin }
+                    }
+                    second
+                }
             }
         }
         .frame(maxWidth: .infinity, minHeight: AvatarSize.team, alignment: .leading)
@@ -140,6 +156,19 @@ struct TeamRow: View {
         }
     }
 
+    /// Where the employee lives, in the quiet colour of the time.
+    @ViewBuilder private var home: some View {
+        if let home = content.home {
+            Text(home).font(RowMetrics.time).foregroundStyle(AppTheme.faint).lineLimit(1)
+        }
+    }
+
+    @ViewBuilder private var pin: some View {
+        if content.pinned {
+            Image(systemName: "pin.fill").font(RowMetrics.pin).foregroundStyle(AppTheme.faint).accessibilityHidden(true)
+        }
+    }
+
     @ViewBuilder private var mark: some View {
         if isNew {
             Circle().fill(AppTheme.signal).frame(width: RowMetrics.dot, height: RowMetrics.dot)
@@ -151,7 +180,10 @@ struct TeamRow: View {
     private var spoken: String {
         var parts = [line]
         if let date = content.date, content.state != .offline { parts.append(TeamWords().ago(date)) }
+        if content.waits { parts.append(L("Ждёт вас")) }
         if content.count > 0 { parts.append(L("Новых: \(content.count)")) } else if content.unread { parts.append(L("Есть новое")) }
+        if let home = content.home { parts.append(home) }
+        if content.pinned { parts.append(L("Закреплено")) }
         return parts.filter { !$0.isEmpty }.joined(separator: ", ")
     }
 }
@@ -164,12 +196,17 @@ enum RowMetrics {
     static let name = Font.system(size: 14.5, weight: .semibold)
     static let preview = Font.system(size: 13)
     static let time = Font.system(size: 12)
+    static let pin = Font.system(size: 9)
+    /// A face in the line of the long-quiet.
+    static let face: CGFloat = 22
     #else
     static let gap: CGFloat = 14
     static let dot: CGFloat = 9
     static let name = Font.body.weight(.semibold)
     static let preview = Font.subheadline
     static let time = Font.footnote
+    static let pin = Font.caption2
+    static let face: CGFloat = 28
     #endif
 }
 
@@ -192,19 +229,27 @@ struct TeamLeadRow: View {
 struct TeamMemberRow: View {
     @EnvironmentObject private var marks: TeamReadMarks
     @EnvironmentObject private var newsroom: Newsroom
+    @EnvironmentObject private var failures: TeamFailures
     let member: TeamMember
     let source: HomeClient
     var selected = false
+    var pinned = false
+    /// Its Home's name, said on a row that lives on another Home than the chat's.
+    var home: String?
+    /// One of its cards waits for the owner.
+    var waits = false
 
     var body: some View {
         if member.isDesk {
-            TeamDeskRow(member: member, source: source, feed: newsroom.feed(member.route, on: source), selected: selected)
+            TeamDeskRow(member: member, source: source, feed: newsroom.feed(member.route, on: source), selected: selected, pinned: pinned, home: home,
+                        reason: failures.failure(member.profile.id, on: source)?.reason, waits: waits)
         } else {
             let profile = member.profile
             TeamRow(content: TeamRowContent(name: profile.name, appearance: profile.resolvedAppearance,
                                             preview: profile.previewText.isEmpty ? profile.roleText : profile.previewText, date: Team.date(profile.previewAt),
                                             state: Team.state(profile, offline: source.isOffline(profile)), unread: marks.isUnread(profile, on: source),
-                                            nextRun: Team.date(profile.nextRunAt)),
+                                            nextRun: Team.date(profile.nextRunAt), reason: failures.failure(profile.id, on: source)?.reason, pinned: pinned, home: home,
+                                            waits: waits),
                     selected: selected)
         }
     }
@@ -215,6 +260,10 @@ private struct TeamDeskRow: View {
     let source: HomeClient
     @ObservedObject var feed: NewsFeed
     let selected: Bool
+    var pinned = false
+    var home: String?
+    var reason: String?
+    var waits = false
 
     var body: some View {
         let profile = member.profile, offline = source.isOffline(profile) || feed.unreachable
@@ -224,21 +273,28 @@ private struct TeamDeskRow: View {
         TeamRow(content: TeamRowContent(name: profile.name, appearance: profile.resolvedAppearance,
                                         preview: feed.headline ?? (profile.previewText.isEmpty ? profile.roleText : profile.previewText),
                                         date: Team.date(profile.previewAt), state: state, count: feed.unseen,
-                                        nextRun: Team.date(profile.nextRunAt ?? feed.status?.nextRunAt)),
+                                        nextRun: Team.date(profile.nextRunAt ?? feed.status?.nextRunAt), reason: reason, pinned: pinned, home: home, waits: waits),
                 selected: selected)
     }
 }
 
-/// What a row's menu offers, as every list of employees does: a new name, out of sight on this device, another device.
+/// What a row's menu offers: a place at the top of the list, and as every list of employees does, a new name, out of
+/// sight on this device, another device.
 struct TeamMenu: ViewModifier {
     @EnvironmentObject private var library: DeviceLibrary
+    @EnvironmentObject private var arrangement: TeamArrangement
     let member: TeamMember
     let source: HomeClient
     @Binding var renaming: RenameTarget?
     @Binding var moving: EmployeeMoveRequest?
 
     func body(content: Content) -> some View {
+        let pinned = arrangement.isPinned(member.profile, on: source)
         content.contextMenu {
+            Button(pinned ? L("Открепить") : L("Закрепить"), systemImage: pinned ? "pin.slash" : "pin") {
+                withAnimation(.smooth(duration: 0.3)) { arrangement.setPinned(!pinned, profile: member.profile, on: source) }
+            }
+            Divider()
             Button(L("Переименовать…"), systemImage: "pencil") { renaming = RenameTarget(client: source, profile: member.profile) }
                 .disabled(source.isOffline(member.profile))
             Button(L("Скрыть у меня"), systemImage: "eye.slash") { Task { await library.setHidden(true, profile: member.profile, on: source) } }
@@ -248,7 +304,7 @@ struct TeamMenu: ViewModifier {
     }
 }
 
-/// A Home's name over its employees, with why it cannot be reached when it cannot.
+/// A Home's name in the list's filter, with why it cannot be reached when it cannot.
 struct TeamHomeTitle: View {
     let source: HomeClient
 
@@ -261,6 +317,40 @@ struct TeamHomeTitle: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(source.connectionNeedsUnlock ? source.displayName + ", " + L("Unlock connection")
                             : source.homeUnreachable ? source.displayName + ", " + L("Нет связи") : source.displayName)
+    }
+}
+
+/// The long-quiet employees as a row of small faces, the first few and how many more: who is in there at a glance.
+struct TeamFaces: View {
+    let members: [TeamMember]
+    var offline = false
+    private static let most = 5
+
+    var body: some View {
+        // Whoever's run failed stands first, so the mark is never among the faces left out.
+        let faces = members.filter { $0.profile.failing == true } + members.filter { $0.profile.failing != true }
+        HStack(spacing: 6) {
+            HStack(spacing: -RowMetrics.face * 0.28) {
+                ForEach(Array(faces.prefix(Self.most).enumerated()), id: \.element.id) { index, member in
+                    ToneAvatar(appearance: member.profile.resolvedAppearance, size: RowMetrics.face, offline: offline)
+                        // Each face stands over the next, with the paper showing between them.
+                        .overlay { Circle().strokeBorder(AppTheme.canvas, lineWidth: 1.5) }
+                        // A run that failed must not hide among the faces: its face keeps the row's small mark.
+                        .overlay(alignment: .bottomTrailing) {
+                            if member.profile.failing == true, !offline {
+                                Image(systemName: "exclamationmark.circle.fill").font(.system(size: RowMetrics.face * 0.42))
+                                    .symbolRenderingMode(.palette).foregroundStyle(.white, AppTheme.warning)
+                                    .background(Circle().fill(AppTheme.canvas).padding(-1)).offset(x: 2, y: 2)
+                            }
+                        }
+                        .zIndex(Double(Self.most - index))
+                }
+            }
+            if members.count > Self.most {
+                Text(verbatim: "+" + (members.count - Self.most).formatted()).font(RowMetrics.time).monospacedDigit().foregroundStyle(AppTheme.faint)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 

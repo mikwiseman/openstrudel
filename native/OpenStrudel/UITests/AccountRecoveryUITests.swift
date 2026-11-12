@@ -140,7 +140,7 @@ final class AccountRecoveryUITests: XCTestCase {
     }
 
     @MainActor private func openConnectedDevice(_ app: XCUIApplication) {
-        let open = app.buttons.matching(NSPredicate(format: "label == %@", "Открыть сотрудников")).firstMatch
+        let open = app.buttons["openDeviceEmployees"]
         let appeared = open.waitForExistence(timeout: 25)
         if !appeared { print(app.debugDescription) }
         XCTAssertTrue(appeared); open.tap()

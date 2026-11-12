@@ -5,7 +5,7 @@ import { Scheduler } from "../src/scheduler.js";
 import { TelegramAdapter } from "../src/telegram.js";
 import { employeeTools } from "../src/personality.js";
 import { readActivity } from "../src/activity.js";
-import { checkInSummary, parsePoll, readCheckIns, recordAnswer } from "../src/check-ins.js";
+import { checkInSummary, cronWeekdays, parsePoll, readCheckIns, recordAnswer } from "../src/check-ins.js";
 
 const stores: Store[] = [];
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); for (const store of stores.splice(0)) store.close(); });
@@ -135,8 +135,29 @@ describe("answers", () => {
     expect(inputs[0]).toContain("Напомни выдохнуть");
     expect(inputs[0]).toContain("Mik: 5 in a row");
     expect(delivered).toEqual(["Утро. Выдыхаем 🐺"]);
-    expect(readActivity(store, true, now).checkIns).toEqual([checkIn]);
+    // The app reads four weeks: this week against the last, and each question over a month.
+    expect(readActivity(store, true, now).checkIns).toEqual(readCheckIns(store, { conversationId, now, days: 28 }));
+    expect(readActivity(store, true, now).checkIns[0]!.days).toHaveLength(28);
     expect(checkInSummary(store, store.primaryConversation().id, now)).toBe("");
+  });
+
+  it("keeps a streak across a day the poll is not asked on", async () => {
+    const { store, scheduler, answer, conversationId } = setup();
+    // Sunday to Friday: Saturday the 7th has no poll.
+    scheduler.save({ conversationId, name: "Пульс · спокойствие", prompt: "", cron: "30 18 * * 0-5", timezone: "Europe/Moscow", delivery: "bound", poll }, saved);
+    const asked = ["03", "04", "05", "06", "08", "09"];
+    for (const day of asked) { await scheduler.tick(new Date(`2026-11-${day}T15:30:00Z`)); await scheduler.idle(); }
+    asked.forEach((day, index) => answer("poll-" + (index + 1), "42", "Аня", 4, `2026-11-${day}T16:00:00Z`));
+    // Марк missed Thursday the 5th, a day the poll was asked on.
+    asked.forEach((day, index) => { if (day !== "05") answer("poll-" + (index + 1), "77", "Марк", 6, `2026-11-${day}T16:00:00Z`); });
+    const streaks = (now: string) => Object.fromEntries(readCheckIns(store, { conversationId, now: new Date(now) })[0]!.participants.map(person => [person.name, person.streak]));
+    expect(streaks("2026-11-09T17:00:00Z")).toEqual({ "Аня": 6, "Марк": 3 });
+    // The next day's poll is open and unanswered: yesterday's streak still stands. A day later it is broken.
+    expect(streaks("2026-11-10T17:00:00Z")).toEqual({ "Аня": 6, "Марк": 3 });
+    expect(streaks("2026-11-11T17:00:00Z")).toEqual({ "Аня": 0, "Марк": 0 });
+    expect([...cronWeekdays("30 18 * * 0-5")]).toEqual([0, 1, 2, 3, 4, 5]);
+    expect([...cronWeekdays("0 9 * * 1,3,7")].sort()).toEqual([0, 1, 3]);
+    for (const cron of ["30 18 * * *", "30 18 * * MON-FRI", "@once 2026-11-09T10:00:00+03:00"]) expect(cronWeekdays(cron).size).toBe(7);
   });
 });
 

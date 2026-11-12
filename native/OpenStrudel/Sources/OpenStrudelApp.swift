@@ -90,8 +90,14 @@ struct OpenStrudelApp: App {
                     .environmentObject(library)
             }
             .task(id: library.connectionListKey + (scenePhase == .background ? ":background" : ":visible")) {
+                #if os(macOS)
+                // A Mac app lives on in the menu bar with its window closed. The library keeps its lists of Homes and
+                // employees current for as long as the app runs, so no window opens on this morning's team.
+                library.keepCataloguesCurrent()
+                #else
                 guard scenePhase != .background else { return }
                 await library.watchCatalogues()
+                #endif
             }
             .onOpenURL { url in
                 guard !library.isErasing else { return }
@@ -137,10 +143,18 @@ private struct PlaceCommands: View {
 
     var body: some View {
         if let places {
-            ForEach(Array(places.prefix(9).enumerated()), id: \.element.id) { index, place in
-                Button(place.title, action: place.open)
-                    .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
+            // The chat and the team in the home's order: ⌘1 to ⌘9 for the first nine, the rest by name only. Then the
+            // pages behind the home's tiles, which a long team must never push off the menu.
+            ForEach(Array(places.filter { !$0.page }.enumerated()), id: \.element.id) { index, place in
+                if index < 9 {
+                    Button(place.title, action: place.open)
+                        .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
+                } else {
+                    Button(place.title, action: place.open)
+                }
             }
+            Divider()
+            ForEach(places.filter(\.page)) { place in Button(place.title, action: place.open) }
         } else {
             Button(L("Чат")) {}.keyboardShortcut("1", modifiers: .command).disabled(true)
             Button(L("Статистика")) {}.keyboardShortcut("2", modifiers: .command).disabled(true)

@@ -5,35 +5,74 @@ private extension HomeActivity.Insight {
     var displayText: String { needsAttention ? L10n.serviceText(text) : text }
 }
 
-/// «Что важно»: results and exceptions, each with its source. It opens from its tile on the home. Reading never
-/// changes the main chat or its draft.
+/// «Ждёт вас»: every card that waits for the owner, from every Home, each whole and with its buttons; then the recent
+/// results of the chat's Home for reading. It opens from the home's lead. Reading never changes the main chat or its draft.
 struct InsightsPage: View {
     @EnvironmentObject private var client: HomeClient
+    @EnvironmentObject private var library: DeviceLibrary
+    @EnvironmentObject private var needs: NeedsYouModel
+    @EnvironmentObject private var failures: TeamFailures
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var model: ActivityModel
     let scope: String
     let refresh: () async -> Void
     let openChat: () -> Void
+    /// Carries out a card's button, with the words it was given when it takes words.
+    let act: (NeedCard, NeedCard.Action, String?) -> Void
     private var activity: HomeActivity? { model.scope == scope ? model.activity : nil }
 
     var body: some View {
-        ActivityColumn {
-            ActivityStatus(model: model, scope: scope, openChat: openChat)
-            if let activity {
-                if activity.insights.isEmpty {
-                    ActivityEmpty(title: L("Nothing to read yet"), text: L("Scheduled results and things that need your attention will appear here."))
+        let cards = needs.cards(library, failures: failures), decided = needs.recent(library), results = activity?.results ?? []
+        ScrollViewReader { proxy in
+            ActivityColumn {
+                if cards.isEmpty {
+                    if results.isEmpty, decided.isEmpty, activity != nil {
+                        ActivityEmpty(title: L("Ничего не ждёт вас"), text: L("Scheduled results and things that need your attention will appear here."))
+                    } else {
+                        Text(L("Ничего не ждёт вас")).font(AppTypography.serif(22, .title2)).displayTracking(-0.3)
+                            .accessibilityAddTraits(.isHeader).accessibilityIdentifier("needsCalm")
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 18) {
+                        ForEach(cards) { card in
+                            Group {
+                                // A question with several parts, or one answered in words, is the chat's own card.
+                                if case .question(let interaction) = card.origin, card.actions.first?.id == NeedsYou.open, let source = library.home(of: card) {
+                                    InteractionCard(interaction: interaction).environmentObject(source)
+                                } else {
+                                    NeedCardView(card: card, act: act)
+                                }
+                            }
+                            .id(card.id)
+                            .transition(reduceMotion ? .opacity : .asymmetric(insertion: .opacity, removal: .scale(scale: 0.96).combined(with: .opacity)))
+                        }
+                    }
+                    .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.8), value: cards.map(\.id))
                 }
-                if !activity.attention.isEmpty {
-                    ActivitySection(title: L("Needs attention"), spacing: 22) { ForEach(activity.attention) { insight($0) } }
+                // What was decided in the last day, on any Home, by whoever answered first: here or in Telegram.
+                if !decided.isEmpty {
+                    ActivitySection(title: L("Решено"), spacing: 16) {
+                        ForEach(decided) { NeedRow(card: $0).accessibilityIdentifier("needDecided-" + $0.id) }
+                    }
                 }
-                if !activity.results.isEmpty {
-                    ActivitySection(title: L("Recent results"), spacing: 22) { ForEach(activity.results) { insight($0) } }
+                // The results are the chat's Home's own; a Home that cannot list them says so here.
+                if model.failure != nil || cards.isEmpty { ActivityStatus(model: model, scope: scope, openChat: openChat) }
+                if !results.isEmpty {
+                    ActivitySection(title: L("Recent results"), spacing: 22) { ForEach(results) { insight($0) } }
                 }
-                ActivityChecked(date: activity.checkedAt, home: client.displayName)
+                if let activity { ActivityChecked(date: activity.checkedAt, home: client.displayName) }
+            }
+            // Opened at one card, the page brings that card into sight.
+            .onChange(of: needs.focus, initial: true) { _, card in
+                guard let card else { return }
+                withAnimation(.smooth(duration: 0.3)) { proxy.scrollTo(card, anchor: .top) }
+                needs.focus = nil
             }
         }
-        .activityPage(L("Что важно"))
+        .activityPage(L("Ждёт вас"))
         .toolbar { ToolbarItem(placement: .primaryAction) { ActivityRefresh(refreshing: model.refreshing, refresh: refresh) } }
         .refreshable { await refresh() }
+        .sensoryFeedback(trigger: cards.count) { old, new in new < old ? .success : nil }
         .accessibilityIdentifier("insightsRoot")
     }
 
@@ -41,16 +80,9 @@ struct InsightsPage: View {
     private func insight(_ item: HomeActivity.Insight) -> some View {
         NavigationLink(value: HomePlace.insight(item)) {
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 5) {
-                    if item.needsAttention {
-                        Image(systemName: "exclamationmark.circle.fill").foregroundStyle(AppTheme.warning).accessibilityHidden(true)
-                    }
-                    Text(([item.employeeName] + (HomeActivity.date(item.occurredAt).map { [TeamWords().ago($0)] } ?? [])).joined(separator: " · "))
-                        .foregroundStyle(AppTheme.secondaryText)
-                }
-                .font(ReaderLine.font).monospacedDigit()
-                Text(item.displayTitle).font(AppTypography.interface.weight(.semibold)).foregroundStyle(item.needsAttention ? AppTheme.warning : Color.primary)
-                    .multilineTextAlignment(.leading)
+                Text(([item.employeeName] + (HomeActivity.date(item.occurredAt).map { [TeamWords().ago($0)] } ?? [])).joined(separator: " · "))
+                    .foregroundStyle(AppTheme.secondaryText).font(ReaderLine.font).monospacedDigit()
+                Text(item.displayTitle).font(AppTypography.interface.weight(.semibold)).multilineTextAlignment(.leading)
                 Text(Team.plain(item.displayText)).font(.subheadline).foregroundStyle(AppTheme.secondaryText).lineSpacing(2)
                     .lineLimit(3).multilineTextAlignment(.leading)
             }
@@ -106,7 +138,7 @@ struct InsightDetail: View {
                 AskCapsule(title: L("Обсудить в чате")) { discuss(context) }.accessibilityIdentifier("discussInsight")
             }
         }
-        .navigationTitle(L("Что важно"))
+        .navigationTitle(item.employeeName)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         .containerBackground(AppTheme.canvas, for: .navigation)
@@ -140,16 +172,15 @@ struct ProgressPage: View {
                                skin: .paper(AgentAppearance.tint(AgentAppearance(kind: "coil", tone: 3), dark: scheme == .dark)))
                 }
                 .padding(.bottom, -26)
-                ProgressCharacter(progress: activity.progress)
+                // The first steps are said until they are taken, not for ever after.
+                let starting = activity.progress.milestones.filter(\.known).contains { !$0.reached }
+                if starting { ProgressCharacter(progress: activity.progress) }
                 ActivitySection(title: L("Last 7 days")) {
                     count(L("Answered requests"), activity.progress.completedRequests)
                     count(L("Automation results"), activity.progress.completedRuns)
                     Text(L("Replies and scheduled results from this Home.")).font(ReaderLine.font).foregroundStyle(AppTheme.secondaryText)
                 }
-                if !activity.rituals.isEmpty {
-                    ActivitySection(title: L("Check-ins")) { ForEach(activity.rituals) { CheckInCard(checkIn: $0) } }
-                }
-                ActivitySection(title: L("Milestones")) {
+                if starting { ActivitySection(title: L("Milestones")) {
                     ForEach(activity.progress.milestones.filter(\.known)) { milestone in
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             Image(systemName: milestone.reached ? "checkmark.circle.fill" : "circle")
@@ -164,7 +195,7 @@ struct ProgressPage: View {
                         .accessibilityValue(milestone.reached ? L("Reached") : L("Not yet"))
                         .accessibilityIdentifier("milestone-" + milestone.id)
                     }
-                }
+                } }
                 ActivitySection(title: L("Automation")) {
                     count(L("Active schedules"), activity.progress.activeSchedules)
                     count(L("Quiet runs · no new result"), activity.progress.quietRuns)
@@ -218,79 +249,6 @@ struct ProgressPage: View {
     }
 }
 
-/// Fourteen days of a Telegram poll: each person's own bars, their streak of answers and today's state. Opens the chat it lives in.
-private struct CheckInCard: View {
-    @EnvironmentObject private var client: HomeClient
-    let checkIn: HomeActivity.CheckIn
-
-    var body: some View {
-        NavigationLink(value: HomePlace.reader(ReaderRoute(connectionID: client.id, kind: .conversation(checkIn.conversationId), title: checkIn.chat ?? checkIn.name))) {
-            VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(checkIn.question).font(.body.weight(.medium)).foregroundStyle(.primary)
-                    if let chat = checkIn.chat { Text(chat).font(.caption).foregroundStyle(.secondary) }
-                }
-                ForEach(checkIn.participants) { person in
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(person.name).font(.subheadline.weight(.medium))
-                            Spacer(minLength: 8)
-                            if let latest = person.latest {
-                                Text(latest.value.formatted()).font(.title3.weight(.semibold)).monospacedDigit()
-                                    .accessibilityLabel(L("Latest answer \(latest.value.formatted())"))
-                            }
-                        }
-                        CheckInBars(days: checkIn.days, participant: person.id, scale: checkIn.scale)
-                        if !caption(person).isEmpty { Text(caption(person)).font(.caption).foregroundStyle(.secondary) }
-                    }
-                    .accessibilityElement(children: .combine)
-                }
-                Text(todayLine).font(.caption).foregroundStyle(.secondary)
-            }
-            .padding(18)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .cardTile()
-        }
-        .buttonStyle(TilePressStyle())
-        .accessibilityIdentifier("checkIn-" + checkIn.id)
-    }
-
-    private func caption(_ person: HomeActivity.CheckIn.Participant) -> String {
-        var parts: [String] = []
-        if person.streak > 0 { parts.append(L("Streak: \(person.streak.formatted())")) }
-        if let average = person.average { parts.append(L("Average \(average.formatted(.number.precision(.fractionLength(0...1))))")) }
-        return parts.joined(separator: " · ")
-    }
-
-    private var todayLine: String {
-        let answered = checkIn.participants.compactMap { person -> String? in
-            guard let value = checkIn.value(of: person, on: checkIn.today) else { return nil }
-            return person.name + " " + value.formatted()
-        }
-        return answered.isEmpty ? L("No answers yet today") : L("Today: \(answered.joined(separator: " · "))")
-    }
-}
-
-/// One bar per local date, taller and darker with the answer; a day without an answer stays a faint base line.
-private struct CheckInBars: View {
-    let days: [HomeActivity.CheckIn.Day]
-    let participant: String
-    let scale: Int
-    var body: some View {
-        HStack(alignment: .bottom, spacing: 3) {
-            ForEach(days, id: \.date) { day in
-                let share = day.values[participant].map { Double($0) / Double(max(scale, 1)) }
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(share.map { Color.primary.opacity(0.3 + 0.7 * $0) } ?? Color.secondary.opacity(0.18))
-                    .frame(height: share.map { max(6, 28 * $0) } ?? 4)
-                    .frame(maxWidth: .infinity, alignment: .bottom)
-            }
-        }
-        .frame(height: 28, alignment: .bottom)
-        .accessibilityHidden(true)
-    }
-}
-
 /// The existing Strudel character acknowledges recorded milestones; no idle animation or spending rewards.
 private struct ProgressCharacter: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -320,7 +278,7 @@ private struct ProgressCharacter: View {
     }
 }
 
-private struct ActivityStatus: View {
+struct ActivityStatus: View {
     @ObservedObject var model: ActivityModel
     let scope: String
     let openChat: () -> Void
@@ -359,7 +317,7 @@ private struct ActivityStatus: View {
     }
 }
 
-private struct ActivityChecked: View {
+struct ActivityChecked: View {
     let date: String
     let home: String
     var body: some View {
@@ -372,7 +330,7 @@ private struct ActivityChecked: View {
     }
 }
 
-private struct ActivityRefresh: View {
+struct ActivityRefresh: View {
     let refreshing: Bool
     let refresh: () async -> Void
     var body: some View {
@@ -381,8 +339,8 @@ private struct ActivityRefresh: View {
     }
 }
 
-/// A page behind a tile: an open column on the paper, its groups under small sentence-case labels, no rules.
-private struct ActivityColumn<Content: View>: View {
+/// A page of the home (what waits, Progress, the polls): an open column on the paper, its groups under small sentence-case labels, no rules.
+struct ActivityColumn<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         ScrollView {
@@ -396,7 +354,7 @@ private struct ActivityColumn<Content: View>: View {
     }
 }
 
-private struct ActivitySection<Content: View>: View {
+struct ActivitySection<Content: View>: View {
     let title: String
     var spacing: CGFloat = 14
     @ViewBuilder var content: Content
@@ -410,7 +368,7 @@ private struct ActivitySection<Content: View>: View {
 }
 
 /// Nothing yet: the bun, one sentence, and what will come.
-private struct ActivityEmpty: View {
+struct ActivityEmpty: View {
     let title: String
     let text: String
     var body: some View {
@@ -424,7 +382,7 @@ private struct ActivityEmpty: View {
     }
 }
 
-private extension View {
+extension View {
     func activityPage(_ title: String) -> some View {
         background(AppTheme.canvas)
             .navigationTitle(title)

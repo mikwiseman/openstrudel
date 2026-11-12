@@ -151,6 +151,12 @@ it("lists every recurring schedule with its chat and this week's runs and cost, 
     ["Утро", false, "main", { runs: 0, quiet: 0, failed: 0, tokens: 0, costUsd: null }],
   ]);
   expect(overview.schedules[1]).toMatchObject({ id: morning.id, prompt: "Собрать", cron: "0 7 * * *", conversationId: main });
+  // The latest run of «Радар» failed and the one before it did not: it is failing since that run. A switched-off schedule
+  // is not failing. The reason is the first line of what the latest failed run said.
+  expect(overview.schedules.map(s => [s.profileId, s.failure])).toEqual([[null, { since: "2026-11-07T09:05:00.000Z", reason: null }], [null, null]]);
+  store.db.prepare("INSERT INTO schedule_runs(id,schedule_id,conversation_id,scheduled_for,status,created_at,error) VALUES('r3',?,?,?,'failed',?,?)")
+    .run(radar.id, main, "2026-11-08T09:05:00.000Z", "2026-11-08T09:05:00.000Z", "Закончился лимит модели.\nat run (scheduler.js:1)");
+  expect(readScheduleOverview(store, scheduler, true, now).schedules[0]!.failure).toEqual({ since: "2026-11-07T09:05:00.000Z", reason: "Закончился лимит модели." });
   expect(readScheduleOverview(store, undefined, true, now).schedules).toEqual([]);
 });
 

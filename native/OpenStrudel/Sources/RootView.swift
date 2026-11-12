@@ -34,6 +34,12 @@ struct OpenStrudelRootView: View {
     @StateObject private var newsroom = Newsroom()
     /// What this device has read of each employee.
     @StateObject private var marks = TeamReadMarks()
+    /// Who is pinned to the top of the team list on this device, and which Homes are open.
+    @StateObject private var arrangement = TeamArrangement()
+    /// Why a failing employee is failing, from every Home that lets its owner read it.
+    @StateObject private var failures = TeamFailures()
+    /// What waits for the owner on every Home: the cards the home leads with.
+    @StateObject private var needs = NeedsYouModel()
     /// What the shelf shows of the chat's Home: results, what needs attention, progress and the subscriptions' limits.
     @StateObject private var activity = ActivityModel()
     @StateObject private var limits = ActivityLimitsModel()
@@ -57,6 +63,19 @@ struct OpenStrudelRootView: View {
             let listsWork = source.profiles.contains { $0.working != nil }
             return source.catalogueIdentity + ":" + employees + ":" + String(listsWork)
         }
+    }
+
+    /// Changes when a Home joins or leaves, and when anyone starts or stops failing.
+    private var failingKey: String {
+        let homes: [String] = library.teamHomes.map(\.id)
+        let failing: [String] = library.team.filter { $0.member.profile.failing == true }.map(\.member.id)
+        return "\(pollingPhase)-" + homes.joined(separator: ",") + "|" + failing.joined(separator: ",")
+    }
+
+    /// Changes when a Home joins or leaves, or the app comes into sight.
+    private var homesKey: String {
+        let homes: [String] = library.teamHomes.map(\.id)
+        return "\(pollingPhase)-" + homes.joined(separator: ",")
     }
 
     private var pollingPhase: ScenePhase {
@@ -119,14 +138,38 @@ struct OpenStrudelRootView: View {
                 do { try await Task.sleep(for: .seconds(client.health == nil ? 5 : 300)) } catch { break }
             }
         }
+        // Why someone is failing is asked of every Home when the home comes into sight, and again whenever anyone starts
+        // or stops failing; the main assistant's own schedules are asked about every few minutes with the rest.
+        .task(id: failingKey) {
+            guard pollingPhase == .active else { return }
+            while !Task.isCancelled {
+                for source in library.teamHomes {
+                    do { failures.take(try await source.readScheduleOverview().schedules, from: source) }
+                    // A connection that is no longer its owner's forgets what only the owner may read. A Home out of
+                    // reach keeps its last word.
+                    catch StatisticsReadError.ownerOnly, StatisticsReadError.unsupported { failures.take([], from: source) }
+                    catch {}
+                }
+                do { try await Task.sleep(for: .seconds(300)) } catch { break }
+            }
+        }
+        // What waits is asked of every Home when the home comes into sight and every ten seconds after: a card answered
+        // in Telegram leaves here soon, and a new one is not kept waiting.
+        .task(id: homesKey) {
+            guard pollingPhase == .active else { return }
+            while !Task.isCancelled {
+                await needs.refresh(library.teamHomes)
+                do { try await Task.sleep(for: .seconds(10)) } catch { break }
+            }
+        }
         // Coming back to the home, or opening one of the pages behind its tiles, reads them again at once.
         .onChange(of: path) { _, pages in
-            guard pages.isEmpty || pages.last == .insights || pages.last == .progress else { return }
-            Task { await refreshActivity(includeLimits: true) }
+            guard pages.isEmpty || pages.last == .insights || pages.last == .progress || pages.last == .checkIns else { return }
+            Task { await refreshActivity(includeLimits: true); await needs.refresh(library.teamHomes) }
         }
         .onChange(of: place) { _, place in
-            guard place == .insights || place == .progress else { return }
-            Task { await refreshActivity(includeLimits: true) }
+            guard place == .insights || place == .progress || place == .checkIns else { return }
+            Task { await refreshActivity(includeLimits: true); await needs.refresh(library.teamHomes) }
         }
         // An employee this device meets for the first time starts read.
         .onChange(of: catalogues, initial: true) { _, _ in
@@ -216,6 +259,9 @@ struct OpenStrudelRootView: View {
         .environment(\.zoomNamespace, zoom)
         .environmentObject(newsroom)
         .environmentObject(marks)
+        .environmentObject(arrangement)
+        .environmentObject(failures)
+        .environmentObject(needs)
     }
 
     private var splitLayout: some View {
@@ -263,7 +309,29 @@ struct OpenStrudelRootView: View {
                      #if os(iOS)
                      showSettings = true
                      #endif
-                 })
+                 },
+                 act: act)
+    }
+
+    /// Carries out a card's button. A card its Home keeps is answered by the Home. What an older Home can only tell
+    /// is answered here: a failing employee's page is opened or the card set aside until tomorrow, and a question is
+    /// answered with the choice or in its chat.
+    private func act(_ card: NeedCard, _ action: NeedCard.Action, _ text: String?) {
+        guard let source = library.home(of: card) else { return }
+        switch card.origin {
+        case .card:
+            Task { await needs.press(action, on: card, text: text, home: source) }
+        case .failing(let route):
+            if action.id == NeedsYou.later { withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { needs.setAside(card) } }
+            else { open(.reader(route)) }
+        case .question(let interaction):
+            if action.id.hasPrefix(NeedsYou.option), let question = interaction.questions.first {
+                let choice = String(action.id.dropFirst(NeedsYou.option.count))
+                Task { await needs.run(card) { try await source.answer(interaction, answers: [question.id: choice]) } }
+            } else {
+                open(source === library.primary ? .chat : .reader(ReaderRoute(connectionID: source.id, kind: .main, title: "OpenStrudel")))
+            }
+        }
     }
 
     @ViewBuilder private func page(_ place: HomePlace) -> some View {
@@ -271,8 +339,11 @@ struct OpenStrudelRootView: View {
         case .chat: chat
         case .reader(let route): ReaderScreen(route: route, discuss: discuss)
         case .insights:
-            InsightsPage(model: activity, scope: activityScope, refresh: { await refreshActivity(includeLimits: false) }, openChat: { open(.chat) })
+            InsightsPage(model: activity, scope: activityScope, refresh: { await refreshActivity(includeLimits: false); await needs.refresh(library.teamHomes) },
+                         openChat: { open(.chat) }, act: act)
         case .insight(let item): InsightDetail(item: item, discuss: discuss)
+        case .checkIns:
+            CheckInsPage(model: activity, scope: activityScope, refresh: { await refreshActivity(includeLimits: false) }, openChat: { open(.chat) })
         case .progress:
             ProgressPage(model: activity, limits: limits, scope: activityScope, refresh: { await refreshActivity(includeLimits: true, force: true) }, openChat: { open(.chat) })
         case .statistics: StatisticsScreen(limit: limits.scope == activityScope ? Shelf.limit(limits.accounts) : nil)
@@ -297,10 +368,21 @@ struct OpenStrudelRootView: View {
 
     #if os(macOS)
     private var placeCommands: [PlaceCommand] {
-        let shown = library.team.filter { $0.source === library.primary || !library.collapsedDeviceIDs.contains($0.source.id) }
-        let members = shown.map { row in PlaceCommand(id: row.member.id, title: row.member.profile.name) { open(.reader(row.member.route)) } }
-        return [PlaceCommand(id: "chat", title: L("Чат")) { open(.chat) }] + members
-            + [PlaceCommand(id: "statistics", title: L("Статистика")) { open(.statistics) }]
+        // The home's own order: the pinned first, then the list as it stands, without the long-quiet.
+        let cards = needs.cards(library, failures: failures)
+        let waiting = Set(cards.compactMap { card in card.profileID.map { card.home + ":" + $0 } })
+        let waits = Set(library.team.map(\.member).filter { waiting.contains($0.route.connectionID + ":" + $0.profile.id) }.map(\.id))
+        let list = library.teamList(arrangement, waiting: waits) { member, _ in Team.isQuiet(member.profile) }
+        let members = list.shown.map(\.member).map { member in PlaceCommand(id: member.id, title: member.profile.name) { open(.reader(member.route)) } }
+        // Every page has its line in View too: what waits, what the Home has to show, then the numbers.
+        let known = activity.scope == activityScope ? activity.activity : nil
+        var pages: [PlaceCommand] = [PlaceCommand(id: "insights", title: L("Ждёт вас"), page: true) { open(.insights) }]
+        if let board = CheckInBoard.boards(known?.rituals ?? []).first(where: { $0.latestDay != nil }) {
+            pages.append(PlaceCommand(id: "checkIns", title: board.title, page: true) { open(.checkIns) })
+        }
+        if known != nil { pages.append(PlaceCommand(id: "progress", title: L("Progress"), page: true) { open(.progress) }) }
+        pages.append(PlaceCommand(id: "statistics", title: L("Статистика"), page: true) { open(.statistics) })
+        return [PlaceCommand(id: "chat", title: L("Чат")) { open(.chat) }] + members + pages
     }
     #endif
 

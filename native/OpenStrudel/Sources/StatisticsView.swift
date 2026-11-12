@@ -85,6 +85,15 @@ struct StatisticsScreen: View {
                     if current.models.contains(where: { $0.id != "/" }) { rows(L("Модели"), current.models, key: "models", model: true) }
                     origin(current).padding(.top, 48)
                     notes(current).padding(.top, 24)
+                    // The limits in full and the first steps live on their own page, a step from the numbers.
+                    NavigationLink(value: HomePlace.progress) {
+                        Label(L("Limits and usage"), systemImage: "gauge.with.dots.needle.33percent")
+                            .font(AppTypography.meta.weight(.medium)).foregroundStyle(.primary)
+                            .padding(.horizontal, 14).frame(minHeight: max(36, controlTarget))
+                            .background(AppTheme.surface, in: Capsule()).contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain).padding(.top, 28)
+                    .accessibilityIdentifier("openProgress")
                 }
                 .frame(maxWidth: Layout.column + 80, alignment: .leading)
                 .padding(.horizontal, Layout.edge)

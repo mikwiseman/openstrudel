@@ -1,7 +1,8 @@
 import XCTest
 
 /// Runs against tests/fixtures/one-chat.ts on a disposable simulator: the home, one chat with one composer behind its
-/// capsule, readers behind the chat, «Что важно» and Progress behind their tiles, and no second composer anywhere.
+/// capsule, readers behind the chat, what waits and the recent results behind the home's lead, Progress a step from
+/// Statistics, and no second composer anywhere.
 final class OneChatUITests: XCTestCase {
     private var control = ""
 
@@ -21,7 +22,8 @@ final class OneChatUITests: XCTestCase {
 
         // 1. Home is the first place, without tabs; its capsule opens the chat: history already there, the composer
         // ready, nothing to send yet and no Clients.
-        let homeComposer = app.buttons["homeComposer"], important = app.buttons["tile-important"], progress = app.buttons["tile-progress"]
+        // Nothing waits on this Home, so the home leads with its calm sentence, which opens the recent results.
+        let homeComposer = app.buttons["homeComposer"], calm = app.buttons["needsCalm"]
         XCTAssertTrue(homeComposer.waitForExistence(timeout: 40), app.debugDescription)
         XCTAssertEqual(app.tabBars.count, 0)
         XCTAssertFalse(app.textFields["Сообщение"].exists, "The home's capsule opens the composer; it is not a second one")
@@ -126,14 +128,14 @@ final class OneChatUITests: XCTestCase {
         XCTAssertEqual(app.textFields["Сообщение"].waitForExistence(timeout: 10) ? app.textFields["Сообщение"].value as? String : nil, "Черновик, который должен выжить")
         try await assertNoSend(since: state)
 
-        // «Что важно» and Progress open from their tiles on the home; neither takes ownership of the main draft or
-        // sends a message.
+        // The results and Progress open from the home; neither takes ownership of the main draft or sends a message.
         back(app)
-        XCTAssertTrue(important.waitForExistence(timeout: 20), app.debugDescription)
-        scrollShelf(app, to: important); important.tap()
+        XCTAssertTrue(calm.waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertTrue(calm.label.contains("Ничего не ждёт вас") && calm.label.contains("Сегодня готово: 1"), calm.debugDescription)
+        calm.tap()
         XCTAssertTrue(app.descendants(matching: .any)["insightsRoot"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.textFields["Сообщение"].exists)
-        // A desk is read from the team list now; this page keeps to results and what needs attention.
+        // A desk is read from the team list now; this page keeps to what waits and the results.
         XCTAssertFalse(app.buttons["newsEntry-" + editorID].exists)
         let activity = try XCTUnwrap(state["activity"] as? [String: Any])
         let insight = app.buttons["insight-" + (try XCTUnwrap(activity["id"] as? String))]
@@ -151,12 +153,11 @@ final class OneChatUITests: XCTestCase {
         app.buttons["removeDraftContext"].tap()
         // The chat grew out of the result; the way back passes it and the page it came from.
         back(app); back(app); back(app)
-        XCTAssertTrue(progress.waitForExistence(timeout: 20), app.debugDescription)
-        scrollShelf(app, to: progress); progress.tap()
+        openProgress(app)
         XCTAssertTrue(app.descendants(matching: .any)["progressRoot"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.buttons["openClients"].exists, "Clients left the app")
         XCTAssertFalse(app.textFields["Сообщение"].exists)
-        back(app)
+        back(app); back(app)
         XCTAssertTrue(homeComposer.waitForExistence(timeout: 10), app.debugDescription); homeComposer.tap()
         XCTAssertTrue(composer.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(composer.value as? String, "Черновик, который должен выжить")
@@ -202,18 +203,16 @@ final class OneChatUITests: XCTestCase {
         app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         app.launch()
         XCTAssertTrue(app.descendants(matching: .any)["homeRoot"].waitForExistence(timeout: 30), app.debugDescription)
-        XCTAssertTrue(important.waitForExistence(timeout: 30), app.debugDescription)
-        scrollShelf(app, to: important); important.tap()
+        XCTAssertTrue(calm.waitForExistence(timeout: 30), app.debugDescription); calm.tap()
         XCTAssertTrue(insight.waitForExistence(timeout: 20), app.debugDescription); insight.tap()
         XCTAssertTrue(app.descendants(matching: .any)["insightDetail"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.textFields["Сообщение"].exists)
         capture("large-text-insight", app)
         back(app); back(app)
-        XCTAssertTrue(progress.waitForExistence(timeout: 20), app.debugDescription)
-        scrollShelf(app, to: progress); progress.tap()
+        openProgress(app)
         XCTAssertTrue(app.descendants(matching: .any)["progressCharacter"].waitForExistence(timeout: 15), app.debugDescription)
         capture("large-text-progress", app)
-        back(app)
+        back(app); back(app)
         XCTAssertTrue(app.buttons["openChats"].waitForExistence(timeout: 10), app.debugDescription)
         app.buttons["openChats"].tap()
         // At this size the desk's row with its latest headline fills the first screen of the list.
@@ -239,11 +238,13 @@ final class OneChatUITests: XCTestCase {
         XCTAssertTrue(toEmployee.waitForExistence(timeout: 5), app.debugDescription); toEmployee.tap()
         XCTAssertTrue(app.buttons["saveEmployeeChanges"].waitForExistence(timeout: 5), app.debugDescription)
         app.buttons["saveEmployeeChanges"].tap()
-        // Back on the home, what only the owner may read leaves its shelf.
+        // Back on the home, what only the owner may read leaves it: the calm sentence says nothing of the day's results
+        // and opens nothing.
         back(app)
         XCTAssertTrue(app.descendants(matching: .any)["homeRoot"].waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(important.waitForNonExistence(timeout: 20), app.debugDescription)
-        XCTAssertFalse(progress.exists)
+        XCTAssertTrue(calm.waitForNonExistence(timeout: 20), app.debugDescription)
+        let line = app.descendants(matching: .any)["needsCalmLine"]
+        XCTAssertTrue(line.waitForExistence(timeout: 10) && !line.label.contains("Сегодня готово"), app.debugDescription)
         XCTAssertFalse(insight.exists)
         capture("home-owner-access-removed", app)
         let denied = try await read("/")
@@ -290,11 +291,15 @@ final class OneChatUITests: XCTestCase {
         button.tap()
     }
 
-    /// The shelf scrolls sideways; a tile out of sight is brought in before it is pressed.
-    @MainActor private func scrollShelf(_ app: XCUIApplication, to tile: XCUIElement) {
-        let tiles = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "tile-"))
-        for _ in 0..<4 where !tile.isHittable { tiles.firstMatch.swipeLeft() }
-        for _ in 0..<4 where !tile.isHittable { tiles.element(boundBy: min(2, tiles.count - 1)).swipeRight() }
+    /// Progress is a step from Statistics, which opens from the foot of the home.
+    @MainActor private func openProgress(_ app: XCUIApplication) {
+        let statistics = app.buttons["homeStatistics"], progress = app.buttons["openProgress"], home = app.descendants(matching: .any)["homeRoot"]
+        XCTAssertTrue(statistics.waitForExistence(timeout: 20), app.debugDescription)
+        for _ in 0..<8 where !statistics.isHittable { home.swipeUp() }
+        statistics.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["statisticsRoot"].waitForExistence(timeout: 10), app.debugDescription)
+        for _ in 0..<8 where !progress.exists || !progress.isHittable { app.swipeUp() }
+        XCTAssertTrue(progress.waitForExistence(timeout: 15), app.debugDescription); progress.tap()
     }
 
     /// A screenshot kept with the test, and beside the others when a folder is named for them.

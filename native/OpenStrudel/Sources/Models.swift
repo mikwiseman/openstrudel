@@ -271,16 +271,23 @@ struct ScheduleResponse: Decodable { let schedule: ChatSchedule }
 /// One recurring schedule of a Home with its chat and what it ran and spent this week (`GET /v1/schedules`).
 struct HomeSchedule: Decodable, Identifiable {
     struct Week: Decodable, Equatable { let runs: Int; let quiet: Int; let failed: Int; let tokens: Int; let costUsd: Double? }
+    struct Failure: Decodable, Equatable { let since: String; let reason: String? }
     let schedule: ChatSchedule
     let chat: HomeStatistics.Chat
     let week: Week
+    /// Whose schedule it is: nil for the main assistant's, and on a Home that does not say.
+    let profileId: String?
+    /// Its latest finished run failed: since which run, and the first line of what the latest one said.
+    let failure: Failure?
     var id: String { schedule.id }
-    private enum Keys: String, CodingKey { case chat, week }
+    private enum Keys: String, CodingKey { case chat, week, profileId, failure }
     init(from decoder: Decoder) throws {
         schedule = try ChatSchedule(from: decoder)
         let container = try decoder.container(keyedBy: Keys.self)
         chat = try container.decode(HomeStatistics.Chat.self, forKey: .chat)
         week = try container.decode(Week.self, forKey: .week)
+        profileId = try container.decodeIfPresent(String.self, forKey: .profileId)
+        failure = try container.decodeIfPresent(Failure.self, forKey: .failure)
     }
 }
 struct ScheduleOverview: Decodable { let checkedAt: String; let schedules: [HomeSchedule] }
