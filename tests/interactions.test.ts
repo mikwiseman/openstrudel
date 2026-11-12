@@ -84,3 +84,22 @@ describe("Codex approvals", () => {
     } finally { broker.close(); vi.useRealTimers(); }
   });
 });
+
+describe("a service action that sends words", () => {
+  it("is read in plain parts, with every other argument kept as a fact", async () => {
+    const { sendAction, sendDetail } = await import("../src/interactions.js");
+    const send = sendAction("mail", "send_letter", { to: ["a@example.com", "b@example.com"], subject: "Friday", body: "We close at 15:00.", replyToMessageId: 17, attachments: [], dry_run: false })!;
+    expect(send).toMatchObject({ to: "a@example.com, b@example.com", via: "mail", subject: "Friday", text: "We close at 15:00.",
+      details: [{ label: "Reply to message id", value: "17" }, { label: "Dry run", value: "false" }] });
+    expect(sendDetail(send)).toBe("To: a@example.com, b@example.com · mail\nSubject: Friday\n\nWe close at 15:00.\n\nReply to message id: 17\nDry run: false");
+    expect(sendDetail(sendAction("chat", "sendMessage", { chat: "Команда", text: "Закрываемся в 15:00." })!)).toBe("Кому: Команда · chat\n\nЗакрываемся в 15:00.");
+  });
+  it("is not claimed for a draft, a read, or an action without a recipient or a text", async () => {
+    const { sendAction } = await import("../src/interactions.js");
+    expect(sendAction("mail", "create_reply_draft", { to: "a@example.com", body: "Text" })).toBeNull();
+    expect(sendAction("mail", "search_messages", { to: "a@example.com", text: "invoice" })).toBeNull();
+    expect(sendAction("mail", "send_letter", { subject: "Friday", body: "Text" })).toBeNull();
+    expect(sendAction("mail", "send_file", { to: "a@example.com", path: "/tmp/report.pdf" })).toBeNull();
+    expect(sendAction("files", "resend_invoice", { to: "a@example.com", text: "Text" })).toBeNull();
+  });
+});
