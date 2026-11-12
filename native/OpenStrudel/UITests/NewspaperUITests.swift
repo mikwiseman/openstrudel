@@ -53,10 +53,21 @@ final class NewspaperUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Выпуски"].exists, app.debugDescription)
         capture("04-front-sections-and-issues", app)
 
-        // 3. An earlier issue is a paper of its own.
+        // 3. An earlier issue is a paper of its own. Its lead has no picture, and is set in words: the headline alone
+        // in one issue, the figure its story stands on in the next.
         issue.tap()
         XCTAssertTrue(app.scrollViews["newsDay"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(leadTile.waitForExistence(timeout: 10), app.debugDescription)
         capture("05-issue", app)
+        back(app)
+        XCTAssertTrue(front.waitForExistence(timeout: 10), app.debugDescription)
+        let second = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "newsDay-")).element(boundBy: 1)
+        XCTAssertTrue(second.waitForExistence(timeout: 5) && second.isHittable, app.debugDescription)
+        second.tap()
+        XCTAssertTrue(app.scrollViews["newsDay"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(leadTile.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(leadTile.label.contains("≈ $700"), leadTile.label)
+        capture("05-issue-figure", app)
         back(app)
         XCTAssertTrue(front.waitForExistence(timeout: 10), app.debugDescription)
         for _ in 0..<6 where !leadTile.isHittable { front.swipeDown() }
@@ -85,7 +96,10 @@ final class NewspaperUITests: XCTestCase {
         capture("09-post-writing", app)
         let text = app.textViews["postText"]
         XCTAssertTrue(text.waitForExistence(timeout: 30), app.debugDescription)
-        XCTAssertTrue((text.value as? String ?? "").contains("Клён 3"), text.value as? String ?? "")
+        // The draft reads the way the post will look: its title and its link carry no marks.
+        let shown = text.value as? String ?? ""
+        XCTAssertTrue(shown.contains("Клён 3") && shown.contains("Запись в блоге"), shown)
+        XCTAssertFalse(shown.contains("**") || shown.contains("](") || shown.contains("https://"), shown)
         XCTAssertTrue(app.descendants(matching: .any)["postNote"].exists, "what the channel already said stands under the draft")
         capture("10-post", app)
         _ = try await read("/post?delay=1500")
@@ -101,7 +115,22 @@ final class NewspaperUITests: XCTestCase {
         let revised = await XCTWaiter().fulfillment(of: [shorter], timeout: 30)
         XCTAssertEqual(revised, .completed, text.value as? String ?? "")
         capture("11-post-revised", app)
-        app.buttons["LinkedIn"].firstMatch.tap()
+        // The owner types into the draft. What the Home then keeps is still Markdown: the title bold, the link a link.
+        // A press under the last line puts the cursor at the end of the draft.
+        text.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.96)).tap(); text.typeText("ПРАВКА")
+        let channels = app.buttons["LinkedIn"].firstMatch
+        for _ in 0..<4 where !channels.isHittable { app.scrollViews.firstMatch.swipeDown() }
+        channels.tap()
+        var kept = ""
+        for _ in 0..<20 {
+            let saved = (try await read("/")["posts"] as? [[String: Any]] ?? []).first { $0["channel"] as? String == "telegram" }
+            kept = saved?["text"] as? String ?? ""
+            if kept.contains("ПРАВКА") { break }
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        XCTAssertTrue(kept.contains("ПРАВКА"), kept)
+        XCTAssertTrue(kept.hasPrefix("**«Клён 3» открыт, и младшая версия важнее старшей**"), kept)
+        XCTAssertTrue(kept.contains("](https://severnymost.example/klen-3)"), kept)
         let linkedIn = app.buttons["postLinkedIn"]
         XCTAssertTrue(linkedIn.waitForExistence(timeout: 10), app.debugDescription)
         linkedIn.tap()

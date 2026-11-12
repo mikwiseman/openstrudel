@@ -42,6 +42,22 @@ enum NewsLayout {
         [24, 22, 20, 18]
         #endif
     }
+    /// A lead with no picture is set in words: its headline is the face of the tile, a step larger.
+    static var leadWordSizes: [CGFloat] {
+        #if os(macOS)
+        [38, 34, 30, 27, 24]
+        #else
+        [31, 28, 25, 22, 20]
+        #endif
+    }
+    /// The figure such a lead stands on, when its story has one.
+    static var leadFigure: CGFloat {
+        #if os(macOS)
+        76
+        #else
+        64
+        #endif
+    }
 }
 
 extension EnvironmentValues {
@@ -645,20 +661,39 @@ private struct NewsLeadStory: View {
     @Environment(\.newsWords) private var words
     @Environment(\.newsHome) private var home
     @State private var picture: CGImage?
+    /// The story names a picture that did not come: the tile stops waiting for it.
+    @State private var missed = false
 
     var body: some View {
-        let story = item.story, shown = picture ?? StoryPictures.cached(story.image)
+        let story = item.story, shown = StoryPictures.covers(picture ?? StoryPictures.cached(story.image))
+        // A lead with no picture is not a tile with a hole in it. It is set in words: the figure the story stands on,
+        // large, when it has one, and the headline a step larger, in a tile exactly as tall as they are. While a named
+        // picture is still on its way the tile keeps the picture's shape, so the page does not jump when it lands.
+        let inWords = shown == nil && (story.image == nil || missed || picture != nil), figure = inWords ? story.numbers?.first : nil
         Button(action: open) {
             VStack(alignment: .leading, spacing: 0) {
                 Tile(label: (developed ? "↻ " : "") + newsLine(story, locale: words.language.locale), skin: shown.map { .picture($0) } ?? .paper(tint),
-                     side: .infinity, height: NewsLayout.lead, radius: 40) {
-                    Spacer(minLength: 8)
-                    // At most three lines, a step smaller rather than cut; over a picture the headline stands on its scrim.
-                    FittedTitle(text: story.title, sizes: NewsLayout.leadSizes, lines: shown == nil ? 4 : 3, tracking: -0.3)
+                     side: .infinity, height: inWords ? nil : NewsLayout.lead, grows: inWords, radius: 40) {
+                    if let figure {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(figure.value).font(.system(size: NewsLayout.leadFigure, weight: .semibold)).tracking(-2).monospacedDigit()
+                                .lineLimit(1).minimumScaleFactor(0.5)
+                            Text(figure.label).font(AppTypography.label.weight(.regular)).opacity(0.66).lineLimit(2).multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.top, 10)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(figure.value + ", " + figure.label)
+                        .accessibilityIdentifier("newsLeadFigure")
+                    }
+                    Spacer(minLength: inWords ? (figure == nil ? 14 : 18) : 8)
+                    // A step smaller rather than cut; over a picture the headline stands on its scrim.
+                    FittedTitle(text: story.title, sizes: inWords && figure == nil ? NewsLayout.leadWordSizes : NewsLayout.leadSizes, lines: shown != nil ? 3 : inWords ? 5 : 4, tracking: -0.3)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .pictureScrim(shown != nil)
                 }
                 .animation(.smooth(duration: 0.3), value: shown != nil)
+                .animation(.smooth(duration: 0.3), value: inWords)
                 // The lead's first paragraph and the desk's view are read here; the rest is one press away.
                 Text(story.opening).font(AppTypography.reading).lineSpacing(AppTypography.readingLineSpacing)
                     .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
@@ -673,8 +708,10 @@ private struct NewsLeadStory: View {
         }
         .buttonStyle(TilePressStyle())
         .task(id: story.image) {
+            missed = false
             guard let address = story.image else { picture = nil; return }
             picture = await StoryPictures.load(address, home: home)
+            missed = picture == nil && !Task.isCancelled
         }
         .accessibilityElement(children: .combine)
         .accessibilityHint(words("Открыть историю"))

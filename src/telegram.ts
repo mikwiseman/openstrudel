@@ -440,10 +440,11 @@ export class TelegramAdapter {
 
   /** One rich message (headings, sections that open, up to 32,768 characters) through the durable outbox. False when Telegram
    * refused it: nothing went out, and the same content follows as ordinary text. An unconfirmed send is never repeated. */
-  private async sendRich(chatId: string | number, html: string, deliveryKey: string, replyToMessageId: number | undefined, options: { silent?: boolean; assertCurrent?: () => void }): Promise<boolean> {
+  private async sendRich(chatId: string | number, html: string, deliveryKey: string, replyToMessageId: number | undefined, options: { silent?: boolean; assertCurrent?: () => void; buttons?: TelegramButton[][] }): Promise<boolean> {
     options.assertCurrent?.();
     const key=`${chatId}:${deliveryKey}:rich`;
     const payload=JSON.stringify({chat_id:chatId,rich_message:{html},...(options.silent ? { disable_notification:true } : {}),
+      ...(options.buttons ? {reply_markup:{inline_keyboard:options.buttons}} : {}),
       ...(replyToMessageId ? { reply_parameters: { message_id: replyToMessageId, allow_sending_without_reply: true } } : {})});
     this.store.db.prepare("INSERT OR IGNORE INTO telegram_outbox(key,chat_id,payload,status) VALUES(?,?,?,'pending')").run(key,String(chatId),payload);
     const row=this.store.db.prepare("SELECT * FROM telegram_outbox WHERE key=?").get(key)!;
@@ -550,7 +551,7 @@ export class TelegramAdapter {
   /** A requested cross-chat delivery uses the same durable outbox as ordinary replies. */
   async sendToChat(input: {chatId:string;text:string;files:Array<{name:string;mimeType?:string;contentBase64:string}>;externalId:string;silent?:boolean;linkPreview?:boolean;album?:boolean;scopedGroup?:boolean;
     /** A page to show as a large preview under the text. */ preview?:string; /** The Telegram message this one answers. */ replyTo?:number; /** The same content as one rich message; text is sent if Telegram refuses it. */ rich?:string;
-    /** Rows of buttons under the text; a rich message carries none. */ buttons?:TelegramButton[][];
+    /** Rows of buttons under the message, rich or not. */ buttons?:TelegramButton[][];
     /** The text exactly as written: nothing in it is read as formatting. */ plain?:boolean}) {
     const {chat,conversation,previous} = this.deliveryTarget(input.chatId,input.externalId,{scopedGroup:input.scopedGroup});
     const receipt = (messageId:string) => {

@@ -188,6 +188,7 @@ targets:
         buildPhase: resources
       - path: Sources/Models.swift
       - path: Sources/NewsDesk.swift
+      - path: Sources/NewsPostText.swift
       - path: Sources/Team.swift
       - path: Sources/AgentAppearance.swift
       - path: Sources/HomeClient.swift

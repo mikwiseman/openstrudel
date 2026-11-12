@@ -348,14 +348,25 @@ describe("a post draft asked from a card", () => {
     } finally { await close(); }
   });
 
-  it("gives a development's reply and a picture card no button", async () => {
+  it("puts the button under a picture card too, and under the text that follows when Telegram refuses the picture", async () => {
+    const { tools, calls, refusing } = desk();
+    const chart = { image: "https://example.com/chart.png", sources: [{ title: "отчёт", url: "https://example.com/report", role: "Первоисточник", publishedAt: null }] };
+    const first = await tools().call("publish_story", story({ storyId: "chart-story", ...chart })) as { messageId: string };
+    const rich = calls.find(call => call.method === "sendRichMessage")!.body;
+    expect(rich.reply_markup).toEqual({ inline_keyboard: [[{ text: "✍️ Пост", callback_data: "np:" + first.messageId }]] });
+    expect(calls.some(call => call.method === "sendMessage")).toBe(false);
+    refusing.add("sendRichMessage");
+    const second = await tools().call("publish_story", story({ storyId: "chart-two", ...chart, sources: [{ ...chart.sources[0]!, url: "https://example.com/second" }] })) as { messageId: string };
+    const text = calls.find(call => call.method === "sendMessage")!.body;
+    expect(text.reply_markup.inline_keyboard[0][0].callback_data).toBe("np:" + second.messageId);
+  });
+
+  it("gives a development's reply no button", async () => {
     const { tools, calls } = desk();
     await tools().call("publish_story", story());
     await tools().call("publish_story", story({ change: "Диктовка появилась и на Windows.", status: "Обновление" }));
-    await tools().call("publish_story", story({ storyId: "chart-story", image: "https://example.com/chart.png", sources: [{ title: "отчёт", url: "https://example.com/report", role: "Первоисточник", publishedAt: null }] }));
     const [, reply] = calls.filter(call => call.method === "sendMessage");
     expect(reply!.body.reply_markup).toBeUndefined();
-    expect(calls.find(call => call.method === "sendRichMessage")!.body.reply_markup).toBeUndefined();
   });
 
   it("writes the draft's reply as the post, the note after it, or one line when it failed", () => {
