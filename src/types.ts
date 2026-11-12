@@ -4,6 +4,8 @@ export type Channel = "api" | "telegram";
 export interface TelegramLinkButton { text: string; url: string }
 /** A button whose press comes back to the Home; `callback_data` holds at most 64 bytes. */
 export interface TelegramActionButton { text: string; callback_data: string }
+/** A button under a message: a link, or a press the Home handles. Messages carry them as rows. */
+export type TelegramButton = TelegramLinkButton | TelegramActionButton;
 
 export interface Conversation {
   id: string;

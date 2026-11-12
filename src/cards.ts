@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { Store } from "./store.js";
 import type { MessageService } from "./messages.js";
-import type { EmployeeProfile, Interaction, MessageInput, SendAction } from "./types.js";
+import type { EmployeeProfile, Interaction, MessageInput, SendAction, TelegramButton } from "./types.js";
 import type { Entity, TelegramText } from "./telegram-format.js";
 import { DONT_SEND, SEND, approvedTool, safeURL } from "./interactions.js";
 import { accessOwners, hasAccess } from "./telegram-tools.js";
@@ -192,7 +192,8 @@ export class Cards {
   private async show(row: Row): Promise<void> {
     if (!row.chat_id || !this.messages.telegram?.enabled()) return;
     try {
-      const messageId = await this.messages.telegram.sendCard(row.chat_id, this.telegramText(row), this.keyboard(row), row.id);
+      const messageId = await this.messages.telegram.sendMessage(row.chat_id, this.telegramText(row), `card:${row.id}`, undefined, { buttons: this.keyboard(row) });
+      if (messageId === undefined) return;
       this.store.db.prepare("UPDATE cards SET telegram_message_id=? WHERE id=?").run(messageId, row.id);
       // Answered elsewhere while Telegram was still taking the message: it must not keep live buttons.
       const now = this.row(row.id)!;
@@ -253,12 +254,12 @@ export class Cards {
   private fits(row: Row): boolean { return !this.telegramText({ ...row, answer: null }).text.endsWith(word("long", speaksRussian(row))); }
 
   /** Buttons in rows that fit a phone: short ones share a row. An answered card, or one too long to show whole, has none. */
-  private keyboard(row: Row): Array<Array<Record<string, string>>> {
+  private keyboard(row: Row): TelegramButton[][] {
     if (row.state !== "open" || !this.fits(row)) return [];
-    const rows: Array<Array<Record<string, string>>> = [];
+    const rows: TelegramButton[][] = [];
     let width = 0;
     for (const choice of row.choices) {
-      const button: Record<string, string> = choice.role === "link" ? { text: choice.label, url: choice.url! } : { text: choice.label, callback_data: `c:${row.id}:${choice.id}` };
+      const button: TelegramButton = choice.role === "link" ? { text: choice.label, url: choice.url! } : { text: choice.label, callback_data: `c:${row.id}:${choice.id}` };
       if (!rows.length || width + choice.label.length > 32) { rows.push([button]); width = choice.label.length; } else { rows.at(-1)!.push(button); width += choice.label.length; }
     }
     return rows;

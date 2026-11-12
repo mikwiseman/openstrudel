@@ -329,6 +329,25 @@ describe("a post draft asked from a card", () => {
     expect(buttonStory(store, "card:0:1", "-100")).toBeNull();
   });
 
+  it("answers a press at once and puts the draft under the card, only for someone who may write in that chat", async () => {
+    const { store, messages, publish, calls, close } = desk();
+    try {
+      await publish();
+      const card = calls.find(call => call.method === "sendMessage")!, cardId = 100 + calls.indexOf(card) + 1;
+      const data = card.body.reply_markup.inline_keyboard[0][0].callback_data;
+      const press = (id: number, from: number) => messages.telegram!.processUpdate({ update_id: id, callback_query: { id: "q" + id, from: { id: from }, data, message: { message_id: cardId, chat: { id: -100 } } } });
+      await press(1, 9);
+      expect(calls.at(-1)).toMatchObject({ method: "answerCallbackQuery", body: { callback_query_id: "q1", text: "Попросить пост может участник этого чата" } });
+      expect(calls.filter(call => call.method === "sendMessage")).toHaveLength(1);
+      store.db.prepare("UPDATE telegram_chats SET allowed_senders_json=? WHERE chat_id='-100'").run(JSON.stringify(["7"]));
+      await press(2, 7);
+      expect(calls.find(call => call.method === "answerCallbackQuery" && call.body.callback_query_id === "q2")!.body.text).toBe("Пишу черновик…");
+      // The draft, or the line that it failed, answers under the card; the card keeps its button for another one.
+      await vi.waitFor(() => expect(calls.some(call => call.method === "sendMessage" && call.body.reply_parameters?.message_id === cardId)).toBe(true));
+      expect(calls.some(call => call.method === "editMessageReplyMarkup" || call.method === "editMessageText")).toBe(false);
+    } finally { await close(); }
+  });
+
   it("gives a development's reply and a picture card no button", async () => {
     const { tools, calls } = desk();
     await tools().call("publish_story", story());

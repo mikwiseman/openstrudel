@@ -1,7 +1,7 @@
 import { recordDiagnostic } from "./diagnostics.js";
 import { randomBytes, randomUUID } from "node:crypto";
 import { sha256, sleep } from "./util.js";
-import type { Attachment, Interaction, MessageInput, MessageResult, TelegramActionButton, TelegramChat, TelegramLinkButton } from "./types.js";
+import type { Attachment, Interaction, MessageInput, MessageResult, TelegramButton, TelegramChat, TelegramLinkButton } from "./types.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -402,34 +402,40 @@ export class TelegramAdapter {
     return { messageId: reply.id };
   }
 
-  async sendMessage(chatId: string | number, text: string, deliveryKey: string = randomUUID(), replyToMessageId?: number, options: { silent?: boolean; linkPreview?: boolean; preview?: string; rich?: string; assertCurrent?: () => void; button?: TelegramLinkButton | TelegramActionButton;
-    /** The text exactly as written: nothing in it is read as formatting. */ plain?: boolean } = {}): Promise<void> {
+  /** Every text message goes out here, through the durable outbox: an answer, a News post, a card, an approval. `text` is Markdown,
+   * or a text already laid out with its entities. `buttons` are rows under the first part: links, and presses that come back to
+   * `pressed`. Returns Telegram's id of the first part. */
+  async sendMessage(chatId: string | number, text: string | TelegramText, deliveryKey: string = randomUUID(), replyToMessageId?: number, options: { silent?: boolean; linkPreview?: boolean; preview?: string; rich?: string; assertCurrent?: () => void; buttons?: TelegramButton[][];
+    /** The text exactly as written: nothing in it is read as formatting. */ plain?: boolean } = {}): Promise<number | undefined> {
     if (!this.token) throw new Error("Telegram не подключён");
-    if (options.rich && await this.sendRich(chatId, options.rich, deliveryKey, replyToMessageId, options)) return;
-    const chunks=options.plain ? plainText(text) : telegramText(text);
+    if (typeof text === "string" && options.rich && await this.sendRich(chatId, options.rich, deliveryKey, replyToMessageId, options)) return;
+    const chunks=typeof text !== "string" ? [text] : options.plain ? plainText(text) : telegramText(text);
+    let first: number | undefined;
     for (const [index,chunk] of chunks.entries()) {
       options.assertCurrent?.();
       const key=`${chatId}:${deliveryKey}:${index}`;
       // A named page shows as a large preview under the first part; otherwise a preview is the sender's choice.
       const payload=JSON.stringify({chat_id:chatId,...chunk,link_preview_options:options.preview && index === 0 ? {url:options.preview,prefer_large_media:true} : {is_disabled:options.linkPreview !== true || Boolean(options.preview)},
-        ...(index === 0 && options.button ? {reply_markup:{inline_keyboard:[[options.button]]}} : {}),
+        ...(index === 0 && options.buttons ? {reply_markup:{inline_keyboard:options.buttons}} : {}),
         ...(options.silent ? { disable_notification:true } : {}),
         // The owner's words still reach the group if the original was deleted.
         ...(index === 0 && replyToMessageId ? { reply_parameters: { message_id: replyToMessageId, allow_sending_without_reply: true } } : {})});
       this.store.db.prepare("INSERT OR IGNORE INTO telegram_outbox(key,chat_id,payload,status) VALUES(?,?,?,'pending')").run(key,String(chatId),payload);
       const row=this.store.db.prepare("SELECT * FROM telegram_outbox WHERE key=?").get(key)!;
       if(row.payload!==payload) throw new Error("Содержимое доставки изменилось");
-      if(row.status==="delivered") continue;
+      if(row.status==="delivered") { if (index === 0) first = Number(row.message_id); continue; }
       if(row.status!=="pending") throw new Error("Доставка требует проверки в Telegram перед повтором");
       this.store.db.prepare("UPDATE telegram_outbox SET status='sending' WHERE key=?").run(key);
       try {
         const sent=await this.call<{message_id:number}>("sendMessage",JSON.parse(payload),undefined,undefined,options.assertCurrent);
         this.store.db.prepare("UPDATE telegram_outbox SET status='delivered',message_id=? WHERE key=?").run(String(sent.message_id),key);
+        if (index === 0) first = sent.message_id;
       } catch (error) {
         this.store.db.prepare("UPDATE telegram_outbox SET status=?,error=? WHERE key=?").run(...(refused(error) ? ["not_sent", REFUSED] : ["unknown", "Ответ Telegram не подтверждён; автоматический повтор остановлен"]), key);
         throw error;
       }
     }
+    return first;
   }
 
   /** One rich message (headings, sections that open, up to 32,768 characters) through the durable outbox. False when Telegram
@@ -457,27 +463,8 @@ export class TelegramAdapter {
     }
   }
 
-  /** A card: one message with its buttons, through the durable outbox, so a retry never shows it twice. Returns Telegram's message id. */
-  async sendCard(chatId: string, card: TelegramText, keyboard: Array<Array<Record<string, string>>>, cardId: string): Promise<number> {
-    if (!this.token) throw new Error("Telegram не подключён");
-    const key = `${chatId}:card:${cardId}:0`;
-    const payload = JSON.stringify({ chat_id: chatId, text: card.text, entities: card.entities, link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: keyboard } });
-    this.store.db.prepare("INSERT OR IGNORE INTO telegram_outbox(key,chat_id,payload,status) VALUES(?,?,?,'pending')").run(key, chatId, payload);
-    const row = this.store.db.prepare("SELECT * FROM telegram_outbox WHERE key=?").get(key)!;
-    if (row.status === "delivered") return Number(row.message_id);
-    if (row.status !== "pending") throw new Error("Доставка требует проверки в Telegram перед повтором");
-    this.store.db.prepare("UPDATE telegram_outbox SET status='sending' WHERE key=?").run(key);
-    try {
-      const sent = await this.call<{ message_id: number }>("sendMessage", JSON.parse(String(row.payload)));
-      this.store.db.prepare("UPDATE telegram_outbox SET status='delivered',message_id=? WHERE key=?").run(String(sent.message_id), key);
-      return sent.message_id;
-    } catch (error) {
-      this.store.db.prepare("UPDATE telegram_outbox SET status=?,error=? WHERE key=?").run(...(refused(error) ? ["not_sent", REFUSED] : ["unknown", "Ответ Telegram не подтверждён; автоматический повтор остановлен"]), key);
-      throw error;
-    }
-  }
   /** The card's message now says what was decided. An edit that changes nothing, or a message already gone, is not an error. */
-  async editCard(chatId: string, messageId: number, card: TelegramText, keyboard: Array<Array<Record<string, string>>>): Promise<void> {
+  async editCard(chatId: string, messageId: number, card: TelegramText, keyboard: TelegramButton[][]): Promise<void> {
     if (!this.token) return;
     try { await this.call("editMessageText", { chat_id: chatId, message_id: messageId, text: card.text, entities: card.entities, link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: keyboard } }); }
     catch (error) { if (!(error instanceof TelegramRequestError && error.code === 400 && /message (?:is not modified|to edit not found|can.t be edited)/i.test(error.message))) throw error; }
@@ -518,7 +505,7 @@ export class TelegramAdapter {
     const photos: Attachment[] = [];
     for (const file of files) if (!begun.has(prefix + "file:" + file.id) && await this.isPhoto(file)) photos.push(file);
     const caption = photos.length && !(button && photos.length !== 1) && !begun.has(prefix + "0") ? captionFor(text) : null;
-    if (!caption) await this.sendMessage(chatId, text, deliveryKey, replyToMessageId, { assertCurrent, button });
+    if (!caption) await this.sendMessage(chatId, text, deliveryKey, replyToMessageId, { assertCurrent, buttons: button && [[button]] });
     for (let first = 0; first < photos.length; first += 10) {
       const batch = photos.slice(first, first + 10), captioned = Boolean(caption && !first);
       assertCurrent?.();
@@ -526,7 +513,7 @@ export class TelegramAdapter {
       catch (error) {
         // Telegram refused the photos, so nothing went out: the answer still arrives as text and files.
         if (!refused(error)) throw error;
-        if (captioned) await this.sendMessage(chatId, text, deliveryKey, replyToMessageId, { assertCurrent, button });
+        if (captioned) await this.sendMessage(chatId, text, deliveryKey, replyToMessageId, { assertCurrent, buttons: button && [[button]] });
         await this.sendFiles(chatId, batch, deliveryKey, { assertCurrent });
       }
     }
@@ -563,7 +550,7 @@ export class TelegramAdapter {
   /** A requested cross-chat delivery uses the same durable outbox as ordinary replies. */
   async sendToChat(input: {chatId:string;text:string;files:Array<{name:string;mimeType?:string;contentBase64:string}>;externalId:string;silent?:boolean;linkPreview?:boolean;album?:boolean;scopedGroup?:boolean;
     /** A page to show as a large preview under the text. */ preview?:string; /** The Telegram message this one answers. */ replyTo?:number; /** The same content as one rich message; text is sent if Telegram refuses it. */ rich?:string;
-    /** One button under the text; a rich message carries none. */ button?:TelegramActionButton;
+    /** Rows of buttons under the text; a rich message carries none. */ buttons?:TelegramButton[][];
     /** The text exactly as written: nothing in it is read as formatting. */ plain?:boolean}) {
     const {chat,conversation,previous} = this.deliveryTarget(input.chatId,input.externalId,{scopedGroup:input.scopedGroup});
     const receipt = (messageId:string) => {
@@ -750,51 +737,7 @@ export class TelegramAdapter {
         { id: String(user.id), name: user.first_name ?? "" }, reaction.new_reaction.flatMap(r => r.type === "emoji" && r.emoji ? [r.emoji] : []));
       this.store.markTelegramUpdate(update.update_id); return;
     }
-    if (update.callback_query?.data?.startsWith("c:")) {
-      // A card's button. The person hears back at once; what the answer starts (a send, the raiser's turn) follows.
-      const query = update.callback_query, [, id, choice] = query.data!.split(":");
-      const pressed = this.messages.cards.press({ id: id ?? "", choice: choice ?? "", chatId: String(query.message?.chat.id ?? ""), messageId: query.message?.message_id,
-        userId: query.from && Number.isSafeInteger(query.from.id) && query.from.id > 0 ? String(query.from.id) : undefined,
-        name: [query.from?.first_name, query.from?.last_name].filter(Boolean).join(" ") || String(query.from?.id ?? "") });
-      await this.call("answerCallbackQuery", { callback_query_id: query.id, text: pressed.toast.slice(0, 190), show_alert: pressed.alert }).catch(() => undefined);
-      // The answer is already recorded, so the update is done whatever happens next; a replay finds the card decided.
-      this.store.markTelegramUpdate(update.update_id);
-      await pressed.carry?.().catch(() => { this.lastError = "Ответ на карточку записан; продолжение не завершено"; });
-      return;
-    }
-    if (update.callback_query) {
-      const query = update.callback_query;
-      const chatId = String(query.message?.chat.id ?? "");
-      // «✍️ Пост» under a News card: a draft for the owner's channel, answered under that card. The button stays for another one.
-      const story = buttonStory(this.store, query.data ?? "", chatId);
-      if (story) {
-        const allowed = this.linkedChats().includes(chatId) && this.authorizedSender(chatId, query.from?.id);
-        await this.call("answerCallbackQuery", { callback_query_id: query.id, text: allowed ? "Пишу черновик…" : "Попросить пост может участник этого чата" });
-        this.store.markTelegramUpdate(update.update_id);
-        // The draft stays among the desk's posts in the app whether or not this answer reaches the chat.
-        if (allowed) void draftFromCard({ store: this.store, telegram: this, chatId, submit: input => this.messages.submit(input) }, story, query.message?.message_id,
-          Number(chatId) > 0 && this.isOwner(query.from?.id)).catch(() => undefined);
-        return;
-      }
-      const [id, q, o] = (query.data ?? "").split(":");
-      const card = id ? this.messages.interactions.get(id) : undefined;
-      let feedback = "Этот запрос уже завершён";
-      if (card && this.authorizedSender(chatId,query.from?.id) && this.ownsInteraction(chatId, card) && card.requestedBy && card.requestedBy !== String(query.from?.id)) {
-        feedback = "Подтвердить может тот, кто дал поручение";
-      } else if (card && this.authorizedSender(chatId,query.from?.id) && this.ownsInteraction(chatId, card)) {
-        const question = card.questions[Number(q)];
-        const option = question?.options[Number(o)];
-        if (question && option) {
-          try { await this.messages.interactions.answer(card.id, card.conversationId, { [question.id]: option }); feedback = "Ответ принят"; }
-          catch (error) { feedback = error instanceof Error ? error.message : "Не удалось принять ответ"; }
-        }
-      }
-      await this.call("answerCallbackQuery", { callback_query_id: query.id, text: feedback.slice(0, 190), show_alert: feedback !== "Ответ принят" });
-      if (!card && this.linkedChats().includes(chatId)) {
-        await this.call("editMessageReplyMarkup", { chat_id: chatId, message_id: query.message?.message_id, reply_markup: { inline_keyboard: [] } });
-      }
-      this.store.markTelegramUpdate(update.update_id); return;
-    }
+    if (update.callback_query) { await this.pressed(update.update_id, update.callback_query); return; }
     const edited = update.edited_message;
     if (edited) {
       const chatId = String(edited.chat.id), text = (edited.text ?? edited.caption)?.trim();
@@ -1027,6 +970,47 @@ export class TelegramAdapter {
     this.store.markTelegramUpdate(update.update_id);
   }
 
+  /** Every button press comes here. What the button carries names its kind: a card's choice (`c:`), «Пост» under a story (`np:`),
+   * or an answer to a question of a running turn. The person hears back at once; the update is then done, so a replay finds the
+   * press already taken; what the press started (a send, a draft, the raiser's turn) follows. */
+  private async pressed(updateId: number, query: NonNullable<TelegramUpdate["callback_query"]>): Promise<void> {
+    const data = query.data ?? "", chatId = String(query.message?.chat.id ?? ""), sender = query.from?.id;
+    let outcome: { toast: string; alert: boolean; carry?: () => Promise<unknown> };
+    const story = buttonStory(this.store, data, chatId);
+    if (data.startsWith("c:")) {
+      const [, id, choice] = data.split(":");
+      outcome = this.messages.cards.press({ id: id ?? "", choice: choice ?? "", chatId, messageId: query.message?.message_id,
+        userId: sender !== undefined && Number.isSafeInteger(sender) && sender > 0 ? String(sender) : undefined,
+        name: [query.from?.first_name, query.from?.last_name].filter(Boolean).join(" ") || String(sender ?? "") });
+    } else if (story) {
+      // A draft for the owner's channel, answered under that card. The button stays for another one, and the draft stays
+      // among the desk's posts in the app whether or not its answer reaches the chat.
+      const allowed = this.linkedChats().includes(chatId) && this.authorizedSender(chatId, sender);
+      outcome = { toast: allowed ? "Пишу черновик…" : "Попросить пост может участник этого чата", alert: false,
+        ...allowed ? { carry: () => draftFromCard({ store: this.store, telegram: this, chatId, submit: input => this.messages.submit(input) }, story, query.message?.message_id, Number(chatId) > 0 && this.isOwner(sender)) } : {} };
+    } else {
+      const [id, q, o] = data.split(":");
+      const card = id ? this.messages.interactions.get(id) : undefined;
+      let feedback = "Этот запрос уже завершён";
+      if (card && this.authorizedSender(chatId,sender) && this.ownsInteraction(chatId, card) && card.requestedBy && card.requestedBy !== String(sender)) {
+        feedback = "Подтвердить может тот, кто дал поручение";
+      } else if (card && this.authorizedSender(chatId,sender) && this.ownsInteraction(chatId, card)) {
+        const question = card.questions[Number(q)];
+        const option = question?.options[Number(o)];
+        if (question && option) {
+          try { await this.messages.interactions.answer(card.id, card.conversationId, { [question.id]: option }); feedback = "Ответ принят"; }
+          catch (error) { feedback = error instanceof Error ? error.message : "Не удалось принять ответ"; }
+        }
+      }
+      // A question that is gone leaves no live buttons behind.
+      outcome = { toast: feedback, alert: feedback !== "Ответ принят",
+        ...!card && this.linkedChats().includes(chatId) ? { carry: () => this.call("editMessageReplyMarkup", { chat_id: chatId, message_id: query.message?.message_id, reply_markup: { inline_keyboard: [] } }) } : {} };
+    }
+    await this.call("answerCallbackQuery", { callback_query_id: query.id, text: outcome.toast.slice(0, 190), show_alert: outcome.alert }).catch(() => undefined);
+    this.store.markTelegramUpdate(updateId);
+    await outcome.carry?.().catch(() => { this.lastError = "Нажатие принято; его продолжение не завершено"; });
+  }
+
   private ownsInteraction(chatId: string, card: Interaction): boolean {
     if (!this.linkedChats().includes(chatId)) return false;
     // Restricted turns never ask for approval. No card, button or reply may cross into a protected audience.
@@ -1052,17 +1036,18 @@ export class TelegramAdapter {
     if (card.send) return;
     const chatId = this.interactionChat(card);
     if (!chatId) return;
-    const rows: Array<Array<Record<string, string>>> = [];
+    const rows: TelegramButton[][] = [];
     if (card.url) rows.push([{ text: "Открыть подключение", url: card.url }]);
     card.questions.forEach((q, qi) => q.options.forEach((option, oi) => rows.push([{ text: option, callback_data: `${card.id}:${qi}:${oi}` }])));
     const text = [card.title, card.detail, ...card.questions.map(q => q.question), card.requestedBy && Number(chatId) < 0 ? "Подтвердить может тот, кто дал поручение." : null].filter(Boolean).join("\n");
     // Never offer approval for an action whose details were cut off by Telegram.
     const tooLong = text.length > 4000;
-    const result = await this.call<{ message_id: number }>("sendMessage", {
-      chat_id: chatId,
-      text: tooLong ? `${card.title}\nПолное описание действия доступно в OpenStrudel. Откройте эту переписку в приложении, чтобы проверить и подтвердить его.` : text,
-      reply_markup: tooLong ? { inline_keyboard: [] } : rows.length ? { inline_keyboard: rows } : { force_reply: true },
-    });
+    const shown = tooLong ? `${card.title}\nПолное описание действия доступно в OpenStrudel. Откройте эту переписку в приложении, чтобы проверить и подтвердить его.` : text;
+    // A question answered in words has no buttons: it asks Telegram to open a reply to it.
+    const messageId = tooLong || rows.length ? await this.sendMessage(chatId, shown, `question:${card.id}`, undefined, { plain: true, buttons: tooLong ? [] : rows })
+      : (await this.call<{ message_id: number }>("sendMessage", { chat_id: chatId, text: shown, reply_markup: { force_reply: true } })).message_id;
+    if (messageId === undefined) return;
+    const result = { message_id: messageId };
     this.questionMessages.set(chatId + ":" + result.message_id, card.id);
     this.store.db.prepare('INSERT OR REPLACE INTO telegram_interactions VALUES(?,?,?,?)').run(this.token!.split(':')[0]!,chatId,result.message_id,card.id);
     // Approval may have completed in the app while Telegram was still acknowledging the card.
