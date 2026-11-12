@@ -28,6 +28,14 @@ Cards are not shown in a chat with restricted access, are not offered to a sende
 
 A chat whose Codex thread began before this tool existed gets `raise_card` and `close_card` through the per-turn tool bridge, like the management tools.
 
+## A scheduled message that did not come
+
+When a scheduled message fails, the Home raises the `failed` card itself in the chat the message was meant for: what did not come, why, and the next try. A group reads the Home's own plain words; the owner's own private chat reads the run's reason, and is then not sent a second notice. While the schedule keeps failing and the card still waits, the same card is refreshed with the newest reason and next try, and nobody is told twice. When the schedule delivers again the card closes itself. Where Telegram cannot show a card, the same words go out as one plain line.
+
+## A card is part of the chat it was shown in
+
+A card shown in a chat whose talk lives in another conversation (an employee's card in a group that belongs to the main assistant, or in a person's private chat) is recorded in that chat's own conversation as it appeared, and so is what was decided. A plain message about it then reaches an assistant that saw it. Nothing of that chat flows back to the employee that raised the card.
+
 ## "Always" after the same answer twice
 
 A question can name what it is about (`about`: a shop, a client, a kind of request). When this chat's last two questions about the same thing got the same answer, the next card about it adds one more button: that answer, "always". Pressing it answers the card and saves one line in the Home's standing rules ("about … the answer is always …; do not ask again"), which every turn reads after its SOUL. The line names the thing and the answer, never an amount. Only a Home administrator's press, or an owner's device, makes a rule; anyone else is told so and chooses the plain answer. The rule is removed like any other, with `remove_home_rule`.
