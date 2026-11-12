@@ -116,7 +116,9 @@ final class NewspaperUITests: XCTestCase {
         XCTAssertEqual(revised, .completed, text.value as? String ?? "")
         capture("11-post-revised", app)
         // The owner types into the draft. What the Home then keeps is still Markdown: the title bold, the link a link.
-        // A press under the last line puts the cursor at the end of the draft.
+        // A press under the last line puts the cursor at the end of the draft. At a large text size that line is under
+        // the bar of actions, so the draft is scrolled clear of it first.
+        for _ in 0..<8 where text.frame.maxY > bar.frame.minY - 8 { app.scrollViews.firstMatch.swipeUp(velocity: .slow) }
         text.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.96)).tap(); text.typeText("ПРАВКА")
         let channels = app.buttons["LinkedIn"].firstMatch
         for _ in 0..<4 where !channels.isHittable { app.scrollViews.firstMatch.swipeDown() }
