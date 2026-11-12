@@ -170,9 +170,8 @@ export async function deliverStory(desk: NewsDesk, messageId: string, now = new 
       const same = sameSource(desk, chatId, story, now);
       if (same) return { sent: false, sameSourceAs: same, reason: `Story ${same} with the same first source went out this week. Publish a development under that storyId, with change, instead.` };
       const alert = story.telegram === "alert" && loud(desk, chatId, zone, now);
-      // A rich message is not known to take a button, and a refused one would lose the picture, so a picture card goes without.
       return outcome(await desk.telegram!.sendToChat({ chatId, text: storyCard(story, zone), files: [], externalId: storyPost(chatId, desk.conversationId, story.id),
-        silent: !alert, preview: story.sources[0]!.url, ...story.image ? { rich: pictureCard(story, zone)! } : { buttons: [[postButton(messageId)]] } }), alert ? "alert" : "card");
+        silent: !alert, preview: story.sources[0]!.url, ...story.image ? { rich: pictureCard(story, zone)! } : {}, buttons: [[postButton(messageId)]] }), alert ? "alert" : "card");
     }
     const parts = desk.store.db.prepare("SELECT status, message_id AS id FROM telegram_outbox WHERE key>=? AND key<? ORDER BY key")
       .all(`${chatId}:reply:${first.id}:`, `${chatId}:reply:${first.id}:￿`) as Array<{ status: string; id: string | null }>;

@@ -104,6 +104,8 @@ struct Tile<Content: View>: View {
     let skin: TileSkin
     var side: CGFloat = TileMetrics.side
     var height: CGFloat? = nil
+    /// A face made of words alone takes the height of what it holds, and never less than `height`.
+    var grows = false
     var radius: CGFloat = TileMetrics.radius
     @ViewBuilder var content: Content
 
@@ -121,8 +123,8 @@ struct Tile<Content: View>: View {
             content
         }
         .padding(TileMetrics.padding)
-        .frame(width: side == .infinity ? nil : side, height: height ?? side, alignment: .topLeading)
-        .frame(maxWidth: side == .infinity ? .infinity : nil, alignment: .topLeading)
+        .frame(width: side == .infinity ? nil : side, height: grows ? nil : height ?? side, alignment: .topLeading)
+        .frame(maxWidth: side == .infinity ? .infinity : nil, minHeight: grows ? height : nil, alignment: .topLeading)
         .foregroundStyle(foreground)
         .background { background }
         .clipShape(shape)
@@ -174,6 +176,9 @@ struct TilePressStyle: ButtonStyle {
 enum StoryPictures {
     private static var loaded: [String: CGImage] = [:]
     static func cached(_ address: String?) -> CGImage? { address.flatMap { loaded[$0] } }
+    /// A picture large enough to be a wide tile's whole face. A smaller one, a logo or an icon, would be stretched
+    /// into a blur, so the tile is set in words and the picture stays on the story's own page.
+    static func covers(_ image: CGImage?) -> CGImage? { image.flatMap { $0.width >= 480 && $0.height >= 240 ? $0 : nil } }
     static func load(_ address: String, home: String?) async -> CGImage? {
         if let image = loaded[address] { return image }
         guard let image = try? await ChatMedia.picture(address, home: home) else { return nil }

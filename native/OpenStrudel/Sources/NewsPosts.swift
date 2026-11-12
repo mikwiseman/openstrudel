@@ -5,9 +5,9 @@ import AppKit
 import UIKit
 #endif
 
-/// A post for the owner's channel, written on the desk's Home from its stories. The sheet shows the draft as text to
-/// edit, takes a change in words, makes a version for LinkedIn, and copies or shares the result. Nothing here
-/// publishes: the owner posts it themselves.
+/// A post for the owner's channel, written on the desk's Home from its stories. The sheet shows the draft the way the
+/// post will look, to read and edit, takes a change in words, makes a version for LinkedIn, and copies or shares the
+/// result as rich text. Nothing here publishes: the owner posts it themselves.
 struct NewsPostSheet: View {
     @ObservedObject var feed: NewsFeed
     @ObservedObject var posts: NewsPostShelf
@@ -19,9 +19,13 @@ struct NewsPostSheet: View {
     @State private var channel = "telegram"
     /// The draft on screen for each channel.
     @State private var drafts: [String: String] = [:]
-    @State private var text = ""
+    /// The draft as it will look: its bold and links shown, not marked.
+    @State private var text = AttributedString()
     /// The draft the text was last taken from, so a newer one replaces it and typing is never overwritten.
     @State private var shownVersion = ""
+    /// The desk's own Markdown of that draft and the same as this sheet would write it: an untouched draft goes back
+    /// to the Home letter for letter.
+    @State private var taken = (markdown: "", written: "")
     @State private var instruction = ""
     @State private var failure: String?
     @State private var picking = false
@@ -30,6 +34,7 @@ struct NewsPostSheet: View {
     /// A request to the Home is on its way: the sheet shows the desk writing, not a button to press again.
     @State private var asking = false
     @FocusState private var editing: Bool
+    @Environment(\.fontResolutionContext) private var fonts
 
     init(feed: NewsFeed, posts: NewsPostShelf, request: NewsPostRequest, appearance: AgentAppearance?) {
         self.feed = feed; self.posts = posts; self.request = request; self.appearance = appearance
@@ -37,6 +42,12 @@ struct NewsPostSheet: View {
     }
 
     private var post: NewsPost? { posts.post(drafts[channel]) }
+    private var pieces: [NewsPostText.Piece] { NewsPostText.pieces(text, fonts: fonts) }
+    /// The draft as it stands now, in the Markdown the Home keeps.
+    private var written: String {
+        let now = NewsPostText.markdown(pieces)
+        return now == taken.written ? taken.markdown : now
+    }
     private var name: String { feed.route.title }
     private static var editorHeight: CGFloat {
         #if os(macOS)
@@ -113,12 +124,12 @@ struct NewsPostSheet: View {
             case "writing": writing
             case "failed":
                 notice(post.error ?? words("Пост не получился. Попросите ещё раз."), warning: true)
-                Button(words("Попросить ещё раз")) { ask { try await posts.revise(post, text: text, instruction: "") } }.buttonStyle(InkCapsuleStyle())
+                Button(words("Попросить ещё раз")) { ask { try await posts.revise(post, text: written, instruction: "") } }.buttonStyle(InkCapsuleStyle())
             default:
                 editor
                 if let note = post.note { notice(note) }
                 if Set(post.storyIds) != Set(stories) {
-                    Button(words("Переписать из выбранных историй")) { ask { try await posts.revise(postWith(stories), text: text, instruction: "") } }
+                    Button(words("Переписать из выбранных историй")) { ask { try await posts.revise(postWith(stories), text: written, instruction: "") } }
                         .buttonStyle(InkCapsuleStyle()).accessibilityIdentifier("postRewrite")
                 }
                 change
@@ -172,7 +183,7 @@ struct NewsPostSheet: View {
             Button {
                 guard let post else { return }
                 let said = instruction
-                ask { try await posts.revise(post, text: text, instruction: said); instruction = "" }
+                ask { try await posts.revise(post, text: written, instruction: said); instruction = "" }
             } label: {
                 Image(systemName: "arrow.up").font(.system(size: 15, weight: .semibold)).foregroundStyle(AppTheme.canvas)
                     .frame(width: 36, height: 36).background(AppTheme.accentText, in: Circle())
@@ -204,11 +215,11 @@ struct NewsPostSheet: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(InkCapsuleStyle()).accessibilityIdentifier("postCopy")
-            ShareLink(item: text) { Image(systemName: "square.and.arrow.up").font(.system(size: 17, weight: .medium)).frame(width: 48, height: 48).background(AppTheme.surface, in: Circle()) }
+            ShareLink(item: NewsPostShare(pieces: pieces), preview: SharePreview(post?.titles.first ?? words("Пост"))) { Image(systemName: "square.and.arrow.up").font(.system(size: 17, weight: .medium)).frame(width: 48, height: 48).background(AppTheme.surface, in: Circle()) }
                 .buttonStyle(.plain).foregroundStyle(.primary)
-                .simultaneousGesture(TapGesture().onEnded { if let post { Task { await posts.save(post, text: text); await posts.used(post, "shared") } } })
+                .simultaneousGesture(TapGesture().onEnded { if let post { Task { await posts.save(post, text: written); await posts.used(post, "shared") } } })
                 .accessibilityLabel(words("Поделиться")).accessibilityIdentifier("postShare")
-            Button { if let post { ask { try await posts.revise(post, text: text, instruction: "") } } } label: {
+            Button { if let post { ask { try await posts.revise(post, text: written, instruction: "") } } } label: {
                 Image(systemName: "arrow.clockwise").font(.system(size: 17, weight: .medium)).frame(width: 48, height: 48).background(AppTheme.surface, in: Circle())
             }
             .buttonStyle(.plain).foregroundStyle(.primary)
@@ -223,10 +234,10 @@ struct NewsPostSheet: View {
 
     private func copy() {
         guard let post else { return }
-        NewsPostText.copy(text)
+        NewsPostText.copy(pieces, channel: channel)
         withAnimation(.smooth(duration: 0.2)) { copied = true }
         Task {
-            await posts.save(post, text: text); await posts.used(post, "copied")
+            await posts.save(post, text: written); await posts.used(post, "copied")
             try? await Task.sleep(for: .seconds(1.6))
             withAnimation(.smooth(duration: 0.2)) { copied = false }
         }
@@ -261,12 +272,16 @@ struct NewsPostSheet: View {
     private func show() {
         guard let post, post.status == "ready" else { return }
         let version = post.id + post.updatedAt
-        if version != shownVersion { text = post.text; shownVersion = version }
+        guard version != shownVersion else { return }
+        let shown = NewsPostText.rich(post.text)
+        text = shown
+        taken = (post.text, NewsPostText.markdown(NewsPostText.pieces(shown, fonts: fonts)))
+        shownVersion = version
     }
 
     private func keep(of channel: String? = nil) async {
         guard let post = posts.post(drafts[channel ?? self.channel]), post.status == "ready", shownVersion.hasPrefix(post.id) else { return }
-        await posts.save(post, text: text)
+        await posts.save(post, text: written)
     }
 
     private func ask(_ work: @escaping () async throws -> Void) {
@@ -294,18 +309,6 @@ struct InkCapsuleStyle: ButtonStyle {
             .opacity(enabled ? (configuration.isPressed ? 0.75 : 1) : 0.35)
             .contentShape(Capsule())
             .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
-    }
-}
-
-/// A draft leaves the app as the text it is.
-enum NewsPostText {
-    static func copy(_ text: String) {
-        #if os(macOS)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        #else
-        UIPasteboard.general.string = text
-        #endif
     }
 }
 
@@ -365,11 +368,18 @@ struct NewsPostRow: View {
     var body: some View {
         let when = Team.date(post.updatedAt).map { words.moment($0) }
         let state = post.status == "writing" ? words("пишется…") : post.status == "failed" ? words("не получился") : post.usedAt != nil ? words("взят в работу") : nil
+        let lines = post.text.split(whereSeparator: \.isNewline).map { Team.line(String($0)) }.filter { !$0.isEmpty }
         Button { open(NewsPostRequest(stories: post.storyIds, post: post.id)) } label: {
             VStack(alignment: .leading, spacing: 4) {
                 QuietLine(text: [words.channel(post.channel), when, state].compactMap { $0 }.joined(separator: " · "))
-                Text(post.text.isEmpty ? (post.titles.first ?? "") : Team.plain(post.text)).font(AppTypography.reading).lineSpacing(AppTypography.readingLineSpacing)
-                    .lineLimit(3).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                // The post's first line is its headline here; the rest follows in two quiet lines, so a title never runs
+                // into the sentence after it.
+                Text(lines.first ?? post.titles.first ?? "").font(AppTypography.reading.weight(.semibold)).lineSpacing(AppTypography.readingLineSpacing)
+                    .lineLimit(2).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                if lines.count > 1 {
+                    Text(lines.dropFirst().joined(separator: " ")).font(AppTypography.reading).lineSpacing(AppTypography.readingLineSpacing)
+                        .foregroundStyle(AppTheme.secondaryText).lineLimit(2).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                }
                 if !post.titles.isEmpty, !post.text.isEmpty {
                     Text(post.titles.joined(separator: " · ")).font(NewsType.quiet).foregroundStyle(AppTheme.secondaryText).lineLimit(1)
                 }

@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { OpenStrudelRuntime } from "../../src/runtime.js";
 import type { CodexEngine, NewsStory } from "../../src/types.js";
-import { POST_BRIEF } from "../../src/news-posts.js";
+import { POST_BRIEF, listPosts } from "../../src/news-posts.js";
 
 /** A story's picture: an invented chart kept beside this file, served by the control port below. */
 const chart = fileURLToPath(new URL("./assets/chart.png", import.meta.url));
@@ -34,7 +34,7 @@ const engine: CodexEngine = {
       const several = input.includes("these stories together");
       if (input.includes("LinkedIn post")) return { threadId: "post", events: [], response:
         "Открытые модели догнали закрытые там, где это видно каждому: в коде на обычном ноутбуке.\n\n«Северный мост» выложил «Клён 3» в трёх размерах. Младший работает без сети и без видеокарты. Для команды это значит одно: черновую работу с кодом можно вернуть на свои машины.\n\nЧто я бы проверил до переезда: скорость на своём железе и качество на своих задачах, а не на тестах компании.\n\nИсточник: severnymost.example" };
-      const body = asked ? `**«Клён 3» открыт, и младшая версия важнее старшей**\n\nКоротко: веса лежат в открытом доступе, младшая модель пишет код на ноутбуке без сети.\n\n→ Попробуйте её на своём проекте раньше, чем читать замеры.`
+      const body = asked ? `**«Клён 3» открыт, и младшая версия важнее старшей**\n\nКоротко: веса лежат [в открытом доступе](https://severnymost.example/klen-3), младшая модель пишет код на ноутбуке без сети.\n\n→ Попробуйте её на своём проекте раньше, чем читать замеры.`
         : `**«Северный мост» открыл «Клён 3». Главное в нём не старшая модель**\n\nВеса вышли под свободной лицензией в трёх размерах: 4, 16 и 70 млрд параметров. Старшая на тестах самой компании обходит прежний «Клён» в коде и переводе.\n\nНо интереснее младшая: она работает на обычном ноутбуке со скоростью разговора. Независимых замеров пока нет, так что цифры компании — это цифры компании.${several ? "\n\nВ тот же день модель появилась у двух облачных провайдеров по цене прежней версии." : ""}\n\n→ Я бы поставил младшую версию на рабочий ноутбук уже сегодня: локальная работа с кодом перестала требовать видеокарты.\n\n[Запись в блоге](https://severnymost.example/)`;
       return { threadId: "post", events: [], response: body + "\n---\nКанал уже писал о «Клёне» 3 ноября: предысторию не повторял. Замеры компании независимо не проверены." };
     }
@@ -108,7 +108,8 @@ edition(3, "07:05", ["mayak-eval", "pero-tables", "iva-translate", "registry-dra
 // Two days ago the morning run did not publish: a radar and no edition.
 publish(at(2, "10:15"), { id: "skvorets-week", section: "Агенты", status: "Демо", title: "Агент «Скворец» неделю вёл учебный проект без присмотра", summary: "Команда показала журнал работы: 212 шагов, девять остановок на вопросы к человеку." });
 publish(at(2, "14:40"), { id: "klen-leak", section: "Модели", status: "Слух", title: "Слух: «Северный мост» готовит модель «Клён 3»", summary: "В репозитории компании появилась и исчезла страница с описанием новой модели." });
-publish(at(2, "18:05"), { id: "granit-price-talk", section: "Железо", status: "Слух", title: "Слух: ускоритель «Гранит» будет стоить как игровая видеокарта", summary: "Цену называют два поставщика; официального прайса нет." });
+publish(at(2, "18:05"), { id: "granit-price-talk", section: "Железо", status: "Слух", title: "Слух: ускоритель «Гранит» будет стоить как игровая видеокарта", summary: "Цену называют два поставщика; официального прайса нет.",
+  numbers: [{ value: "≈ $700", label: "называют два поставщика; официального прайса нет" }] });
 
 // Yesterday: an edition, a radar, and the story that keeps developing.
 publish(at(1, "07:03"), { id: "veresk-phone", section: "Модели", status: "Демо", title: "«Вереск» запустил малую модель на телефоне", summary: "На видео модель отвечает без сети; скорость — около десяти слов в секунду." });
@@ -227,7 +228,9 @@ const control = createServer(async (req, res) => {
   if (url.pathname === "/chart.png") { res.writeHead(200, { "content-type": "image/png", "cache-control": "no-store" }).end(await readFile(chart)); return; }
   if (url.pathname === "/post") { postDelay = Number(url.searchParams.get("delay") ?? postDelay); postFails = value === "fail"; }
   res.end(JSON.stringify({ news: news.id, conversation: chat.id, main: main.id, variant, showsEdition, showsToday, empty, offline, upcoming: upcoming.length,
-    stories: drafts.size, lead: again("klen-3").title, developing: harbour }));
+    stories: drafts.size, lead: again("klen-3").title, developing: harbour,
+    // The drafts as the Home keeps them: what the app saved after an edit is checked letter for letter.
+    posts: listPosts(runtime.store, chat.id).map(post => ({ channel: post.channel, text: post.text, status: post.status })) }));
 });
 await new Promise<void>(done => control.listen(0, "127.0.0.1", done));
 const controlURL = `http://127.0.0.1:${(control.address() as { port: number }).port}`;

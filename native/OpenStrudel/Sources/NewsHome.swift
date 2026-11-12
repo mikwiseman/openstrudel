@@ -47,6 +47,8 @@ private struct NewsPaperTile: View {
     @ObservedObject var feed: NewsFeed
     @Environment(\.colorScheme) private var scheme
     @State private var picture: CGImage?
+    /// The lead names a picture that did not come.
+    @State private var missed = false
 
     private static var height: CGFloat {
         #if os(macOS)
@@ -62,10 +64,21 @@ private struct NewsPaperTile: View {
         [23, 21, 19, 17.5, 16]
         #endif
     }
+    /// With no picture the headline is the tile's face: larger, on as many lines as the tile holds.
+    private static var wordSizes: [CGFloat] {
+        #if os(macOS)
+        [21, 19, 17.5, 16, 15, 14]
+        #else
+        [27, 25, 23, 21, 19, 17]
+        #endif
+    }
 
     var body: some View {
         let lead = feed.lead?.story, unseen = feed.unseen, words = NewsWords()
-        let shown = picture ?? StoryPictures.cached(lead?.image)
+        let shown = StoryPictures.covers(picture ?? StoryPictures.cached(lead?.image))
+        // Set in words only when no picture is coming: a headline that grew at every launch and shrank again when the
+        // picture landed would be a flicker.
+        let inWords = shown == nil && (lead?.image == nil || missed || picture != nil)
         let label = unseen > 0 ? paper.name + " · " + words.fresh(unseen) : paper.name
         // Until the first story, the desk says what will be here in the language of its own interface.
         let title = lead?.title ?? (feed.loaded ? L("Сегодняшние новости появятся здесь") : "")
@@ -73,14 +86,16 @@ private struct NewsPaperTile: View {
              skin: shown.map { .picture($0) } ?? .paper(AgentAppearance.tint(paper.appearance, dark: scheme == .dark)),
              side: .infinity, height: Self.height, radius: TileMetrics.radius + 2) {
             Spacer(minLength: 8)
-            FittedTitle(text: title, sizes: Self.sizes, lines: 3, most: 4, tracking: -0.3)
+            FittedTitle(text: title, sizes: inWords ? Self.wordSizes : Self.sizes, lines: inWords ? 4 : 3, most: 4, tracking: -0.3)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .pictureScrim(shown != nil)
         }
         .animation(.smooth(duration: 0.3), value: shown != nil)
         .task(id: lead?.image) {
+            missed = false
             guard let image = lead?.image else { picture = nil; return }
             picture = await StoryPictures.load(image, home: paper.host)
+            missed = picture == nil && !Task.isCancelled
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)

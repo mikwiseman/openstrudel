@@ -8,6 +8,8 @@ The analysis runs once a day at 13:30 (`razbor.md`). It takes the one or two sto
 
 The edition runs at 06:45. It reads the day's queue, the night's queue and the reference lane, includes every story that two or more reference sources carried, and publishes one selection with `publish_edition`. The application sends that day's edition once as one rich message: the lead stories in full, the rest under their sections, each opening to its summary.
 
+Every story carries a picture when its source has one of its own (`image`): what proves the story first, then the product's own picture, then the page's preview picture, which `SKILL.md` shows how to read. It opens the story in the app and stands on top of the Telegram post. A story without one is set in words in the app.
+
 The owner can ask for a post draft for their own channel from a story, or a few: in the app's story page, or with the «✍️ Пост» button under a card in the desk's chat. The Home sends the desk's employee the stories and the rules as a turn of its own (`src/news-posts.ts`); the employee answers with the post text alone, in the owner's voice. The voice guide is a skill installed on the Home for the desk's chat and named in `soul.md`; its text is private and never part of this repository. Nothing publishes a draft.
 
 `read_news` gives one line per story with stable story IDs, whether the application has posted it and what readers left on the post; with a `storyId` it gives the complete story. Telegram delivers reactions from a group only to a bot that is an administrator there. The collectors' claim commands are no longer part of the work.
