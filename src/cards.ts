@@ -6,6 +6,7 @@ import type { Entity, TelegramText } from "./telegram-format.js";
 import { DONT_SEND, SEND, approvedTool, safeURL } from "./interactions.js";
 import { accessOwners, hasAccess, managementPeople } from "./telegram-tools.js";
 import { saveHomeRule } from "./home-management.js";
+import { agentTransfer } from "./agent-move.js";
 import { isProtectedTelegramAudience } from "./authorization.js";
 import { ownerTimezone } from "./timezone.js";
 import { quietReply } from "./operations.js";
@@ -30,7 +31,7 @@ export interface Card {
 }
 /** What the Home keeps beside the shown content: where its own bot would send, the service action an approval stands for,
  * and whether a press still lets one matching service call through. Never sent to a client. */
-type Kept = CardContent & { chatId?: string; action?: Pick<SendAction, "server" | "tool" | "params">; grant?: "ready" | "used" };
+type Kept = CardContent & { chatId?: string; action?: Pick<SendAction, "server" | "tool" | "params">; grant?: "ready" | "used"; /** What the Home's own card stands for, such as a schedule. */ key?: string };
 type Row = { id: string; kind: CardKind; conversation_id: string; profile_id: string | null; message_id: string | null; chat_id: string | null; telegram_message_id: number | null;
   people: string[] | null; title: string; reason: string | null; content: Kept; choices: CardChoice[]; state: "open" | "answered"; answer: CardAnswer | null;
   interaction_id: string | null; created_at: string; answered_at: string | null; told: number };
@@ -51,6 +52,7 @@ const WORDS = {
   words: ["Reply to this message with your answer.", "Ответьте на это сообщение своими словами."], newDate: ["Reply to this message with the new date.", "Ответьте на это сообщение новой датой."],
   decided: ["Already decided: {0}", "Уже решено: {0}"], waitsFor: ["This card waits for {0}.", "Эта карточка ждёт: {0}."], someone: ["someone with access to this Home", "человека с доступом к этому Home"],
   closed: ["This card is closed.", "Эта карточка закрыта."], recorded: ["Recorded", "Записано"], app: ["OpenStrudel app", "приложение OpenStrudel"],
+  came: ["It came", "Пришло"],
   always: ["{0}, always", "{0}, всегда"], ruleSaved: ["Saved as a rule", "Сохранено как правило"],
   ruleAdmin: ["A rule for the whole Home is given by its administrators. Choose the answer for this one.", "Правило для всего Home задают его администраторы. Выберите ответ на этот раз."],
   long: ["The full text is in OpenStrudel. Open it there to read and decide.", "Полный текст в OpenStrudel. Откройте его там, чтобы прочитать и решить."],
@@ -222,13 +224,14 @@ export class Cards {
   }
 
   private async show(row: Row): Promise<void> {
-    if (!row.chat_id || !this.messages.telegram?.enabled()) return;
+    if (!row.chat_id || !this.messages.telegram?.enabled?.()) return;
     try {
       const messageId = await this.messages.telegram.sendMessage(row.chat_id, this.telegramText(row), `card:${row.id}`, undefined, { buttons: this.keyboard(row) });
       if (messageId === undefined) return;
       this.store.db.prepare("UPDATE cards SET telegram_message_id=? WHERE id=?").run(messageId, row.id);
       // Answered elsewhere while Telegram was still taking the message: it must not keep live buttons.
       const now = this.row(row.id)!;
+      this.record(now, this.telegramText({ ...now, answer: null }).text);
       if (now.state !== "open") await this.redraw(now);
     } catch { /* The card still waits in the app; Telegram's own outbox keeps what happened to the message. */ }
   }
@@ -297,7 +300,48 @@ export class Cards {
     return rows;
   }
   private async redraw(row: Row, note?: string): Promise<void> {
-    if (row.chat_id && row.telegram_message_id != null) await this.messages.telegram?.editCard(row.chat_id, row.telegram_message_id, this.telegramText(row, note), this.keyboard(row));
+    if (!row.chat_id || row.telegram_message_id == null) return;
+    if (row.answer) this.record(row, `«${row.title}»: ✓ ${row.answer.outcome ?? row.answer.label} · ${row.answer.by}`, ":answer");
+    await this.messages.telegram?.editCard?.(row.chat_id, row.telegram_message_id, this.telegramText(row, note), this.keyboard(row));
+  }
+  /**
+   * A card shown in a chat whose talk lives in another conversation is recorded there too, as it appeared, and so is what was
+   * decided: a plain message about it then reaches an assistant that saw it. Nothing of that chat flows back to the raiser.
+   */
+  private record(row: Row, text: string, part = ""): void {
+    const chat = row.chat_id ? this.store.getTelegramChat(row.chat_id) : null;
+    const target = chat?.conversationId ? this.store.getConversation(chat.conversationId)
+      : chat && Number(chat.chatId) > 0 ? this.store.getOrCreateConversation({ channel: "telegram", externalId: chat.chatId, title: chat.title }) : null;
+    if (!target || target.id === row.conversation_id || agentTransfer(this.store, target.profileId ?? "main")) return;
+    this.store.addMessage({ conversationId: target.id, channel: "telegram", direction: "outbound", externalId: `notification:card:${row.id}${part}`, text,
+      author: this.raiserName(row) ?? this.store.getSetting("telegram.bot_name") ?? "OpenStrudel" });
+  }
+
+  /** A scheduled message that did not come, said by the Home itself: one card per schedule while it keeps failing, with the
+   * newest reason and next try. Nobody is told twice about a card still waiting. Returns whether Telegram shows it. */
+  async failed(input: { key: string; conversationId: string; chatId: string; title: string; reason: string; nextTry: string | null }): Promise<boolean> {
+    const conversation = this.store.getConversation(input.conversationId);
+    if (!conversation) return false;
+    const content: Kept = { key: input.key, ...input.nextTry ? { nextTry: input.nextTry } : {} };
+    const waiting = this.rows("conversation_id=? AND kind='failed' AND state='open'", conversation.id).find(row => row.content.key === input.key);
+    if (waiting) {
+      this.store.db.prepare("UPDATE cards SET reason=?,content_json=? WHERE id=?").run(input.reason, JSON.stringify(content), waiting.id);
+      await this.redraw(this.row(waiting.id)!).catch(() => undefined);
+      return waiting.telegram_message_id != null;
+    }
+    const row = this.insert({ kind: "failed", conversation_id: conversation.id, profile_id: conversation.profileId ?? null, message_id: null, chat_id: input.chatId,
+      people: Number(input.chatId) > 0 ? [input.chatId] : null, title: input.title, reason: input.reason, content,
+      choices: [{ id: "ok", label: word("ok", russian(input.title + input.reason)), role: "primary" }], interaction_id: null });
+    await this.show(row);
+    return this.row(row.id)!.telegram_message_id != null;
+  }
+  /** The schedule delivered again: its failure card needs nobody now and closes itself. */
+  async recovered(key: string): Promise<void> {
+    for (const row of this.rows("kind='failed' AND state='open'").filter(card => card.content.key === key)) {
+      const at = new Date().toISOString(), answer: CardAnswer = { choice: null, label: word("came", speaksRussian(row)), text: null, by: this.raiserName(row) ?? "OpenStrudel", via: "raiser", at, outcome: null };
+      if (Number(this.store.db.prepare("UPDATE cards SET state='answered',answer_json=?,answered_at=?,told=1 WHERE id=? AND state='open'").run(JSON.stringify(answer), at, row.id).changes))
+        await this.redraw(this.row(row.id)!).catch(() => undefined);
+    }
   }
 
   /** Only a verified person the card is for, in the chat it was shown in, with access to this Home as of now. */
@@ -453,7 +497,7 @@ export class Cards {
 
   private view(row: Row): Card {
     const chat = row.chat_id ? this.store.getTelegramChat(row.chat_id) : null, owners = accessOwners(this.store);
-    const { chatId: _chatId, action: _action, grant: _grant, ...content } = row.content;
+    const { chatId: _chatId, action: _action, grant: _grant, key: _key, ...content } = row.content;
     return { id: row.id, kind: row.kind, state: row.state, createdAt: row.created_at, raiser: { profileId: row.profile_id, name: this.raiserName(row) ?? "OpenStrudel" },
       conversationId: row.conversation_id, messageId: row.message_id, title: row.title, reason: row.reason, content, choices: row.choices, chat: chat ? { id: chat.chatId, title: chat.title } : null,
       for: row.people?.map(id => ({ id, name: this.name(id) })) ?? null, canAnswer: !row.people || row.people.some(id => owners.includes(id)), answer: row.answer };

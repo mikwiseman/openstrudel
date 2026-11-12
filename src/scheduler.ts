@@ -380,13 +380,22 @@ export class Scheduler {
       : code === "account" && /лимит/i.test(reason) ? "Закончился лимит модели." : failureWords[code] ?? "Задача завершилась с ошибкой.";
     const next = (this.store.db.prepare("SELECT MIN(next_run_at) AS at FROM schedules WHERE enabled=1 AND (id=? OR backup_of=?)").get(run.id, run.id) as { at: string | null }).at;
     this.store.setSetting(key, today);
-    try { await this.deliver(chat, `Не получилось подготовить «${run.name}». ${why} ${next ? `Следующая попытка ${nextTry(next, now, run.timezone)}.` : "Повтора по расписанию не будет."}`, "schedule-failure:" + runId); }
+    // A card's title is one line of at most 60 characters; the plain line keeps the whole name.
+    const name = String(run.name), title = `Не получилось подготовить «${name.length > 32 ? name.slice(0, 31) + "…" : name}»`;
+    try {
+      // A card where Telegram can show one: it waits in the list of what needs a person, keeps the newest reason and next try,
+      // and closes itself when the schedule delivers again. Otherwise the same words as one plain line.
+      if (!await this.messages.cards?.failed({ key: String(run.id), conversationId: String(run.conversation_id), chatId: chat, title, reason: next ? why : `${why} Повтора по расписанию не будет.`, nextTry: next }))
+        await this.deliver(chat, `Не получилось подготовить «${name}». ${why} ${next ? `Следующая попытка ${nextTry(next, now, run.timezone)}.` : "Повтора по расписанию не будет."}`, "schedule-failure:" + runId);
+    }
     catch { return; /* the owner's notice still carries the reason */ }
     return owner ? chat : undefined;
   }
   private recovered(runId: string): void {
     const run = this.store.db.prepare("SELECT schedule_id FROM schedule_runs WHERE id=?").get(runId);
-    if (run) this.store.deleteSetting("schedule.failure_told." + run.schedule_id);
+    if (!run) return;
+    this.store.deleteSetting("schedule.failure_told." + run.schedule_id);
+    void this.messages.cards?.recovered(String(run.schedule_id)).catch(() => undefined);
   }
 }
 

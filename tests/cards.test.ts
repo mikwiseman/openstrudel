@@ -602,6 +602,30 @@ describe("where a card goes and who it reaches", { timeout: 30_000 }, () => {
     expect(h.messages.cards.list().recent[0]).toMatchObject({ raiser: { profileId: sales.id, name: "Sales" }, chat: { id: "-100", title: "Team" }, for: null });
   });
 
+  it("is recorded in the conversation of the chat it was shown in, with what was decided, so that chat's assistant knows", async () => {
+    const tg = telegram(), h = home();
+    const sales = h.store.createProfile({ name: "Sales" }), own = h.store.profileConversation(sales.id), team = h.store.getTelegramChat("-100")!.conversationId!;
+    h.store.addMessage({ conversationId: team, channel: "telegram", direction: "inbound", author: "Yulia", text: "TEAM_ONLY_TALK" });
+    h.script.run = raising({ kind: "answer", title: "Go to the trade fair?", reason: "Entries close on Friday.", choices: ["Yes", "No"] });
+    await h.messages.handle({ channel: "api", conversationId: own.id, text: "Scheduled request: fairs", externalId: "schedule:run-1", scheduled: true, scheduleTelegramChatId: "-100" });
+    const card = tg.of("sendMessage")[0];
+    // The group's own conversation holds the card as it appeared there, from the employee who raised it.
+    expect(h.store.listMessages(team).map(m => [m.direction, m.author, m.text])).toEqual([["inbound", "Yulia", "TEAM_ONLY_TALK"], ["outbound", "Sales", card.text]]);
+    h.script.run = async () => ({ threadId: "t", response: "Noted: we go.", events: [] });
+    await h.adapter.processUpdate(press(43, -100, 501, tg.buttons(card)[0]!.callback_data!));
+    expect(h.store.listMessages(team).at(-1)).toMatchObject({ direction: "outbound", author: "Sales", text: expect.stringMatching(/Go to the trade fair\?.*Yes · Yulia/) });
+    // A plain message in the group, not a reply, reaches the group's assistant with the card and its answer in view.
+    h.script.run = async () => ({ threadId: "t", response: "We decided to go.", events: [] });
+    await h.adapter.processUpdate(text(43, -100, "what did we decide about the fair?"));
+    expect(h.runs.at(-1)!.options!.conversationId).toBe(team);
+    expect(h.runs.at(-1)!.input).toMatch(/Go to the trade fair\?[\s\S]*Yes · Yulia/);
+    // The employee that raised it never read the group's talk, and a card in its own chat is not recorded twice.
+    expect(h.runs[0]!.input).not.toContain("TEAM_ONLY_TALK");
+    h.script.run = raising(question);
+    await h.adapter.processUpdate(text(42, 42, "what is new?"));
+    expect(h.store.listMessages(h.store.getTelegramChat("42")!.conversationId!).filter(m => m.externalId?.startsWith("notification:card:"))).toEqual([]);
+  });
+
   it("raised in the app's main chat for a named person, brings that person's press back to the main chat", async () => {
     const tg = telegram(), h = home();
     const main = h.store.primaryConversation();
@@ -646,6 +670,50 @@ describe("where a card goes and who it reaches", { timeout: 30_000 }, () => {
     await h.runtime.scheduler.tick(new Date("2030-01-16T06:00:30Z")); await h.runtime.scheduler.idle();
     expect(tg.of("sendMessage").filter(message => message.chat_id === "-100").at(-1).text).toContain("Go to the fair?");
     expect(h.runtime.messages.cards.list().open.map(card => card.chat?.id)).toEqual(["-100", "-100"]);
+  });
+
+  it("says a scheduled message did not come as one card, refreshed while it keeps failing and closed when the schedule delivers again", async () => {
+    const tg = telegramBeside();
+    let answer = "FAILED: the source did not answer";
+    const h = await served(async () => ({ threadId: "t", response: answer, events: [] }));
+    const own = h.runtime.store.primaryConversation();
+    h.runtime.scheduler.save({ conversationId: own.id, name: "Ideas", prompt: "Two ideas", cron: "0 6 * * *", timezone: "UTC", delivery: "telegram", telegramChatId: "-100" }, new Date("2030-01-15T05:00:00Z"));
+    const run = async (at: string) => { await h.runtime.scheduler.tick(new Date(at)); await h.runtime.scheduler.idle(); };
+    const toGroup = () => tg.of("sendMessage").filter(message => message.chat_id === "-100");
+    await run("2030-01-15T06:00:30Z");
+    // One message in the chat the report was meant for: a card with its one button, in the Home's own words, never the run's reason.
+    expect(toGroup()).toHaveLength(1);
+    expect(toGroup()[0].text).toContain("Не получилось подготовить «Ideas»");
+    expect(toGroup()[0].text).not.toContain("the source did not answer");
+    expect(toGroup()[0].reply_markup.inline_keyboard.flat().map((button: any) => button.text)).toEqual(["Понятно"]);
+    const first = (await (await h.call("/v1/cards")).json()).open;
+    expect(first).toEqual([expect.objectContaining({ kind: "failed", title: "Не получилось подготовить «Ideas»", chat: { id: "-100", title: "Team" }, content: { nextTry: "2030-01-16T06:00:00.000Z" } })]);
+    // The next day it fails again: the same card, told once, now with the next try; no second message.
+    await run("2030-01-16T06:00:30Z");
+    expect(toGroup()).toHaveLength(1);
+    expect((await (await h.call("/v1/cards")).json()).open).toEqual([expect.objectContaining({ id: first[0].id, content: { nextTry: "2030-01-17T06:00:00.000Z" } })]);
+    expect(tg.of("editMessageText").at(-1)).toMatchObject({ chat_id: "-100", message_id: 501 });
+    // The schedule delivers again: the card needs nobody and closes itself.
+    answer = "1. The first idea.";
+    await run("2030-01-17T06:00:30Z");
+    const after = await (await h.call("/v1/cards")).json();
+    expect(after.open).toEqual([]);
+    expect(after.recent[0]).toMatchObject({ id: first[0].id, state: "answered", answer: { via: "raiser" } });
+    expect(tg.of("editMessageText").at(-1)).toMatchObject({ message_id: 501, reply_markup: { inline_keyboard: [] } });
+  });
+
+  it("gives the owner's own chat the reason on the card, and no second notice", async () => {
+    const tg = telegramBeside();
+    const h = await served(async () => ({ threadId: "t", response: "FAILED: the source did not answer", events: [] }));
+    await h.runtime.telegram.processUpdate(text(42, 42, "hello"));
+    const dm = h.runtime.store.getTelegramChat("42")!.conversationId!, before = tg.of("sendMessage").length;
+    h.runtime.scheduler.save({ conversationId: dm, name: "Morning brief", prompt: "The day", cron: "0 6 * * *", timezone: "UTC", delivery: "telegram", telegramChatId: "42" }, new Date("2030-01-15T05:00:00Z"));
+    await h.runtime.scheduler.tick(new Date("2030-01-15T06:00:30Z")); await h.runtime.scheduler.idle();
+    const sent = tg.of("sendMessage").slice(before);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ chat_id: "42" });
+    expect(sent[0].text).toContain("the source did not answer");
+    expect(sent[0].reply_markup.inline_keyboard.flat().map((button: any) => button.text)).toEqual(["Понятно"]);
   });
 
   it("stays in the app when the turn has no Telegram chat", async () => {
