@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { CodexEngineAdapter } from "../src/codex.js";
 afterEach(() => {wire.request.mockReset();vi.useRealTimers();});
 
-it.each(["read_model_settings", "correspondence_checkpoint", "unipile_accounts", "unipile_read", "github_checkout"])("offers current %s to an existing native thread and closes it after the turn", async (toolName) => {
+it.each(["read_model_settings", "correspondence_checkpoint", "unipile_accounts", "unipile_read", "github_checkout", "read_team"])("offers current %s to an existing native thread and closes it after the turn", async (toolName) => {
   let endpoint: { url: string; http_headers: Record<string,string>; default_tools_approval_mode?: string; tool_timeout_sec?: number } | undefined;
   const call = vi.fn(async () => ({ saved: true }));
   wire.request.mockImplementation(async (method: string, params: any) => {

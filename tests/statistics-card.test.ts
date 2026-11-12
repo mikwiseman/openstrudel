@@ -190,3 +190,27 @@ it("sends the owner's own chat the card at nine through Telegram without a model
     expect(model).not.toHaveBeenCalled();
   } finally { await runtime.stop(); rmSync(root, { recursive: true, force: true }); }
 }, 20_000);
+
+it("keeps the card on the owner's own page when its schedule stays in the app, so a morning brief can carry it as one line", async () => {
+  const root = mkdtempSync(join(tmpdir(), "statistics-card-"));
+  vi.stubEnv("TELEGRAM_BOT_TOKEN", "test-token");
+  const model = vi.fn(async () => ({ threadId: "unused", response: "wall of text", events: [] }));
+  const runtime = new OpenStrudelRuntime({ rootDirectory: root, dbPath: ":memory:", startTelegram: false, engine: { run: model } });
+  const { store, scheduler } = runtime;
+  try {
+    store.setSetting("owner.timezone", "Europe/Moscow");
+    store.linkTelegramChat({ chatId: "42", title: "Мик", allowedSenders: ["42"] });
+    const own = store.getOrCreateConversation({ channel: "telegram", externalId: "42", title: "Мик" }).id;
+    const card = scheduler.save({ conversationId: own, name: "Статистика", prompt: "Карточка статистики", cron: "50 6 * * *", timezone: "Europe/Moscow", delivery: "app" }, new Date("2026-11-07T20:00:00Z"));
+    store.setSetting("statistics.cardScheduleId", card.id);
+    const sent: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => { sent.push(url); return Response.json({ ok: true, result: { message_id: 1 } }); }));
+    await scheduler.tick(new Date("2026-11-08T03:50:00Z")); await scheduler.idle();
+    expect(sent).toEqual([]);
+    expect(scheduler.runs(own)[0]?.status).toBe("completed");
+    const kept = store.listMessages(own).find(m => m.direction === "outbound" && m.attachments?.length);
+    expect(kept?.attachments?.[0]?.mimeType).toBe("image/png");
+    expect(kept?.text).toMatch(/^\*\*.* · Saturday, November 7\*\*/);
+    expect(model).not.toHaveBeenCalled();
+  } finally { await runtime.stop(); rmSync(root, { recursive: true, force: true }); vi.unstubAllGlobals(); vi.unstubAllEnvs(); }
+}, 30_000);
