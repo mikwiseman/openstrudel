@@ -127,8 +127,8 @@ struct NeedCardView: View {
     }
 
     @ViewBuilder private var buttons: some View {
-        // With no step marked as the main one, the first leads.
-        let main = card.actions.first { $0.role == .primary } ?? card.actions.first
+        // The first choice is the step the card proposes; for an access that is missing it is the link.
+        let main = card.actions.first
         ForEach(card.actions) { action in
             let prominent = action.id == main?.id
             if action.role == .link, let url = action.url {
@@ -143,12 +143,12 @@ struct NeedCardView: View {
                 .buttonStyle(CardButtonStyle(prominent: prominent)).disabled(busy)
                 .accessibilityIdentifier("needAction-" + action.id)
             } else {
-                Button(action.label) { act(card, action, card.kind == .send && prominent ? edited : nil) }
+                Button(action.label) { act(card, action, card.editable && action.id == NeedCard.send ? edited : nil) }
                     .buttonStyle(CardButtonStyle(prominent: prominent)).disabled(busy)
                     .accessibilityIdentifier("needAction-" + action.id)
             }
             // The words can be changed before they leave.
-            if !lead, prominent, card.readsFirst, edited == nil, case .card = card.origin {
+            if !lead, prominent, card.editable, edited == nil {
                 Button(L("Изменить")) {
                     edited = card.draft?.text
                     // A Mac selects the whole field it focuses, and one key would then replace the draft.

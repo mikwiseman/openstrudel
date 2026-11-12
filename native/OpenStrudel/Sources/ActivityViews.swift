@@ -83,7 +83,8 @@ struct InsightsPage: View {
                 Text(([item.employeeName] + (HomeActivity.date(item.occurredAt).map { [TeamWords().ago($0)] } ?? [])).joined(separator: " · "))
                     .foregroundStyle(AppTheme.secondaryText).font(ReaderLine.font).monospacedDigit()
                 Text(item.displayTitle).font(AppTypography.interface.weight(.semibold)).multilineTextAlignment(.leading)
-                Text(Team.plain(item.displayText)).font(.subheadline).foregroundStyle(AppTheme.secondaryText).lineSpacing(2)
+                // What is now true when the result says it; otherwise its first words.
+                Text(item.outcome ?? Team.plain(item.displayText)).font(.subheadline).foregroundStyle(AppTheme.secondaryText).lineSpacing(2)
                     .lineLimit(3).multilineTextAlignment(.leading)
             }
             .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())

@@ -77,6 +77,12 @@ struct NeedCard: Identifiable, Equatable {
 
     /// Words that leave are read before they leave: such a card is answered on its page, never from the home.
     var readsFirst: Bool { draft != nil }
+
+    /// The Home's own choices for words that leave: send them, or keep them as a draft.
+    static let send = "send", keep = "draft"
+    /// The person may change the words before they go. A connector's own request to send is allowed or refused as
+    /// it stands; it offers no draft to keep.
+    var editable: Bool { kind == .send && draft != nil && actions.contains { $0.id == Self.send } && actions.contains { $0.id == Self.keep } }
 }
 
 enum NeedsYou {

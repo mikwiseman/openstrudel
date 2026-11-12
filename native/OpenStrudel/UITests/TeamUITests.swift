@@ -52,6 +52,8 @@ final class TeamUITests: XCTestCase {
         try await expect(working, says: "Работает…")
         try await expect(failing, says: "Не получилось")
         XCTAssertFalse(value(fresh).contains("Есть новое"), "Everything written before the first meeting counts as seen")
+        // A result that says what is now true is shown by that line, not by the report's first words.
+        try await expect(fresh, says: "План на утро готов: двадцать минут.")
 
         XCTAssertLessThan(lead.frame.minY, failing.frame.minY)
         XCTAssertLessThan(failing.frame.minY, working.frame.minY, "Whoever has something waiting comes first")
@@ -248,7 +250,7 @@ final class TeamUITests: XCTestCase {
         XCTAssertTrue(polls.waitForExistence(timeout: 20), app.debugDescription)
         XCTAssertEqual(polls.label, "Пульс")
         XCTAssertTrue((polls.value as? String ?? "").contains("Аня: Спокойствие 7"), polls.debugDescription)
-        scrollShelf(app, to: polls); polls.tap()
+        bring(polls, in: app); polls.tap()
         XCTAssertTrue(app.descendants(matching: .any)["checkInsRoot"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(app.staticTexts["checkInDay"].label, "Сегодня")
         let anya = app.descendants(matching: .any)["checkInPerson-42"], mark = app.descendants(matching: .any)["checkInPerson-77"]

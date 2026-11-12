@@ -57,12 +57,21 @@ enum Team {
         return now.timeIntervalSince(last) > 14 * 86_400
     }
 
-    /// A message as one plain line: its first line that says something, without its Markdown.
+    /// A message as one plain line: its first line that says something, without its Markdown. A block of code or of
+    /// a tool's output is passed over, and so is a line of nothing but marks; a line that opens one ends before it.
     static func line(_ markdown: String?) -> String {
+        var fenced = false
         for line in (markdown ?? "").split(whereSeparator: \.isNewline) {
-            let source = String(line)
+            var source = String(line)
+            if source.trimmingCharacters(in: .whitespaces).hasPrefix("```") { fenced.toggle(); continue }
+            if fenced { continue }
+            if let fence = source.range(of: "```") {
+                // An odd number of fences on the line leaves the block open below it.
+                fenced = source.components(separatedBy: "```").count % 2 == 0
+                source = String(source[..<fence.lowerBound])
+            }
             let plain = String(((try? AttributedString(markdown: source)) ?? AttributedString(source)).characters).trimmingCharacters(in: .whitespaces)
-            if !plain.isEmpty { return plain }
+            if plain.contains(where: { $0.isLetter || $0.isNumber }) { return plain }
         }
         return ""
     }

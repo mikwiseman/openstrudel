@@ -320,6 +320,20 @@ import Testing
         #expect(TeamArrangement(defaults: defaults).home == nil)
     }
 
+    @Test func aRowSaysWhatIsNowTrueAndOtherwiseACleanExcerpt() throws {
+        // The employee's own line leads; a Home that sends none, or an empty one, leaves the answer's first words.
+        let told = try profile("1", "Продажи", #","preview":"**Отчёт за среду**\n1. Клён","outcome":"Клён оплатил. День 14.""#)
+        #expect(told.previewText == "Клён оплатил. День 14.")
+        #expect(try profile("2", "Продажи", #","preview":"**Отчёт за среду**\n1. Клён","outcome":null"#).previewText == "Отчёт за среду")
+        #expect(try profile("3", "Продажи", #","preview":"**Отчёт за среду**","outcome":"  ""#).previewText == "Отчёт за среду")
+        // Never markup, and never a block of a tool's output.
+        #expect(Team.line("```json\n{\"sent\":3}\n```\n**Готово.** Три письма ушли.") == "Готово. Три письма ушли.")
+        #expect(Team.line("***\n---\n**Продажи · среда**") == "Продажи · среда")
+        #expect(Team.line("Вывод команды: ```text\nCWD=/data\n```\nДальше слова.") == "Вывод команды:")
+        #expect(Team.line("Команда `ls` и ```одна строка``` целиком") == "Команда ls и")
+        #expect(Team.line("```\nтолько код\n```") == "")
+    }
+
     @Test func theOneListLeadsWithWhatWaitsThenWhoWorksThenTheLatestAnswer() throws {
         func member(_ id: String, _ name: String, _ extra: String = "", home: String = "home") throws -> TeamMember {
             TeamMember(profile: try profile(id, name, extra), route: ReaderRoute(connectionID: home, kind: .employee(id), title: name))

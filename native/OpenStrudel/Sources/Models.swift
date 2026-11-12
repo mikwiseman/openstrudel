@@ -505,7 +505,16 @@ struct EmployeeProfile: Codable, Identifiable, Hashable {
     var isWork: Bool { domain == "work" }
     var roleText: String { purpose?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
 
-    var previewText: String { Team.line(preview) }
+    /// What the employee's latest result made true, in its own line of at most 60 characters. A Home that asks its
+    /// employees for one sends it; nil otherwise, and for an answer that wrote none.
+    var outcome: String? = nil
+
+    /// What a row says of the latest answer: its own line of what is now true, otherwise the answer's first words as
+    /// plain text.
+    var previewText: String {
+        let said = outcome?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return said.isEmpty ? Team.line(preview) : said
+    }
 }
 
 struct ProfilesEnvelope: Decodable {

@@ -92,10 +92,10 @@ const ran = (schedule: { id: string; conversationId: string }, scheduledFor: str
     .run(`fixture-${schedule.id}-${scheduledFor}`, schedule.id, schedule.conversationId, scheduledFor, status, scheduledFor, error);
 /** A scheduled run with its whole retained chain, as the scheduler leaves it: the hidden request, the answer, the receipt.
  * The Home's activity reads results from exactly this. */
-const produced = (schedule: { id: string; conversationId: string; prompt: string }, scheduledFor: string, text: string) => {
+const produced = (schedule: { id: string; conversationId: string; prompt: string }, scheduledFor: string, text: string, outcome?: string) => {
   const runId = `fixture-${schedule.id}-${scheduledFor}`;
   const request = store.addMessage({ conversationId: schedule.conversationId, channel: "api", direction: "inbound", externalId: "schedule:" + runId, text: schedule.prompt });
-  const answer = store.addMessage({ conversationId: schedule.conversationId, channel: "api", direction: "outbound", replyToId: request.id, text });
+  const answer = store.addMessage({ conversationId: schedule.conversationId, channel: "api", direction: "outbound", replyToId: request.id, text, outcome });
   store.db.prepare("UPDATE messages SET hidden=1, created_at=? WHERE id=?").run(scheduledFor, request.id);
   store.db.prepare("UPDATE messages SET created_at=? WHERE id=?").run(new Date(Date.parse(scheduledFor) + 60_000).toISOString(), answer.id);
   store.db.prepare("INSERT INTO schedule_runs(id,schedule_id,conversation_id,scheduled_for,status,created_at,message_id) VALUES(?,?,?,?,'completed',?,?)")
@@ -191,7 +191,8 @@ await runtime.messages.reportProblem(tutorChat.id, `fixture-${tutorEvening.id}-$
 const coach = store.createProfile({ name: "Тренер", instructions: "Составляй короткие тренировки.", purpose: "Утренний план тренировки на двадцать минут", appearance: { version: 1, kind: "fold", tone: 6 } });
 const coachChat = store.profileConversation(coach.id);
 const coachMorning = runtime.scheduler.save({ conversationId: coachChat.id, name: "План на утро", prompt: "Составить план", cron: "45 6 * * *", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
-produced(coachMorning, at(1, "06:45"), "План на сегодня: **растяжка и планка**, двадцать минут.");
+// The result says in its own line what is now true; the team row shows that line instead of the report's first words.
+produced(coachMorning, at(1, "06:45"), "План на сегодня: **растяжка и планка**, двадцать минут.", "План на утро готов: двадцать минут.");
 runtime.scheduler.save({ conversationId: coachChat.id, name: "Итоги недели", prompt: "Подвести итоги", cron: "0 20 * * 0", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
 const arrive = () => store.addMessage({ conversationId: coachChat.id, channel: "api", direction: "outbound",
   text: "План на сегодня: **лёгкий бег и приседания**, двадцать минут.\n\nТехника — в [памятке о приседаниях](<https://trener.example/guide/squat_(basic)>) и в [разминке](<https://trener.example/warm_up_plan>)." });
