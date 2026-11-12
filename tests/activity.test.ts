@@ -175,7 +175,7 @@ it("shows actual schedule outputs with source IDs and distinguishes quiet, faile
   store.db.prepare("UPDATE schedules SET enabled=0 WHERE id=?").run(result.scheduleId);
   const activity = readActivity(store, true, now);
   expect(activity.progress).toMatchObject({ activeDays: 0, completedRequests: 0, completedRuns: 1, quietRuns: 1, failedRuns: 1, activeSchedules: 6 });
-  expect(activity.insights).toEqual([{ id: "run:" + result.runId, kind: "result", title: "Daily source check", text: result.reply.text,
+  expect(activity.insights).toEqual([{ id: "run:" + result.runId, kind: "result", title: "Daily source check", text: result.reply.text, outcome: null,
     occurredAt: recent, conversationId, profileId: employee.id, employeeName: "Research", messageId: result.reply.id, status: "completed" }]);
   expect(milestone(activity, "first-automation")).toBe(true); expect(milestone(activity, "three-active-days")).toBe(false);
 });
