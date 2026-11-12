@@ -666,7 +666,7 @@ extension HomeClient {
 
 /// Card actions are capsules at one height. The one prominent action is ink with a canvas-coloured
 /// label; the others sit on the quiet fill. Neither changes with window focus.
-private struct CardButtonStyle: ButtonStyle {
+struct CardButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     let prominent: Bool
 

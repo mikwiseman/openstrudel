@@ -249,7 +249,11 @@ export function readStatistics(store: Store, owner: boolean, now = new Date()): 
 export interface ScheduleOverview {
   checkedAt: string;
   /** Every recurring schedule on this Home with its chat and what it ran and spent this week (from Monday). One-time reminders are left out. */
-  schedules: Array<Schedule & { chat: ChatInfo; week: { runs: number; quiet: number; failed: number; tokens: number; costUsd: number | null } }>;
+  schedules: Array<Schedule & { chat: ChatInfo; week: { runs: number; quiet: number; failed: number; tokens: number; costUsd: number | null };
+    /** Whose schedule it is; null for the main assistant's. */
+    profileId: string | null;
+    /** An enabled schedule whose latest finished run failed: since which run, and the first line of what the latest one said. */
+    failure: { since: string; reason: string | null } | null }>;
 }
 
 /** The owner's switchboard: each recurring schedule, its chat and this week's runs and cost. Switching one uses the chat's own schedule save. */
@@ -258,8 +262,21 @@ export function readScheduleOverview(store: Store, scheduler: Pick<Scheduler, "l
   const list = (scheduler?.list() ?? []).filter(schedule => !schedule.cron.startsWith("@once "));
   const week = new Map((readStatistics(store, true, now).weeks.at(-1)?.schedules ?? []).map(run => [run.id, run]));
   const chats = chatInfo(store, new Set(list.map(schedule => schedule.conversationId)));
+  // Since when an enabled schedule has not worked and what its latest failure said: the runs that failed after the
+  // last one that worked. The owner reads the same errors on the schedule's own page.
+  const finished = list.length ? store.db.prepare("SELECT status,scheduled_for,error FROM schedule_runs WHERE schedule_id=? AND status IN ('completed','quiet','failed','uncertain') ORDER BY scheduled_for DESC LIMIT 100") : null;
+  const failure = (id: string): { since: string; reason: string | null } | null => {
+    let since: string | null = null, reason: string | null = null;
+    for (const run of (finished?.all(id) ?? []) as Array<{ status: string; scheduled_for: string; error: string | null }>) {
+      if (run.status !== "failed" && run.status !== "uncertain") break;
+      if (since === null) reason = String(run.error ?? "").split("\n").map(line => line.trim()).find(Boolean)?.slice(0, 240) ?? null;
+      since = run.scheduled_for;
+    }
+    return since === null ? null : { since, reason };
+  };
   return { checkedAt: now.toISOString(), schedules: list.map(schedule => {
     const spent = week.get(schedule.id);
-    return { ...schedule, chat: chats[schedule.conversationId]!, week: { runs: spent?.runs ?? 0, quiet: spent?.quiet ?? 0, failed: spent?.failed ?? 0, tokens: spent?.tokens ?? 0, costUsd: spent?.costUsd ?? null } };
+    return { ...schedule, chat: chats[schedule.conversationId]!, week: { runs: spent?.runs ?? 0, quiet: spent?.quiet ?? 0, failed: spent?.failed ?? 0, tokens: spent?.tokens ?? 0, costUsd: spent?.costUsd ?? null },
+      profileId: store.getConversation(schedule.conversationId)?.profileId ?? null, failure: schedule.enabled ? failure(schedule.id) : null };
   }) };
 }

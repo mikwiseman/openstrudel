@@ -187,7 +187,7 @@ export function readActivity(store: Store, owner: boolean, now = new Date()): Ac
   insights.push(...attention(store, insightStart, end, scheduler));
   insights.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || b.id.localeCompare(a.id));
   const activeDays = Number(requests.active_days);
-  return { checkedAt: end, period: { start, end, timeZone }, insights: insights.slice(0, limit), checkIns: readCheckIns(store, { now }), progress: {
+  return { checkedAt: end, period: { start, end, timeZone }, insights: insights.slice(0, limit), checkIns: readCheckIns(store, { now, days: 28 }), progress: {
     activeDays, completedRequests: Number(requests.completed_requests), completedRuns, quietRuns, failedRuns, activeSchedules,
     milestones: [
       { id: "first-request", reached: firstRequest },

@@ -43,6 +43,18 @@ export function localDate(instant: string | Date, timezone: string): string {
 }
 /** A date `daysAgo` local dates before `date` (YYYY-MM-DD), by calendar arithmetic. */
 const shiftDate = (date: string, daysAgo: number) => new Date(Date.parse(date + "T00:00:00Z") - daysAgo * 86_400_000).toISOString().slice(0, 10);
+/** The weekdays a five-field cron asks on, 0 for Sunday; every day when its day field says nothing simpler. */
+export function cronWeekdays(cron: string): Set<number> {
+  const every = new Set([0, 1, 2, 3, 4, 5, 6]), field = cron.trim().split(/\s+/)[4];
+  if (cron.trim().startsWith("@once ") || !field || field === "*") return every;
+  const days = new Set<number>();
+  for (const part of field.split(",")) {
+    const range = /^(\d)(?:-(\d))?$/.exec(part);
+    if (!range) return every;
+    for (let day = Number(range[1]); day <= Number(range[2] ?? range[1]); day++) days.add(day % 7);
+  }
+  return days.size ? days : every;
+}
 
 /** A leading number is the answer's value ("7 · много"); otherwise the option's position, from 1. */
 export const answerValue = (option: string, index: number): number => { const match = /^\s*(\d{1,3})(?!\d)/.exec(option); return match ? Number(match[1]) : index + 1; };
@@ -84,7 +96,7 @@ export function recordAnswer(store: Store, answer: { pollId: string; userId: str
 export function readCheckIns(store: Store, options: { conversationId?: string; days?: number; now?: Date } = {}): CheckIn[] {
   if (!hasTables(store)) return [];
   const days = options.days ?? 14, now = options.now ?? new Date();
-  const schedules = store.db.prepare(`SELECT s.id,s.name,s.conversation_id,s.timezone,s.poll_json,t.title AS chat FROM schedules s
+  const schedules = store.db.prepare(`SELECT s.id,s.name,s.conversation_id,s.timezone,s.cron,s.poll_json,t.title AS chat FROM schedules s
     JOIN conversations c ON c.id=s.conversation_id LEFT JOIN employee_profiles p ON p.id=c.profile_id
     LEFT JOIN telegram_chats t ON t.chat_id=COALESCE(s.telegram_chat_id,(SELECT chat_id FROM telegram_chats WHERE conversation_id=s.conversation_id LIMIT 1))
     WHERE s.enabled=1 AND s.poll_json IS NOT NULL AND (c.profile_id IS NULL OR p.id IS NOT NULL)${options.conversationId ? " AND s.conversation_id=?" : ""} ORDER BY s.rowid`)
@@ -95,7 +107,7 @@ export function readCheckIns(store: Store, options: { conversationId?: string; d
     const dates = Array.from({ length: days }, (_, i) => shiftDate(today, days - 1 - i));
     const answers = store.db.prepare(`SELECT p.local_date,p.options_json,a.user_id,a.user_name,a.option_index,a.answered_at FROM schedule_polls p
       JOIN schedule_poll_answers a ON a.poll_id=p.poll_id WHERE p.schedule_id=? AND p.local_date<=? ORDER BY p.local_date,julianday(a.answered_at),p.rowid`).all(schedule.id, today) as Row[];
-    const byDate = new Map(dates.map(date => [date, {} as Record<string, number>]));
+    const byDate = new Map(dates.map(date => [date, {} as Record<string, number>])), asked = cronWeekdays(String(schedule.cron));
     const people = new Map<string, string>(), answeredDates = new Map<string, Set<string>>();
     for (const row of answers) {
       const pollOptions = readPollOptions(String(row.options_json)), index = Number(row.option_index);
@@ -107,9 +119,15 @@ export function readCheckIns(store: Store, options: { conversationId?: string; d
     }
     const participants: CheckInParticipant[] = [...people.entries()].map(([id, name]) => {
       const answered = answeredDates.get(id) ?? new Set<string>();
-      // Today's answer is optional until the day ends; a missing calendar day breaks the streak.
+      // Today's answer is optional until the day ends. A day the poll is not asked on (a Saturday of a Sunday-to-Friday
+      // schedule) neither adds to the streak nor breaks it; a day it was asked on and not answered breaks it.
+      const first = [...answered].sort()[0];
       let streak = 0, date = answered.has(today) ? today : shiftDate(today, 1);
-      while (answered.has(date)) { streak++; date = shiftDate(date, 1); }
+      while (first && date >= first) {
+        if (answered.has(date)) streak++;
+        else if (asked.has(new Date(date + "T12:00:00Z").getUTCDay())) break;
+        date = shiftDate(date, 1);
+      }
       const recent = dates.flatMap(date => byDate.get(date)![id] === undefined ? [] : [{ date, value: byDate.get(date)![id]! }]).slice(-7);
       const average = recent.length ? Math.round(recent.reduce((sum, item) => sum + item.value, 0) / recent.length * 10) / 10 : null;
       return { id, name, streak, latest: recent.at(-1) ?? null, average };

@@ -9,6 +9,8 @@ struct HomeActivity: Decodable, Equatable {
         let kind: String
         let title: String
         let text: String
+        /// A result's one line of what is now true, when its Home asks its employees for one.
+        var outcome: String? = nil
         let occurredAt: String
         let conversationId: String
         let profileId: String?

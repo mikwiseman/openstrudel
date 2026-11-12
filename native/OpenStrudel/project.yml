@@ -57,7 +57,9 @@ targets:
           # HomeClient rejects remote HTTP and unpinned HTTPS.
           NSAllowsArbitraryLoads: true
         ITSAppUsesNonExemptEncryption: false
-        UILaunchScreen: {}
+        UILaunchScreen:
+          # The paper from the first frame: no white flash before the home.
+          UIColorName: CanvasColor
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UISupportedInterfaceOrientations:
@@ -196,6 +198,8 @@ targets:
       - path: Sources/DeviceLibrary.swift
       - path: Sources/ConversationReader.swift
       - path: Sources/ActivityModel.swift
+      - path: Sources/CheckIns.swift
+      - path: Sources/NeedsYou.swift
       - path: Sources/StatisticsModel.swift
       - path: Sources/ProjectSettingsModel.swift
       - path: Sources/HostingStore.swift

@@ -185,12 +185,13 @@ import Testing
         let next = (route: route("coach"), name: "Coach", at: Self.instant("2026-11-11T03:45:00.000Z"))
         let limits = [try account(#"{"name":"5h","remainingPercent":81,"windowDurationMins":300,"resetsAt":1},{"name":"weekly","remainingPercent":32,"windowDurationMins":10080,"resetsAt":1}"#)]
         let picture = ShelfTile.result(route: route("cook"), name: "Cook", appearance: AgentAppearance(kind: "pillow", tone: 7), text: "Dinner", file: file)
-        // A desk without a story, a Home without activity and an account without limits put nothing on the shelf.
-        #expect(Shelf.tiles(desks: [silent], activity: nil, next: nil, accounts: []).isEmpty)
-        let tiles = Shelf.tiles(desks: [desk, silent], activity: nil, next: next, accounts: limits, results: [picture])
-        #expect(tiles.map(\.id) == ["desk:" + desk.route.id, "next", "limit", "result:" + route("cook").id])
-        #expect(tiles.map(\.place) == [.reader(desk.route), .reader(next.route), .statistics, .reader(route("cook"))])
-        // The fullest week decides the ring; without a weekly window, the fullest of the others.
+        // A desk without a story and a Home without activity put nothing on the shelf.
+        #expect(Shelf.tiles(desks: [silent], activity: nil, next: nil).isEmpty)
+        // A tile holds an answer. The limit is a figure at the foot of the home and on Statistics, never a gauge here.
+        let tiles = Shelf.tiles(desks: [desk, silent], activity: nil, next: next, results: [picture])
+        #expect(tiles.map(\.id) == ["desk:" + desk.route.id, "next", "result:" + route("cook").id])
+        #expect(tiles.map(\.place) == [.reader(desk.route), .reader(next.route), .reader(route("cook"))])
+        // The fullest week decides the figure; without a weekly window, the fullest of the others.
         #expect(Shelf.limit(limits)?.weekly == true)
         #expect(abs((Shelf.limit(limits)?.used ?? 0) - 0.68) < 0.001)
         let short = try #require(Shelf.limit([try account(#"{"name":"5h","remainingPercent":81,"windowDurationMins":300,"resetsAt":1}"#)]))
@@ -200,14 +201,14 @@ import Testing
 
     @Test func upToThreeTilesStandInOneRowAndMoreMakeTwo() {
         let tile = { (name: String) in ShelfTile.next(route: self.route(name), name: name, at: Self.now) }
-        let rows = { (count: Int) in Shelf.columns((0..<count).map { _ in ShelfTile.progress(done: 1) }).map(\.count) }
+        let rows = { (count: Int) in Shelf.columns((0..<count).map { tile("t" + String($0)) }).map(\.count) }
         #expect(Shelf.columns([]).isEmpty)
         #expect(rows(3) == [1, 1, 1])
         #expect(rows(4) == [2, 2])
         #expect(rows(7) == [2, 2, 2, 1])
         // The first half is the top row, in order.
-        let five = [ShelfTile.important(open: ["A"], done: []), .limit(used: 0.5, weekly: true), .progress(done: 2), tile("x"), .limit(used: 0.1, weekly: false)]
-        #expect(Shelf.columns(five).map { $0.first?.id } == ["important", "limit", "progress"])
+        let five = ["a", "b", "c", "d", "e"].map { ShelfTile.result(route: self.route($0), name: $0, appearance: AgentAppearance(kind: "coil", tone: 1), text: $0, file: self.file) }
+        #expect(Shelf.columns(five).map { $0.first?.id } == ["a", "b", "c"].map { "result:" + self.route($0).id })
     }
 
     private var file: ChatAttachment { ChatAttachment(id: "0a0a0a0a-1111-4222-8333-444444444444", conversationId: "c", name: "plate.png", mimeType: "image/png", size: 10) }
@@ -292,5 +293,111 @@ import Testing
         marks.see(first, on: client)
         #expect(!marks.isUnread(next, on: client))
         #expect(!TeamReadMarks(defaults: defaults).isUnread(next, on: client))
+    }
+
+    // MARK: How this device arranges the list
+
+    @Test func pinsAndTheChosenHomeAreKeptOnTheDevice() throws {
+        let suite = "OpenStrudel.team." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        defaults.set("http://127.0.0.1:57712", forKey: "openstrudel.homeURL")
+        let client = HomeClient(defaults: defaults, connectionID: "team", credentialReader: { _, _ in nil }, credentialWriter: { _, _ in })
+        let arrangement = TeamArrangement(defaults: defaults)
+        let scout = try profile("p1", "Scout"), baker = try profile("p2", "Baker")
+        #expect(!arrangement.isPinned(scout, on: client))
+        arrangement.setPinned(true, profile: scout, on: client)
+        #expect(arrangement.isPinned(scout, on: client) && !arrangement.isPinned(baker, on: client))
+        // After a relaunch too, and given back the same way.
+        #expect(TeamArrangement(defaults: defaults).isPinned(scout, on: client))
+        arrangement.setPinned(false, profile: scout, on: client)
+        #expect(!TeamArrangement(defaults: defaults).isPinned(scout, on: client))
+        // Every Home is listed until one is chosen; the choice outlives a relaunch and is given back the same way.
+        #expect(arrangement.home == nil)
+        arrangement.show(home: "cabin")
+        #expect(TeamArrangement(defaults: defaults).home == "cabin")
+        arrangement.show(home: nil)
+        #expect(TeamArrangement(defaults: defaults).home == nil)
+    }
+
+    @Test func aRowSaysWhatIsNowTrueAndOtherwiseACleanExcerpt() throws {
+        // The employee's own line leads; a Home that sends none, or an empty one, leaves the answer's first words.
+        let told = try profile("1", "Продажи", #","preview":"**Отчёт за среду**\n1. Клён","outcome":"Клён оплатил. День 14.""#)
+        #expect(told.previewText == "Клён оплатил. День 14.")
+        #expect(try profile("2", "Продажи", #","preview":"**Отчёт за среду**\n1. Клён","outcome":null"#).previewText == "Отчёт за среду")
+        #expect(try profile("3", "Продажи", #","preview":"**Отчёт за среду**","outcome":"  ""#).previewText == "Отчёт за среду")
+        // Never markup, and never a block of a tool's output.
+        #expect(Team.line("```json\n{\"sent\":3}\n```\n**Готово.** Три письма ушли.") == "Готово. Три письма ушли.")
+        #expect(Team.line("***\n---\n**Продажи · среда**") == "Продажи · среда")
+        #expect(Team.line("Вывод команды: ```text\nCWD=/data\n```\nДальше слова.") == "Вывод команды:")
+        #expect(Team.line("Команда `ls` и ```одна строка``` целиком") == "Команда ls и")
+        #expect(Team.line("```\nтолько код\n```") == "")
+    }
+
+    @Test func theOneListLeadsWithWhatWaitsThenWhoWorksThenTheLatestAnswer() throws {
+        func member(_ id: String, _ name: String, _ extra: String = "", home: String = "home") throws -> TeamMember {
+            TeamMember(profile: try profile(id, name, extra), route: ReaderRoute(connectionID: home, kind: .employee(id), title: name))
+        }
+        let old = try member("1", "Архив", #","previewAt":"2026-11-01T09:00:00.000Z","working":false"#)
+        let fresh = try member("2", "Юрист", #","previewAt":"2026-11-10T09:00:00.000Z","working":false"#)
+        let busy = try member("3", "Продажи", #","previewAt":"2026-11-02T09:00:00.000Z","working":true"#, home: "cabin")
+        let asked = try member("4", "Бухгалтер", #","previewAt":"2026-10-30T09:00:00.000Z","working":false"#, home: "cabin")
+        let silent = try member("5", "Новый")
+        let order = { (rows: [TeamMember], waiting: Set<String>) in rows.sorted { Team.comesFirst($0, $1, waiting: waiting) }.map(\.profile.name) }
+        #expect(order([old, silent, fresh, busy, asked], [asked.id]) == ["Бухгалтер", "Продажи", "Юрист", "Архив", "Новый"])
+        // With nothing waiting and nobody at work the list is simply the latest answers first, whichever Home they are from.
+        #expect(order([old, asked, fresh], []) == ["Юрист", "Архив", "Бухгалтер"])
+        // Equal times fall back to the names, so two rows never trade places between two polls.
+        let twin = try member("6", "Аналитик", #","previewAt":"2026-11-10T09:00:00.000Z","working":false"#)
+        #expect(order([fresh, twin], []) == ["Аналитик", "Юрист"] && order([twin, fresh], []) == ["Аналитик", "Юрист"])
+    }
+
+    @Test func thePinnedOnesKeepTheOneOrderOfEveryList() throws {
+        let rows = [try profile("3", "Тренер"), try profile("2", "News", #","news":true"#), try profile("1", "Репетитор"), try profile("4", "репетитор")]
+        let russian = Locale(identifier: "ru")
+        #expect(rows.sorted { Team.precedes($0, $1, locale: russian) }.map(\.id) == ["2", "1", "4", "3"])
+        #expect(Team.order(rows, locale: russian).map(\.id) == ["2", "1", "4", "3"])
+    }
+
+    @Test func anEmployeeQuietForTwoWeeksIsTuckedAwayUnlessSomethingIsGoingOn() throws {
+        let now = Self.now
+        let recent = try profile("1", "Sales", #","previewAt":"2026-11-09T09:00:00.000Z","working":false"#)
+        let old = try profile("2", "Архив", #","previewAt":"2026-10-20T09:00:00.000Z","working":false"#)
+        let never = try profile("3", "Новый")
+        let young = try JSONDecoder().decode(EmployeeProfile.self, from: Data(#"{"id":"4","name":"Вчерашний","instructions":"","capabilities":[],"model":null,"tokenLimit":null,"createdAt":"2026-11-09T00:00:00.000Z"}"#.utf8))
+        #expect(!Team.isQuiet(recent, now: now) && Team.isQuiet(old, now: now))
+        // One that has never answered is judged by the day it was made: made in January it is quiet, made yesterday it is not.
+        #expect(Team.isQuiet(never, now: now) && !Team.isQuiet(young, now: now))
+        // At work or failing, it is never out of sight.
+        #expect(!Team.isQuiet(try profile("5", "Работает", #","previewAt":"2026-10-20T09:00:00.000Z","working":true"#), now: now))
+        #expect(!Team.isQuiet(try profile("6", "Сломан", #","previewAt":"2026-10-20T09:00:00.000Z","failing":true"#), now: now))
+    }
+
+    @Test func aFailingEmployeeSaysWhyWhenItsHomeTells() throws {
+        let suite = "OpenStrudel.team." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        defaults.set("http://127.0.0.1:57712", forKey: "openstrudel.homeURL")
+        let client = HomeClient(defaults: defaults, connectionID: "team", credentialReader: { _, _ in nil }, credentialWriter: { _, _ in })
+        func listed(_ id: String, profile: String?, failure: String?) throws -> HomeSchedule {
+            try JSONDecoder().decode(HomeSchedule.self, from: Data("""
+            {"id":"\(id)","conversationId":"c","name":"Run \(id)","prompt":"Check","cron":"30 18 * * *","timezone":"UTC","enabled":true,"nextRunAt":"2026-11-11T18:30:00.000Z","telegramChatId":null,
+             "chat":{"title":"Chat","employee":null,"kind":"employee"},"week":{"runs":3,"quiet":0,"failed":2,"tokens":0,"costUsd":null}\(profile.map { ",\"profileId\":\"\($0)\"" } ?? "")\(failure.map { ",\"failure\":" + $0 } ?? "")}
+            """.utf8))
+        }
+        let failures = TeamFailures()
+        failures.take([
+            try listed("a", profile: "tutor", failure: #"{"since":"2026-11-09T15:30:00.000Z","reason":"Закончился лимит модели."}"#),
+            try listed("b", profile: "tutor", failure: #"{"since":"2026-11-10T06:00:00.000Z","reason":"Чат доставки изменился"}"#),
+            try listed("c", profile: "coach", failure: nil),
+            try listed("d", profile: nil, failure: #"{"since":"2026-11-10T04:30:00.000Z","reason":null}"#),
+        ], from: client)
+        // The schedule that began failing last speaks for its employee; the main assistant's own schedules too.
+        #expect(failures.failure("tutor", on: client)?.reason == "Чат доставки изменился")
+        #expect(failures.failure("coach", on: client) == nil)
+        #expect(failures.failure(nil, on: client) == TeamFailures.Failure(since: Self.instant("2026-11-10T04:30:00.000Z"), reason: nil))
+        // An older Home says nothing about failures, and what it said before is forgotten when it stops failing.
+        failures.take([try listed("a", profile: "tutor", failure: nil)], from: client)
+        #expect(failures.known.isEmpty)
     }
 }

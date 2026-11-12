@@ -265,17 +265,8 @@ private struct ShelfTileView: View {
         switch tile {
         case .desk(_, let name, let appearance, let title, let image, let host, let unseen):
             DeskTile(name: name, appearance: appearance, title: title, image: image, host: host, unseen: unseen)
-        case .important(let open, let done):
-            Tile(label: L("Что важно"), skin: .paper(AgentAppearance.tint(AgentAppearance(kind: "coil", tone: 6), dark: scheme == .dark))) {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(Array(open.enumerated()), id: \.offset) { _, line in check(line, done: false) }
-                    ForEach(Array(done.enumerated()), id: \.offset) { _, line in check(line, done: true) }
-                }
-                .padding(.top, 12)
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(L("Что важно"))
-            .accessibilityValue((open + done).joined(separator: ", "))
+        case .checkIns(let board):
+            CheckInTile(board: board)
         case .next(_, let name, let at):
             Tile(label: L("Дальше"), skin: .ink) {
                 TimelineView(.everyMinute) { timeline in
@@ -291,32 +282,9 @@ private struct ShelfTileView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(L("Дальше"))
             .accessibilityValue(name + ", " + TeamWords().moment(at))
-        case .limit(let used, let weekly):
-            LimitTile(used: used, weekly: weekly)
-        case .progress(let done):
-            Tile(label: L("Прогресс"), skin: .paper(AgentAppearance.tint(AgentAppearance(kind: "coil", tone: 1), dark: scheme == .dark))) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(done.formatted()).font(.system(size: TileMetrics.side * 0.26, weight: .semibold)).tracking(-1.6).monospacedDigit()
-                        .contentTransition(.numericText(value: Double(done))).lineLimit(1).minimumScaleFactor(0.6)
-                    Text(L("сделано за 7 дней")).font(AppTypography.label.weight(.regular)).opacity(0.62).lineLimit(2).minimumScaleFactor(0.8)
-                }
-                .padding(.top, TileMetrics.side * 0.13)
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(L("Прогресс"))
-            .accessibilityValue(done.formatted() + ", " + L("сделано за 7 дней"))
         case .result(let route, let name, let appearance, let text, let file):
             ResultTile(connection: route.connectionID, name: name, appearance: appearance, text: text, file: file)
         }
-    }
-
-    private func check(_ line: String, done: Bool) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 7) {
-            Image(systemName: done ? "checkmark.circle.fill" : "circle").font(.system(size: 14, weight: .medium))
-                .foregroundStyle(AppTheme.signal).alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2.5 }
-            Text(line).font(.system(size: 13, weight: .medium)).lineLimit(done ? 1 : 2).multilineTextAlignment(.leading)
-        }
-        .opacity(done ? 0.5 : 1)
     }
 }
 

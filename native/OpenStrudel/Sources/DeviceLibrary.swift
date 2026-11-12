@@ -18,6 +18,10 @@ final class DeviceLibrary: ObservableObject {
     @Published private(set) var viewGeneration = 0
     @Published private(set) var hiddenEmployees: [String: [String]]
     @Published private(set) var collapsedDeviceIDs: Set<String>
+    #if os(macOS)
+    /// The one loop that keeps every Home's list current, and the connections it was started for.
+    private var catalogueWatch: (key: String, task: Task<Void, Never>)?
+    #endif
     var fileDrafts: [String: [PickedFile]] = [:]
     private let defaults: UserDefaults
     private let clientFactory: (String) -> HomeClient
@@ -270,7 +274,21 @@ final class DeviceLibrary: ObservableObject {
     /// Each host has its own conditional refresh loop. A slow or unreachable
     /// host cannot delay changes from another one. Background iOS suspends the
     /// task; the first foreground request catches up without a socket service.
-    func watchCatalogues() async {
+    #if os(macOS)
+    /// On the Mac the lists stay current for as long as the app runs, whether or not its window is open: the menu-bar
+    /// item reads the same lists, and a window opened later must show the team as it is. With no window in sight each
+    /// Home is asked every half a minute instead of every two seconds. A window's own task would stop with its window.
+    func keepCataloguesCurrent() {
+        let key = connectionListKey
+        guard catalogueWatch?.key != key else { return }
+        catalogueWatch?.task.cancel()
+        catalogueWatch = (key, Task { [weak self] in
+            await self?.watchCatalogues { NSApplication.shared.windows.contains { $0.isVisible && $0.canBecomeMain && !$0.isMiniaturized } ? 2 : 30 }
+        })
+    }
+    #endif
+
+    func watchCatalogues(pace: @escaping @MainActor @Sendable () -> Int = { 2 }) async {
         employeeMoves.resume(using: moveTransport)
         await withTaskGroup(of: Void.self) { group in
             for client in visibleClients where client.shouldRestoreConnection && !client.isPairing {
@@ -281,7 +299,8 @@ final class DeviceLibrary: ObservableObject {
                     while !Task.isCancelled {
                         await client.refreshCatalogue(refreshPresence: checks % 3 == 0)
                         checks += 1
-                        do { try await Task.sleep(for: .seconds(await client.homeUnreachable ? 15 : 2)) } catch { break }
+                        let seconds = await client.homeUnreachable ? 15 : await pace()
+                        do { try await Task.sleep(for: .seconds(seconds)) } catch { break }
                     }
                 }
                 group.addTask {

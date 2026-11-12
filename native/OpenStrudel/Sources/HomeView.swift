@@ -1,11 +1,16 @@
 import SwiftUI
 
-/// Home: what the team did today, the team itself and one way to write. It is the whole first screen on a phone and
-/// the sidebar beside the open place on a Mac or an iPad. Nothing here is a tab: a tile or a row opens its page.
+/// Home: what waits for the owner first, then what the team did today, the team itself and one way to write. It is
+/// the whole first screen on a phone and the sidebar beside the open place on a Mac or an iPad. Nothing here is a
+/// tab: a card, a tile or a row opens its page.
 struct HomeView: View {
     @EnvironmentObject private var library: DeviceLibrary
     @EnvironmentObject private var client: HomeClient
     @EnvironmentObject private var newsroom: Newsroom
+    @EnvironmentObject private var marks: TeamReadMarks
+    @EnvironmentObject private var arrangement: TeamArrangement
+    @EnvironmentObject private var needs: NeedsYouModel
+    @EnvironmentObject private var failures: TeamFailures
     @ObservedObject var activity: ActivityModel
     @ObservedObject var limits: ActivityLimitsModel
     /// The Home whose activity and limits are shown; older answers for another Home are not.
@@ -18,8 +23,12 @@ struct HomeView: View {
     let open: (HomePlace, AnyHashable) -> Void
     let openSearch: () -> Void
     let openSettings: () -> Void
+    /// Carries out a card's button, with the words it was given when it takes words.
+    let act: (NeedCard, NeedCard.Action, String?) -> Void
     @State private var renaming: RenameTarget?
     @State private var moving: EmployeeMoveRequest?
+    /// The long-quiet employees are in sight for now.
+    @State private var showsQuiet = false
     @ScaledMetric(relativeTo: .title2) private var wordmark: CGFloat = HomeMetrics.wordmark
 
     private var margin: CGFloat { split ? HomeMetrics.sidebarMargin : HomeMetrics.margin }
@@ -35,12 +44,18 @@ struct HomeView: View {
     private var tiles: [ShelfTile] {
         // The desks stand above the shelf as papers of their own.
         let team = library.team.map { (route: $0.member.route, profile: $0.member.profile) }
-        return Shelf.tiles(desks: [], activity: activity.scope == scope ? activity.activity : nil, next: Shelf.next(team),
-                           accounts: limits.scope == scope ? limits.accounts : [], results: Shelf.results(team))
+        return Shelf.tiles(desks: [], activity: known, next: Shelf.next(team), results: Shelf.results(team))
+    }
+
+    private var known: HomeActivity? { activity.scope == scope ? activity.activity : nil }
+
+    /// The results of today on the chat's Home, for the calm sentence.
+    private var doneToday: Int {
+        (known?.results ?? []).filter { result in HomeActivity.date(result.occurredAt).map { Calendar.current.isDateInToday($0) } ?? false }.count
     }
 
     var body: some View {
-        let tiles = tiles, papers = papers
+        let tiles = tiles, papers = papers, cards = needs.cards(library, failures: failures), decided = needs.recent(library)
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 header
@@ -48,13 +63,20 @@ struct HomeView: View {
                 if !split, client.openAIAccount?.connected == false, !client.homeUnreachable, client.health != nil {
                     OpenAIRecoveryNotice().padding(.horizontal, margin).padding(.bottom, 16)
                 }
+                // What waits comes first. A Home out of reach says nothing about it, so nothing is claimed.
+                if !cards.isEmpty || client.health != nil {
+                    HomeNeeds(cards: cards, split: split, margin: margin, last: decided.first, done: doneToday,
+                              readable: !decided.isEmpty || !(known?.results ?? []).isEmpty, zoom: zoom,
+                              open: { card in needs.focus = card?.id; open(.insights, AnyHashable("needs")) }, act: act)
+                }
+                // Then the paper, then what else the team has to show, then the team.
                 if !papers.isEmpty {
                     NewsPaperShelf(papers: papers, margin: margin, zoom: zoom) { open(.reader($0), AnyHashable("tile:desk:" + $0.id)) }
                 }
                 if !tiles.isEmpty {
                     HomeShelf(tiles: tiles, margin: margin, source: { AnyHashable("tile:" + $0.id) }, zoom: zoom) { open($0.place, AnyHashable("tile:" + $0.id)) }
                 }
-                team.padding(.top, tiles.isEmpty && papers.isEmpty ? 8 : 0)
+                team(waiting: Set(cards.compactMap { card in card.profileID.map { card.home + ":" + $0 } })).padding(.top, tiles.isEmpty && papers.isEmpty ? 4 : 0)
             }
             .padding(.bottom, 16)
         }
@@ -106,30 +128,142 @@ struct HomeView: View {
 
     // MARK: The team
 
-    private var team: some View {
-        VStack(alignment: .leading, spacing: split ? 2 : 0) {
+    /// The chat, then one list across every Home: the pinned employees, then whoever has something waiting, whoever is
+    /// working, and the latest answers first. A Home is a quiet word on a row and a filter over the list, never a
+    /// section; whoever has said nothing for two weeks waits under one line.
+    private func team(waiting: Set<String>) -> some View {
+        let homes = library.teamHomes, several = homes.count > 1
+        let chosen = library.shownHome(arrangement)
+        let waits = { (member: TeamMember) in waiting.contains(member.route.connectionID + ":" + member.profile.id) }
+        let list = library.teamList(arrangement, waiting: Set(library.team.map(\.member).filter(waits).map(\.id))) { isQuiet($0, on: $1) }
+        return VStack(alignment: .leading, spacing: split ? 2 : 0) {
+            if several { homeFilter(homes, chosen: chosen) }
             row(.chat, identifier: "teamLead") { TeamLeadRow(selected: selection == .chat) }
-            ForEach(library.team(on: library.primary)) { member($0, on: library.primary) }
-            // Every other Home folds under its name, with its own assistant first.
-            ForEach(Array(library.teamHomes.dropFirst())) { source in
-                homeHeader(source)
-                if !library.collapsedDeviceIDs.contains(source.id) {
-                    let assistant = HomePlace.reader(ReaderRoute(connectionID: source.id, kind: .main, title: "OpenStrudel"))
-                    row(assistant, identifier: "teamAssistant-" + source.id) {
-                        TeamRow(content: TeamRowContent(name: "OpenStrudel", appearance: nil, preview: L("Главный помощник"), date: nil,
-                                                        state: source.isOffline(nil) ? .offline : .resting), selected: selection == assistant)
-                    }
-                    ForEach(library.team(on: source)) { member($0, on: source) }
+            // Another Home's own assistant is listed when that Home alone is in sight.
+            if let chosen, chosen !== library.primary {
+                let assistant = HomePlace.reader(ReaderRoute(connectionID: chosen.id, kind: .main, title: "OpenStrudel"))
+                row(assistant, identifier: "teamAssistant-" + chosen.id) {
+                    // Two assistants now stand one under the other; this one says whose it is.
+                    TeamRow(content: TeamRowContent(name: "OpenStrudel", appearance: nil, preview: L("Главный помощник"), date: nil,
+                                                    state: chosen.isOffline(nil) ? .offline : .resting, home: chosen.displayName), selected: selection == assistant)
                 }
             }
-            HiddenEmployeesButton().font(RowMetrics.preview).padding(.horizontal, margin).padding(.top, 16)
+            ForEach(list.pinned, id: \.member.id) { member($0.member, on: $0.source, pinned: true, named: several && chosen == nil, waits: waits($0.member)) }
+            ForEach(list.live, id: \.member.id) { member($0.member, on: $0.source, named: several && chosen == nil, waits: waits($0.member)) }
+            if !list.quiet.isEmpty {
+                quietLine(list.quiet.map(\.member))
+                if showsQuiet { ForEach(list.quiet, id: \.member.id) { member($0.member, on: $0.source, named: several && chosen == nil) } }
+            }
+            footer
+        }
+        .animation(.smooth(duration: 0.3), value: list.shown.map(\.member.id))
+        // A pin taken or given back is felt.
+        .sensoryFeedback(.selection, trigger: arrangement.pinned)
+    }
+
+    private func member(_ member: TeamMember, on source: HomeClient, pinned: Bool = false, named: Bool = false, waits: Bool = false) -> some View {
+        let place = HomePlace.reader(member.route)
+        return row(place, identifier: "teamMember-" + member.profile.id) {
+            // The Home is a quiet word beside the name, and only where it is not the chat's own.
+            TeamMemberRow(member: member, source: source, selected: selection == place, pinned: pinned,
+                          home: named && source !== library.primary ? source.displayName : nil, waits: waits)
+        }
+        .modifier(TeamMenu(member: member, source: source, renaming: $renaming, moving: $moving))
+    }
+
+    /// Quiet for two weeks, with nothing unread and not the page that is open.
+    private func isQuiet(_ member: TeamMember, on source: HomeClient) -> Bool {
+        guard Team.isQuiet(member.profile), selection != .reader(member.route) else { return false }
+        return member.isDesk ? newsroom.feed(member.route, on: source).unseen == 0 : !marks.isUnread(member.profile, on: source)
+    }
+
+    /// «Все», then each Home by name: one word chooses whose employees are listed. A Home with something new that
+    /// the list does not show carries a dot; one out of reach says so beside its name.
+    private func homeFilter(_ homes: [HomeClient], chosen: HomeClient?) -> some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 0) {
+                homeWord(nil, chosen: chosen) { Text(L("Все")) }
+                ForEach(homes, id: \.id) { source in
+                    homeWord(source, chosen: chosen) {
+                        HStack(spacing: 5) {
+                            TeamHomeTitle(source: source)
+                            if chosen != nil, chosen !== source, hasNew(on: source) {
+                                Circle().fill(AppTheme.signal).frame(width: 6, height: 6).transition(.scale.combined(with: .opacity))
+                            }
+                        }
+                    }
+                    .contextMenu {
+                        Button(L("Переименовать…"), systemImage: "pencil") { renaming = RenameTarget(client: source) }.disabled(!source.canRenameDevice)
+                    }
+                }
+            }
+            .padding(.horizontal, margin - 9)
+        }
+        .scrollIndicators(.hidden)
+        .padding(.bottom, 2)
+        .accessibilityIdentifier("teamHomes")
+    }
+
+    private func homeWord<Label: View>(_ source: HomeClient?, chosen: HomeClient?, @ViewBuilder label: () -> Label) -> some View {
+        let on = chosen === source
+        return Button { withAnimation(.smooth(duration: 0.25)) { arrangement.show(home: source?.id); showsQuiet = false } } label: {
+            label().font(AppTypography.label).foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(AppTheme.secondaryText))
+                .padding(.horizontal, 9).frame(minHeight: max(30, controlTarget * 0.8)).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
+        .accessibilityIdentifier("teamHome-" + (source?.id ?? "all"))
+    }
+
+    /// «Давно молчат» and their faces: a tap brings the rows back for as long as the home is open.
+    private func quietLine(_ quiet: [TeamMember]) -> some View {
+        Button {
+            withAnimation(.smooth(duration: 0.25)) { showsQuiet.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Text(L("Давно молчат"))
+                Image(systemName: "chevron.forward").imageScale(.small).rotationEffect(.degrees(showsQuiet ? 90 : 0))
+                Spacer(minLength: 8)
+                if !showsQuiet { TeamFaces(members: quiet).transition(.opacity) }
+            }
+            .font(AppTypography.label).foregroundStyle(AppTheme.secondaryText)
+            .frame(maxWidth: .infinity, minHeight: controlTarget, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, margin).padding(.top, 4)
+        .accessibilityValue(showsQuiet ? L("Развёрнуто") : L("Свёрнуто"))
+        .accessibilityIdentifier("teamQuiet")
+    }
+
+    /// Something on a Home this device has not had on screen.
+    private func hasNew(on source: HomeClient) -> Bool {
+        library.team(on: source).contains { member in
+            member.isDesk ? newsroom.feed(member.route, on: source).unseen > 0 : marks.isUnread(member.profile, on: source)
         }
     }
 
-    private func member(_ member: TeamMember, on source: HomeClient) -> some View {
-        let place = HomePlace.reader(member.route)
-        return row(place, identifier: "teamMember-" + member.profile.id) { TeamMemberRow(member: member, source: source, selected: selection == place) }
-            .modifier(TeamMenu(member: member, source: source, renaming: $renaming, moving: $moving))
+    /// The home ends with its quiet doors: the numbers, with the fullest limit as a figure, and who is hidden here.
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button { open(.statistics, AnyHashable(HomePlace.statistics)) } label: {
+                HStack(spacing: 6) {
+                    Label(L("Статистика"), systemImage: "chart.bar")
+                    if limits.scope == scope, let limit = Shelf.limit(limits.accounts) {
+                        Text(verbatim: "· " + (limit.weekly ? L("Лимит недели") : L("Лимит")).lowercased(with: L10n.locale) + " " + limit.used.formatted(.percent.precision(.fractionLength(0))))
+                            .monospacedDigit().foregroundStyle(limit.used >= 0.9 ? AppTheme.warning : AppTheme.faint)
+                    }
+                }
+                .foregroundStyle(AppTheme.secondaryText)
+                .frame(minHeight: max(32, controlTarget * 0.8)).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .zoomSource(AnyHashable(HomePlace.statistics), in: zoom)
+            .accessibilityIdentifier("homeStatistics")
+            HiddenEmployeesButton().frame(minHeight: max(32, controlTarget * 0.8))
+        }
+        .font(RowMetrics.preview)
+        .padding(.horizontal, margin).padding(.top, 14)
     }
 
     /// A row is its own button. Beside an open place it wears a soft plate when it is the one open.
@@ -146,27 +280,6 @@ struct HomeView: View {
         .padding(.horizontal, split ? margin - HomeMetrics.plate : 0)
         .accessibilityIdentifier(identifier)
         .accessibilityAddTraits(selection == place ? .isSelected : [])
-    }
-
-    private func homeHeader(_ source: HomeClient) -> some View {
-        let collapsed = library.collapsedDeviceIDs.contains(source.id)
-        return Button { withAnimation(.smooth(duration: 0.25)) { library.setCollapsed(!collapsed, client: source) } } label: {
-            HStack(spacing: 6) {
-                TeamHomeTitle(source: source)
-                Image(systemName: "chevron.forward").imageScale(.small).rotationEffect(.degrees(collapsed ? 0 : 90))
-                Spacer(minLength: 0)
-            }
-            .font(AppTypography.label).foregroundStyle(AppTheme.secondaryText)
-            .frame(maxWidth: .infinity, minHeight: controlTarget, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, margin).padding(.top, 18)
-        .accessibilityValue(collapsed ? L("Свёрнуто") : L("Развёрнуто"))
-        .accessibilityIdentifier("teamHome-" + source.id)
-        .contextMenu {
-            Button(L("Переименовать…"), systemImage: "pencil") { renaming = RenameTarget(client: source) }.disabled(!source.canRenameDevice)
-        }
     }
 
     // MARK: The dock

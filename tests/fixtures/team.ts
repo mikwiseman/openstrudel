@@ -2,9 +2,10 @@
  * edition whose lead story carries a picture the fixture serves itself, a second desk named Startups whose edition has a name
  * of its own, and three ordinary employees: one working (its request is held until released), one whose latest scheduled run
  * failed, and one that gets a new result when the control port is asked. The control port can also make the main assistant
- * ask for an approval, so the chat shows a card. The second Home has one employee. No real accounts or Telegram: the
- * subscription's limits are the only invented answer of the Home itself; scheduled runs stay quiet; every name, company,
- * story and number is invented. */
+ * ask for an approval, so the chat shows a card. A Telegram group of the first Home is asked four questions every evening
+ * but Saturday, and two people have answered them for eighteen days. The second Home has one employee. No real accounts or
+ * Telegram: the subscription's limits are the only invented answer of the Home itself; scheduled runs stay quiet; every
+ * name, company, story and number is invented. */
 import { createServer } from "node:http";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { mkdirSync } from "node:fs";
@@ -13,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { OpenStrudelRuntime } from "../../src/runtime.js";
 import { publishEdition, publishStory } from "../../src/news.js";
+import { recordAnswer, recordPoll } from "../../src/check-ins.js";
 import type { CodexEngine } from "../../src/types.js";
 
 const output = resolve(process.argv[2]!);
@@ -90,10 +92,10 @@ const ran = (schedule: { id: string; conversationId: string }, scheduledFor: str
     .run(`fixture-${schedule.id}-${scheduledFor}`, schedule.id, schedule.conversationId, scheduledFor, status, scheduledFor, error);
 /** A scheduled run with its whole retained chain, as the scheduler leaves it: the hidden request, the answer, the receipt.
  * The Home's activity reads results from exactly this. */
-const produced = (schedule: { id: string; conversationId: string; prompt: string }, scheduledFor: string, text: string) => {
+const produced = (schedule: { id: string; conversationId: string; prompt: string }, scheduledFor: string, text: string, outcome?: string) => {
   const runId = `fixture-${schedule.id}-${scheduledFor}`;
   const request = store.addMessage({ conversationId: schedule.conversationId, channel: "api", direction: "inbound", externalId: "schedule:" + runId, text: schedule.prompt });
-  const answer = store.addMessage({ conversationId: schedule.conversationId, channel: "api", direction: "outbound", replyToId: request.id, text });
+  const answer = store.addMessage({ conversationId: schedule.conversationId, channel: "api", direction: "outbound", replyToId: request.id, text, outcome });
   store.db.prepare("UPDATE messages SET hidden=1, created_at=? WHERE id=?").run(scheduledFor, request.id);
   store.db.prepare("UPDATE messages SET created_at=? WHERE id=?").run(new Date(Date.parse(scheduledFor) + 60_000).toISOString(), answer.id);
   store.db.prepare("INSERT INTO schedule_runs(id,schedule_id,conversation_id,scheduled_for,status,created_at,message_id) VALUES(?,?,?,?,'completed',?,?)")
@@ -189,10 +191,44 @@ await runtime.messages.reportProblem(tutorChat.id, `fixture-${tutorEvening.id}-$
 const coach = store.createProfile({ name: "Тренер", instructions: "Составляй короткие тренировки.", purpose: "Утренний план тренировки на двадцать минут", appearance: { version: 1, kind: "fold", tone: 6 } });
 const coachChat = store.profileConversation(coach.id);
 const coachMorning = runtime.scheduler.save({ conversationId: coachChat.id, name: "План на утро", prompt: "Составить план", cron: "45 6 * * *", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
-produced(coachMorning, at(1, "06:45"), "План на сегодня: **растяжка и планка**, двадцать минут.");
+// The result says in its own line what is now true; the team row shows that line instead of the report's first words.
+produced(coachMorning, at(1, "06:45"), "План на сегодня: **растяжка и планка**, двадцать минут.", "План на утро готов: двадцать минут.");
 runtime.scheduler.save({ conversationId: coachChat.id, name: "Итоги недели", prompt: "Подвести итоги", cron: "0 20 * * 0", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
 const arrive = () => store.addMessage({ conversationId: coachChat.id, channel: "api", direction: "outbound",
   text: "План на сегодня: **лёгкий бег и приседания**, двадцать минут.\n\nТехника — в [памятке о приседаниях](<https://trener.example/guide/squat_(basic)>) и в [разминке](<https://trener.example/warm_up_plan>)." });
+
+// MARK: The evening polls
+
+// Four questions in one group, Sunday to Friday. Аня answers every evening; Марк missed one and has not answered today.
+// His calm fell this week, and her energy today is far above her usual: both are things the page should notice.
+store.linkTelegramChat({ chatId: "-4242", title: "Вечерний круг", allowedSenders: ["42", "77"] });
+const circle = store.connectTelegramGroup("-4242").conversationId!;
+const asked: Array<[string, string, number[], Array<number | null>]> = [
+  ["спокойствие", "Спокойствие: насколько спокойным был день? 1 — совсем нет; 10 — полностью.",
+    [6, 7, 6, 5, 7, 6, 6, 7, 5, 6, 7, 6, 7, 6, 7, 6, 7, 7], [7, 6, 7, 6, 7, 6, 7, 6, null, 7, 6, 4, 4, 3, 5, 4, 4, null]],
+  ["фокус", "Фокус: сколько из задуманного получилось? 1 — почти ничего; 10 — всё.",
+    [7, 8, 7, 6, 8, 7, 7, 8, 6, 7, 8, 7, 8, 7, 8, 7, 6, 8], [6, 6, 7, 5, 6, 7, 6, 6, null, 6, 5, 6, 7, 6, 6, 7, 6, null]],
+  ["энергия", "Энергия: сколько было сил? 1 — почти не было; 10 — через край.",
+    [6, 6, 5, 6, 7, 6, 5, 6, 6, 5, 6, 6, 5, 6, 6, 5, 6, 9], [7, 7, 8, 7, 6, 7, 8, 7, null, 8, 7, 7, 8, 7, 7, 8, 7, null]],
+  ["настроение", "Настроение: как вы себя чувствовали? 1 — плохо; 10 — отлично.",
+    [7, 7, 8, 7, 7, 8, 7, 7, 6, 7, 8, 7, 7, 8, 7, 7, 8, 8], [6, 7, 6, 7, 6, 6, 7, 6, null, 6, 6, 7, 6, 5, 6, 6, 7, null]],
+];
+for (const [name, question, anya, mark] of asked) {
+  const options = Array.from({ length: 10 }, (_, i) => String(i + 1));
+  const schedule = runtime.scheduler.save({ conversationId: circle, name: "Пульс · " + name, prompt: "", cron: "30 18 * * 0-5",
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, delivery: "bound", poll: { question, options } });
+  // The clock never asks while the fixture runs: its answers are the ones written here.
+  store.db.prepare("UPDATE schedules SET next_run_at='2099-01-01T15:30:00.000Z' WHERE id=?").run(schedule.id);
+  anya.forEach((value, index) => {
+    const daysAgo = anya.length - 1 - index, date = day(daysAgo), when = new Date(); when.setDate(when.getDate() - daysAgo);
+    // No poll on a past Saturday. Today is always asked, so the page reads the same on any day the fixture runs.
+    if (daysAgo > 0 && when.getDay() === 6) return;
+    const pollId = `fixture-${schedule.id}-${date}`, at = new Date(Date.now() - daysAgo * 86_400_000).toISOString();
+    recordPoll(store, { pollId, scheduleId: schedule.id, conversationId: circle, chatId: "-4242", messageId: null, localDate: date, question, options, createdAt: at });
+    recordAnswer(store, { pollId, userId: "42", userName: "Аня", optionIds: [value - 1], at });
+    if (mark[index] != null) recordAnswer(store, { pollId, userId: "77", userName: "Марк", optionIds: [mark[index]! - 1], at });
+  });
+}
 
 // MARK: The second Home
 
@@ -201,6 +237,13 @@ const gardenerChat = second.runtime.store.profileConversation(gardener.id);
 const garden = second.runtime.store.addMessage({ conversationId: gardenerChat.id, channel: "api", direction: "outbound", text: "На этой неделе: укрыть розы и убрать шланги до заморозков." });
 second.runtime.store.db.prepare("UPDATE messages SET created_at=? WHERE id=?").run(at(3, "10:00"), garden.id);
 second.runtime.scheduler.save({ conversationId: gardenerChat.id, name: "Дела в саду", prompt: "Составить список", cron: "0 10 * * 6", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+// Two cards wait on the second Home, raised as an employee's turn raises them: words that will leave, and a promise
+// with its day. Neither has a Telegram chat, so they live in the app; closing either needs no model turn.
+const raised = { conversationId: gardenerChat.id, messageId: garden.id, channel: "api" as const, profile: second.runtime.store.getProfile(gardener.id)!, sendable: () => false };
+await second.runtime.messages.cards.raise({ kind: "send", title: "Отправить соседу про шланги?", reason: "Он спрашивал во вторник.", to: "Сосед", via: "Почта",
+  subject: "Шланги и розы", text: "Добрый день. Шланги уберём в субботу, розы укроем в воскресенье." }, raised);
+await second.runtime.messages.cards.raise({ kind: "due", title: "Укрыть розы до заморозков", reason: "Обещали на прошлой неделе.",
+  due: new Date(Date.now() + 86_400_000).toLocaleDateString("sv-SE") }, raised);
 
 // MARK: Control
 
@@ -229,7 +272,7 @@ const control = createServer(async (req, res) => {
   if (url.pathname === "/release") first.release();
   if (url.pathname === "/work") work();
   if (url.pathname === "/ask") void runtime.messages.handle({ channel: "api", text: "Отправь письмо в «Лодку» с новыми условиями аренды", byOwner: true }).catch(() => undefined);
-  res.end(JSON.stringify({ news: news.id, startups: startups.id, working: recipes.id, failing: tutor.id, fresh: coach.id, gardener: gardener.id, main: main.id,
+  res.end(JSON.stringify({ news: news.id, startups: startups.id, working: recipes.id, failing: tutor.id, fresh: coach.id, gardener: gardener.id, main: main.id, polls: circle,
     team: store.listTeam().map(p => ({ id: p.id, name: p.name, news: p.news, working: p.working, failing: p.failing, nextRunAt: p.nextRunAt, previewAt: p.previewAt })) }));
 });
 await new Promise<void>(done => control.listen(0, "127.0.0.1", done));

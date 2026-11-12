@@ -11,6 +11,8 @@ extension EnvironmentValues {
 struct PlaceCommand: Identifiable {
     let id: String
     let title: String
+    /// A page of the home (what waits, the polls, Progress, Statistics) rather than a row of the team list.
+    var page = false
     let open: () -> Void
 }
 

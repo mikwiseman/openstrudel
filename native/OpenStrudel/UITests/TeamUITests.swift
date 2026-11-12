@@ -1,7 +1,8 @@
 import XCTest
 
-/// Runs against tests/fixtures/team.ts on a disposable simulator. Home is the root: today's work as tiles, the team as
-/// rows, one composer capsule and search; there is no tab bar. Every place opens from a tile or a row and leads back.
+/// Runs against tests/fixtures/team.ts on a disposable simulator. Home is the root: what waits as a card, today's work
+/// as tiles, the team as one list, one composer capsule and search; there is no tab bar. Every place opens from a card,
+/// a tile or a row and leads back.
 final class TeamUITests: XCTestCase {
     private var control = ""
     private let environment = ProcessInfo.processInfo.environment
@@ -34,32 +35,118 @@ final class TeamUITests: XCTestCase {
         // 1. Home is the first screen: no tab bar, the wordmark, the shelf, the team, and one way to write.
         let home = app.descendants(matching: .any)["homeRoot"]
         XCTAssertTrue(home.waitForExistence(timeout: 40), app.debugDescription)
-        XCTAssertEqual(app.tabBars.count, 0, "Insights, Progress and Statistics open from their tiles")
+        XCTAssertEqual(app.tabBars.count, 0, "What waits, Progress and Statistics open from the home itself")
         XCTAssertTrue(app.staticTexts["OpenStrudel"].firstMatch.exists, app.debugDescription)
         let composer = app.buttons["homeComposer"], search = app.buttons["openChats"]
         XCTAssertTrue(composer.waitForExistence(timeout: 10) && search.exists, app.debugDescription)
         XCTAssertFalse(app.textFields["Сообщение"].exists, "The home's capsule opens the composer; it is not a second one")
 
-        // 2. The main assistant, the desks, then the others by name; the second Home under its own name with its assistant.
+        // 2. The chat first, then one list: who has something waiting, who is working, then the latest answers.
         let lead = app.buttons["teamLead"]
         let rows = try ["news", "startups", "failing", "working", "fresh"].map { app.buttons["teamMember-" + (try id($0))] }
         XCTAssertTrue(lead.waitForExistence(timeout: 10), app.debugDescription)
         for row in rows { XCTAssertTrue(row.waitForExistence(timeout: 20), app.debugDescription) }
         XCTAssertEqual(rows.map(\.label), ["News", "Startups", "Репетитор", "Рецепты", "Тренер"])
-        let tops = ([lead] + rows).map(\.frame.minY)
-        XCTAssertEqual(tops, tops.sorted(), "Desks first, then by name")
         for row in [lead] + rows { XCTAssertGreaterThanOrEqual(row.frame.height, 44) }
         let failing = rows[2], working = rows[3], fresh = rows[4]
         try await expect(working, says: "Работает…")
         try await expect(failing, says: "Не получилось")
         XCTAssertFalse(value(fresh).contains("Есть новое"), "Everything written before the first meeting counts as seen")
+        // A result that says what is now true is shown by that line, not by the report's first words.
+        try await expect(fresh, says: "План на утро готов: двадцать минут.")
 
-        // 3. The shelf: each desk's lead, what matters, the next run, the limit and progress, each from what the Home says.
+        XCTAssertLessThan(lead.frame.minY, failing.frame.minY)
+        XCTAssertLessThan(failing.frame.minY, working.frame.minY, "Whoever has something waiting comes first")
+        for row in [rows[0], rows[1], fresh] { XCTAssertLessThan(working.frame.minY, row.frame.minY, "Then whoever is working") }
+
+        // 2a. Two Homes make one list. A Home is a word on a row and a filter over the list: «Все», then each Home by
+        // name. An employee pinned from its menu stands right under the chat.
+        let all = app.buttons["teamHome-all"]
+        let office = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "teamHome-", "Тестовый Mac")).firstMatch
+        let cabin = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "teamHome-", "Дачный Mac")).firstMatch
+        let gardener = app.buttons["teamMember-" + (try id("gardener"))]
+        XCTAssertTrue(all.waitForExistence(timeout: 10) && office.exists && cabin.exists, app.debugDescription)
+        XCTAssertTrue(all.isSelected && !cabin.isSelected, app.debugDescription)
+        XCTAssertTrue(gardener.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(value(gardener).contains("Дачный Mac"), "Another Home's employee says where it lives")
+        XCTAssertFalse(value(fresh).contains("Тестовый Mac"), "The chat's own Home goes without saying")
+        bring(all, in: app)
+        capture("home-all", app)
+        office.tap()
+        XCTAssertTrue(gardener.waitForNonExistence(timeout: 10), app.debugDescription)
+        cabin.tap()
+        XCTAssertTrue(gardener.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(fresh.waitForNonExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "teamAssistant-")).firstMatch.exists, "Its own assistant is listed with it")
+        XCTAssertTrue(cabin.isSelected)
+        capture("home-one-home", app)
+        all.tap()
+        XCTAssertTrue(fresh.waitForExistence(timeout: 10), app.debugDescription)
+        bring(fresh, in: app)
+        fresh.press(forDuration: 1.2)
+        let pin = app.buttons["Закрепить"]
+        XCTAssertTrue(pin.waitForExistence(timeout: 5), app.debugDescription); pin.tap()
+        try await expect(fresh, says: "Закреплено")
+        XCTAssertLessThan(fresh.frame.minY, failing.frame.minY, "A pinned employee stands above the rest")
+        for _ in 0..<3 { home.swipeDown() }
+        capture("home-pinned", app)
+        bring(fresh, in: app)
+        fresh.press(forDuration: 1.2)
+        let unpin = app.buttons["Открепить"]
+        XCTAssertTrue(unpin.waitForExistence(timeout: 5), app.debugDescription); unpin.tap()
+        XCTAssertFalse(value(fresh).contains("Закреплено"))
+        for _ in 0..<3 { home.swipeDown() }
+
+        // 2b. What waits leads the home, from every Home. The second Home keeps two cards: words that will leave, which
+        // are read on their page before anything is sent, and a promise with its day. The first Home has an employee
+        // whose run failed, which is a card too. Each leaves when it is decided, and one calm sentence stays.
+        let count = app.buttons["needsCount"], readFirst = app.buttons["needRead"]
+        XCTAssertTrue(count.waitForExistence(timeout: 20), app.debugDescription)
+        try await expectLabel(count, says: "3")
+        XCTAssertTrue(readFirst.waitForExistence(timeout: 10), "Words that leave are not sent from the home")
+        XCTAssertFalse(app.buttons["needAction-send"].exists)
+        let first = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "need-")).firstMatch
+        XCTAssertTrue(first.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Садовник", "Дачный Mac")).firstMatch.exists, first.debugDescription)
+        XCTAssertTrue(value(gardener).contains("Ждёт вас"), "A row whose employee has a card waiting says so")
+        capture("home-needs", app)
+        readFirst.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["insightsRoot"].waitForExistence(timeout: 10), app.debugDescription)
+        let draft = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Шланги уберём в субботу")).firstMatch
+        XCTAssertTrue(draft.waitForExistence(timeout: 10), "The whole text stands on the page")
+        XCTAssertTrue(app.buttons["needAction-send"].exists && app.buttons["needEdit"].exists, app.debugDescription)
+        capture("needs", app)
+        app.buttons["needAction-draft"].tap()
+        XCTAssertTrue(draft.waitForNonExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "needDecided-")).firstMatch.waitForExistence(timeout: 15), app.debugDescription)
+        capture("needs-decided", app)
+        back(app)
+        // The promise leads now, with its day; «Готово» closes it from the home.
+        let done = app.buttons["needAction-done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Укрыть розы", "завтра")).firstMatch.exists, app.debugDescription)
+        done.tap()
+        // Then the employee whose run failed: its page is one press away, and «Завтра» sets it aside on this device.
+        let later = app.buttons["needAction-later"]
+        let card = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "need-failing:")).firstMatch
+        XCTAssertTrue(later.waitForExistence(timeout: 15) && card.exists, app.debugDescription)
+        XCTAssertTrue(card.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Репетитор")).firstMatch.exists, card.debugDescription)
+        app.buttons["needAction-open"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["reader"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(app.buttons["readerTitle"].value as? String, "Репетитор")
+        back(app)
+        XCTAssertTrue(later.waitForExistence(timeout: 10), app.debugDescription); later.tap()
+        let calm = app.buttons["needsCalm"]
+        XCTAssertTrue(calm.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(card.exists)
+        try await expect(failing, says: "Не получилось")
+        capture("home-calm", app)
+
+        // 3. The shelf holds answers: each desk's lead, the polls, the next run. No gauges: the limit is a figure at the
+        // foot of the home.
         let desk = app.buttons["tile-desk:" + (try newsRoute(app, rows[0]))].firstMatch
-        let tiles = ["tile-important", "tile-next", "tile-limit", "tile-progress"].map { app.buttons[$0] }
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "tile-desk:")).firstMatch.waitForExistence(timeout: 20), app.debugDescription)
-        XCTAssertTrue(tiles[0].waitForExistence(timeout: 20), app.debugDescription)
-        XCTAssertTrue((tiles[0].value as? String ?? "").contains("Репетитор"), tiles[0].debugDescription)
+        XCTAssertTrue(app.buttons["tile-next"].waitForExistence(timeout: 20), app.debugDescription)
+        for gone in ["tile-important", "tile-limit", "tile-progress"] { XCTAssertFalse(app.buttons[gone].exists, gone) }
         _ = desk
         // The picture comes from the fixture itself; give it a moment before the first look.
         try await Task.sleep(for: .seconds(2))
@@ -155,23 +242,56 @@ final class TeamUITests: XCTestCase {
         capture("second-desk", app)
         back(app)
 
-        // 10. Statistics, what matters and progress are pages behind their tiles.
-        XCTAssertTrue(tiles[2].waitForExistence(timeout: 20), app.debugDescription)
-        XCTAssertEqual(tiles[2].value as? String, "68 %".replacingOccurrences(of: " ", with: "\u{a0}"), tiles[2].debugDescription)
-        scrollShelf(app, to: tiles[2]); tiles[2].tap()
+        // 10. Statistics opens from the foot of the home, which says the fullest limit as a figure; the limits in full
+        // are a step further. What waits and the recent results are one page behind the home's lead.
+        let statistics = app.buttons["homeStatistics"]
+        XCTAssertTrue(statistics.waitForExistence(timeout: 20), app.debugDescription)
+        bring(statistics, in: app)
+        try await expectLabel(statistics, says: "68 %".replacingOccurrences(of: " ", with: "\u{a0}"))
+        statistics.tap()
         XCTAssertTrue(app.descendants(matching: .any)["statisticsRoot"].waitForExistence(timeout: 10), app.debugDescription)
         try await Task.sleep(for: .seconds(2))
         capture("statistics", app)
-        back(app)
-        scrollShelf(app, to: tiles[0]); tiles[0].tap()
+        let progress = app.buttons["openProgress"]
+        for _ in 0..<8 where !progress.exists || !progress.isHittable { app.swipeUp() }
+        XCTAssertTrue(progress.waitForExistence(timeout: 10), app.debugDescription); progress.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["progressRoot"].waitForExistence(timeout: 10), app.debugDescription)
+        capture("progress", app)
+        back(app); back(app)
+        for _ in 0..<4 { home.swipeDown() }
+        XCTAssertTrue(calm.waitForExistence(timeout: 10), app.debugDescription); calm.tap()
         XCTAssertTrue(app.descendants(matching: .any)["insightsRoot"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "insight-")).firstMatch.waitForExistence(timeout: 15), app.debugDescription)
         capture("insights", app)
         back(app)
-        scrollShelf(app, to: tiles[3]); tiles[3].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["progressRoot"].waitForExistence(timeout: 10), app.debugDescription)
-        capture("progress", app)
-        back(app)
+
+        // 10a. The evening polls are a place behind their tile: the day's answers with the people side by side, what
+        // stands out, each question over the weeks, and the chat they live in.
+        let polls = app.buttons["tile-checkIns"]
+        XCTAssertTrue(polls.waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertEqual(polls.label, "Пульс")
+        XCTAssertTrue((polls.value as? String ?? "").contains("Аня: Спокойствие 7"), polls.debugDescription)
+        bring(polls, in: app); polls.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["checkInsRoot"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(app.staticTexts["checkInDay"].label, "Сегодня")
+        let anya = app.descendants(matching: .any)["checkInPerson-42"], mark = app.descendants(matching: .any)["checkInPerson-77"]
+        XCTAssertTrue(anya.waitForExistence(timeout: 10) && mark.exists, app.debugDescription)
+        XCTAssertTrue((anya.value as? String ?? "").contains("Энергия 9"), anya.debugDescription)
+        XCTAssertTrue((mark.value as? String ?? "").contains("Пока без ответа"), mark.debugDescription)
+        // His calm fell against the week before, and her energy today is far above her usual.
+        for kind in ["week:", "unusual:"] {
+            XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "checkInStandout-" + kind)).firstMatch.exists, app.debugDescription)
+        }
+        capture("polls", app)
+        // The chat the polls live in is one tap away, and it is only read.
+        let source = app.buttons["checkInSource"]
+        for _ in 0..<6 where !source.exists || !source.isHittable { app.swipeUp() }
+        XCTAssertTrue(app.descendants(matching: .any)["checkInWeeks"].exists, app.debugDescription)
+        capture("polls-weeks", app)
+        source.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["reader"].waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertFalse(app.textFields["Сообщение"].exists)
+        back(app); back(app)
 
         // 11. The first row is the chat itself; an approval arrives there as a card with its two answers.
         lead.tap()
@@ -237,8 +357,9 @@ final class TeamUITests: XCTestCase {
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "tile-desk:")).firstMatch.waitForExistence(timeout: 20), app.debugDescription)
         try await Task.sleep(for: .seconds(2))
         capture("ipad-home-chat", app)
+        // The desk's row sits lower in the one list now: it is brought above the search capsule before it is pressed.
         let desk = app.buttons["teamMember-" + (try XCTUnwrap(state["news"] as? String))]
-        XCTAssertTrue(desk.waitForExistence(timeout: 20), app.debugDescription); desk.tap()
+        open(desk, in: app)
         XCTAssertTrue(app.scrollViews["newsToday"].waitForExistence(timeout: 15), app.debugDescription)
         XCTAssertTrue(app.descendants(matching: .any)["homeRoot"].exists, "The home stays beside the desk")
         try await Task.sleep(for: .seconds(2))
@@ -314,6 +435,13 @@ final class TeamUITests: XCTestCase {
         let tile = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "tile-desk:", "News")).firstMatch
         XCTAssertTrue(tile.waitForExistence(timeout: 20), app.debugDescription)
         return String(tile.identifier.dropFirst("tile-desk:".count))
+    }
+
+    /// Brings an element of the home between its top and the dock.
+    @MainActor private func bring(_ element: XCUIElement, in app: XCUIApplication) {
+        let home = app.descendants(matching: .any)["homeRoot"], dock = app.buttons["homeComposer"].exists ? app.buttons["homeComposer"] : app.buttons["openChats"]
+        for _ in 0..<4 where element.exists && element.frame.minY < 110 { home.swipeDown(velocity: .slow) }
+        for _ in 0..<6 where element.exists && dock.exists && element.frame.maxY > dock.frame.minY - 12 { home.swipeUp(velocity: .slow) }
     }
 
     /// A row below the dock is scrolled above it before it is pressed.
