@@ -182,6 +182,72 @@ final class NewspaperUITests: XCTestCase {
         capture("17-search", app)
     }
 
+    /// A walk of whatever desk a Home serves, for looking at real stories and drafts: it only opens the pages and keeps
+    /// their screenshots. The one thing it checks is that a draft shows no Markdown marks. Pass the control URL of a
+    /// Home that answers `/invite`; nothing about its stories is written here.
+    @MainActor
+    func testAWalkOfAnyDesk() async throws {
+        continueAfterFailure = false
+        guard let home = environment["OPENSTRUDEL_NEWS_WALK"] else { throw XCTSkip("Pass the control URL of a Home whose desk to walk.") }
+        control = home
+        let app = launch()
+        try await pair(app, "/invite")
+        let consent = app.buttons["acceptAIDataSharing"]
+        if consent.waitForExistence(timeout: 8) { consent.tap() }
+        let tile = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "tile-desk:")).firstMatch
+        XCTAssertTrue(tile.waitForExistence(timeout: 40), app.debugDescription)
+        capture("01-home", app)
+        tile.tap()
+        let front = app.scrollViews["newsToday"]
+        XCTAssertTrue(front.waitForExistence(timeout: 15), app.debugDescription)
+        let leadTile = app.buttons["newsLead"]
+        XCTAssertTrue(leadTile.waitForExistence(timeout: 10), app.debugDescription)
+        // A picture named by the lead has a moment to arrive.
+        try await Task.sleep(for: .seconds(4))
+        capture("02-front", app)
+        for index in 3...6 { front.swipeUp(velocity: .slow); capture(String(format: "%02d-front", index), app) }
+        for _ in 0..<12 where !leadTile.isHittable { front.swipeDown() }
+        leadTile.tap()
+        let story = app.scrollViews["newsStory"]
+        XCTAssertTrue(story.waitForExistence(timeout: 10), app.debugDescription)
+        capture("07-story", app)
+        story.swipeUp(velocity: .slow); capture("08-story", app)
+        story.swipeUp(velocity: .slow); capture("09-story", app)
+        back(app)
+        XCTAssertTrue(front.waitForExistence(timeout: 10), app.debugDescription)
+        let posts = app.buttons["newsWay-posts"]
+        for _ in 0..<6 where !posts.isHittable { front.swipeDown() }
+        posts.tap()
+        XCTAssertTrue(app.scrollViews["newsPosts"].waitForExistence(timeout: 10), app.debugDescription)
+        capture("10-posts", app)
+        let draft = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "post-")).firstMatch
+        if draft.waitForExistence(timeout: 5) {
+            draft.tap()
+            let text = app.textViews["postText"]
+            XCTAssertTrue(text.waitForExistence(timeout: 30), app.debugDescription)
+            let shown = text.value as? String ?? ""
+            XCTAssertFalse(shown.contains("**") || shown.contains("]("), "a draft shows its Markdown marks")
+            capture("11-post", app)
+            app.scrollViews.firstMatch.swipeUp(velocity: .slow); capture("12-post", app)
+            app.buttons["postDone"].tap()
+        }
+        back(app)
+        XCTAssertTrue(front.waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["newsWay-week"].tap()
+        let week = app.scrollViews["newsWeek"]
+        XCTAssertTrue(week.waitForExistence(timeout: 10), app.debugDescription)
+        capture("13-week", app)
+        week.swipeUp(velocity: .slow); capture("14-week", app)
+        back(app)
+        XCTAssertTrue(front.waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["newsWay-search"].tap()
+        let field = app.textFields["newsSearchField"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10), app.debugDescription)
+        field.typeText(environment["OPENSTRUDEL_NEWS_WALK_WORD"] ?? "AI")
+        try await Task.sleep(for: .seconds(2))
+        capture("15-search", app)
+    }
+
     // MARK: Helpers
 
     @MainActor private func launch() -> XCUIApplication {
