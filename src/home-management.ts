@@ -19,6 +19,17 @@ const RULES = "home.rules", MAX_RULES = 30, MAX_RULE = 500;
 export function homeRules(store: Store): HomeRule[] {
   try { const rules = JSON.parse(store.getSetting(RULES) ?? "[]"); return Array.isArray(rules) ? rules.filter(r => typeof r?.id === "string" && typeof r?.text === "string") : []; } catch { return []; }
 }
+/** Adds one line to the Home's rules; the same words are kept once. Whoever calls it has already checked who is asking. */
+export function saveHomeRule(store: Store, rule: string): HomeRule {
+  const rules = homeRules(store), text = rule.trim().replace(/\s+/g, " ");
+  if (!text || text.length > MAX_RULE) throw new Error("Сформулируйте правило в одном-двух предложениях.");
+  const kept = rules.find(r => r.text === text);
+  if (kept) return kept;
+  if (rules.length >= MAX_RULES) throw new Error("Правил уже 30: сначала снимите устаревшее.");
+  const saved = { id: randomUUID().slice(0, 8), text, at: new Date().toISOString() };
+  store.setSetting(RULES, JSON.stringify([...rules, saved]));
+  return saved;
+}
 /** The block every turn carries after its SOUL. A changed list changes the instructions, so a resumed chat receives it too. */
 export function homeRulesPrompt(store: Store): string | undefined {
   const rules = homeRules(store);
@@ -45,21 +56,15 @@ export function homeManagementTools(store: Store, engine: CodexEngine, context: 
     assertManagement(store,context);
     if (name === "record_daily_scores") return recordDailyMetrics(store, args);
     if (name === "save_home_rule" || name === "remove_home_rule") {
-      const rules = homeRules(store), text = String(args.text ?? "").trim().replace(/\s+/g, " ");
       let readBack: string;
-      if (name === "save_home_rule") {
-        if (!text || text.length > MAX_RULE) throw new Error("Сформулируйте правило в одном-двух предложениях.");
-        if (!rules.some(r => r.text === text)) {
-          if (rules.length >= MAX_RULES) throw new Error("Правил уже 30: сначала снимите устаревшее.");
-          rules.push({ id: randomUUID().slice(0, 8), text, at: new Date().toISOString() });
-        }
-        readBack = `Правило для всего Home: ${text}`;
-      } else {
-        const index = rules.findIndex(r => r.id === String(args.id ?? ""));
+      if (name === "save_home_rule") readBack = `Правило для всего Home: ${saveHomeRule(store, String(args.text ?? "")).text}`;
+      else {
+        const rules = homeRules(store), index = rules.findIndex(r => r.id === String(args.id ?? ""));
         if (index < 0) throw new Error("Такого правила нет.");
         readBack = `Правило снято: ${rules.splice(index, 1)[0]!.text}`;
+        store.setSetting(RULES, JSON.stringify(rules));
       }
-      store.setSetting(RULES, JSON.stringify(rules));
+      const rules = homeRules(store);
       store.addMessage({ conversationId: context.conversationId, channel: context.channel, direction: "outbound", text: readBack, kind: "notice" });
       return { saved: true, readBack, rules };
     }

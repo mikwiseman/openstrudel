@@ -416,6 +416,79 @@ describe("a connector's own approval to send", () => {
   });
 });
 
+describe("the same answer twice", () => {
+  const about = (amount: string) => ({ kind: "answer", title: `Corner bakery, ${amount}`, about: "Corner bakery", choices: ["Salary", "Office"] });
+  /** One round: the assistant asks about the bakery in `chat`, and `from` presses the button that reads `label`. Returns the card as sent. */
+  async function round(h: ReturnType<typeof home>, tg: ReturnType<typeof telegram>, amount: string, label: string | null, chat = 42, from = 42) {
+    h.script.run = raising(about(amount));
+    await h.adapter.processUpdate(text(42, chat, "anything new?"));
+    const card = tg.of("sendMessage").filter(message => message.reply_markup?.inline_keyboard?.length).at(-1), id = 501 + tg.of("sendMessage").indexOf(card);
+    h.script.run = async () => ({ threadId: "t", response: "NO_REPLY", events: [] });
+    if (label) await h.adapter.processUpdate(press(from, chat, id, tg.buttons(card).find(button => button.text === label)!.callback_data!));
+    return { card, id };
+  }
+
+  it("offers always, and one press saves a rule that every later turn reads", async () => {
+    const { homeRules } = await import("../src/home-management.js");
+    const tg = telegram(), h = home();
+    expect(tg.buttons((await round(h, tg, "12.40", "Salary")).card).map(b => b.text)).toEqual(["Salary", "Office", "Something else"]);
+    expect(tg.buttons((await round(h, tg, "9.10", "Salary")).card).map(b => b.text)).toEqual(["Salary", "Office", "Something else"]);
+    const third = await round(h, tg, "7.00", null);
+    expect(tg.buttons(third.card).map(b => b.text)).toEqual(["Salary", "Office", "Salary, always", "Something else"]);
+    expect(h.messages.cards.list().open[0]).toMatchObject({ content: { about: "Corner bakery" }, choices: expect.arrayContaining([{ id: "always", label: "Salary, always", role: "plain", repeats: "c0", times: 2 }]) });
+    expect(homeRules(h.store)).toEqual([]);
+    h.script.run = async () => ({ threadId: "t", response: "Filed, and I will not ask again.", events: [] });
+    await h.adapter.processUpdate(press(42, 42, third.id, tg.buttons(third.card)[2]!.callback_data!));
+    const rules = homeRules(h.store);
+    expect(rules).toHaveLength(1);
+    expect(rules[0]!.text).toMatch(/Corner bakery.*always.*Salary/);
+    expect(rules[0]!.text).not.toMatch(/7\.00|12\.40/);
+    expect(tg.of("editMessageText").at(-1).text).toMatch(/Salary, always\. Saved as a rule · Den/);
+    // The raiser hears the answer and the rule now, and every later turn carries the rule after its SOUL.
+    expect(h.runs.at(-1)!.input).toContain(rules[0]!.text);
+    expect(h.runs.at(-1)!.options!.profile).toContain(rules[0]!.text);
+    expect(h.messages.cards.list().recent[0]).toMatchObject({ answer: { choice: "always", by: "Den" }, content: { rule: rules[0]!.text } });
+    // The streak goes on through an "always": a later card about it still offers the same.
+    expect(tg.buttons((await round(h, tg, "3.30", null)).card).map(b => b.text)).toContain("Salary, always");
+  });
+
+  it("is not offered after one answer, different answers, words, or about another thing", async () => {
+    const tg = telegram(), h = home();
+    await round(h, tg, "12.40", "Salary");
+    await round(h, tg, "9.10", "Office");
+    expect(tg.buttons((await round(h, tg, "7.00", "Office")).card).map(b => b.text)).toEqual(["Salary", "Office", "Something else"]);
+    // Two in a row now: offered for the bakery. Another thing has its own count, and a card that names nothing never offers it.
+    const offered = await round(h, tg, "5.50", null);
+    expect(tg.buttons(offered.card).map(b => b.text)).toContain("Office, always");
+    for (const other of [{ title: "Flower shop, 20.00", about: "Flower shop" }, { title: "Which account?" }]) {
+      h.script.run = raising({ kind: "answer", choices: ["Salary", "Office"], ...other });
+      await h.adapter.processUpdate(text(42, 42, "anything new?"));
+      expect(tg.buttons(tg.of("sendMessage").filter(message => message.reply_markup?.inline_keyboard?.length).at(-1)).map(b => b.text)).toEqual(["Salary", "Office", "Something else"]);
+    }
+    // Words break the streak.
+    await h.adapter.processUpdate(text(42, 42, "split it this time", offered.id));
+    expect(tg.buttons((await round(h, tg, "4.40", null)).card).map(b => b.text)).toEqual(["Salary", "Office", "Something else"]);
+  });
+
+  it("becomes a rule only on an administrator's press", async () => {
+    const { homeRules } = await import("../src/home-management.js");
+    const tg = telegram(), h = home();
+    await round(h, tg, "12.40", "Salary", -100);
+    await round(h, tg, "9.10", "Salary", -100);
+    const third = await round(h, tg, "7.00", null, -100);
+    const always = tg.buttons(third.card).find(button => button.text === "Salary, always")!.callback_data!;
+    // A colleague with access may answer, but a rule for the whole Home is its administrators' to give.
+    await h.adapter.processUpdate(press(43, -100, third.id, always));
+    expect(homeRules(h.store)).toEqual([]);
+    expect(h.messages.cards.list().open).toHaveLength(1);
+    expect(tg.of("answerCallbackQuery").at(-1)).toMatchObject({ show_alert: true });
+    h.store.setSetting("access.managers", JSON.stringify(["43"]));
+    await h.adapter.processUpdate(press(43, -100, third.id, always));
+    expect(homeRules(h.store)).toHaveLength(1);
+    expect(h.messages.cards.list().open).toEqual([]);
+  });
+});
+
 describe("the other kinds", () => {
   it("closes a due card on Done with no model turn, and tells its raiser on the next turn", async () => {
     const tg = telegram(), h = home({ run: raising({ kind: "due", title: "Call the venue about Friday", reason: "Promised on the 3 November call.", due: "2026-11-12" }) });
@@ -683,6 +756,24 @@ describe("the app's list", { timeout: 30_000 }, () => {
     const draft = (await (await h.call("/v1/cards")).json()).open[0];
     await h.call(`/v1/cards/${draft.id}/answer`, { choice: "send", text: "Friday we close at 14:00." });
     expect(tg.of("sendMessage").filter(message => message.chat_id === "-100").map(message => message.text)).toEqual(["Friday we close at 14:00."]);
+  });
+
+  it("takes always from the app as an owner's rule", async () => {
+    const { homeRules } = await import("../src/home-management.js");
+    const tg = telegramBeside(), h = await served();
+    const ask = async (amount: string) => {
+      h.script.run = raising({ kind: "answer", title: `Corner bakery, ${amount}`, about: "Corner bakery", choices: ["Salary", "Office"] });
+      await h.runtime.telegram.processUpdate(text(42, 42, "anything new?"));
+      h.script.run = async () => ({ threadId: "t", response: "NO_REPLY", events: [] });
+      return h.runtime.messages.cards.list().open[0]!;
+    };
+    for (const amount of ["12.40", "9.10"]) expect((await h.call(`/v1/cards/${(await ask(amount)).id}/answer`, { choice: "c0" })).status).toBe(200);
+    const third = await ask("7.00");
+    expect(third.choices.map(choice => choice.id)).toEqual(["c0", "c1", "always", "other"]);
+    const answered = await (await h.call(`/v1/cards/${third.id}/answer`, { choice: "always" })).json();
+    expect(answered.card).toMatchObject({ state: "answered", answer: { choice: "always", via: "app", outcome: "Salary, always. Saved as a rule" } });
+    expect(homeRules(h.runtime.store).map(rule => rule.text)).toEqual([answered.card.content.rule]);
+    await vi.waitFor(() => expect(tg.of("editMessageText").at(-1)?.text).toMatch(/Saved as a rule · OpenStrudel app/));
   });
 
   it("is closed to a colleague's device", async () => {

@@ -28,6 +28,10 @@ Cards are not shown in a chat with restricted access, are not offered to a sende
 
 A chat whose Codex thread began before this tool existed gets `raise_card` and `close_card` through the per-turn tool bridge, like the management tools.
 
+## "Always" after the same answer twice
+
+A question can name what it is about (`about`: a shop, a client, a kind of request). When this chat's last two questions about the same thing got the same answer, the next card about it adds one more button: that answer, "always". Pressing it answers the card and saves one line in the Home's standing rules ("about … the answer is always …; do not ask again"), which every turn reads after its SOUL. The line names the thing and the answer, never an amount. Only a Home administrator's press, or an owner's device, makes a rule; anyone else is told so and chooses the plain answer. The rule is removed like any other, with `remove_home_rule`.
+
 ## A send shows exactly what leaves
 
 The text on a send card is shown as written, never read as formatting, and the Home's own bot sends it the same way. A card too long for one Telegram message has no buttons there: the whole of it waits in the app.
@@ -41,8 +45,12 @@ A press on Send is the approval of one call:
 
 ## For the app
 
-- `GET /v1/cards` returns `{ open, recent }`: what waits, longest first, and what was decided in the last 24 hours. Each card has `id`, `kind`, `state`, `createdAt`, `raiser {profileId, name}`, `conversationId`, `messageId`, `title` (60 characters at most), `reason`, `content` (`to`, `via`, `subject`, `text`, `details`, `due`, `url`, `nextTry`, whichever apply), `choices [{id, label, role, needsText?, url?}]`, `chat {id, title}`, `for [{id, name}]` (null: anyone with access), `canAnswer` and `answer {choice, label, text, by, via, at, outcome}`, where `via` is `telegram`, `app` or `raiser`.
+- `GET /v1/cards` returns `{ open, recent }`: what waits, longest first, and what was decided in the last 24 hours. Each card has `id`, `kind`, `state`, `createdAt`, `raiser {profileId, name}`, `conversationId`, `messageId`, `title` (60 characters at most), `reason`, `content` (`to`, `via`, `subject`, `text`, `details`, `due`, `url`, `nextTry`, `about`, `rule`, whichever apply), `choices [{id, label, role, needsText?, url?, repeats?, times?}]`, `chat {id, title}`, `for [{id, name}]` (null: anyone with access), `canAnswer` and `answer {choice, label, text, by, via, at, outcome}`, where `via` is `telegram`, `app` or `raiser`.
 - `POST /v1/cards/{id}/answer` takes `{choice}`, `{choice, text}` or `{text}`. It answers `200 {card}`, `409` with the card when it was already decided, `400` for an answer the card does not offer, `404` for an unknown card. For a send raised by the assistant, `text` with `choice: "send"` is the text as the person edited it, and that text is what leaves.
 - Both routes are for owner devices. A card for one named person who is not an owner of this Home has `canAnswer: false`.
 
-Checked by `tests/cards.test.ts` and `tests/interactions.test.ts`.
+## One way to send buttons, one place for a press
+
+Every text message goes out through `sendMessage` and the outbox, with its buttons as rows: an answer with a link, a News story with «Пост», a card, an approval. Every press arrives in one method of the Telegram adapter. The button's data names its kind (`c:` a card's choice, `np:` a post draft from a story, otherwise an answer to a question of a running turn); the person hears back at once, the update is done, and what the press started follows.
+
+Checked by `tests/cards.test.ts`, `tests/interactions.test.ts`, `tests/news-telegram.test.ts` and `tests/codex-management-transport.test.ts`.

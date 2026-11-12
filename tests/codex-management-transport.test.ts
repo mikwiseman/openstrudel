@@ -55,16 +55,16 @@ it("starts ordinary chats and resumes them across management grant and revocatio
   } finally { engine.close(); await engine.settled(); rmSync(root,{recursive:true,force:true}); }
 }, 30_000);
 
-it("gives a chat that began before cards existed the card tools on its next turn", async () => {
+it("gives a chat that began before cards and Home rules existed those tools on its next turn", async () => {
   const root = mkdtempSync(join(tmpdir(), "strudel-card-transport-"));
   const engine = new CodexEngineAdapter({codexHome:join(root,"codex"),workingDirectory:root});
-  served = ["raise_card", "close_card"];
+  served = ["raise_card", "close_card", "save_home_rule", "remove_home_rule"];
   try {
     // The thread starts with no Home tools at all, as a chat from before this release did.
     const before = await engine.run("An older chat",{access:true});
     const call = vi.fn(async()=>({fixture:true}));
     const tool = (name: string) => ({type:"function" as const,name,description:"Fixture",inputSchema:{type:"object",properties:{}}});
-    const after = await engine.run("The same chat today",{threadId:before.threadId,access:true,tools:{definitions:[tool("raise_card"),tool("close_card")],call}});
+    const after = await engine.run("The same chat today",{threadId:before.threadId,access:true,tools:{definitions:served.map(tool),call}});
     expect(after.threadId).toBe(before.threadId);
     expect(call).toHaveBeenCalledWith("raise_card",{});
   } finally { served = ["read_model_settings"]; engine.close(); await engine.settled(); rmSync(root,{recursive:true,force:true}); }

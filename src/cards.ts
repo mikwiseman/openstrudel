@@ -4,7 +4,8 @@ import type { MessageService } from "./messages.js";
 import type { EmployeeProfile, Interaction, MessageInput, SendAction, TelegramButton } from "./types.js";
 import type { Entity, TelegramText } from "./telegram-format.js";
 import { DONT_SEND, SEND, approvedTool, safeURL } from "./interactions.js";
-import { accessOwners, hasAccess } from "./telegram-tools.js";
+import { accessOwners, hasAccess, managementPeople } from "./telegram-tools.js";
+import { saveHomeRule } from "./home-management.js";
 import { isProtectedTelegramAudience } from "./authorization.js";
 import { ownerTimezone } from "./timezone.js";
 import { quietReply } from "./operations.js";
@@ -16,8 +17,10 @@ import { quietReply } from "./operations.js";
  */
 export const cardKinds = ["send", "answer", "due", "connect", "failed"] as const;
 export type CardKind = typeof cardKinds[number];
-export interface CardChoice { id: string; label: string; role: "primary" | "plain" | "link"; needsText?: true; url?: string }
-export interface CardContent { to?: string; via?: string; subject?: string | null; text?: string; details?: Array<{ label: string; value: string }>; due?: string; url?: string; nextTry?: string }
+export interface CardChoice { id: string; label: string; role: "primary" | "plain" | "link"; needsText?: true; url?: string;
+  /** "Always": the choice the person gave the last `times` times about the same thing. */ repeats?: string; times?: number }
+export interface CardContent { to?: string; via?: string; subject?: string | null; text?: string; details?: Array<{ label: string; value: string }>; due?: string; url?: string; nextTry?: string;
+  /** What a question is about, when the same question comes back for it. */ about?: string; /** The Home rule an "always" saved. */ rule?: string }
 export interface CardAnswer { choice: string | null; label: string; text: string | null; by: string; via: "telegram" | "app" | "raiser"; at: string; outcome: string | null }
 export interface Card {
   id: string; kind: CardKind; state: "open" | "answered"; createdAt: string;
@@ -48,6 +51,8 @@ const WORDS = {
   words: ["Reply to this message with your answer.", "Ответьте на это сообщение своими словами."], newDate: ["Reply to this message with the new date.", "Ответьте на это сообщение новой датой."],
   decided: ["Already decided: {0}", "Уже решено: {0}"], waitsFor: ["This card waits for {0}.", "Эта карточка ждёт: {0}."], someone: ["someone with access to this Home", "человека с доступом к этому Home"],
   closed: ["This card is closed.", "Эта карточка закрыта."], recorded: ["Recorded", "Записано"], app: ["OpenStrudel app", "приложение OpenStrudel"],
+  always: ["{0}, always", "{0}, всегда"], ruleSaved: ["Saved as a rule", "Сохранено как правило"],
+  ruleAdmin: ["A rule for the whole Home is given by its administrators. Choose the answer for this one.", "Правило для всего Home задают его администраторы. Выберите ответ на этот раз."],
   long: ["The full text is in OpenStrudel. Open it there to read and decide.", "Полный текст в OpenStrudel. Откройте его там, чтобы прочитать и решить."],
 } as const;
 const russian = (text: string) => /[А-Яа-яЁё]/.test(text);
@@ -111,7 +116,12 @@ export class Cards {
     } else if (kind === "answer") {
       const labels = (Array.isArray(args.choices) ? args.choices : []).map(label => str(label, 24, "each choice")).filter((label): label is string => Boolean(label));
       if (labels.length < 2 || labels.length > 3 || new Set(labels).size !== labels.length) throw new Error("Give two or three different short choices.");
-      choices = [...labels.map((label, index): CardChoice => ({ id: `c${index}`, label, role: index ? "plain" : "primary" })), { id: "other", label: word("other", ru), role: "plain", needsText: true }];
+      const about = str(args.about, 60, "what it is about"), repeat = about ? this.repeated(context.conversationId, about, labels) : null;
+      if (about) content.about = about;
+      choices = [...labels.map((label, index): CardChoice => ({ id: `c${index}`, label, role: index ? "plain" : "primary" })),
+        // The same answer twice about the same thing: the card offers to make it a rule.
+        ...repeat ? [{ id: "always", label: word("always", ru, labels[repeat.index]), role: "plain" as const, repeats: `c${repeat.index}`, times: repeat.times }] : [],
+        { id: "other", label: word("other", ru), role: "plain", needsText: true }];
     } else if (kind === "due") {
       const due = str(args.due, 10, "the date (due)", true)!;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(due) || Number.isNaN(Date.parse(due + "T00:00:00Z"))) throw new Error("due is a calendar date: YYYY-MM-DD.");
@@ -146,6 +156,28 @@ export class Cards {
     const held = this.store.db.prepare(`SELECT c.id FROM cards c JOIN messages m ON m.id=c.message_id
       WHERE m.channel='api' AND m.external_id=? AND c.chat_id IS NOT NULL AND c.telegram_message_id IS NULL AND c.state='open' ORDER BY c.created_at,c.rowid`).all(requestExternalId);
     for (const card of held) await this.show(this.row(String(card.id))!);
+  }
+
+  /** The answer a decided question stands for: the label of the choice pressed. An "always" stands for the choice it repeats; words stand for nothing. */
+  private chosen(row: Row): string | undefined {
+    const choice = row.choices.find(item => item.id === row.answer?.choice);
+    return (choice?.repeats ? row.choices.find(item => item.id === choice.repeats) : choice && /^c\d$/.test(choice.id) ? choice : undefined)?.label.toLocaleLowerCase();
+  }
+  /** How many times in a row this chat's last questions about the same thing got the same answer, when that answer is offered again. */
+  private repeated(conversationId: string, about: string, labels: string[]): { index: number; times: number } | null {
+    const past = this.rows("conversation_id=? AND kind='answer' AND state='answered'", conversationId)
+      .filter(row => row.content.about?.toLocaleLowerCase() === about.toLocaleLowerCase()).sort((a, b) => a.answered_at! < b.answered_at! ? 1 : -1);
+    const last = past[0] && this.chosen(past[0]), index = labels.findIndex(label => label.toLocaleLowerCase() === last);
+    if (!last || index < 0) return null;
+    const times = past.findIndex(row => this.chosen(row) !== last);
+    return (times < 0 ? past.length : times) >= 2 ? { index, times: times < 0 ? past.length : times } : null;
+  }
+  /** "Always" becomes one line in the Home's rules, which every turn reads: what it is about and the answer, never an amount. */
+  private always(row: Row, choice: CardChoice, administrator: boolean): string {
+    const ru = speaksRussian(row), answer = row.choices.find(item => item.id === choice.repeats)?.label ?? choice.label, raiser = this.raiserName(row);
+    if (!administrator) throw new Error(word("ruleAdmin", ru));
+    const line = ru ? `про «${row.content.about}» ответ всегда «${answer}»; больше не спрашивать.` : `about "${row.content.about}" the answer is always "${answer}"; do not ask again.`;
+    return saveHomeRule(this.store, raiser ? `${raiser}: ${line}` : line.charAt(0).toLocaleUpperCase() + line.slice(1)).text;
   }
 
   /** People this Home knows by their own chat with its bot and trusts with its services. */
@@ -285,9 +317,12 @@ export class Cards {
     if (!choice || choice.role === "link") return { toast: word("closed", ru), alert: true };
     if (choice.needsText) return { toast: word(choice.id === "date" ? "newDate" : "words", ru), alert: false };
     const by: CardPerson = { via: "telegram", userId: input.userId!, name: input.name };
-    const settled = this.settle(row, choice, null, by);
+    let rule: string | undefined;
+    if (choice.repeats) try { rule = this.always(row, choice, accessOwners(this.store).includes(input.userId!) || managementPeople(this.store).includes(input.userId!)); }
+      catch (error) { return { toast: error instanceof Error ? error.message : String(error), alert: true }; }
+    const settled = this.settle(row, choice, null, by, rule);
     if (!settled) return { toast: word("decided", ru, this.row(row.id)?.answer?.label ?? ""), alert: false };
-    return { toast: choice.label, alert: false, carry: () => this.carry(settled, by) };
+    return { toast: rule ? word("ruleSaved", ru) : choice.label, alert: false, carry: () => this.carry(settled, by) };
   }
 
   /** An open card this person may answer in words by replying to its message. */
@@ -323,11 +358,12 @@ export class Cards {
   }
 
   /** One answer per card: the row changes only while it is still open. */
-  private settle(row: Row, choice: CardChoice | null, text: string | null, by: CardPerson): Row | null {
+  private settle(row: Row, choice: CardChoice | null, text: string | null, by: CardPerson, rule?: string): Row | null {
     const at = new Date().toISOString(), ru = speaksRussian(row);
     const answer: CardAnswer = { choice: choice?.id ?? null, label: choice?.label ?? (text ?? "").replace(/\s+/g, " ").slice(0, 80), text: text || null,
-      by: by.via === "telegram" ? by.name : word("app", ru), via: by.via, at, outcome: null };
-    const changed = this.store.db.prepare("UPDATE cards SET state='answered',answer_json=?,answered_at=? WHERE id=? AND state='open'").run(JSON.stringify(answer), at, row.id).changes;
+      by: by.via === "telegram" ? by.name : word("app", ru), via: by.via, at, outcome: rule ? `${choice!.label}. ${word("ruleSaved", ru)}` : null };
+    const changed = this.store.db.prepare("UPDATE cards SET state='answered',answer_json=?,answered_at=?,content_json=? WHERE id=? AND state='open'")
+      .run(JSON.stringify(answer), at, JSON.stringify(rule ? { ...row.content, rule } : row.content), row.id).changes;
     return Number(changed) ? this.row(row.id) : null;
   }
   private answerLine(row: Row): string { return `«${row.title}»: ${row.answer?.text ?? row.answer?.label ?? ""}`; }
@@ -403,7 +439,10 @@ export class Cards {
     const by: CardPerson = { via: "app" };
     // Words the person edited are the words that leave.
     const edited = !wordsOnly && text ? this.keep(row, { ...row.content, text }) : row;
-    const settled = this.settle(edited, wordsOnly ? null : choice, wordsOnly ? text : null, by);
+    // An owner's device speaks for the Home's owners, so its "always" is a rule.
+    let rule: string | undefined;
+    if (!wordsOnly && choice.repeats) try { rule = this.always(row, choice, true); } catch (error) { return { status: 400, card: view, error: error instanceof Error ? error.message : String(error) }; }
+    const settled = this.settle(edited, wordsOnly ? null : choice, wordsOnly ? text : null, by, rule);
     if (!settled) return { status: 409, card: this.view(this.row(id)!), error: "По этой карточке уже есть решение." };
     // What the Home does itself is done before the answer returns; a raiser's turn runs on.
     const waits = !this.needsTurn(settled) || Boolean(settled.interaction_id && this.messages.interactions.get(settled.interaction_id));
@@ -440,6 +479,7 @@ export class Cards {
       const who = row.people?.map(id => this.name(id)).join(", ") ?? "anyone with access", label = `${row.kind} card ${JSON.stringify(row.title)}`;
       if (row.state === "open") return `- [${row.id}] waiting since ${row.created_at} for ${who}: ${label}.`;
       const answer = row.answer!, head = `- answered ${answer.at} by ${answer.by}: ${label}: ${JSON.stringify(answer.text ?? answer.label)}.`;
+      if (row.content.rule) return `${head} The Home saved this as a standing rule for every chat: «${row.content.rule}» Never ask about it again.`;
       if (row.kind !== "send" || answer.choice !== "send") return head;
       if (answer.outcome) return `${head} The Home did it itself: ${answer.outcome}. Send nothing more.`;
       if (row.content.action) return `${head} The person approved this action now. Call tool ${row.content.action.tool} of ${row.content.action.server} again with exactly these arguments, changing nothing, and ask nothing more: ${JSON.stringify(row.content.action.params)}`;
