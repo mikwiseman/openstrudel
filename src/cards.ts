@@ -332,7 +332,7 @@ export class Cards {
   private answerLine(row: Row): string { return `«${row.title}»: ${row.answer?.text ?? row.answer?.label ?? ""}`; }
   private markTold(ids: string[]): void { for (const id of ids) this.store.db.prepare("UPDATE cards SET told=1 WHERE id=?").run(id); }
   private keep(row: Row, content: Kept, outcome?: string): Row {
-    this.store.db.prepare("UPDATE cards SET content_json=?,answer_json=? WHERE id=?").run(JSON.stringify(content), JSON.stringify(row.answer && outcome ? { ...row.answer, outcome } : row.answer), row.id);
+    this.store.db.prepare("UPDATE cards SET content_json=?,answer_json=? WHERE id=?").run(JSON.stringify(content), row.answer ? JSON.stringify(outcome ? { ...row.answer, outcome } : row.answer) : null, row.id);
     return this.row(row.id)!;
   }
 

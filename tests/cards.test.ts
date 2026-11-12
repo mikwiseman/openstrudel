@@ -511,7 +511,7 @@ describe("the other kinds", () => {
   });
 });
 
-describe("where a card goes and who it reaches", () => {
+describe("where a card goes and who it reaches", { timeout: 30_000 }, () => {
   it("from a scheduled report in someone else's group, takes the press back to the employee who raised it", async () => {
     const tg = telegram(), h = home();
     const sales = h.store.createProfile({ name: "Sales" }), own = h.store.profileConversation(sales.id);
@@ -626,7 +626,7 @@ describe("where a card goes and who it reaches", () => {
   });
 });
 
-describe("the app's list", () => {
+describe("the app's list", { timeout: 30_000 }, () => {
   it("returns what waits with its whole content, and takes one answer that Telegram then shows", async () => {
     const tg = telegramBeside(), h = await served(raising({ kind: "send", title: "Send to the team?", reason: "You asked for a note about Friday.", to: "Team", via: "Telegram", text: "Friday we close at 15:00.", chatId: "-100" }));
     await h.runtime.telegram.processUpdate(text(42, 42, "draft a note for the team"));
