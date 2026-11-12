@@ -431,8 +431,8 @@ struct NewsPostsPage: View {
         .paperTop()
         .environment(\.newsWords, words)
         .newsToolbar(feed, chrome, title: words("Посты"))
-        .onAppear { feed.appear() }
-        .onDisappear { feed.disappear() }
+        .onAppear { feed.appear(); feed.cover() }
+        .onDisappear { feed.disappear(); feed.uncover() }
         .task { await posts.load() }
     }
 }

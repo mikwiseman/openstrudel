@@ -360,6 +360,23 @@ import Testing
         feed.closeStory()
         #expect(feed.place.story == nil)
 
+        // Beside the home, choosing another place closes the desk's pages for real and keeps where the reader was.
+        feed.place.story = "gate"; feed.place.day = "2026-11-09"
+        feed.leave()
+        #expect(feed.isAway)
+        feed.closeStory(); feed.closeDay()
+        #expect(feed.place.story == "gate" && feed.place.day == "2026-11-09")
+        // Back at the desk, even at once, its pages may open again and closing one is the reader's own doing.
+        // The pages over the paper say when they come and go, so the app knows when the last has closed.
+        feed.cover(); feed.cover()
+        #expect(feed.pagesOver == 2)
+        feed.uncover(); feed.uncover(); feed.uncover()
+        #expect(feed.pagesOver == 0)
+        feed.arrive()
+        #expect(!feed.isAway && feed.place.story == "gate")
+        feed.closeStory(); feed.closeDay()
+        #expect(feed.place.story == nil && feed.place.day == nil)
+
         // Another launch of the app reads the same Home and conversation: seen is still seen.
         let again = NewsFeed(client: client, route: route, defaults: defaults)
         await again.refresh()

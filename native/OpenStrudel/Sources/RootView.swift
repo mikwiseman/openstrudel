@@ -23,6 +23,8 @@ struct OpenStrudelRootView: View {
     @State private var place = HomePlace.chat
     /// The pages pushed over that place.
     @State private var detailPath: [HomePlace] = []
+    /// The place the reader chose while a desk still had a page open over its paper: it is shown once that page is gone.
+    @State private var chosen: HomePlace?
     /// The pages pushed over the home, when the home is the whole screen.
     @State private var path: [HomePlace] = []
     /// What each page grew out of: a row, a tile or a capsule. Its way back leads there.
@@ -181,9 +183,17 @@ struct OpenStrudelRootView: View {
         // its first story stays open as the desk it has become.
         .onChange(of: library.team.map(\.member.id)) { _, rows in
             guard case .reader(let route) = place, route.profileID != nil, !rows.contains(route.id) else { return }
-            if let same = library.team.first(where: { $0.member.route.connectionID == route.connectionID && $0.member.profile.id == route.profileID }) { place = .reader(same.member.route) }
-            else { place = .chat }
+            let next: HomePlace = library.team.first(where: { $0.member.route.connectionID == route.connectionID && $0.member.profile.id == route.profileID }).map { .reader($0.member.route) } ?? .chat
+            if isSplit { open(next) } else { place = next }
         }
+        // The pages of the desk the reader left have gone: now the place they chose.
+        .onChange(of: newsroom.pagesClosing) { _, closing in
+            guard !closing, let next = chosen else { return }
+            chosen = nil
+            show(next)
+        }
+        // Whatever way a desk becomes the open place, it shows what the reader had open in it.
+        .onChange(of: place) { _, next in if case .reader(let route) = next { newsroom.arrive(route) } }
         #if os(macOS)
         // A server that finishes installing after its setup window closed joins the list by itself.
         .task { await library.watchPendingServer() }
@@ -357,16 +367,36 @@ struct OpenStrudelRootView: View {
     private func open(_ next: HomePlace, from source: AnyHashable? = nil, writing: Bool = false) {
         if writing { writes += 1 }
         if isSplit {
-            // Leaving a desk for another place closes its pages, not what the reader had open in it.
-            if next != place { newsroom.hold() }
-            detailPath.removeAll()
-            place = next
+            // Leaving a desk for another place closes its pages, not what the reader had open in it. They are closed
+            // for real: a story still pushed when the place changed stayed over the place chosen, and only Back
+            // revealed it. An iPad closes them in the same update. A Mac takes a moment, so there the place changes
+            // when the last of them reports it has gone.
+            guard next != place else { show(next); return }
+            #if os(macOS)
+            var quiet = Transaction(); quiet.disablesAnimations = true
+            withTransaction(quiet) { newsroom.leave() }
+            if newsroom.pagesClosing {
+                chosen = next
+                // A page that never reports must not hold the reader in a desk they have left.
+                Task { try? await Task.sleep(for: .seconds(1)); if chosen == next { chosen = nil; show(next) } }
+            } else { show(next) }
+            #else
+            newsroom.leave()
+            show(next)
+            #endif
         } else if next == .chat, let index = path.firstIndex(of: .chat) {
             path.removeSubrange(path.index(after: index)...)
         } else if path.last != next {
             sources[next] = source ?? AnyHashable(next)
             path.append(next)
         }
+    }
+
+    /// Beside the home: the place itself, once nothing of a desk is pushed over the one before it.
+    private func show(_ next: HomePlace) {
+        if case .reader(let route) = next { newsroom.arrive(route) }
+        detailPath.removeAll()
+        place = next
     }
 
     #if os(macOS)

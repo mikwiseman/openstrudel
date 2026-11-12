@@ -184,6 +184,67 @@ final class NewspaperUITests: XCTestCase {
         capture("17-search", app)
     }
 
+    /// Where the home stands beside the open place (an iPad at full width, a Mac), choosing another place in the home
+    /// shows that place at once, even with a story open. The story is not lost: the desk opens on it again.
+    @MainActor
+    func testAnotherPlaceShowsAtOnceBesideAnOpenStory() async throws {
+        continueAfterFailure = false
+        guard let fixture = environment["OPENSTRUDEL_NEWS_FIXTURE"] else { throw XCTSkip("Start tests/fixtures/news.ts and pass its control URL.") }
+        guard UIDevice.current.userInterfaceIdiom == .pad else { throw XCTSkip("The layout of an iPad and a Mac: the home beside the open place.") }
+        control = fixture
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = launch()
+        try await pair(app, "/invite")
+        let consent = app.buttons["acceptAIDataSharing"]
+        if consent.waitForExistence(timeout: 8) { consent.tap() }
+        let tile = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "tile-desk:")).firstMatch
+        XCTAssertTrue(tile.waitForExistence(timeout: 40), app.debugDescription)
+        tile.tap()
+        XCTAssertTrue(app.scrollViews["newsToday"].waitForExistence(timeout: 15), app.debugDescription)
+        let leadTile = app.buttons["newsLead"]
+        XCTAssertTrue(leadTile.waitForExistence(timeout: 10), app.debugDescription)
+        leadTile.tap()
+        let story = app.scrollViews["newsStory"]
+        XCTAssertTrue(story.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.descendants(matching: .any)["homeRoot"].exists, "The home stays beside the story")
+        capture("ipad-01-story", app)
+
+        // Another place in the home: the chat. It is there at once, and the story is not over it.
+        let chat = app.buttons["teamLead"]
+        XCTAssertTrue(chat.waitForExistence(timeout: 5), app.debugDescription)
+        chat.tap()
+        try await expectGone(story, "The story stays over the place chosen in the home")
+        XCTAssertTrue(app.buttons["chatMore"].waitForExistence(timeout: 10), app.debugDescription)
+        capture("ipad-02-chat-after-a-story", app)
+
+        // Back at the desk the reader finds the story they had open, and can leave it for another place again.
+        tile.tap()
+        XCTAssertTrue(story.waitForExistence(timeout: 10), "The desk opens on the story the reader had open: " + app.debugDescription)
+        capture("ipad-03-back-at-the-story", app)
+        chat.tap()
+        try await expectGone(story, "The story stays over the chat the second time")
+        XCTAssertTrue(app.buttons["chatMore"].waitForExistence(timeout: 10), app.debugDescription)
+
+        // From an earlier issue's story too: two pages deep in the desk.
+        tile.tap()
+        XCTAssertTrue(story.waitForExistence(timeout: 10), app.debugDescription)
+        back(app)
+        let front = app.scrollViews["newsToday"]
+        XCTAssertTrue(front.waitForExistence(timeout: 10), app.debugDescription)
+        let issue = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "newsDay-")).firstMatch
+        bring(issue, into: front)
+        issue.tap()
+        XCTAssertTrue(app.scrollViews["newsDay"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(leadTile.waitForExistence(timeout: 10), app.debugDescription)
+        leadTile.tap()
+        XCTAssertTrue(story.waitForExistence(timeout: 10), app.debugDescription)
+        chat.tap()
+        try await expectGone(story, "A story of an earlier issue stays over the chat")
+        try await expectGone(app.scrollViews["newsDay"], "An earlier issue stays over the chat")
+        XCTAssertTrue(app.buttons["chatMore"].waitForExistence(timeout: 10), app.debugDescription)
+        capture("ipad-04-chat-after-an-earlier-issue", app)
+    }
+
     /// A walk of whatever desk a Home serves, for looking at real stories and drafts: it only opens the pages and keeps
     /// their screenshots. The one thing it checks is that a draft shows no Markdown marks. Pass the control URL of a
     /// Home that answers `/invite`; nothing about its stories is written here.
@@ -284,6 +345,12 @@ final class NewspaperUITests: XCTestCase {
         let said = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", text), object: element)
         let result = await XCTWaiter().fulfillment(of: [said], timeout: 20)
         XCTAssertEqual(result, .completed, "\(element.label): \(element.value as? String ?? "")", file: file, line: line)
+    }
+
+    @MainActor private func expectGone(_ element: XCUIElement, _ message: String, file: StaticString = #filePath, line: UInt = #line) async throws {
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: element)
+        let result = await XCTWaiter().fulfillment(of: [gone], timeout: 8)
+        XCTAssertEqual(result, .completed, message, file: file, line: line)
     }
 
     @MainActor private func expectLabel(_ element: XCUIElement, says text: String, file: StaticString = #filePath, line: UInt = #line) async throws {
