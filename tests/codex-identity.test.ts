@@ -45,6 +45,30 @@ it.each(["read_model_settings", "correspondence_checkpoint", "unipile_accounts",
   } finally {engine.close();}
 });
 
+it("offers the Home's standing-rule tools to an existing native thread, beside the settings an administrator's turn has", async () => {
+  let endpoint: { url: string; http_headers: Record<string,string> } | undefined, listed: string[] = [];
+  wire.request.mockImplementation(async (method: string, params: any) => {
+    if (method === "configRequirements/read") return { requirements: null };
+    if (method === "model/list") return { data: [] };
+    if (method === "thread/resume") { endpoint = params.config["mcp_servers.openstrudel_runtime"]; return { thread: { id: "existing" } }; }
+    if (["thread/unsubscribe","thread/inject_items"].includes(method)) return {};
+    if (method === "turn/start") {
+      const response = await fetch(endpoint!.url,{method:"POST",headers:{...endpoint!.http_headers,"content-type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/list",params:{}})}).then(r=>r.json());
+      listed = response.result.tools.map((tool: { name: string }) => tool.name);
+      queueMicrotask(()=>wire.notify?.({method:"turn/completed",params:{threadId:params.threadId,turn:{status:"completed"}}}));
+      return {turn:{id:"turn"}};
+    }
+    throw new Error(method);
+  });
+  const engine = new CodexEngineAdapter();
+  const tool = (name: string) => ({ type: "function" as const, name, description: name, inputSchema: { type: "object", properties: {} } });
+  try {
+    // A chat started before these tools existed resumes with its old native tool list; only the bridge carries new ones.
+    await engine.run("Always keep drafts", { threadId: "existing", tools: { definitions: ["read_model_settings", "save_home_rule", "remove_home_rule"].map(tool), call: vi.fn() } });
+    expect(listed).toEqual(expect.arrayContaining(["save_home_rule", "remove_home_rule"]));
+  } finally { engine.close(); }
+});
+
 it("releases a silent turn after native tool exhaustion without timing out ordinary long work",async()=>{
   vi.useFakeTimers();
   wire.request.mockImplementation(async(method:string)=>{
