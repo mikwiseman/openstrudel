@@ -40,6 +40,8 @@ struct OpenStrudelRootView: View {
     @StateObject private var failures = TeamFailures()
     /// What waits for the owner on every Home: the cards the home leads with.
     @StateObject private var needs = NeedsYouModel()
+    /// The daily polls of every Home in sight: they may live on a Home other than the chat's.
+    @StateObject private var polls = CheckInHomes()
     /// What the shelf shows of the chat's Home: results, what needs attention, progress and the subscriptions' limits.
     @StateObject private var activity = ActivityModel()
     @StateObject private var limits = ActivityLimitsModel()
@@ -262,6 +264,7 @@ struct OpenStrudelRootView: View {
         .environmentObject(arrangement)
         .environmentObject(failures)
         .environmentObject(needs)
+        .environmentObject(polls)
     }
 
     private var splitLayout: some View {
@@ -343,7 +346,7 @@ struct OpenStrudelRootView: View {
                          openChat: { open(.chat) }, act: act)
         case .insight(let item): InsightDetail(item: item, discuss: discuss)
         case .checkIns:
-            CheckInsPage(model: activity, scope: activityScope, refresh: { await refreshActivity(includeLimits: false) }, openChat: { open(.chat) })
+            CheckInsPage(refresh: { await refreshActivity(includeLimits: false) })
         case .progress:
             ProgressPage(model: activity, limits: limits, scope: activityScope, refresh: { await refreshActivity(includeLimits: true, force: true) }, openChat: { open(.chat) })
         case .statistics: StatisticsScreen(limit: limits.scope == activityScope ? Shelf.limit(limits.accounts) : nil)
@@ -377,7 +380,7 @@ struct OpenStrudelRootView: View {
         // Every page has its line in View too: what waits, what the Home has to show, then the numbers.
         let known = activity.scope == activityScope ? activity.activity : nil
         var pages: [PlaceCommand] = [PlaceCommand(id: "insights", title: L("Ждёт вас"), page: true) { open(.insights) }]
-        if let board = CheckInBoard.boards(known?.rituals ?? []).first(where: { $0.latestDay != nil }) {
+        if let board = polls.boards(library.pollHomes).first {
             pages.append(PlaceCommand(id: "checkIns", title: board.title, page: true) { open(.checkIns) })
         }
         if known != nil { pages.append(PlaceCommand(id: "progress", title: L("Progress"), page: true) { open(.progress) }) }
@@ -389,8 +392,12 @@ struct OpenStrudelRootView: View {
     private func refreshActivity(includeLimits: Bool, force: Bool = false) async {
         let source = client, scope = activityScope
         await activity.load(scope: scope) { try await source.readActivity() }
-        guard includeLimits, !Task.isCancelled, scope == activityScope else { return }
-        await limits.load(scope: scope) { try await source.management("/v1/accounts?refresh=" + String(force)) }
+        // The polls may live on any Home: the chat's own was just read, the others are read after it.
+        if activity.scope == scope, activity.failure != .unavailable { polls.take(activity.activity, from: source.id) }
+        if includeLimits, !Task.isCancelled, scope == activityScope {
+            await limits.load(scope: scope) { try await source.management("/v1/accounts?refresh=" + String(force)) }
+        }
+        await polls.refresh(library.teamHomes.filter { $0 !== source })
     }
 
     /// «Обсудить» and «Спросить про…»: the message or the story goes to the one composer, and the reader with it.

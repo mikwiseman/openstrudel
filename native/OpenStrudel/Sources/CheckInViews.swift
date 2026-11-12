@@ -5,29 +5,28 @@ import Charts
 /// measure over the weeks, and this week against the last. It opens from its tile on the home. A finger on any chart
 /// moves the whole page to that day and lets go back to the latest.
 struct CheckInsPage: View {
-    @EnvironmentObject private var client: HomeClient
-    @ObservedObject var model: ActivityModel
-    let scope: String
+    @EnvironmentObject private var library: DeviceLibrary
+    @EnvironmentObject private var polls: CheckInHomes
     let refresh: () async -> Void
-    let openChat: () -> Void
-    private var activity: HomeActivity? { model.scope == scope ? model.activity : nil }
 
     var body: some View {
-        // A board nobody has answered yet has nothing to draw: the page says so instead.
-        let boards = CheckInBoard.boards(activity?.rituals ?? []).filter { $0.latestDay != nil }
+        // The boards of every Home in sight; one nobody has answered yet has nothing to draw.
+        let homes = library.pollHomes, boards = polls.boards(homes)
         ActivityColumn {
-            ActivityStatus(model: model, scope: scope, openChat: openChat)
-            if let activity {
-                if boards.isEmpty {
+            if boards.isEmpty {
+                if polls.ready(homes) {
                     ActivityEmpty(title: L("Пока нет ответов"), text: L("Когда в чате появится ежедневный опрос, ответы соберутся здесь."))
+                } else {
+                    ProgressView().frame(maxWidth: .infinity).accessibilityLabel(L("Loading activity"))
                 }
-                ForEach(boards) { CheckInBoardView(board: $0, named: boards.count > 1) }
-                ActivityChecked(date: activity.checkedAt, home: client.displayName)
             }
+            ForEach(boards, id: \.place) { CheckInBoardView(board: $0, named: boards.count > 1 || $0.homeName != nil) }
+            ForEach(polls.checked(homes)) { ActivityChecked(date: $0.at, home: $0.name) }
         }
         .activityPage(boards.count == 1 ? boards[0].title : L("Check-ins"))
-        .toolbar { ToolbarItem(placement: .primaryAction) { ActivityRefresh(refreshing: model.refreshing, refresh: refresh) } }
+        .toolbar { ToolbarItem(placement: .primaryAction) { ActivityRefresh(refreshing: false, refresh: refresh) } }
         .refreshable { await refresh() }
+        .task { if !polls.ready(homes) { await refresh() } }
         .accessibilityIdentifier("checkInsRoot")
     }
 }
@@ -51,7 +50,8 @@ private struct CheckInBoardView: View {
         VStack(alignment: .leading, spacing: 38) {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 4) {
-                    if named { Text(board.title).font(AppTypography.label).foregroundStyle(AppTheme.secondaryText) }
+                    // Whose polls these are, and on which Home when it is not the chat's.
+                    if named { Text(([board.title] + [board.homeName].compactMap { $0 }).joined(separator: " · ")).font(AppTypography.label).foregroundStyle(AppTheme.secondaryText) }
                     Text(words.day(shown, today: board.today)).font(AppTypography.display).displayTracking()
                         .contentTransition(.opacity).accessibilityAddTraits(.isHeader).accessibilityIdentifier("checkInDay")
                 }
@@ -81,7 +81,8 @@ private struct CheckInBoardView: View {
                 }
             }
             if board.dates.count > 7 { ActivitySection(title: L("Неделя к прошлой"), spacing: 12) { weeks } }
-            NavigationLink(value: HomePlace.reader(ReaderRoute(connectionID: client.id, kind: .conversation(board.id), title: board.chat ?? board.title))) {
+            // The chat lives on the board's own Home.
+            NavigationLink(value: HomePlace.reader(ReaderRoute(connectionID: board.home ?? client.id, kind: .conversation(board.id), title: board.chat ?? board.title))) {
                 Label(L("Open source conversation"), systemImage: "text.bubble")
                     .font(AppTypography.meta.weight(.medium)).foregroundStyle(.primary)
                     .padding(.horizontal, 14).frame(minHeight: max(36, controlTarget))
@@ -336,7 +337,8 @@ struct CheckInTile: View {
 
     var body: some View {
         let people = Array(board.people.prefix(3)), words = CheckInWords()
-        Tile(label: board.title, skin: .plain) {
+        // On a Home other than the chat's, the tile says which.
+        Tile(label: ([board.title] + [board.homeName].compactMap { $0 }).joined(separator: " · "), shortLabel: board.title, skin: .plain) {
             Spacer(minLength: 6)
             HStack(alignment: .bottom, spacing: 0) {
                 ForEach(Array(board.measures.prefix(5).enumerated()), id: \.element.id) { index, measure in
@@ -355,7 +357,7 @@ struct CheckInTile: View {
             Text(words.shortDay(day, today: board.today)).font(AppTypography.label.weight(.regular)).opacity(0.62).lineLimit(1).padding(.top, 8)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(board.title)
+        .accessibilityLabel(([board.title] + [board.homeName].compactMap { $0 }).joined(separator: ", "))
         .accessibilityValue(spoken)
     }
 

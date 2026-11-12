@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 /// The polls one chat is asked each day, read together: four questions become one board and each question a measure.
 /// The numbers are the people's own answers. A missing answer is missing, never zero, and nothing here folds
@@ -30,6 +31,12 @@ struct CheckInBoard: Identifiable, Equatable {
     let dates: [String]
     let people: [Person]
     let measures: [Measure]
+    /// The connection of the Home the polls live on, which is not always the chat's own.
+    var home: String? = nil
+    /// That Home's name, said when it is not the chat's own Home.
+    var homeName: String? = nil
+    /// The board's own place among several Homes: the same chat id can never meet itself on two Homes.
+    var place: String { (home ?? "") + ":" + id }
 
     /// One board per chat, in the order the Home lists its polls.
     static func boards(_ checkIns: [HomeActivity.CheckIn]) -> [CheckInBoard] {
@@ -208,4 +215,63 @@ struct CheckInWords {
             self("За неделю: \(CheckInBoard.short(high)) \(number(highMean)) · \(CheckInBoard.short(low)) \(number(lowMean))")
         }
     }
+}
+
+/// The polls of every Home in sight: the team's daily questions may be asked on any of them, not only on the Home the
+/// chat is connected to. Each Home's activity is read as its owner may read it; a Home that does not give it has no
+/// polls here.
+@MainActor
+final class CheckInHomes: ObservableObject {
+    struct Home: Equatable { let id: String; let name: String; let primary: Bool }
+    struct Read: Equatable { let boards: [CheckInBoard]; let checkedAt: String }
+    /// A Home that has polls, and when it was read.
+    struct Checked: Identifiable, Equatable { let home: String; let name: String; let at: String; var id: String { home } }
+    /// Each Home's boards that someone has answered, by connection.
+    @Published private(set) var read: [String: Read] = [:]
+    /// The Homes asked at least once, whatever they answered.
+    @Published private(set) var asked: Set<String> = []
+
+    /// What one Home's activity says; nil when the Home gives none to this device.
+    func take(_ activity: HomeActivity?, from home: String) {
+        let next = activity.map { Read(boards: CheckInBoard.boards($0.rituals).filter { $0.latestDay != nil }, checkedAt: $0.checkedAt) }
+        if read[home] != next { read[home] = next }
+        if !asked.contains(home) { asked.insert(home) }
+    }
+
+    /// Every answered board, the chat's own Home first and the others in the order they were connected. A board on
+    /// another Home carries that Home's name; with one Home there is nothing to name.
+    func boards(_ homes: [Home]) -> [CheckInBoard] {
+        let several = homes.count > 1
+        return homes.flatMap { home in
+            (read[home.id]?.boards ?? []).map { board in
+                var board = board
+                board.home = home.id
+                board.homeName = several && !home.primary ? home.name : nil
+                return board
+            }
+        }
+    }
+
+    /// When each Home that has polls was read, for the page's last line.
+    func checked(_ homes: [Home]) -> [Checked] {
+        homes.compactMap { home in read[home.id].flatMap { $0.boards.isEmpty ? nil : Checked(home: home.id, name: home.name, at: $0.checkedAt) } }
+    }
+
+    /// Every Home in sight has been asked once: an empty page then means no polls, not not yet.
+    func ready(_ homes: [Home]) -> Bool { homes.allSatisfy { asked.contains($0.id) } }
+
+    /// Reads the activity of each of these Homes. One out of reach keeps what it last said; one that does not give its
+    /// activity to this device, or predates it, has no polls here.
+    func refresh(_ sources: [HomeClient]) async {
+        for source in sources where !Task.isCancelled {
+            do { take(try await source.readActivity(), from: source.id) }
+            catch ActivityReadError.unsupported, ActivityReadError.ownerOnly, HomeClientError.authenticationExpired { take(nil, from: source.id) }
+            catch { if !asked.contains(source.id) { asked.insert(source.id) } }
+        }
+    }
+}
+
+extension DeviceLibrary {
+    /// The Homes of the team list as the polls know them.
+    var pollHomes: [CheckInHomes.Home] { teamHomes.map { CheckInHomes.Home(id: $0.id, name: $0.displayName, primary: $0 === primary) } }
 }

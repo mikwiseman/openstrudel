@@ -152,12 +152,13 @@ enum Shelf {
     /// Today's work in the order the shelf shows it: each desk's lead, the day's answers to a chat's polls, the next
     /// run, then the answers that came with a picture. A tile holds an answer; what waits for the owner leads the
     /// home as a card instead, and the gauges live on the Statistics page.
-    static func tiles(desks: [Desk], activity: HomeActivity?, next: (route: ReaderRoute, name: String, at: Date)?, results: [ShelfTile] = []) -> [ShelfTile] {
+    /// `boards` are the answered polls of every Home in sight (`CheckInHomes`), the chat's own Home first.
+    static func tiles(desks: [Desk], boards: [CheckInBoard], next: (route: ReaderRoute, name: String, at: Date)?, results: [ShelfTile] = []) -> [ShelfTile] {
         var tiles = desks.compactMap { desk in
             desk.story.map { ShelfTile.desk(route: desk.route, name: desk.name, appearance: desk.appearance, title: $0.title, image: $0.image, host: desk.host, unseen: desk.unseen) }
         }
         // A board with no answer in sight yet has nothing to show.
-        if let board = CheckInBoard.boards(activity?.rituals ?? []).first(where: { $0.latestDay != nil }) { tiles.append(.checkIns(board)) }
+        if let board = boards.first(where: { $0.latestDay != nil }) { tiles.append(.checkIns(board)) }
         if let next { tiles.append(.next(route: next.route, name: next.name, at: next.at)) }
         return tiles + results
     }
