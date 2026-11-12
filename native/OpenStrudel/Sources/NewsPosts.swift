@@ -368,11 +368,18 @@ struct NewsPostRow: View {
     var body: some View {
         let when = Team.date(post.updatedAt).map { words.moment($0) }
         let state = post.status == "writing" ? words("пишется…") : post.status == "failed" ? words("не получился") : post.usedAt != nil ? words("взят в работу") : nil
+        let lines = post.text.split(whereSeparator: \.isNewline).map { Team.line(String($0)) }.filter { !$0.isEmpty }
         Button { open(NewsPostRequest(stories: post.storyIds, post: post.id)) } label: {
             VStack(alignment: .leading, spacing: 4) {
                 QuietLine(text: [words.channel(post.channel), when, state].compactMap { $0 }.joined(separator: " · "))
-                Text(post.text.isEmpty ? (post.titles.first ?? "") : Team.plain(post.text)).font(AppTypography.reading).lineSpacing(AppTypography.readingLineSpacing)
-                    .lineLimit(3).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                // The post's first line is its headline here; the rest follows in two quiet lines, so a title never runs
+                // into the sentence after it.
+                Text(lines.first ?? post.titles.first ?? "").font(AppTypography.reading.weight(.semibold)).lineSpacing(AppTypography.readingLineSpacing)
+                    .lineLimit(2).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                if lines.count > 1 {
+                    Text(lines.dropFirst().joined(separator: " ")).font(AppTypography.reading).lineSpacing(AppTypography.readingLineSpacing)
+                        .foregroundStyle(AppTheme.secondaryText).lineLimit(2).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                }
                 if !post.titles.isEmpty, !post.text.isEmpty {
                     Text(post.titles.joined(separator: " · ")).font(NewsType.quiet).foregroundStyle(AppTheme.secondaryText).lineLimit(1)
                 }

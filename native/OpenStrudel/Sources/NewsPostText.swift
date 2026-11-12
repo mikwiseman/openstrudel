@@ -78,8 +78,9 @@ enum NewsPostText {
                 guard !core.isEmpty else { return String(line) }
                 var inner = look.code ? "`" + core + "`" : escaped(core)
                 if let link = look.link {
+                    // An address shown as itself is written as itself.
                     let address = link.absoluteString
-                    if core != address { inner = "[" + inner + "](" + (address.contains(where: { "() ".contains($0) }) ? "<" + address + ">" : address) + ")" }
+                    inner = core == address ? core : "[" + inner + "](" + (address.contains(where: { "() ".contains($0) }) ? "<" + address + ">" : address) + ")"
                 }
                 if look.struck { inner = "~~" + inner + "~~" }
                 let stars = look.bold && look.italic ? "***" : look.bold ? "**" : look.italic ? "*" : ""
@@ -89,8 +90,17 @@ enum NewsPostText {
     }
 
     /// The characters Markdown would read as a mark, written so that they stay themselves. An underscore inside a word is
-    /// never a mark, so names like snake_case keep their look in the text the desk reads.
+    /// never a mark, so names like snake_case keep their look in the text the desk reads; an address is left as it is.
     private static func escaped(_ text: String) -> String {
+        var result = "", rest = Substring(text)
+        while let address = rest.firstRange(of: #/https?://[^\s<>()\[\]]+/#) {
+            result += marks(rest[..<address.lowerBound]) + rest[address]
+            rest = rest[address.upperBound...]
+        }
+        return result + marks(rest)
+    }
+
+    private static func marks(_ text: Substring) -> String {
         let characters = Array(text)
         var result = ""
         for (index, character) in characters.enumerated() {

@@ -55,6 +55,15 @@ import AppKit
         #expect(pieces(written).allSatisfy { $0.look == .init() })
     }
 
+    @Test func anAddressWrittenOutStaysAsItIs() {
+        // The desk often ends a post with its source as a bare address; nothing in it is a mark.
+        let post = "**Заголовок**\n\nТекст со [ссылкой](https://klen.example/a_b)\n\nhttps://klen.example/blog/_next/klen_3_weights/"
+        #expect(NewsPostText.markdown(pieces(post)) == post)
+        var edited = NewsPostText.rich(post)
+        edited.append(AttributedString(" и ещё слово"))
+        #expect(NewsPostText.markdown(NewsPostText.pieces(edited, fonts: fonts)).contains("https://klen.example/blog/_next/klen_3_weights/"))
+    }
+
     @Test func thePlainVersionHasNoMarksAndKeepsEveryAddress() {
         let plain = NewsPostText.plain(pieces(draft))
         #expect(!plain.contains("*") && !plain.contains("]("))
