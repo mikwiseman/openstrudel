@@ -133,7 +133,7 @@ import Testing
         #expect(cards[4].nextTry == Self.instant("2026-11-10T07:00:00.000Z") && cards[4].kind == .failed)
         // What was decided keeps how, by whom and when.
         let decided = try #require((sent.recent ?? []).compactMap { $0.card(home: "home") }.first)
-        #expect(decided.decision == NeedCard.Decision(words: "Отправлено: Команда", by: "Аня", at: Self.instant("2026-11-10T07:01:00.000Z")))
+        #expect(decided.decision == NeedCard.Decision(words: "Отправлено: Команда", whole: true, by: "Аня", at: Self.instant("2026-11-10T07:01:00.000Z")))
     }
 
     @Test func theModelKeepsEachHomesOpenAndDecidedCardsApart() throws {

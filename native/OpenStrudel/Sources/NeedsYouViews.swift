@@ -337,9 +337,9 @@ struct HomeNeeds: View {
         let words = VStack(alignment: .leading, spacing: 4) {
             Text(L("Ничего не ждёт вас")).font(split ? AppTypography.label : AppTypography.serif(20, .title2))
                 .displayTracking(split ? 0 : -0.3).foregroundStyle(split ? AnyShapeStyle(AppTheme.secondaryText) : AnyShapeStyle(.primary))
-            if let decision = last?.decision {
-                // «Sent to Team · 12:19»: what the last card came to.
-                Text(([decision.words] + (decision.at.map { [TeamWords().ago($0)] } ?? [])).joined(separator: " · "))
+            if let last, let decision = last.decision {
+                // «Sent to Team · 5 мин», or the card and the button that closed it: what the last card came to.
+                Text(((decision.whole ? [] : [last.title]) + [decision.words] + (decision.at.map { [TeamWords().ago($0)] } ?? [])).joined(separator: " · "))
                     .font(split ? RowMetrics.preview : .subheadline).foregroundStyle(AppTheme.secondaryText).lineLimit(1)
             } else if done > 0 {
                 Text(L("Сегодня готово: \(done)")).font(split ? RowMetrics.preview : .subheadline).foregroundStyle(AppTheme.secondaryText)

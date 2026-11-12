@@ -143,8 +143,9 @@ struct HomeView: View {
             if let chosen, chosen !== library.primary {
                 let assistant = HomePlace.reader(ReaderRoute(connectionID: chosen.id, kind: .main, title: "OpenStrudel"))
                 row(assistant, identifier: "teamAssistant-" + chosen.id) {
+                    // Two assistants now stand one under the other; this one says whose it is.
                     TeamRow(content: TeamRowContent(name: "OpenStrudel", appearance: nil, preview: L("Главный помощник"), date: nil,
-                                                    state: chosen.isOffline(nil) ? .offline : .resting), selected: selection == assistant)
+                                                    state: chosen.isOffline(nil) ? .offline : .resting, home: chosen.displayName), selected: selection == assistant)
                 }
             }
             ForEach(list.pinned, id: \.member.id) { member($0.member, on: $0.source, pinned: true, named: several && chosen == nil, waits: waits($0.member)) }

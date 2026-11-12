@@ -62,10 +62,10 @@ struct InsightsPage: View {
                 }
                 if let activity { ActivityChecked(date: activity.checkedAt, home: client.displayName) }
             }
-            // Opened at one card, the page brings that card into sight.
+            // Opened at one card, the page brings that card into sight, clear of the bar. The first is there already.
             .onChange(of: needs.focus, initial: true) { _, card in
                 guard let card else { return }
-                withAnimation(.smooth(duration: 0.3)) { proxy.scrollTo(card, anchor: .top) }
+                if card != cards.first?.id { withAnimation(.smooth(duration: 0.3)) { proxy.scrollTo(card, anchor: UnitPoint(x: 0.5, y: 0.12)) } }
                 needs.focus = nil
             }
         }

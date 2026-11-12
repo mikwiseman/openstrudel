@@ -100,16 +100,16 @@ final class TeamUITests: XCTestCase {
         // 2b. What waits leads the home, from every Home. The second Home keeps two cards: words that will leave, which
         // are read on their page before anything is sent, and a promise with its day. The first Home has an employee
         // whose run failed, which is a card too. Each leaves when it is decided, and one calm sentence stays.
-        let count = app.buttons["needsCount"], read = app.buttons["needRead"]
+        let count = app.buttons["needsCount"], readFirst = app.buttons["needRead"]
         XCTAssertTrue(count.waitForExistence(timeout: 20), app.debugDescription)
         try await expectLabel(count, says: "3")
-        XCTAssertTrue(read.waitForExistence(timeout: 10), "Words that leave are not sent from the home")
+        XCTAssertTrue(readFirst.waitForExistence(timeout: 10), "Words that leave are not sent from the home")
         XCTAssertFalse(app.buttons["needAction-send"].exists)
-        let lead = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "need-")).firstMatch
-        XCTAssertTrue(lead.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Садовник", "Дачный Mac")).firstMatch.exists, lead.debugDescription)
+        let first = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "need-")).firstMatch
+        XCTAssertTrue(first.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Садовник", "Дачный Mac")).firstMatch.exists, first.debugDescription)
         XCTAssertTrue(value(gardener).contains("Ждёт вас"), "A row whose employee has a card waiting says so")
         capture("home-needs", app)
-        read.tap()
+        readFirst.tap()
         XCTAssertTrue(app.descendants(matching: .any)["insightsRoot"].waitForExistence(timeout: 10), app.debugDescription)
         let draft = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Шланги уберём в субботу")).firstMatch
         XCTAssertTrue(draft.waitForExistence(timeout: 10), "The whole text stands on the page")

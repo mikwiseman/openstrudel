@@ -36,6 +36,8 @@ struct NeedCard: Identifiable, Equatable {
     struct Decision: Equatable {
         /// What the Home did, or what the button said.
         let words: String
+        /// The words are the Home's own sentence of what it did («Sent to Team»), which stands without the card's title.
+        var whole = false
         var by: String?
         var at: Date?
     }
@@ -301,7 +303,7 @@ struct HomeCards: Decodable {
                 let said = filled(answer.text).map { Shelf.clipped($0, to: 60) }
                 let button = filled(answer.label).map { label in said.map { $0 == label ? label : label + ": " + $0 } ?? label }
                 guard let words = filled(answer.outcome) ?? button ?? said else { return nil }
-                return NeedCard.Decision(words: words, by: answer.via == "app" ? nil : filled(answer.by), at: Team.date(answer.at))
+                return NeedCard.Decision(words: words, whole: filled(answer.outcome) != nil, by: answer.via == "app" ? nil : filled(answer.by), at: Team.date(answer.at))
             }
             return NeedCard(id: home + ":" + id, home: home, kind: kind, origin: .card(id), profileID: raiser?.profileId, employee: filled(raiser?.name) ?? "OpenStrudel",
                             title: title, text: filled(reason), draft: draft,
