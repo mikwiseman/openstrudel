@@ -357,8 +357,9 @@ final class TeamUITests: XCTestCase {
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "tile-desk:")).firstMatch.waitForExistence(timeout: 20), app.debugDescription)
         try await Task.sleep(for: .seconds(2))
         capture("ipad-home-chat", app)
+        // The desk's row sits lower in the one list now: it is brought above the search capsule before it is pressed.
         let desk = app.buttons["teamMember-" + (try XCTUnwrap(state["news"] as? String))]
-        XCTAssertTrue(desk.waitForExistence(timeout: 20), app.debugDescription); desk.tap()
+        open(desk, in: app)
         XCTAssertTrue(app.scrollViews["newsToday"].waitForExistence(timeout: 15), app.debugDescription)
         XCTAssertTrue(app.descendants(matching: .any)["homeRoot"].exists, "The home stays beside the desk")
         try await Task.sleep(for: .seconds(2))
