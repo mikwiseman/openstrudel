@@ -188,8 +188,8 @@ export class CodexEngineAdapter implements CodexEngine {
     try {
       // Native dynamicTools are fixed at thread/start. Existing chats get the current
       // management and private-source schemas through the per-turn MCP bridge.
-      if (!this.options.restricted && options.tools?.definitions.some(t=>["read_model_settings", "correspondence_checkpoint", "unipile_accounts", "unipile_read", "github_checkout"].includes(t.name))) {
-        const names = new Set(["list_employees","create_employee","update_employee","list_schedules","save_schedule","pause_schedule","list_telegram_chats","read_model_settings","save_model_settings","save_home_rule","remove_home_rule","configure_telegram_chat","list_projects","bind_employee_project","read_project_result","correspondence_checkpoint","unipile_accounts","unipile_read","github_repositories","github_checkout","github_open_pull_request","record_daily_scores","run_server_command"]);
+      if (!this.options.restricted && options.tools?.definitions.some(t=>["read_model_settings", "correspondence_checkpoint", "unipile_accounts", "unipile_read", "github_checkout", "read_team"].includes(t.name))) {
+        const names = new Set(["list_employees","create_employee","update_employee","list_schedules","save_schedule","pause_schedule","list_telegram_chats","read_model_settings","save_model_settings","save_home_rule","remove_home_rule","configure_telegram_chat","list_projects","bind_employee_project","read_project_result","correspondence_checkpoint","unipile_accounts","unipile_read","read_team","github_repositories","github_checkout","github_open_pull_request","record_daily_scores","run_server_command"]);
         const { toolBridge } = await import("./acp-mcp.js");
         bridge = await toolBridge({ definitions:options.tools.definitions.filter(t=>names.has(t.name)), call:options.tools.call });
       }
