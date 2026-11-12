@@ -1,11 +1,13 @@
 import SwiftUI
 
-/// A desk's stories as one page a day: one quiet line for the day and the desk's runs, what is new since the last
-/// visit, the edition with its lead as a large tile, the day's radar and the earlier days. A story opens over its page
-/// with its evidence and its history. Discussion happens in the chat: the capsule at the bottom takes the story there.
+/// A desk's stories as a paper a day: the day and one quiet line about the desk's runs, three ways further (the week,
+/// the post drafts, the search), the lead as a large tile, what came since the reader last looked, the top stories,
+/// the day's analysis, the rest under their sections, and the earlier days as a shelf of issues. A story opens over
+/// its page with its numbers, its evidence and its earlier chapters, and a post for the owner's channel is one press
+/// away. Discussion happens in the chat: the capsule at the bottom takes the story there.
 
 /// The edition's voice: New York for headlines, the interface face for reading, quiet sentence-case lines for the rest.
-private enum NewsType {
+enum NewsType {
     static func headline(_ mac: CGFloat, _ style: Font.TextStyle, weight: Font.Weight = .medium) -> Font { AppTypography.serif(mac, style, weight: weight) }
     /// Time, section and status over a headline.
     static var quiet: Font { ReaderLine.font }
@@ -21,7 +23,7 @@ private enum NewsType {
     }
 }
 
-private enum NewsLayout {
+enum NewsLayout {
     /// The page's reading column, wider than the chat's for headlines; a story reads in a narrower one.
     static let column: CGFloat = 680
     static let story: CGFloat = 620
@@ -42,14 +44,14 @@ private enum NewsLayout {
     }
 }
 
-private extension EnvironmentValues {
+extension EnvironmentValues {
     /// The language of the stories on screen. Every label and date of the reader follows it.
     @Entry var newsWords = NewsWords()
     /// The desk's own Home: a picture it serves itself is read like the rest of the page.
     @Entry var newsHome: String? = nil
 }
 
-private extension NewsStory {
+extension NewsStory {
     /// Where the story comes from, as the reader would name it: each source's site once.
     var domains: [String] {
         var seen = Set<String>()
@@ -58,7 +60,7 @@ private extension NewsStory {
 }
 
 /// A row is its own button: it dims under the finger and springs back.
-private struct NewsRowStyle: ButtonStyle {
+struct NewsRowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .opacity(configuration.isPressed ? 0.55 : 1)
@@ -67,11 +69,11 @@ private struct NewsRowStyle: ButtonStyle {
 }
 
 /// Where a story belongs and how sure it is, in one quiet sentence-case line: «Модели · вышло».
-private func newsLine(_ story: NewsStory, locale: Locale) -> String {
+func newsLine(_ story: NewsStory, locale: Locale) -> String {
     [story.section, story.status.lowercased(with: locale)].filter { !$0.isEmpty }.joined(separator: " · ")
 }
 
-private struct QuietLine: View {
+struct QuietLine: View {
     let text: String
     /// ↻: the story moved since the reader had it on screen.
     var developed = false
@@ -89,7 +91,7 @@ private struct QuietLine: View {
 }
 
 /// The desk's own conclusion, set apart by one arrow in the signal colour.
-private struct ViewLine: View {
+struct ViewLine: View {
     let text: String
     var limit: Int? = nil
     @Environment(\.newsWords) private var words
@@ -107,7 +109,7 @@ private struct ViewLine: View {
 }
 
 /// Small capsules that wrap: a story's sources.
-private struct Capsules: SwiftUI.Layout {
+struct Capsules: SwiftUI.Layout {
     var spacing: CGFloat = 8
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -140,12 +142,17 @@ private struct Capsules: SwiftUI.Layout {
     }
 }
 
-private struct SourceCapsule: View {
+struct SourceCapsule: View {
     let title: String
+    var symbol: String? = nil
     var body: some View {
-        Text(title).font(NewsType.quiet.weight(.medium)).foregroundStyle(.primary).lineLimit(1)
-            .padding(.horizontal, 12).padding(.vertical, 6)
-            .background(AppTheme.surface, in: Capsule())
+        HStack(spacing: 6) {
+            if let symbol { Image(systemName: symbol).imageScale(.small).foregroundStyle(AppTheme.secondaryText) }
+            Text(title).lineLimit(1)
+        }
+        .font(NewsType.quiet.weight(.medium)).foregroundStyle(.primary)
+        .padding(.horizontal, 12).padding(.vertical, 6)
+        .background(AppTheme.surface, in: Capsule())
     }
 }
 
@@ -167,11 +174,13 @@ private struct NewsPicture: View {
         VStack(spacing: 0) {
             if let image {
                 // The picture's own shape inside the column and the cap, so its corners are the picture's.
+                // The corners and the shadow belong to the picture itself, so they are set before the cap on its height:
+                // a wide column would otherwise round a frame wider than the picture and leave its corners square.
                 Image(decorative: image, scale: 1).resizable()
                     .aspectRatio(CGFloat(image.width) / CGFloat(max(image.height, 1)), contentMode: .fit)
-                    .frame(maxHeight: maxHeight)
                     .clipShape(.rect(cornerRadius: 28, style: .continuous))
                     .tileShadow()
+                    .frame(maxHeight: maxHeight)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.bottom, 24)
                     .transition(.opacity)
@@ -196,7 +205,6 @@ struct NewsScreen: View {
     @EnvironmentObject private var client: HomeClient
     @ObservedObject var feed: NewsFeed
     let discuss: (ChatContext) -> Void
-    @State private var details: EmployeeProfile?
     @State private var unavailable: String?
     #if os(macOS)
     @Environment(\.appearsActive) private var appearsActive
@@ -214,12 +222,10 @@ struct NewsScreen: View {
     }
 
     var body: some View {
-        NewsDayPage(feed: feed, date: nil, chrome: NewsChrome(profile: profile, attentive: windowIsActive,
-                                                             showDetails: { details = profile }, discuss: quote))
+        NewsDayPage(feed: feed, date: nil, chrome: NewsChrome(profile: profile, attentive: windowIsActive, discuss: quote))
             .environment(\.newsHome, URL(string: client.normalizedBaseURL)?.host)
             // Stories that arrive behind another app are read as new when the reader comes back.
             .onChange(of: windowIsActive, initial: true) { _, active in feed.attend(active) }
-            .sheet(item: $details) { profile in BotDetailsView(profile: profile, conversationID: feed.conversationID).environmentObject(client) }
             .alert(L("Нет связи"), isPresented: Binding(get: { unavailable != nil }, set: { if !$0 { unavailable = nil } })) {
                 Button(L("Понятно"), role: .cancel) {}
             } message: { Text(unavailable ?? "") }
@@ -235,18 +241,41 @@ struct NewsScreen: View {
     }
 }
 
-/// What every page of a desk shares: whose desk it is, whether the reader is looking, and the two ways out.
-private struct NewsChrome {
+/// What every page of a desk shares: whose desk it is, whether the reader is looking, and the way to the chat.
+struct NewsChrome {
     let profile: EmployeeProfile?
     let attentive: Bool
-    let showDetails: () -> Void
     let discuss: (HomeMessage) -> Void
 }
 
-private extension View {
+extension EnvironmentValues {
+    /// Opens the post sheet from the page on screen: a new draft from stories, or one already written.
+    @Entry var newsPost: (NewsPostRequest) -> Void = { _ in }
+}
+
+extension View {
     /// The desk's capsule in the bar opens its settings, as on every page. Its character proofs there while a run is on.
     func newsToolbar(_ feed: NewsFeed, _ chrome: NewsChrome, title: String, working: Bool = false, offline: Bool = false) -> some View {
-        navigationTitle(title)
+        modifier(NewsToolbar(feed: feed, chrome: chrome, title: title, working: working, offline: offline))
+    }
+}
+
+/// A desk page's bar, and the two sheets a page can open: the desk's settings and a post. Each page presents them
+/// itself. On the Mac a sheet attached to the first page of the desk does not open while another page is pushed over
+/// it, so the page in front has to be the one that presents.
+private struct NewsToolbar: ViewModifier {
+    @ObservedObject var feed: NewsFeed
+    let chrome: NewsChrome
+    let title: String
+    let working: Bool
+    let offline: Bool
+    @State private var details: EmployeeProfile?
+    @State private var composing: NewsPostRequest?
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.newsPost) { composing = $0 }
+            .navigationTitle(title)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             // A pushed page would sit on the system's white; the edition reads on the app's own paper.
@@ -255,7 +284,7 @@ private extension View {
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     TitleCapsule(appearance: chrome.profile?.resolvedAppearance, name: feed.route.title, offline: offline, working: working,
-                                 action: chrome.profile == nil ? nil : chrome.showDetails)
+                                 action: chrome.profile == nil ? nil : { details = chrome.profile })
                         .accessibilityLabel(chrome.profile == nil ? feed.route.title : L("Настройки сотрудника"))
                         .accessibilityValue(feed.route.title)
                         .accessibilityIdentifier("readerTitle")
@@ -263,13 +292,20 @@ private extension View {
                 if chrome.profile != nil {
                     ToolbarItem(placement: .primaryAction) {
                         Menu {
-                            Button(L("Настройки сотрудника"), systemImage: "slider.horizontal.3", action: chrome.showDetails)
+                            Button(L("Настройки сотрудника"), systemImage: "slider.horizontal.3") { details = chrome.profile }
                         } label: { Image(systemName: "ellipsis") }
                         .menuIndicator(.hidden)
                         .accessibilityLabel(L("Ещё"))
                         .accessibilityIdentifier("readerMore")
                     }
                 }
+            }
+            .sheet(item: $details) { profile in
+                BotDetailsView(profile: profile, conversationID: feed.conversationID).environmentObject(feed.client)
+            }
+            .sheet(item: $composing) { request in
+                NewsPostSheet(feed: feed, posts: feed.posts, request: request, appearance: chrome.profile?.resolvedAppearance)
+                    .environment(\.newsWords, feed.words)
             }
     }
 }
@@ -333,7 +369,7 @@ private struct NewsArrivals: View {
 
 // MARK: - A day
 
-private struct NewsDayPage: View {
+struct NewsDayPage: View {
     @ObservedObject var feed: NewsFeed
     /// Nil is today.
     let date: String?
@@ -345,26 +381,22 @@ private struct NewsDayPage: View {
     @State private var dwell = NewsDwell()
 
     /// Nothing is pushed over this page.
-    private var isFront: Bool { feed.place.story == nil && feed.place.day == date }
+    private var isFront: Bool { feed.place.story == nil && feed.place.day == date && (date != nil || feed.place.panel == nil) }
     private var offline: Bool { feed.unreachable || client.homeUnreachable || client.connectionNeedsPairing }
-    /// The story «Спросить про…» takes to the chat: the page's first.
-    private var lead: NewsDesk.Item? {
-        let page = feed.desk.page(date, read: feed.visit)
-        return page.edition.first ?? page.fresh.first?.item ?? page.radar.first?.item
-    }
+    private var home: String? { URL(string: client.normalizedBaseURL)?.host }
 
     var body: some View {
         // The minute decides what "today" is and how the status line reads.
         TimelineView(.everyMinute) { timeline in
             let now = timeline.date, words = feed.words
-            let page = feed.desk.page(date, now: now, read: feed.visit)
-            let line = NewsStatusLine(status: feed.status, page: page)
+            let front = feed.desk.front(date, now: now, read: feed.visit)
+            let line = NewsStatusLine(status: feed.status, front: front)
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         // In an empty feed the one sentence stands in the middle of the page, not under the date.
-                        masthead(page, line: page.isEmpty ? nil : line, words: words, now: now).id("top")
-                        if !page.isEmpty { sections(page, words: words, now: now) }
+                        masthead(front, line: front.isEmpty ? nil : line, words: words, now: now).id("top")
+                        if !front.isEmpty { sections(front, words: words, now: now) }
                         else if feed.loaded { empty(line, words: words, now: now).id("empty") }
                     }
                     .scrollTargetLayout()
@@ -391,17 +423,22 @@ private struct NewsDayPage: View {
         }
         .paperTop()
         .safeAreaBar(edge: .bottom, spacing: 0) {
-            // The page's way to the composer: its first story goes to the chat as context.
-            if let lead {
+            // The page's way to the composer: its lead goes to the chat as context.
+            if let lead = feed.desk.front(date, read: feed.visit).lead {
                 AskCapsule(title: feed.words("Спросить про \(feed.route.title)")) { chrome.discuss(lead.latest) }
                     .accessibilityIdentifier("discussDesk")
             }
         }
-        .navigationDestination(isPresented: Binding(get: { feed.place.story != nil && feed.place.day == date }, set: { if !$0 { feed.closeStory() } })) {
-            NewsStoryPage(feed: feed, date: date, chrome: chrome).environment(\.newsHome, URL(string: client.normalizedBaseURL)?.host)
+        .navigationDestination(isPresented: Binding(get: { feed.place.story != nil && feed.place.day == date && (date != nil || feed.place.panel == nil) }, set: { if !$0 { feed.closeStory() } })) {
+            NewsStoryPage(feed: feed, story: Binding(get: { feed.place.story }, set: { feed.place.story = $0 }),
+                          order: feed.desk.front(date, read: feed.visit).order, chrome: chrome)
+                .environment(\.newsHome, home)
         }
         .navigationDestination(item: Binding(get: { date == nil ? feed.place.day : nil }, set: { if date == nil { if let day = $0 { feed.place.day = day } else { feed.closeDay() } } })) { day in
-            NewsDayPage(feed: feed, date: day, chrome: chrome).environmentObject(client).environment(\.newsHome, URL(string: client.normalizedBaseURL)?.host).id(day)
+            NewsDayPage(feed: feed, date: day, chrome: chrome).environmentObject(client).environment(\.newsHome, home).id(day)
+        }
+        .navigationDestination(item: Binding(get: { date == nil ? feed.place.panel : nil }, set: { if date == nil, !feed.holdsPlace { feed.place.panel = $0 } })) { panel in
+            NewsPanelPage(feed: feed, panel: panel, chrome: chrome).environmentObject(client).environment(\.newsHome, home)
         }
         #if os(macOS)
         .background {
@@ -418,35 +455,46 @@ private struct NewsDayPage: View {
         }
         .onDisappear { feed.disappear() }
         .onChange(of: chrome.attentive && isFront, initial: true) { _, looking in dwell.attentive = looking }
+        // Today's page says how many drafts there are, so it asks the Home once it is opened.
+        .task { if date == nil { await feed.posts.load() } }
     }
 
     // MARK: Masthead
 
-    /// The page's head: the day as its title, then what the desk's runs say in one quiet line. It always tells the
-    /// truth about the feed, and it does not wrap: an edition's line is short, a sentence may take a second line.
-    private func masthead(_ page: NewsDesk.Page, line: NewsStatusLine?, words: NewsWords, now: Date) -> some View {
+    /// The page's head: the day as its title, what the desk's runs say in one quiet line, the desk's own words on the
+    /// day when its edition has them, and on today's page the three ways further.
+    private func masthead(_ front: NewsDesk.Front, line: NewsStatusLine?, words: NewsWords, now: Date) -> some View {
         let status = line.map { offline ? words("«\(client.displayName)» не на связи. Показано, что уже прочитано.") : words.status($0, name: feed.route.title, now: now) }
         var isEdition = false
         if case .edition? = line, !offline { isEdition = true }
-        return VStack(alignment: .leading, spacing: 5) {
-            Text(words.weekday(page.date, now: now))
-                .font(NewsType.dayTitle).displayTracking(-0.7).foregroundStyle(.primary)
-                .lineLimit(1).minimumScaleFactor(0.6)
-                .accessibilityAddTraits(.isHeader)
-            if let status, let line {
-                Text(status).font(NewsType.quiet).monospacedDigit()
-                    .foregroundStyle(line.isFailing && !offline ? AppTheme.warning : AppTheme.secondaryText)
-                    // One line; at the largest text sizes, where one line cannot hold it, two.
-                    .lineLimit(isEdition && !typeSize.isAccessibilitySize ? 1 : 2).minimumScaleFactor(isEdition ? 0.85 : 1).multilineTextAlignment(.leading)
-                    .contentTransition(.opacity)
-                    .animation(.easeInOut(duration: 0.15), value: line)
+        let intro = feed.edition.flatMap { $0.date == front.date && !front.standsIn ? $0.intro : nil }
+        return VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(words.weekday(front.isToday ? NewsDesk.dayKey(now, feed.desk.calendar) : front.date, now: now))
+                    .font(NewsType.dayTitle).displayTracking(-0.7).foregroundStyle(.primary)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                    .accessibilityAddTraits(.isHeader)
+                if let status, let line {
+                    Text(status).font(NewsType.quiet).monospacedDigit()
+                        .foregroundStyle(line.isFailing && !offline ? AppTheme.warning : AppTheme.secondaryText)
+                        // One line; at the largest text sizes, where one line cannot hold it, two.
+                        .lineLimit(isEdition && !typeSize.isAccessibilitySize ? 1 : 2).minimumScaleFactor(isEdition ? 0.85 : 1).multilineTextAlignment(.leading)
+                        .contentTransition(.opacity)
+                        .animation(.easeInOut(duration: 0.15), value: line)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("newsStatus")
+            if date == nil, !front.isEmpty { NewsWays(feed: feed, posts: feed.posts).padding(.top, 14) }
+            if let intro {
+                Text(intro).font(AppTypography.reading).lineSpacing(AppTypography.readingLineSpacing).foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true).padding(.top, 16)
+                    .accessibilityIdentifier("newsIntro")
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         // The space under the bar belongs to this first row, so scrolling to it shows the page's very top.
         .padding(.top, 10).padding(.bottom, 18)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("newsStatus")
     }
 
     /// No story in two weeks: the character, the truth in one sentence, and nothing to press.
@@ -467,65 +515,51 @@ private struct NewsDayPage: View {
 
     // MARK: Sections
 
-    @ViewBuilder private func sections(_ page: NewsDesk.Page, words: NewsWords, now: Date) -> some View {
-        let hasFresh = !page.fresh.isEmpty, hasEdition = !page.edition.isEmpty, hasRadar = !page.radar.isEmpty
-        if hasFresh {
-            head(words.freshTitle(since: page.freshSince(feed.visit), count: page.fresh.count, now: now), accent: true).id("fresh")
-            ForEach(feed.place.showsAllFresh ? page.fresh : Array(page.fresh.prefix(5))) { moment in
-                compact(moment, page: page, row: "fresh:")
+    @ViewBuilder private func sections(_ front: NewsDesk.Front, words: NewsWords, now: Date) -> some View {
+        if let lead = front.lead {
+            // An edition reads under the name its desk gave it; a day the radar made alone needs no name.
+            if front.published != nil || front.standsIn { head(words.paperTitle(front, named: feed.edition, now: now)).padding(.bottom, 6).id("edition") }
+            NewsLeadStory(item: lead, developed: lead.developed(since: feed.visit), tint: AgentAppearance.tint(chrome.profile?.resolvedAppearance, dark: scheme == .dark)) { open(lead.id) }
+                .onScrollVisibilityChange(threshold: 0.5) { dwell.rest("lead:" + lead.id, $0) }
+                .id("lead:" + lead.id)
+        }
+        if !front.fresh.isEmpty {
+            head(words.freshTitle(since: front.freshSince(feed.visit, calendar: feed.desk.calendar), count: front.fresh.count, now: now), accent: true).padding(.top, 30).id("fresh")
+            ForEach(feed.place.showsAllFresh ? front.fresh : Array(front.fresh.prefix(5))) { moment in
+                compact(moment.item, line: words.column(moment, on: front.date) + " · " + moment.item.story.section.lowercased(with: words.language.locale),
+                        developed: moment.isDevelopment, row: "fresh:")
             }
-            if page.fresh.count > 5 {
-                Button(feed.place.showsAllFresh ? words("Свернуть") : words("Показать все · \(page.fresh.count)")) { feed.place.showsAllFresh.toggle() }
+            if front.fresh.count > 5 {
+                Button(feed.place.showsAllFresh ? words("Свернуть") : words("Показать все · \(front.fresh.count)")) { feed.place.showsAllFresh.toggle() }
                     .buttonStyle(.plain).font(AppTypography.interface.weight(.medium)).foregroundStyle(AppTheme.accentText)
                     .frame(minHeight: controlTarget)
                     .accessibilityIdentifier("newsMoreFresh")
                     .id("fresh:more")
             }
         }
-        if hasEdition {
-            head(words.editionTitle(page, named: feed.edition, now: now)).padding(.top, hasFresh ? 30 : 0).padding(.bottom, 6).id("edition")
-            // One run of rows, so a story keeps its identity when the next edition makes it the lead.
-            ForEach(Array(page.edition.enumerated()), id: \.element.id) { index, item in
-                Group {
-                    if index == 0 {
-                        NewsLeadStory(item: item, developed: item.developed(since: feed.visit), tint: AgentAppearance.tint(chrome.profile?.resolvedAppearance, dark: scheme == .dark)) { open(item.id) }
-                            .padding(.bottom, page.edition.count > 1 ? 22 : 0)
-                    } else { NewsRow(item: item, developed: item.developed(since: feed.visit)) { open(item.id) } }
-                }
-                .onScrollVisibilityChange(threshold: 0.5) { dwell.rest("edition:" + item.id, $0) }
-                .id("edition:" + item.id)
+        if !front.top.isEmpty {
+            head(words("Главное")).padding(.top, 30).padding(.bottom, 2).id("top-stories")
+            ForEach(front.top) { item in
+                NewsRow(item: item, developed: item.developed(since: feed.visit)) { open(item.id) }
+                    .onScrollVisibilityChange(threshold: 0.5) { dwell.rest("top:" + item.id, $0) }
+                    .id("top:" + item.id)
             }
         }
-        if hasRadar {
-            head(words("Радар за день")).padding(.top, hasFresh || hasEdition ? 30 : 0).id("radar")
-            ForEach(page.radar) { moment in
-                compact(moment, page: page, row: "radar:")
+        if !front.analysis.isEmpty {
+            head(words("Разбор")).padding(.top, 30).padding(.bottom, 8).id("analysis")
+            NewsAnalysisShelf(items: front.analysis, open: open).id("analysis:shelf")
+        }
+        ForEach(front.sections) { section in
+            head(section.name).padding(.top, 30).id("section:" + section.name)
+            ForEach(section.items) { item in
+                compact(item, line: [feed.desk.moment(item).map { words.column($0, on: front.date) }, item.story.status.lowercased(with: words.language.locale)].compactMap { $0 }.joined(separator: " · "),
+                        developed: item.developed(since: feed.visit), row: "section:")
             }
         }
-        if !page.earlier.isEmpty {
-            head(words("Раньше")).padding(.top, hasFresh || hasEdition || hasRadar ? 30 : 0).id("earlier")
-            ForEach(page.earlier) { day in
-                Button { feed.place.day = day.date } label: {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .firstTextBaseline) { dayTitle(day, words, now); Spacer(minLength: 16); daySummary(day, words) }
-                        VStack(alignment: .leading, spacing: 4) { dayTitle(day, words, now); daySummary(day, words) }
-                    }
-                    .frame(maxWidth: .infinity, minHeight: controlTarget, alignment: .leading)
-                    .contentShape(.rect)
-                }
-                .buttonStyle(NewsRowStyle())
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("newsDay-" + day.date)
-                .id("day:" + day.date)
-            }
+        if !front.earlier.isEmpty {
+            head(words("Выпуски")).padding(.top, 38).padding(.bottom, 8).id("earlier")
+            NewsIssueShelf(desk: feed.desk, days: front.earlier, now: now) { feed.place.day = $0 }.id("earlier:shelf")
         }
-    }
-
-    private func dayTitle(_ day: NewsDesk.Day, _ words: NewsWords, _ now: Date) -> some View {
-        Text(words.weekday(day.date, now: now)).font(AppTypography.reading).multilineTextAlignment(.leading)
-    }
-    private func daySummary(_ day: NewsDesk.Day, _ words: NewsWords) -> some View {
-        Text(words.summary(day)).font(NewsType.quiet).monospacedDigit().foregroundStyle(AppTheme.secondaryText)
     }
 
     /// A group of stories opens under its own small name; what is new wears the signal colour.
@@ -537,10 +571,10 @@ private struct NewsDayPage: View {
             .accessibilityAddTraits(.isHeader)
     }
 
-    private func compact(_ moment: NewsDesk.Moment, page: NewsDesk.Page, row: String) -> some View {
-        NewsCompactRow(moment: moment, day: page.date) { open(moment.id) }
-            .onScrollVisibilityChange(threshold: 0.5) { dwell.rest(row + moment.id, $0) }
-            .id(row + moment.id)
+    private func compact(_ item: NewsDesk.Item, line: String, developed: Bool, row: String) -> some View {
+        NewsCompactRow(item: item, line: line, developed: developed) { open(item.id) }
+            .onScrollVisibilityChange(threshold: 0.5) { dwell.rest(row + item.id, $0) }
+            .id(row + item.id)
     }
 
     private func open(_ story: String) {
@@ -549,21 +583,43 @@ private struct NewsDayPage: View {
     }
 }
 
-/// A row to scan: when it happened and where it belongs in one quiet line, then what it is. The summary waits on the story's page.
-private struct NewsCompactRow: View {
-    let moment: NewsDesk.Moment
-    /// The page's day: a time on another day shows as its date.
-    let day: String
+/// The three ways further from today's paper, said in words: the week, the post drafts with how many there are, the search.
+private struct NewsWays: View {
+    @ObservedObject var feed: NewsFeed
+    @ObservedObject var posts: NewsPostShelf
+
+    var body: some View {
+        let words = feed.words, drafts = posts.posts.count
+        Capsules {
+            way(words("Неделя"), "chart.bar", .week)
+            way(drafts > 0 ? words("Посты · \(drafts)") : words("Посты"), "square.and.pencil", .posts)
+            way(words("Найти"), "magnifyingglass", .search)
+        }
+    }
+
+    private func way(_ title: String, _ symbol: String, _ panel: NewsPanel) -> some View {
+        Button { feed.place.panel = panel } label: {
+            SourceCapsule(title: title, symbol: symbol).frame(minHeight: controlTarget - 8).contentShape(.rect)
+        }
+        .buttonStyle(NewsRowStyle())
+        .accessibilityIdentifier("newsWay-" + panel.rawValue)
+    }
+}
+
+/// A row to scan: when and what kind in one quiet line, then what it is. The summary waits on the story's page.
+struct NewsCompactRow: View {
+    let item: NewsDesk.Item
+    let line: String
+    /// ↻: a development of a story reported earlier.
+    var developed = false
     let open: () -> Void
     @Environment(\.newsWords) private var words
 
     var body: some View {
-        let clock = words.column(moment, on: day)
         Button(action: open) {
             VStack(alignment: .leading, spacing: 3) {
-                // ↻ marks a development of a story reported earlier.
-                QuietLine(text: clock + " · " + moment.item.story.section.lowercased(with: words.language.locale), developed: moment.isDevelopment)
-                Text(moment.item.story.title).font(NewsType.headline(19, .title3, weight: .regular)).multilineTextAlignment(.leading)
+                QuietLine(text: line, developed: developed)
+                Text(item.story.title).font(NewsType.headline(19, .title3, weight: .regular)).multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -574,13 +630,13 @@ private struct NewsCompactRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityHint(words("Открыть историю"))
         #if os(macOS)
-        .help(moment.item.story.summary)
+        .help(item.story.opening)
         #endif
     }
 }
 
-/// The edition's first story: a large tile with its picture, or the desk's own paper, then what it says, what the
-/// desk makes of it and where it comes from.
+/// The paper's first story: a large tile with its picture, or the desk's own paper, then its first paragraph, what
+/// the desk makes of it and where it comes from.
 private struct NewsLeadStory: View {
     let item: NewsDesk.Item
     let developed: Bool
@@ -598,13 +654,13 @@ private struct NewsLeadStory: View {
                      side: .infinity, height: NewsLayout.lead, radius: 40) {
                     Spacer(minLength: 8)
                     // At most three lines, a step smaller rather than cut; over a picture the headline stands on its scrim.
-                    FittedTitle(text: story.title, sizes: NewsLayout.leadSizes, lines: 3, tracking: -0.3)
+                    FittedTitle(text: story.title, sizes: NewsLayout.leadSizes, lines: shown == nil ? 4 : 3, tracking: -0.3)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .pictureScrim(shown != nil)
                 }
                 .animation(.smooth(duration: 0.3), value: shown != nil)
-                // The lead's first paragraph and the desk's view are read here in full; the rest is one press away.
-                Text(story.summary).font(AppTypography.reading).lineSpacing(AppTypography.readingLineSpacing)
+                // The lead's first paragraph and the desk's view are read here; the rest is one press away.
+                Text(story.opening).font(AppTypography.reading).lineSpacing(AppTypography.readingLineSpacing)
                     .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 18)
                 if let view = story.view { ViewLine(text: view).padding(.top, 12) }
@@ -622,60 +678,154 @@ private struct NewsLeadStory: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityHint(words("Открыть историю"))
+        .accessibilityIdentifier("newsLead")
     }
 }
 
-private struct NewsRow: View {
+/// One of the day's top stories: where it belongs, what it is, its first lines, and its picture small beside them
+/// when it has one.
+struct NewsRow: View {
     let item: NewsDesk.Item
     let developed: Bool
     let open: () -> Void
     @Environment(\.newsWords) private var words
+    @Environment(\.newsHome) private var home
+    @State private var picture: CGImage?
 
     var body: some View {
+        let shown = picture ?? StoryPictures.cached(item.story.image)
         Button(action: open) {
-            VStack(alignment: .leading, spacing: 4) {
-                QuietLine(text: newsLine(item.story, locale: words.language.locale), developed: developed)
-                Text(item.story.title).font(NewsType.headline(21, .title3))
-                    .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
-                Text(item.story.summary).font(AppTypography.reading).foregroundStyle(AppTheme.secondaryText).lineSpacing(AppTypography.readingLineSpacing)
-                    .lineLimit(2).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 2)
+            HStack(alignment: .top, spacing: 14) {
+                VStack(alignment: .leading, spacing: 4) {
+                    QuietLine(text: newsLine(item.story, locale: words.language.locale), developed: developed)
+                    Text(item.story.title).font(NewsType.headline(21, .title3))
+                        .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                    Text(item.story.opening).font(AppTypography.reading).foregroundStyle(AppTheme.secondaryText).lineSpacing(AppTypography.readingLineSpacing)
+                        .lineLimit(2).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if let shown {
+                    Image(decorative: shown, scale: 1).resizable().scaledToFill()
+                        .frame(width: 72, height: 72).clipShape(.rect(cornerRadius: 18, style: .continuous))
+                        .padding(.top, 4).transition(.opacity)
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 12)
             .contentShape(.rect)
         }
         .buttonStyle(NewsRowStyle())
+        .task(id: item.story.image) {
+            guard let address = item.story.image else { picture = nil; return }
+            picture = await StoryPictures.load(address, home: home)
+        }
         .accessibilityElement(children: .combine)
         .accessibilityHint(words("Открыть историю"))
     }
 }
 
+/// «Разбор»: the points the headlines missed, as ink tiles. One fills the column; more stand in a row that scrolls.
+private struct NewsAnalysisShelf: View {
+    let items: [NewsDesk.Item]
+    let open: (String) -> Void
+    @Environment(\.newsWords) private var words
+
+    var body: some View {
+        if items.count == 1 { card(items[0]) }
+        else {
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: TileMetrics.gap) { ForEach(items) { card($0).frame(width: 264) } }
+                    .scrollTargetLayout()
+                    // Room for the shadows, which the scroll view would otherwise cut.
+                    .padding(.top, 2).padding(.bottom, 22)
+            }
+            .scrollTargetBehavior(.viewAligned)
+            .scrollIndicators(.hidden)
+            .scrollClipDisabled()
+        }
+    }
+
+    private func card(_ item: NewsDesk.Item) -> some View {
+        Button { open(item.id) } label: {
+            Tile(label: item.story.section, skin: .ink, side: .infinity, height: 164, radius: 32) {
+                Spacer(minLength: 8)
+                FittedTitle(text: item.story.title, sizes: [21, 19.5, 18, 16.5, 15, 14], lines: 4, most: 5, tracking: -0.2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .buttonStyle(TilePressStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(words("Открыть историю"))
+        .accessibilityIdentifier("newsAnalysis-" + item.id)
+    }
+}
+
+/// «Выпуски»: the earlier days as tiles, each with its day, its lead and how many stories it had.
+private struct NewsIssueShelf: View {
+    let desk: NewsDesk
+    let days: [NewsDesk.Day]
+    let now: Date
+    let open: (String) -> Void
+    @Environment(\.newsWords) private var words
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            HStack(alignment: .top, spacing: TileMetrics.gap) {
+                ForEach(days) { day in
+                    let stories = desk.paper(day)
+                    Button { open(day.date) } label: {
+                        Tile(label: words.issue(day.date, now: now), skin: .plain) {
+                            Spacer(minLength: 6)
+                            FittedTitle(text: stories.first?.story.title ?? "", sizes: [14, 13, 12.5], lines: 4, most: 4)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Text(words.stories(stories.count)).font(AppTypography.label.weight(.regular)).opacity(0.62).lineLimit(1).padding(.top, 6)
+                        }
+                    }
+                    .buttonStyle(TilePressStyle())
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("newsDay-" + day.date)
+                }
+            }
+            .scrollTargetLayout()
+            .padding(.top, 2).padding(.bottom, 26)
+        }
+        .scrollTargetBehavior(.viewAligned)
+        .scrollIndicators(.hidden)
+        .scrollClipDisabled()
+    }
+}
+
 // MARK: - One story
 
-/// The story open over its page. Next and previous follow the page's reading order.
-private struct NewsStoryPage: View {
+/// The story open over the page it was opened from. Next and previous follow that page's reading order.
+struct NewsStoryPage: View {
     @ObservedObject var feed: NewsFeed
-    let date: String?
+    /// The open story; nil closes the page.
+    @Binding var story: String?
+    /// The stories of the page it was opened from, as they read from top to bottom.
+    let order: [String]
     let chrome: NewsChrome
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// The story on screen. It stays while the page slides away after `place.story` is cleared.
+    /// The story on screen. It stays while the page slides away after `story` is cleared.
     @State private var shown: String?
+    /// Everything about one name, opened over the story.
+    @State private var topic: NewsTopic?
 
-    init(feed: NewsFeed, date: String?, chrome: NewsChrome) {
-        self.feed = feed; self.date = date; self.chrome = chrome
-        _shown = State(initialValue: feed.place.story)
+    init(feed: NewsFeed, story: Binding<String?>, order: [String], chrome: NewsChrome) {
+        self.feed = feed; _story = story; self.order = order; self.chrome = chrome
+        _shown = State(initialValue: story.wrappedValue)
     }
 
     var body: some View {
-        let words = feed.words, order = feed.desk.page(date, read: feed.visit).order
+        let words = feed.words
         let item = feed.desk.item(shown)
         ZStack {
             if let item {
                 let next = order.firstIndex(of: item.id).flatMap { order.indices.contains($0 + 1) ? feed.desk.item(order[$0 + 1]) : nil }
-                NewsArticle(item: item, next: next, start: feed.storyScroll?.story == item.id ? feed.storyScroll?.offset ?? 0 : 0,
-                            scrolled: { feed.storyScroll = (item.id, $0) }, open: { feed.place.story = $0 },
-                            step: { move($0, in: order) }, close: { feed.place.story = nil })
+                NewsArticle(item: item, next: next, related: feed.desk.related(to: item), start: feed.storyScroll?.story == item.id ? feed.storyScroll?.offset ?? 0 : 0,
+                            scrolled: { feed.storyScroll = (item.id, $0) }, open: { feed.storyScroll = nil; story = $0 },
+                            topic: { topic = NewsTopic(name: $0) },
+                            step: { move($0) }, close: { story = nil })
                     .id(item.id)
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 12)))
             }
@@ -686,42 +836,111 @@ private struct NewsStoryPage: View {
             NewsArrivals(feed: feed, words: words) {
                 feed.showIncoming()
                 feed.place.top += 1
-                feed.place.story = nil; feed.place.day = nil
+                story = nil; feed.place.story = nil; feed.place.day = nil; feed.place.panel = nil
             }
         }
         .paperTop()
         .safeAreaBar(edge: .bottom, spacing: 0) {
-            // Takes this story to the chat as context; the discussion happens there, with everything else.
+            // Two ways on from a story: ask about it in the chat, or have a post for the channel written from it.
             if let item {
-                AskCapsule(title: words("Спросить про историю")) { chrome.discuss(item.latest) }
-                    .accessibilityIdentifier("discussStory")
+                NewsDock(ask: words("Спросить"), onAsk: { chrome.discuss(item.latest) }, post: words("Сделать пост"), stories: [item.id])
             }
         }
         .newsToolbar(feed, chrome, title: item?.story.title ?? "")
+        .navigationDestination(item: $topic) { NewsListPage(feed: feed, kind: .topic($0.name), chrome: chrome) }
         #if os(macOS)
         .background {
             // Esc goes back from anywhere in the window, also while the sidebar holds the keyboard.
-            Button(words("Сегодня")) { feed.place.story = nil }.keyboardShortcut(.cancelAction).opacity(0).accessibilityHidden(true)
+            Button(words("Сегодня")) { story = nil }.keyboardShortcut(.cancelAction).opacity(0).accessibilityHidden(true)
         }
         #endif
         .onAppear { feed.appear(); see() }
         .onDisappear { feed.disappear() }
-        .onChange(of: feed.place.story) { _, story in
-            if let story { shown = story; see() }
+        .onChange(of: story) { _, next in
+            if let next { shown = next; see() }
         }
         // A story that left the feed leaves the screen.
-        .onChange(of: item == nil) { _, gone in if gone { feed.place.story = nil } }
+        .onChange(of: item == nil) { _, gone in if gone { story = nil } }
     }
 
     /// Opening a story is the plainest way of seeing it.
     private func see() {
-        if let story = feed.place.story { feed.see([story]) }
+        if let story { feed.open(story) }
     }
 
-    private func move(_ step: Int, in order: [String]) {
-        guard let index = order.firstIndex(of: feed.place.story ?? ""), order.indices.contains(index + step) else { return }
+    private func move(_ step: Int) {
+        guard let index = order.firstIndex(of: story ?? ""), order.indices.contains(index + step) else { return }
         feed.storyScroll = nil
-        feed.place.story = order[index + step]
+        story = order[index + step]
+    }
+}
+
+/// The story's dock: a glass capsule that takes it to the chat, and the ink capsule that makes a post of it. Where
+/// both names do not fit side by side (a large text size, a narrow window), asking becomes a round «+» and keeps its
+/// name for VoiceOver: an action is never left as an ellipsis.
+struct NewsDock: View {
+    @Environment(\.zoomNamespace) private var zoom
+    @Environment(\.newsPost) private var newsPost
+    let ask: String
+    let onAsk: () -> Void
+    let post: String
+    /// What a post is made from.
+    let stories: [String]
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) { asking(named: true); posting }
+            HStack(spacing: 10) { asking(named: false); Spacer(minLength: 0); posting }
+        }
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+        .frame(maxWidth: Layout.column)
+        .padding(.horizontal, Layout.edge)
+        .padding(.top, 8)
+        .padding(.bottom, Layout.belowComposer)
+        .frame(maxWidth: .infinity)
+        .dockFade()
+    }
+
+    @ViewBuilder private func asking(named: Bool) -> some View {
+        let button = Button(action: onAsk) {
+            Group {
+                if named {
+                    HStack(spacing: 12) {
+                        Image(systemName: "plus").font(.system(size: AskCapsule.height * 0.35, weight: .regular)).foregroundStyle(.primary)
+                        // The whole word or the round button: never a cut one.
+                        Text(ask).font(AppTypography.reading).foregroundStyle(AppTheme.secondaryText).lineLimit(1).fixedSize()
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 18).frame(minHeight: AskCapsule.height)
+                } else {
+                    Image(systemName: "plus").font(.system(size: AskCapsule.height * 0.35, weight: .regular)).foregroundStyle(.primary)
+                        .frame(width: AskCapsule.height, height: AskCapsule.height)
+                }
+            }
+            .contentShape(Capsule())
+            .dockGlass()
+        }
+        .buttonStyle(TilePressStyle())
+        .accessibilityLabel(ask)
+        .accessibilityIdentifier("discussStory")
+        if let zoom { button.zoomSource(AnyHashable("ask"), in: zoom) } else { button }
+    }
+
+    private var posting: some View {
+        Button { newsPost(NewsPostRequest(stories: stories)) } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "square.and.pencil").font(.system(size: AskCapsule.height * 0.33, weight: .medium))
+                Text(post).font(AppTypography.reading.weight(.medium)).lineLimit(1)
+            }
+            .foregroundStyle(AppTheme.canvas)
+            .padding(.horizontal, 20).frame(minHeight: AskCapsule.height)
+            .background(AppTheme.accentText, in: Capsule())
+            .contentShape(Capsule())
+            // The action keeps its whole name.
+            .fixedSize()
+        }
+        .buttonStyle(TilePressStyle())
+        .accessibilityIdentifier("makePost")
     }
 }
 
@@ -736,8 +955,12 @@ private final class NewsScroll {
 private struct NewsArticle: View {
     let item: NewsDesk.Item
     let next: NewsDesk.Item?
+    /// Other stories about the same names, the newest first.
+    let related: [NewsDesk.Item]
     let scrolled: (CGFloat) -> Void
     let open: (String) -> Void
+    /// Everything the desk wrote about one name.
+    let topic: (String) -> Void
     /// The next or the previous story of the page, and the way back to it.
     let step: (Int) -> Void
     let close: () -> Void
@@ -750,9 +973,9 @@ private struct NewsArticle: View {
     @State private var scroll = NewsScroll()
     @FocusState private var focused: Bool
 
-    init(item: NewsDesk.Item, next: NewsDesk.Item?, start: CGFloat, scrolled: @escaping (CGFloat) -> Void, open: @escaping (String) -> Void,
-         step: @escaping (Int) -> Void, close: @escaping () -> Void) {
-        self.item = item; self.next = next; self.scrolled = scrolled; self.open = open; self.step = step; self.close = close
+    init(item: NewsDesk.Item, next: NewsDesk.Item?, related: [NewsDesk.Item], start: CGFloat, scrolled: @escaping (CGFloat) -> Void, open: @escaping (String) -> Void,
+         topic: @escaping (String) -> Void, step: @escaping (Int) -> Void, close: @escaping () -> Void) {
+        self.item = item; self.next = next; self.related = related; self.scrolled = scrolled; self.open = open; self.topic = topic; self.step = step; self.close = close
         // Three sources or fewer are the evidence at a glance; more wait behind their count.
         _showsSources = State(initialValue: item.story.sources.count <= 3)
         _position = State(initialValue: start > 0 ? ScrollPosition(point: CGPoint(x: 0, y: start)) : ScrollPosition(edge: .top))
@@ -771,18 +994,20 @@ private struct NewsArticle: View {
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 if item.developments.count > 1, let change = item.newest.story?.change { development(item.newest, change).padding(.top, 14) }
                 if let view = story.view { ViewLine(text: view).padding(.top, 14) }
+                if let numbers = story.numbers, !numbers.isEmpty { NewsNumbers(numbers: numbers).padding(.top, 22) }
                 if !links.isEmpty {
                     Capsules {
                         ForEach(Array(links.enumerated()), id: \.offset) { _, source in
-                            Link(destination: source.url) { SourceCapsule(title: source.title) }.buttonStyle(.plain)
+                            Link(destination: source.url) { SourceCapsule(title: source.title, symbol: "arrow.up.right") }.buttonStyle(.plain)
                         }
                     }
-                    .padding(.top, 18)
+                    .padding(.top, story.numbers?.isEmpty == false ? 4 : 18)
                 }
 
                 section(words("Что произошло")) { MessageContent(source: story.body).equatable() }
                 evidence.padding(.top, 32)
                 if item.developments.count > 1 { history.padding(.top, 32) }
+                if !item.topics.isEmpty || !related.isEmpty { chapters.padding(.top, 32) }
                 if let next {
                     Button { open(next.id) } label: {
                         VStack(alignment: .leading, spacing: 4) {
@@ -936,6 +1161,25 @@ private struct NewsArticle: View {
         }
     }
 
+    /// Whom the story is about, each name a way to everything the desk wrote about it, and the earlier chapters of
+    /// the same storyline.
+    private var chapters: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            label(words("Раньше по теме"))
+            if !item.topics.isEmpty {
+                Capsules {
+                    ForEach(item.topics, id: \.self) { name in
+                        Button { topic(name) } label: { SourceCapsule(title: name) }.buttonStyle(NewsRowStyle())
+                            .accessibilityIdentifier("storyTopic-" + name)
+                    }
+                }
+            }
+            ForEach(related) { other in
+                NewsCompactRow(item: other, line: [other.newest.sentAt.map { words.shortDay($0) }, other.story.section.lowercased(with: words.language.locale)].compactMap { $0 }.joined(separator: " · ")) { open(other.id) }
+            }
+        }
+    }
+
     private var history: some View {
         VStack(alignment: .leading, spacing: 12) {
             label(words("Развитие"))
@@ -944,5 +1188,42 @@ private struct NewsArticle: View {
                      version.id == item.versions.first?.id ? words("Первое сообщение") : version.story?.change ?? "")
             }
         }
+    }
+}
+
+/// The figures that carry a story, each large over what it measures: a row of tiles that scrolls when it must.
+struct NewsNumbers: View {
+    let numbers: [NewsStory.Number]
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            HStack(alignment: .top, spacing: TileMetrics.gap) {
+                ForEach(Array(numbers.enumerated()), id: \.offset) { index, number in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(number.value).font(.system(size: TileMetrics.side * 0.2, weight: .semibold)).tracking(-1).monospacedDigit()
+                            .lineLimit(1).minimumScaleFactor(0.5)
+                        Text(number.label).font(AppTypography.label.weight(.regular)).opacity(0.66).lineLimit(4).multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(TileMetrics.padding)
+                    // A little wider than a tile of the shelf: what a figure measures is a phrase, not a word.
+                    .frame(width: TileMetrics.side * 1.2, height: TileMetrics.side, alignment: .topLeading)
+                    .foregroundStyle(index == 0 ? AnyShapeStyle(AppTheme.canvas) : AnyShapeStyle(.primary))
+                    .background(index == 0 ? AppTheme.accentText : AppTheme.tile, in: .rect(cornerRadius: TileMetrics.radius, style: .continuous))
+                    .tileShadow()
+                    .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(number.value + ", " + number.label)
+                }
+            }
+            .scrollTargetLayout()
+            // Room for the shadows, which the scroll view would otherwise cut.
+            .padding(.top, 2).padding(.bottom, 26)
+        }
+        .scrollTargetBehavior(.viewAligned)
+        .scrollIndicators(.hidden)
+        .scrollClipDisabled()
+        .accessibilityIdentifier("storyNumbers")
     }
 }

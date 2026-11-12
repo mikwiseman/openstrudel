@@ -2,6 +2,8 @@ import type { MessageContext } from "./message-context.js";
 
 export type Channel = "api" | "telegram";
 export interface TelegramLinkButton { text: string; url: string }
+/** A button whose press comes back to the Home; `callback_data` holds at most 64 bytes. */
+export interface TelegramActionButton { text: string; callback_data: string }
 
 export interface Conversation {
   id: string;
@@ -49,6 +51,10 @@ export interface NewsStory {
   telegram?: "alert" | "card" | null;
   /** A picture that proves the story, shown on top of its Telegram post: a chart, a table, a screenshot from a source. */
   image?: string | null;
+  /** The figures that carry the story, each with what it measures; absent on a story published before the field existed. */
+  numbers?: Array<{ value: string; label: string }> | null;
+  /** Whom the story is about: companies, products and people by their usual names. */
+  topics?: string[] | null;
 }
 
 export interface Attachment { id: string; conversationId: string; name: string; mimeType: string; size: number; }
@@ -191,6 +197,9 @@ export interface MessageInput {
   replyTo?: { messageId: number; author?: string; text: string };
   /** An app question about a News story in this chat: the story's message id. */
   replyToId?: string;
+  /** Trusted: what the Home itself prepared for this turn to read, a post draft's stories and rules. Never accepted from a request
+   * body. It takes the place of the story question's context, and the turn starts a session of its own. */
+  brief?: string;
   telegramSenderId?: string;
   /** Trusted adapter input: preserve group context without invoking the model. */
   contextOnly?: boolean;

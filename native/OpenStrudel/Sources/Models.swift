@@ -115,7 +115,38 @@ struct NewsStory: Codable, Hashable {
     let sources: [Source]
     /// A picture that proves the story, as an https address; older Homes send none.
     var image: String? = nil
+    /// A figure that carries the story, and what it measures: «30 %», «причинных вариантов найдено, было 16 %».
+    struct Number: Codable, Hashable { let value: String; let label: String }
+    var numbers: [Number]? = nil
+    /// The companies, products and people the story is about, by their usual names.
+    var topics: [String]? = nil
+    /// How the desk sent this version to its Telegram chat: "alert" for what the reader must know now, "card", or nil for the app alone.
+    var telegram: String? = nil
 }
+
+/// A draft of a post for the owner's channel, written on the desk's Home from its stories. Nothing publishes it.
+struct NewsPost: Codable, Identifiable, Hashable {
+    let id: String
+    var storyIds: [String]
+    /// The stories' headlines when the draft was asked for.
+    var titles: [String]
+    /// "telegram" or "linkedin".
+    var channel: String
+    var text: String
+    /// What the desk wants the owner to know about the draft: what the channel already said, what it could not check.
+    var note: String?
+    /// "writing", "ready" or "failed".
+    var status: String
+    var error: String?
+    var createdAt: String
+    var updatedAt: String
+    /// When the owner copied or shared it.
+    var usedAt: String?
+
+    var isWriting: Bool { status == "writing" }
+}
+struct NewsPostEnvelope: Decodable { let post: NewsPost }
+struct NewsPostsEnvelope: Decodable { let posts: [NewsPost] }
 
 /// What the Home knows about the feed's scheduled runs. Older Homes send none, and every field may be missing.
 struct NewsStatus: Decodable, Equatable {
@@ -145,7 +176,11 @@ struct NewsStatus: Decodable, Equatable {
 }
 
 /// The edition the desk named itself, when it gave it a title.
-struct NewsEditionTitle: Decodable, Equatable { let date: String; let title: String }
+struct NewsEditionTitle: Decodable, Equatable {
+    let date: String; let title: String
+    /// A sentence or two from the desk on the day; older Homes send none.
+    var intro: String? = nil
+}
 struct NewsFeedEnvelope: Decodable { let messages: [HomeMessage]; let stamp: String?; var status: NewsStatus? = nil; var edition: NewsEditionTitle? = nil }
 
 struct TelegramStatus: Codable {

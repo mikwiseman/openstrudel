@@ -455,3 +455,185 @@ private final class NewsProtocol: URLProtocol, @unchecked Sendable {
     }
     override func stopLoading() { operation?.cancel() }
 }
+
+// MARK: - The paper
+
+/// The front page's arithmetic, the week, the search and the copy of the paper a device keeps.
+extension NewsDeskTests {
+    private func report(_ id: String, at created: String, section: String = "Модели", status: String = "Вышло", telegram: String? = nil, edition: String? = nil, rank: Int? = nil,
+                        change: String? = nil, topics: [String]? = nil, title: String? = nil, message: String? = nil) -> HomeMessage {
+        HomeMessage(id: message ?? id + "@" + created, conversationId: "news", channel: "api", direction: "outbound", replyToId: nil,
+                    text: "Story", externalId: nil, createdAt: created, status: "completed", error: nil, kind: "text",
+                    story: NewsStory(id: id, edition: edition, rank: rank, section: section, status: status, title: title ?? id, summary: "Первый абзац.\n\nВторой абзац.",
+                                     body: "Факты про " + id, view: nil, check: nil, verification: "Источник", eventAt: nil, change: change, sources: [],
+                                     topics: topics, telegram: telegram))
+    }
+
+    @Test func thePaperLeadsWithWhatMustBeKnownThenTheEditionThenTheRadar() {
+        let desk = desk([
+            report("quiet", at: "2026-11-10T05:00:00.000Z"),
+            report("second", at: "2026-11-10T04:04:00.000Z", edition: "2026-11-10", rank: 2),
+            report("first", at: "2026-11-10T04:04:01.000Z", edition: "2026-11-10", rank: 1),
+            report("card-early", at: "2026-11-10T06:00:00.000Z", telegram: "card"),
+            report("card-late", at: "2026-11-10T09:00:00.000Z", section: "Роботы", telegram: "card"),
+            report("urgent", at: "2026-11-10T08:00:00.000Z", telegram: "alert"),
+            report("point", at: "2026-11-10T10:30:00.000Z", status: "Разбор", telegram: "card"),
+            report("robot", at: "2026-11-10T07:00:00.000Z", section: "Роботы"),
+        ])
+        let front = desk.front(now: Self.now)
+        #expect(front.stories.map(\.id) == ["urgent", "first", "second", "point", "card-late", "card-early", "robot", "quiet"])
+        #expect(front.lead?.id == "urgent" && front.isToday && !front.standsIn)
+        // The analysis stands in its own block, the next four are the top stories, the rest go under their sections.
+        #expect(front.analysis.map(\.id) == ["point"])
+        #expect(front.top.map(\.id) == ["first", "second", "card-late", "card-early"])
+        #expect(front.sections.map(\.name) == ["Роботы", "Модели"])
+        #expect(front.sections.map { $0.items.map(\.id) } == [["robot"], ["quiet"]])
+        #expect(front.order == ["urgent", "first", "second", "card-late", "card-early", "point", "robot", "quiet"])
+        #expect(Set(front.order).count == front.stories.count, "every story stands in one place")
+        #expect(front.published == Self.instant("2026-11-10T04:04:00.000Z"))
+        #expect(NewsStatusLine(status: NewsStatus(nextRunAt: "2026-11-10T12:05:00.000Z"), front: front, calendar: Self.moscow)
+                == .edition(published: Self.instant("2026-11-10T04:04:00.000Z"), stories: 8, checked: nil))
+    }
+
+    @Test func newIsWhatWasReportedSinceTheReaderLastLeftTodaysPaper() {
+        let messages = [
+            report("morning", at: "2026-11-10T05:00:00.000Z", telegram: "card"),
+            report("unread", at: "2026-11-10T06:00:00.000Z"),
+            report("noon", at: "2026-11-10T09:10:00.000Z"),
+            report("morning", at: "2026-11-10T10:00:00.000Z", change: "Назвали цену.", message: "morning-update"),
+            report("urgent", at: "2026-11-10T11:00:00.000Z", telegram: "alert"),
+        ]
+        let desk = desk(messages)
+        // The first look of the day: the paper is the paper, nothing is singled out.
+        var read = NewsReadState(lastVisitAt: Self.instant("2026-11-09T18:00:00.000Z"))
+        #expect(desk.front(now: Self.now, read: read).fresh.isEmpty)
+        #expect(desk.front(now: Self.now, read: read).unseen(read) == 4)
+        // Back at noon, having left at 09:00 with the morning story seen: what came since is new, the newest first.
+        // The story left unread then is not new, and the lead is never repeated.
+        read = NewsReadState(lastVisitAt: Self.instant("2026-11-10T06:30:00.000Z"), seen: ["morning@2026-11-10T05:00:00.000Z"])
+        let front = desk.front(now: Self.now, read: read)
+        #expect(front.lead?.id == "urgent")
+        #expect(front.fresh.map(\.id) == ["morning", "noon"])
+        #expect(front.fresh.first?.isDevelopment == true)
+        #expect(front.top.map(\.id) == ["unread"])
+        #expect(front.freshSince(read, calendar: Self.moscow) == Self.instant("2026-11-10T06:30:00.000Z"))
+        // An earlier day's page singles nothing out.
+        #expect(desk.front("2026-11-10", now: Self.instant("2026-11-11T08:00:00.000Z"), read: read).fresh.isEmpty)
+    }
+
+    @Test func beforeTodaysFirstStoryTheLatestPaperStandsInAndSaysSo() {
+        let desk = desk([report("monday", at: "2026-11-09T09:00:00.000Z"), report("sunday", at: "2026-11-08T09:00:00.000Z")])
+        let front = desk.front(now: Self.now)
+        #expect(front.date == "2026-11-09" && front.isToday && front.standsIn && front.lead?.id == "monday")
+        #expect(front.earlier.map(\.date) == ["2026-11-08"])
+        #expect(NewsStatusLine(status: NewsStatus(nextRunAt: "2026-11-10T12:05:00.000Z"), front: front, calendar: Self.moscow) == .noEdition(standIn: "2026-11-09"))
+        let empty = self.desk([]).front(now: Self.now)
+        #expect(empty.isEmpty && empty.lead == nil && empty.date == "2026-11-10")
+        // An earlier day is the page of that day alone.
+        let sunday = desk.front("2026-11-08", now: Self.now)
+        #expect(!sunday.isToday && sunday.stories.map(\.id) == ["sunday"] && sunday.earlier.map(\.date) == ["2026-11-09"])
+    }
+
+    @Test func theWeekCountsWhereTheStoriesWereAndWhomTheyWereAbout() {
+        let desk = desk([
+            report("old-model", at: "2026-10-30T09:00:00.000Z", topics: ["Клён"]),
+            report("old-robot", at: "2026-10-31T09:00:00.000Z", section: "Роботы", topics: ["Скворец"]),
+            report("old-robot-2", at: "2026-11-01T09:00:00.000Z", section: "Роботы"),
+            report("model-a", at: "2026-11-05T09:00:00.000Z", telegram: "alert", topics: ["Клён", "Северный мост"]),
+            report("model-b", at: "2026-11-08T09:00:00.000Z", topics: ["клён"]),
+            report("model-c", at: "2026-11-10T09:00:00.000Z", topics: ["Ива"]),
+            report("robot", at: "2026-11-09T09:00:00.000Z", section: "Роботы"),
+            report("robot", at: "2026-11-10T10:00:00.000Z", section: "Роботы", change: "Показали вторую версию.", message: "robot-update"),
+        ])
+        var read = NewsReadState(seen: ["model-a@2026-11-05T09:00:00.000Z", "model-b@2026-11-08T09:00:00.000Z"])
+        read.opened = ["model-a": Self.now]
+        let week = NewsWeek(desk, read: read, now: Self.now)
+        #expect(week.stories.map(\.id) == ["model-c", "robot", "model-b", "model-a"])
+        #expect(week.storiesBefore == 3 && week.mustKnow == 1)
+        #expect(week.sections.map(\.name) == ["Модели", "Роботы"])
+        #expect(week.sections.map(\.count) == [3, 1] && week.sections.map(\.before) == [1, 2])
+        #expect(week.sections.map(\.direction) == [1, -1])
+        // A name counts once a story, however it is capitalised, and keeps the spelling it was first given this week.
+        #expect(week.topics.map(\.name) == ["Клён", "Ива", "Северный мост"])
+        #expect(week.topics.map(\.count) == [2, 1, 1] && week.topics.first?.before == 1 && week.topics.first?.latest.id == "model-b")
+        #expect(week.storylines.map(\.item.id) == ["robot"] && week.storylines.first?.events == 2)
+        #expect(week.seen == 2 && week.opened == 1)
+        // A feed that does not reach the week before says nothing about it.
+        let short = NewsWeek(self.desk([report("only", at: "2026-11-10T09:00:00.000Z")]), now: Self.now)
+        #expect(short.storiesBefore == nil && short.sections.first?.before == nil && short.sections.first?.direction == nil)
+        #expect(NewsWords(language: .russian).change(3, from: 1) == "+2" && NewsWords(language: .russian).change(1, from: 2) == "−1")
+    }
+
+    @Test func aStoryIsFoundByItsWordsAndByWhomItIsAbout() throws {
+        let desk = desk([
+            report("klen-open", at: "2026-11-08T09:00:00.000Z", topics: ["Клён", "Северный мост"], title: "Открыты веса модели"),
+            report("klen-cloud", at: "2026-11-10T09:00:00.000Z", topics: ["клён"], title: "Модель появилась в облаках"),
+            report("robot", at: "2026-11-09T09:00:00.000Z", section: "Роботы", title: "Робот собрал шкаф"),
+        ])
+        #expect(desk.search("модел").map(\.id) == ["klen-cloud", "klen-open"])
+        #expect(desk.search("северный клён").map(\.id) == ["klen-open"])
+        #expect(desk.search("роботы шкаф").map(\.id) == ["robot"])
+        #expect(desk.search("  ").isEmpty && desk.search("трактор").isEmpty)
+        #expect(desk.related(to: try #require(desk.item("klen-cloud"))).map(\.id) == ["klen-open"])
+        #expect(desk.related(to: try #require(desk.item("robot"))).isEmpty)
+    }
+
+    @Test func aRunOfDaysEndsTodayOrYesterday() {
+        var read = NewsReadState()
+        #expect(read.streak(now: Self.now, calendar: Self.moscow) == 0)
+        read.days = ["2026-11-10", "2026-11-09", "2026-11-08", "2026-11-06"]
+        #expect(read.streak(now: Self.now, calendar: Self.moscow) == 3)
+        read.days = ["2026-11-09", "2026-11-08"]
+        #expect(read.streak(now: Self.now, calendar: Self.moscow) == 2)
+        read.days = ["2026-11-07"]
+        #expect(read.streak(now: Self.now, calendar: Self.moscow) == 0)
+        // A state saved by an earlier version has neither days nor opened stories.
+        let saved = try? JSONDecoder().decode(NewsReadState.self, from: Data(#"{"seen":["a"]}"#.utf8))
+        #expect(saved?.seen == ["a"] && saved?.days == nil && saved?.opened == nil)
+    }
+
+    @Test func aStoryCarriesItsFiguresAndNamesAndAnOlderOneDoesWithout() throws {
+        let json = #"{"id":"s","edition":null,"rank":null,"section":"Модели","status":"Вышло","title":"T","summary":"S","body":"B","view":null,"check":null,"verification":"V","eventAt":null,"change":null,"sources":[]"#
+        let full = try JSONDecoder().decode(NewsStory.self, from: Data((json + #","telegram":"alert","numbers":[{"value":"30%","label":"было 16%"}],"topics":["Клён"]}"#).utf8))
+        #expect(full.numbers == [NewsStory.Number(value: "30%", label: "было 16%")] && full.topics == ["Клён"] && full.telegram == "alert")
+        let old = try JSONDecoder().decode(NewsStory.self, from: Data((json + "}").utf8))
+        #expect(old.numbers == nil && old.topics == nil && old.telegram == nil && old.opening == "S")
+        let edition = try JSONDecoder().decode(NewsEditionTitle.self, from: Data(#"{"date":"2026-11-10","title":"Утро"}"#.utf8))
+        #expect(edition.intro == nil)
+    }
+
+    @Test func thePaperOpensFromTheCopyTheDeviceKeeps() async throws {
+        let fixture = NewsFixture()
+        fixture.messages = [version("now", story: "roof", at: fixture.stamp(-1))]
+        let (client, session, defaults, suite) = makeClient(fixture)
+        let folder = FileManager.default.temporaryDirectory.appending(path: "news-cache-" + UUID().uuidString)
+        defer { session.invalidateAndCancel(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: folder) }
+        let route = ReaderRoute(connectionID: client.id, kind: .news("news"), title: "News")
+        let first = NewsFeed(client: client, route: route, defaults: defaults, cache: folder)
+        #expect(!first.loaded && first.lead == nil)
+        await first.refresh()
+        #expect(first.lead?.id == "roof")
+        first.open("roof")
+        #expect(first.read.opened?["roof"] != nil && first.unseen == 0)
+
+        // The next launch has the paper before the Home has said a word, with what was read of it.
+        let second = NewsFeed(client: client, route: route, defaults: defaults, cache: folder)
+        #expect(second.loaded && second.lead?.id == "roof" && second.conversationID == "c-news" && second.unseen == 0)
+        #expect(second.status == nil, "what the Home said about its runs then is not said again")
+        // Another desk keeps its own copy.
+        let other = NewsFeed(client: client, route: ReaderRoute(connectionID: client.id, kind: .news("startups"), title: "Startups"), defaults: defaults, cache: folder)
+        #expect(!other.loaded && other.lead == nil)
+    }
+}
+
+extension NewsDeskTests {
+    @Test func anEditionReadsUnderTheNameItsDeskGaveIt() {
+        let words = NewsWords(language: .russian, calendar: Self.moscow)
+        let edition = desk([version("a", story: "kettle", at: "2026-11-10T04:04:00.000Z", edition: "2026-11-10", rank: 1)]).front(now: Self.now)
+        #expect(words.paperTitle(edition, named: NewsEditionTitle(date: "2026-11-10", title: "Стартапы дня"), now: Self.now) == "Стартапы дня")
+        #expect(words.paperTitle(edition, named: NewsEditionTitle(date: "2026-11-09", title: "Вчерашнее"), now: Self.now) == "Выпуск")
+        #expect(words.paperTitle(edition, named: nil, now: Self.now) == "Выпуск")
+        let standIn = desk([version("b", story: "lantern", at: "2026-11-09T04:04:00.000Z", edition: "2026-11-09", rank: 1)]).front(now: Self.now)
+        #expect(words.paperTitle(standIn, named: nil, now: Self.now) == "Выпуск за 9 ноября")
+    }
+}
