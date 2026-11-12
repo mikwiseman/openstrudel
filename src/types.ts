@@ -182,7 +182,11 @@ export interface ServiceSignIn {
 
 export interface DynamicTool { type: "function"; name: string; description: string; inputSchema: Record<string, unknown> }
 export interface Connection { id: string; name: string; kind: "app" | "mcp"; detail?: string | null; connected: boolean; url: string | null; status?: "ready" | "sign_in" | "unavailable" | "disabled" | "available" | "unknown"; toolCount?: number; removable?: boolean; }
-export interface Interaction { id: string; conversationId: string; messageId: string; title: string; detail?: string; url?: string; requestedBy?: string; questions: Array<{ id: string; question: string; options: string[] }>; }
+export interface Interaction { id: string; conversationId: string; messageId: string; title: string; detail?: string; url?: string; requestedBy?: string; questions: Array<{ id: string; question: string; options: string[] }>;
+  /** A service action that sends words to someone, in plain parts: shown as a send card. */
+  send?: SendAction; }
+/** What a service's send will do: who receives, through what, the subject and the whole text; every other argument as a plain fact. */
+export interface SendAction { server: string; tool: string; params: Record<string, unknown>; to: string; via: string; subject: string | null; text: string; details: Array<{ label: string; value: string }> }
 
 export interface MessageInput {
   mode?: "steer" | "queue";
@@ -213,6 +217,8 @@ export interface MessageInput {
   scheduleTelegramChatId?: string | null;
   /** Trusted: the device owner sent this message. Set by the server and the Telegram adapter, never from a request body. */
   byOwner?: boolean;
+  /** Trusted: a verified answer to a card. It continues the conversation that raised the card, whatever chat it was shown in. Never from a request body. */
+  cardReply?: boolean;
   attachments?: string[];
   /** Downloaded channel media; never accepted as arbitrary paths by the API. */
   uploads?: Array<{ id: string; name: string; mimeType?: string; contentBase64: string }>;

@@ -381,6 +381,18 @@ export class HttpApi {
       if (path === "/v1/activity" && request.method === "GET") {
         this.send(response, 200, readActivity(this.store, canManageAccount)); return;
       }
+      // «Нужен ты»: what waits for a person on this Home, and one answer per card. The same act as a press in Telegram.
+      if (path === "/v1/cards" && request.method === "GET") {
+        if (!canManageAccount) throw new HomeError("Что ждёт решения, видит владелец устройства.", 403);
+        this.send(response, 200, this.messages.cards.list()); return;
+      }
+      const cardAnswer = path.match(/^\/v1\/cards\/([a-f0-9]{16})\/answer$/);
+      if (cardAnswer && request.method === "POST") {
+        if (!canManageAccount) throw new HomeError("На карточки отвечает владелец устройства.", 403);
+        const body = await this.body(request, 64 * 1024);
+        const answered = await this.messages.cards.answerFromApp(cardAnswer[1]!, { choice: typeof body.choice === "string" ? body.choice : undefined, text: typeof body.text === "string" ? body.text : undefined });
+        this.send(response, answered.status, answered.status === 200 ? { card: answered.card } : { error: answered.error, ...answered.card ? { card: answered.card } : {} }); return;
+      }
       if (path === "/v1/statistics" && request.method === "GET") {
         this.send(response, 200, readStatistics(this.store, canManageAccount)); return;
       }

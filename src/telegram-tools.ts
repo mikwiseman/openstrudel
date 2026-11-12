@@ -18,6 +18,8 @@ export interface TelegramToolContext {
   telegram?: TelegramAdapter;
   files?: ConversationFiles;
   scope?: string;
+  /** Cards this turn may raise for a person. */
+  cards?: import("./cards.js").Cards;
 }
 
 /** A Telegram user who paired their private chat with this Home: an owner. */
@@ -58,6 +60,15 @@ export function assertManagement(store: Store, context: TelegramToolContext): vo
 /** Only from the adapter's verified sender id: a paired owner or someone on the access list. */
 export const hasAccess = (store: Store, sender?: string) => Boolean(sender && !isRestrictedSubject(store, sender) && (paired(store, sender) || accessPeople(store).includes(sender) || managementPeople(store).includes(sender)));
 
+/** Chats this turn may send to through the Home's bot: the owner and administrators, any connected chat; a schedule, its own
+ * destination; anyone else, the chat they are in. A model turn never posts to a protected audience, even the owner's. */
+export function reachableChats(store: Store, context: TelegramToolContext, includePaused = false) {
+  const owner = managementTurn(store, context);
+  return store.telegramChats().filter(chat => (chat.enabled !== false || includePaused && owner) && !isProtectedTelegramAudience(store, chat.chatId) && (context.scheduled
+    ? chat.chatId === context.scheduleTelegramChatId
+    : owner || chat.conversationId === context.conversationId));
+}
+
 /** The already connected bot is a native capability, not another MCP sign-in. */
 export function telegramTools(store: Store, context: TelegramToolContext) {
   const definitions: DynamicTool[] = context.telegram ? [
@@ -66,13 +77,7 @@ export function telegramTools(store: Store, context: TelegramToolContext) {
     { type:"function", name:"send_telegram_message", description:"Send through the already connected bot, only when the current user explicitly asks to send to this destination. Resolve its exact chatId with list_telegram_chats first; never guess. text may be empty when files are provided. paths contains real files in your permitted workspace (25 MB each). Telegram decides how each file appears: the receipt's files[], in paths order, gives the kind it actually made (animation, video, audio, document…); describe that, never an expected format. For one photo album use album:true with 2–10 JPEG/PNG files (up to 10 MB each), in display order; text is its single caption, at most 1024 characters. Find/download real requested images with available web tools. silent:true delivers without notification sound; linkPreview:true shows Telegram's preview of a link. Options default to false. Do not invent a file or claim delivery without sent:true. Ordinary answers already go back to the current chat automatically; do not send them twice. A repeated identical call in this turn does not send again. Unknown delivery means check Telegram, not retry with different content.",
       inputSchema:{type:"object",properties:{chatId:{type:"string"},text:{type:"string"},paths:{type:"array",items:{type:"string"}},silent:{type:["boolean","null"]},linkPreview:{type:["boolean","null"]},album:{type:["boolean","null"]}},required:["chatId","text","paths"],additionalProperties:false} },
   ] : [];
-  const chats = (includePaused = false) => {
-    const owner = managementTurn(store, context);
-    // A model turn never posts to a protected audience, even the owner's: only its own verified answers reach it.
-    return store.telegramChats().filter(chat => (chat.enabled !== false || includePaused && owner) && !isProtectedTelegramAudience(store, chat.chatId) && (context.scheduled
-      ? chat.chatId === context.scheduleTelegramChatId
-      : owner || chat.conversationId === context.conversationId));
-  };
+  const chats = (includePaused = false) => reachableChats(store, context, includePaused);
   return { definitions, async call(name: string, args: Record<string, unknown>) {
     assertNativeAccess(store, context.conversationId, context.telegramSenderId);
     if (!context.telegram?.enabled()) throw new Error("Подключите бота в настройках устройства → Telegram. Дополнительный сервис Telegram сотруднику не нужен.");

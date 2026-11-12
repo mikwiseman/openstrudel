@@ -4388,6 +4388,76 @@
     "he": "שליחה",
     "ru": "Отправить"
   },
+  "Оставить черновиком": {
+    "en": "Keep as draft",
+    "fr": "Garder en brouillon",
+    "es": "Dejar como borrador",
+    "he": "להשאיר כטיוטה",
+    "ru": "Оставить черновиком"
+  },
+  "Не отправлять": {
+    "en": "Don’t send",
+    "fr": "Ne pas envoyer",
+    "es": "No enviar",
+    "he": "לא לשלוח",
+    "ru": "Не отправлять"
+  },
+  "Другое": {
+    "en": "Something else",
+    "fr": "Autre chose",
+    "es": "Otra cosa",
+    "he": "משהו אחר",
+    "ru": "Другое"
+  },
+  "Новая дата": {
+    "en": "New date",
+    "fr": "Nouvelle date",
+    "es": "Nueva fecha",
+    "he": "תאריך חדש",
+    "ru": "Новая дата"
+  },
+  "Отправить сообщение?": {
+    "en": "Send this message?",
+    "fr": "Envoyer ce message ?",
+    "es": "¿Enviar este mensaje?",
+    "he": "לשלוח את ההודעה?",
+    "ru": "Отправить сообщение?"
+  },
+  "Что ждёт решения, видит владелец устройства.": {
+    "en": "Only the owner of this device sees what waits for a decision.",
+    "fr": "Seul le propriétaire de cet appareil voit ce qui attend une décision.",
+    "es": "Solo el propietario de este dispositivo ve lo que espera una decisión.",
+    "he": "רק בעל המכשיר רואה מה מחכה להחלטה.",
+    "ru": "Что ждёт решения, видит владелец устройства."
+  },
+  "На карточки отвечает владелец устройства.": {
+    "en": "Only the owner of this device answers cards.",
+    "fr": "Seul le propriétaire de cet appareil répond aux cartes.",
+    "es": "Solo el propietario de este dispositivo responde a las tarjetas.",
+    "he": "רק בעל המכשיר עונה על כרטיסים.",
+    "ru": "На карточки отвечает владелец устройства."
+  },
+  "Карточка не найдена.": {
+    "en": "This card was not found.",
+    "fr": "Cette carte est introuvable.",
+    "es": "No se encontró esta tarjeta.",
+    "he": "הכרטיס לא נמצא.",
+    "ru": "Карточка не найдена."
+  },
+  "По этой карточке уже есть решение.": {
+    "en": "This card is already decided.",
+    "fr": "Cette carte a déjà une décision.",
+    "es": "Esta tarjeta ya tiene una decisión.",
+    "he": "כבר התקבלה החלטה בכרטיס הזה.",
+    "ru": "По этой карточке уже есть решение."
+  },
+  "Выберите один из вариантов или напишите ответ.": {
+    "en": "Choose one of the answers or write your own.",
+    "fr": "Choisissez une réponse ou écrivez la vôtre.",
+    "es": "Elige una de las respuestas o escribe la tuya.",
+    "he": "בחרו אחת מהתשובות או כתבו תשובה משלכם.",
+    "ru": "Выберите один из вариантов или напишите ответ."
+  },
   "Остановить текущий ответ": {
     "en": "Stop current reply",
     "fr": "Arrêter la réponse en cours",
