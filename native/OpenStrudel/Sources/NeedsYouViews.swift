@@ -134,7 +134,7 @@ struct NeedCardView: View {
             if action.role == .link, let url = action.url {
                 Button(action.label, systemImage: "arrow.up.forward") { openURL(url) }.buttonStyle(CardButtonStyle(prominent: prominent))
             } else if lead, let read, prominent && card.readsFirst {
-                Button(L("Прочитать и отправить"), action: read).buttonStyle(CardButtonStyle(prominent: true))
+                Button(L("Прочитать и отправить"), action: read).buttonStyle(CardButtonStyle(prominent: true)).accessibilityIdentifier("needRead")
             } else if action.needsText {
                 // Words are written on the card's page, where there is room for them.
                 Button(action.label) {

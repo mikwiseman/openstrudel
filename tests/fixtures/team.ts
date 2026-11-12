@@ -237,6 +237,13 @@ const gardenerChat = second.runtime.store.profileConversation(gardener.id);
 const garden = second.runtime.store.addMessage({ conversationId: gardenerChat.id, channel: "api", direction: "outbound", text: "На этой неделе: укрыть розы и убрать шланги до заморозков." });
 second.runtime.store.db.prepare("UPDATE messages SET created_at=? WHERE id=?").run(at(3, "10:00"), garden.id);
 second.runtime.scheduler.save({ conversationId: gardenerChat.id, name: "Дела в саду", prompt: "Составить список", cron: "0 10 * * 6", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+// Two cards wait on the second Home, raised as an employee's turn raises them: words that will leave, and a promise
+// with its day. Neither has a Telegram chat, so they live in the app; closing either needs no model turn.
+const raised = { conversationId: gardenerChat.id, messageId: garden.id, channel: "api" as const, profile: second.runtime.store.getProfile(gardener.id)!, sendable: () => false };
+await second.runtime.messages.cards.raise({ kind: "send", title: "Отправить соседу про шланги?", reason: "Он спрашивал во вторник.", to: "Сосед", via: "Почта",
+  subject: "Шланги и розы", text: "Добрый день. Шланги уберём в субботу, розы укроем в воскресенье." }, raised);
+await second.runtime.messages.cards.raise({ kind: "due", title: "Укрыть розы до заморозков", reason: "Обещали на прошлой неделе.",
+  due: new Date(Date.now() + 86_400_000).toLocaleDateString("sv-SE") }, raised);
 
 // MARK: Control
 

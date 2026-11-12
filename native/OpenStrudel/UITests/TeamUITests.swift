@@ -97,18 +97,39 @@ final class TeamUITests: XCTestCase {
         XCTAssertFalse(value(fresh).contains("Закреплено"))
         for _ in 0..<3 { home.swipeDown() }
 
-        // 2b. What waits leads the home: the employee whose run failed is one card that says so, with its step. Its
-        // page lists every card whole. Set aside until tomorrow, the card leaves and one calm sentence stays.
-        let count = app.buttons["needsCount"], later = app.buttons["needAction-later"]
-        let card = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "need-failing:")).firstMatch
-        XCTAssertTrue(count.waitForExistence(timeout: 20) && card.exists && later.exists, app.debugDescription)
-        XCTAssertTrue(card.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Репетитор")).firstMatch.exists, card.debugDescription)
+        // 2b. What waits leads the home, from every Home. The second Home keeps two cards: words that will leave, which
+        // are read on their page before anything is sent, and a promise with its day. The first Home has an employee
+        // whose run failed, which is a card too. Each leaves when it is decided, and one calm sentence stays.
+        let count = app.buttons["needsCount"], read = app.buttons["needRead"]
+        XCTAssertTrue(count.waitForExistence(timeout: 20), app.debugDescription)
+        try await expectLabel(count, says: "3")
+        XCTAssertTrue(read.waitForExistence(timeout: 10), "Words that leave are not sent from the home")
+        XCTAssertFalse(app.buttons["needAction-send"].exists)
+        let lead = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "need-")).firstMatch
+        XCTAssertTrue(lead.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Садовник", "Дачный Mac")).firstMatch.exists, lead.debugDescription)
+        XCTAssertTrue(value(gardener).contains("Ждёт вас"), "A row whose employee has a card waiting says so")
         capture("home-needs", app)
-        count.tap()
+        read.tap()
         XCTAssertTrue(app.descendants(matching: .any)["insightsRoot"].waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(card.waitForExistence(timeout: 10) && later.exists, app.debugDescription)
+        let draft = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Шланги уберём в субботу")).firstMatch
+        XCTAssertTrue(draft.waitForExistence(timeout: 10), "The whole text stands on the page")
+        XCTAssertTrue(app.buttons["needAction-send"].exists && app.buttons["needEdit"].exists, app.debugDescription)
         capture("needs", app)
+        app.buttons["needAction-draft"].tap()
+        XCTAssertTrue(draft.waitForNonExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "needDecided-")).firstMatch.waitForExistence(timeout: 15), app.debugDescription)
+        capture("needs-decided", app)
         back(app)
+        // The promise leads now, with its day; «Готово» closes it from the home.
+        let done = app.buttons["needAction-done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Укрыть розы", "завтра")).firstMatch.exists, app.debugDescription)
+        done.tap()
+        // Then the employee whose run failed: its page is one press away, and «Завтра» sets it aside on this device.
+        let later = app.buttons["needAction-later"]
+        let card = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "need-failing:")).firstMatch
+        XCTAssertTrue(later.waitForExistence(timeout: 15) && card.exists, app.debugDescription)
+        XCTAssertTrue(card.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Репетитор")).firstMatch.exists, card.debugDescription)
         app.buttons["needAction-open"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["reader"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(app.buttons["readerTitle"].value as? String, "Репетитор")
