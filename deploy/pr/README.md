@@ -15,7 +15,7 @@ Three mornings a week, 09:00 in the owner's time zone, into the team's group. At
 | Monday | `week.md` | Deadlines of this week and one new opportunity, the best one still unanswered |
 | Tuesday, Thursday | `posts.md` | Two or three post ideas: title, the point, opening lines, sources; one of them also for LinkedIn. One ready post instead when the channel has been silent for five days |
 
-Every message ends with one question that takes one word, and names the words: «Идём? Ответь на это сообщение: да / нет / позже». The answer has to be a reply to the message: the Home brings a reply to a delivered report back to the employee's own conversation, where it marks the calendar at once and prepares the next step.
+One decision per run is asked as a card (`raise_card`, kind `answer`), shown right after the message with its answers as buttons: «Идём на …?» with «Да», «Нет», «Позже». A press comes back to the employee's own conversation, where it marks the calendar at once and prepares the next step. Words in reply to the card or to a delivered report come back the same way. A card that still waits is not raised again; one that is out of date is closed with `close_card`.
 
 Why not daily. The first version ran every morning for twelve days and sent three to five items each time: meetups a day away, paid awards nobody had chosen, early price stages. Nobody answered one of them. Calls for speakers and awards move in weeks, so one checked list a week is enough, and a deadline still gets its reminder: every run first looks at what expires before the next run. Posts follow the pace the owner really publishes at, about two a week.
 
