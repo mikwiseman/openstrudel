@@ -664,6 +664,9 @@ final class NewsFeed: ObservableObject, Identifiable {
     private var leaving: Task<Void, Never>?
     /// The reader is leaving for the chat or another place and will come back: the pages go away, the place stays.
     private(set) var holdsPlace = false
+    /// Where the home stands beside the open place, the reader chose another place. The desk's pages read this and
+    /// close for real: a page left pushed would stay over the place chosen. What was open is kept in `place`.
+    @Published private(set) var isAway = false
 
     nonisolated var id: String { route.id }
 
@@ -806,6 +809,7 @@ final class NewsFeed: ObservableObject, Identifiable {
             if screens == 1 {
                 // Opened anew, the page shows everything the Home has sent and starts a visit.
                 holdsPlace = false
+                isAway = false
                 showIncoming()
                 Task { await refresh() }
             }
@@ -815,6 +819,15 @@ final class NewsFeed: ObservableObject, Identifiable {
     /// Called before the app takes the reader elsewhere. Navigation closes its pages then, and that must not read
     /// as the reader closing the story.
     func hold() { holdsPlace = true }
+    /// The reader chose another place beside this desk: its pages close, and where the reader was is kept.
+    func leave() { holdsPlace = true; isAway = true }
+    /// Pages on screen over the desk's paper right now: a story, an earlier issue, the week, the drafts, the search.
+    /// Each says when it comes and when it goes, so the app knows when the last of them has really closed.
+    @Published private(set) var pagesOver = 0
+    func cover() { pagesOver += 1 }
+    func uncover() { pagesOver = max(0, pagesOver - 1) }
+    /// The reader opened the desk again: its pages open where they were, and closing one is the reader's own doing.
+    func arrive() { holdsPlace = false; isAway = false }
     /// The reader closed the open story, or the earlier day.
     func closeStory() { if !holdsPlace { place.story = nil } }
     func closeDay() { if !holdsPlace { place.day = nil } }
@@ -913,6 +926,13 @@ final class Newsroom: ObservableObject {
 
     /// The reader is being taken to the chat or to another place: every feed keeps where they were.
     func hold() { feeds.values.forEach { $0.hold() } }
+    /// The home stands beside the open place and the reader chose another one: the pages of the desks on screen close.
+    func leave() { feeds.values.filter(\.isOpen).forEach { $0.leave() } }
+    /// A desk the reader has left still has a page on screen over its paper. The Mac takes a moment to close one, and
+    /// a place shown before it has closed gets that page left standing over it.
+    var pagesClosing: Bool { feeds.values.contains { $0.isAway && $0.pagesOver > 0 } }
+    /// The reader opened a desk: it shows what they had open in it.
+    func arrive(_ route: ReaderRoute) { feeds[route.id]?.arrive() }
 }
 
 /// One desk's post drafts. The Home writes them and keeps them; the app asks, edits and copies.

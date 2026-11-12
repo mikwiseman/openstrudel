@@ -26,8 +26,8 @@ private extension View {
         paperTop()
             .environment(\.newsWords, feed.words)
             .newsToolbar(feed, chrome, title: title)
-            .onAppear { feed.appear() }
-            .onDisappear { feed.disappear() }
+            .onAppear { feed.appear(); feed.cover() }
+            .onDisappear { feed.disappear(); feed.uncover() }
     }
 }
 
@@ -88,10 +88,10 @@ struct NewsWeekPage: View {
         }
         .newsPage(feed, chrome, title: feed.words("Неделя"))
         .task { await posts.load() }
-        .navigationDestination(isPresented: Binding(get: { story != nil }, set: { if !$0 { story = nil } })) {
+        .navigationDestination(isPresented: Binding(get: { story != nil && !feed.isAway }, set: { if !$0 { story = nil } })) {
             NewsStoryPage(feed: feed, story: $story, order: NewsWeek(feed.desk, read: feed.read).storylines.map(\.item.id), chrome: chrome)
         }
-        .navigationDestination(item: $topic) { NewsListPage(feed: feed, kind: .topic($0.name), chrome: chrome) }
+        .navigationDestination(item: Binding(get: { feed.isAway ? nil : topic }, set: { topic = $0 })) { NewsListPage(feed: feed, kind: .topic($0.name), chrome: chrome) }
     }
 
     /// The week as numbers: what came out, what the reader read, what became posts, and the run of days.
@@ -224,7 +224,7 @@ struct NewsListPage: View {
         .accessibilityIdentifier(kind == .search ? "newsSearch" : "newsTopic")
         .newsPage(feed, chrome, title: { if case .topic(let name) = kind { name } else { words("Найти") } }())
         .onAppear { if kind == .search, query.isEmpty { typing = true } }
-        .navigationDestination(isPresented: Binding(get: { story != nil }, set: { if !$0 { story = nil } })) {
+        .navigationDestination(isPresented: Binding(get: { story != nil && !feed.isAway }, set: { if !$0 { story = nil } })) {
             NewsStoryPage(feed: feed, story: $story, order: found.map(\.id), chrome: chrome)
         }
     }

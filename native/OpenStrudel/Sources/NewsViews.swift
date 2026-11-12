@@ -445,15 +445,16 @@ struct NewsDayPage: View {
                     .accessibilityIdentifier("discussDesk")
             }
         }
-        .navigationDestination(isPresented: Binding(get: { feed.place.story != nil && feed.place.day == date && (date != nil || feed.place.panel == nil) }, set: { if !$0 { feed.closeStory() } })) {
+        // Every page pushed over this one reads `isAway`: once the reader has chosen another place, none stays open.
+        .navigationDestination(isPresented: Binding(get: { !feed.isAway && feed.place.story != nil && feed.place.day == date && (date != nil || feed.place.panel == nil) }, set: { if !$0 { feed.closeStory() } })) {
             NewsStoryPage(feed: feed, story: Binding(get: { feed.place.story }, set: { feed.place.story = $0 }),
                           order: feed.desk.front(date, read: feed.visit).order, chrome: chrome)
                 .environment(\.newsHome, home)
         }
-        .navigationDestination(item: Binding(get: { date == nil ? feed.place.day : nil }, set: { if date == nil { if let day = $0 { feed.place.day = day } else { feed.closeDay() } } })) { day in
+        .navigationDestination(item: Binding(get: { date == nil && !feed.isAway ? feed.place.day : nil }, set: { if date == nil { if let day = $0 { feed.place.day = day } else { feed.closeDay() } } })) { day in
             NewsDayPage(feed: feed, date: day, chrome: chrome).environmentObject(client).environment(\.newsHome, home).id(day)
         }
-        .navigationDestination(item: Binding(get: { date == nil ? feed.place.panel : nil }, set: { if date == nil, !feed.holdsPlace { feed.place.panel = $0 } })) { panel in
+        .navigationDestination(item: Binding(get: { date == nil && !feed.isAway ? feed.place.panel : nil }, set: { if date == nil, !feed.holdsPlace { feed.place.panel = $0 } })) { panel in
             NewsPanelPage(feed: feed, panel: panel, chrome: chrome).environmentObject(client).environment(\.newsHome, home)
         }
         #if os(macOS)
@@ -466,10 +467,11 @@ struct NewsDayPage: View {
         #endif
         .onAppear {
             feed.appear()
+            if date != nil { feed.cover() }
             // Rows are named by their section and story; a story id has no colon.
             dwell.seen = { [feed] rows in feed.see(Set(rows.map { String($0.split(separator: ":", maxSplits: 1).last ?? "") })) }
         }
-        .onDisappear { feed.disappear() }
+        .onDisappear { feed.disappear(); if date != nil { feed.uncover() } }
         .onChange(of: chrome.attentive && isFront, initial: true) { _, looking in dwell.attentive = looking }
         // Today's page says how many drafts there are, so it asks the Home once it is opened.
         .task { if date == nil { await feed.posts.load() } }
@@ -884,15 +886,15 @@ struct NewsStoryPage: View {
             }
         }
         .newsToolbar(feed, chrome, title: item?.story.title ?? "")
-        .navigationDestination(item: $topic) { NewsListPage(feed: feed, kind: .topic($0.name), chrome: chrome) }
+        .navigationDestination(item: Binding(get: { feed.isAway ? nil : topic }, set: { topic = $0 })) { NewsListPage(feed: feed, kind: .topic($0.name), chrome: chrome) }
         #if os(macOS)
         .background {
             // Esc goes back from anywhere in the window, also while the sidebar holds the keyboard.
             Button(words("Сегодня")) { story = nil }.keyboardShortcut(.cancelAction).opacity(0).accessibilityHidden(true)
         }
         #endif
-        .onAppear { feed.appear(); see() }
-        .onDisappear { feed.disappear() }
+        .onAppear { feed.appear(); feed.cover(); see() }
+        .onDisappear { feed.disappear(); feed.uncover() }
         .onChange(of: story) { _, next in
             if let next { shown = next; see() }
         }
