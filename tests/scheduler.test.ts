@@ -497,6 +497,27 @@ describe("durable cron", () => {
     expect(scheduler.runs(news.id).map(r => [r.scheduledFor, r.status]).reverse()).toEqual([["2026-11-07T03:45:00.000Z", "quiet"], ["2026-11-07T05:05:00.000Z", "quiet"],
       ["2026-11-07T06:05:00.000Z", "failed"], ["2026-11-07T07:05:00.000Z", "completed"], ["2026-11-07T08:05:00.000Z", "completed"]]);
   });
+  it("also tells a request its own last successful run when another request in the chat ran since", async () => {
+    const store = new Store(":memory:"); stores.push(store);
+    const seen: Array<{ name: string; chat: string | null; own: string | null }> = [];
+    const scheduler = new Scheduler(store, new MessageService(store, { async run(input) {
+      seen.push({ name: input.match(/^Scheduled request: (.+)$/m)![1]!, chat: input.match(/^Previous successful run in this chat: (.+)$/m)?.[1] ?? null,
+        own: input.match(/^Previous successful run of this request: (.+)$/m)?.[1] ?? null });
+      return { threadId: "t", response: "OUTCOME: Готово.\nГотово.", events: [] };
+    } }));
+    const owner = store.getOrCreateConversation({ channel: "api", externalId: "owner", title: "Owner" }), saved = new Date("2026-11-12T03:00:00Z");
+    scheduler.save({ conversationId: owner.id, name: "Статистика", prompt: "Карточка", cron: "50 6 * * *", timezone: "Europe/Moscow" }, saved);
+    scheduler.save({ conversationId: owner.id, name: "Бриф", prompt: "Бриф с утра", cron: "0 7 * * *", timezone: "Europe/Moscow" }, saved);
+    for (const at of ["2026-11-12T03:50:01Z", "2026-11-12T04:00:01Z", "2026-11-13T03:50:01Z", "2026-11-13T04:00:01Z"]) { await scheduler.tick(new Date(at)); await scheduler.idle(); }
+    // The brief reads since its own run a day earlier, not since the statistics ten minutes before it.
+    expect(seen.filter(s => s.name === "Бриф")).toEqual([
+      { name: "Бриф", chat: "2026-11-12T03:50:00.000Z", own: "none" },
+      { name: "Бриф", chat: "2026-11-13T03:50:00.000Z", own: "2026-11-12T04:00:00.000Z" }]);
+    // When the chat's last run was the request's own, one line says it.
+    expect(seen.filter(s => s.name === "Статистика")).toEqual([
+      { name: "Статистика", chat: null, own: null },
+      { name: "Статистика", chat: "2026-11-12T04:00:00.000Z", own: "2026-11-12T03:50:00.000Z" }]);
+  });
   it("counts neither a skipped backup nor a run a restart left uncertain as the chat's last successful run", async () => {
     const store = new Store(":memory:"); stores.push(store);
     const seen: Array<{ name: string; previous: string | null }> = [];
