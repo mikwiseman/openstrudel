@@ -43,7 +43,7 @@ function fixture(options: { configured?: boolean } = {}) {
   const main = git(origin, "rev-parse", "main");
   const head = git(origin, "commit-tree", "main^{tree}", "-p", main, "-m", "Candidate");
   const merge = git(origin, "commit-tree", "main^{tree}", "-p", main, "-p", head, "-m", "Merge candidate");
-  const cloud = { id: "8366a125-adb6-42e3-8318-90d7a450b31c", head, main, merge, merges: 0, mergedAt: "" };
+  const cloud = { id: "8366a125-adb6-42e3-8318-90d7a450b31c", head, main, merge, merges: 0 };
   vi.stubGlobal("fetch", async (input: string, init: RequestInit = {}) => {
     const url = new URL(input), method = init.method ?? "GET", auth = String((init.headers as Record<string, string>).authorization ?? "").replace(/^Bearer /, "");
     const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -67,15 +67,14 @@ function fixture(options: { configured?: boolean } = {}) {
     if (method === "GET" && repository && url.pathname.endsWith("/installation")) return json(200, { id: 7 });
     if (method === "GET" && repository && url.pathname === repository[0]) return json(200, { full_name: `o/${repository[2]!.toLowerCase()}`, default_branch: "main" });
     if (url.pathname.endsWith("/pulls/11")) return json(200, {user:{login:"wai-wolf[bot]"},draft:false,state:cloud.merges?"closed":"open",merged:!!cloud.merges,
-      merge_commit_sha:cloud.merges?merge:null,merged_at:cloud.mergedAt || null,head:{sha:head,ref:"wolf/aigid-"+cloud.id,repo:{full_name:"o/r"}},base:{ref:"main",repo:{full_name:"o/r"}}});
+      merge_commit_sha:cloud.merges?merge:null,head:{sha:head,ref:"wolf/aigid-"+cloud.id,repo:{full_name:"o/r"}},base:{ref:"main",repo:{full_name:"o/r"}}});
     if (method === "PUT" && url.pathname.endsWith("/pulls/11/merge")) {
       if (JSON.parse(String(init.body)).sha !== head) return json(409, {});
       git(origin, "update-ref", "refs/heads/main", merge, main);
-      cloud.mergedAt = new Date().toISOString();
       cloud.merges++; return json(200, {merged:true,sha:merge});
     }
     if (url.pathname.includes("/compare/")) return json(200,{status:[main,merge].some(x=>url.pathname.endsWith(x+"...main"))?"ahead":"diverged"});
-    if (url.pathname.includes("/git/ref/tags/")) {
+    if (url.pathname.includes("/git/ref/heads/wolf-testflight/")) {
       const ref = "refs/" + url.pathname.split("/git/ref/")[1];
       const sha = git(origin, "for-each-ref", "--format=%(objectname)", ref);
       return sha ? json(200,{ref,object:{type:"commit",sha}}) : json(404,{});
@@ -230,58 +229,40 @@ function readdir(path: string): string[] { return execFileSync("ls", ["-A", path
 
 
 describe("AiGid cloud handoff", () => {
-  it("merges only the recorded Wolf candidate, and retries the same release tag", async () => {
+  it("merges only the recorded candidate and pushes its exact tree once on an observable branch", async () => {
     const { root, cloud, upstream } = fixture();
-    const origin = upstream("o/r"), tag = "refs/tags/wolf-testflight-" + cloud.id;
-    const hook = join(origin, "hooks/post-receive");
-    writeFileSync(hook, "#!/bin/sh\ncat >>wolf-pushes\n", { mode: 0o755 });
+    const origin = upstream("o/r"), branch = "wolf-testflight/" + cloud.id, ref = "refs/heads/" + branch;
+    writeFileSync(join(origin, "hooks/post-receive"), "#!/bin/sh\ncat >>wolf-pushes\n", { mode: 0o755 });
     const request = { id: cloud.id, pull: 11, commit: cloud.head };
-    const wait = vi.fn(async (ms: number) => {
-      expect(cloud.merges).toBe(1);
-      expect(git(origin, "tag", "-l")).toBe("");
-      expect(ms).toBeGreaterThan(5 * 60_000);
-    });
-    const dispatch = (input = request, authorize = () => {}) => dispatchAiGidCloud(root, "o/r", input, authorize, { remote: upstream, wait });
+    const dispatch = (input = request, authorize = () => {}) => dispatchAiGidCloud(root, "o/r", input, authorize, { remote: upstream });
     await expect(dispatch({ ...request, commit: cloud.main })).rejects.toThrow();
     expect(cloud.merges).toBe(0);
     await expect(dispatch(request, () => { throw Error("revoked"); })).rejects.toThrow("revoked");
+    await expect(dispatch(request, () => { if (cloud.merges) throw Error("revoked after merge"); })).rejects.toThrow("revoked after merge");
+    expect(git(origin, "for-each-ref", "--format=%(refname)", ref)).toBe("");
     const first = await dispatch();
+    const released = git(origin, "rev-parse", ref);
+    expect(first).toEqual({branch, revision: cloud.merge, releaseCommit: released});
+    expect(git(origin, "show", "-s", "--format=%P%n%s", released)).toBe(cloud.merge + "\nAiGid TestFlight " + cloud.id);
+    expect(git(origin, "rev-parse", ref + "^{tree}")).toBe(git(origin, "rev-parse", cloud.merge + "^{tree}"));
     expect(await dispatch()).toEqual(first);
     expect(cloud.merges).toBe(1);
-    expect(wait).toHaveBeenCalledTimes(1);
-    expect(readFileSync(join(origin, "wolf-pushes"), "utf8").trim()).toBe(`${"0".repeat(40)} ${cloud.merge} ${tag}`);
+    expect(readFileSync(join(origin, "wolf-pushes"), "utf8").trim()).toBe(`${"0".repeat(40)} ${released} ${ref}`);
   });
-  it("resumes from GitHub's merge time and rechecks authorization after the wait", async () => {
+
+  it("gives independent build-only requests for the same canonical commit distinct commits and rejects a conflicting branch", async () => {
     const { root, cloud, upstream } = fixture();
-    const request = { id: cloud.id, pull: 11, commit: cloud.head };
-    let allowed = true;
-    const authorize = () => { if (!allowed) throw Error("revoked"); };
-    await expect(dispatchAiGidCloud(root, "o/r", request, authorize, { remote: upstream,
-      wait: async () => { allowed = false; } })).rejects.toThrow("revoked");
-    expect(git(upstream("o/r"), "tag", "-l")).toBe("");
-    cloud.mergedAt = new Date(Date.now() - 4 * 60_000).toISOString();
-    allowed = true;
-    const wait = vi.fn(async (ms: number) => {
-      expect(ms).toBeGreaterThan(115_000);
-      expect(ms).toBeLessThanOrEqual(120_000);
-    });
-    await dispatchAiGidCloud(root, "o/r", request, authorize, { remote: upstream, wait });
-    expect(wait).toHaveBeenCalledTimes(1);
-    expect(cloud.merges).toBe(1);
-  });
-  it("accepts a build-only revision from main and refuses a conflicting existing tag", async () => {
-    const { root, cloud, upstream } = fixture();
-    const origin = upstream("o/r"), tag = "refs/tags/wolf-testflight-" + cloud.id;
+    const origin = upstream("o/r"), ref = "refs/heads/wolf-testflight/" + cloud.id;
     const request = { id: cloud.id, pull: null, commit: cloud.main };
-    const dispatch = (input = request) => dispatchAiGidCloud(root, "o/r", input, () => {}, { remote: upstream,
-      wait: async () => { throw Error("A build-only release needs no merge wait"); } });
+    const dispatch = (input = request) => dispatchAiGidCloud(root, "o/r", input, () => {}, { remote: upstream });
     await expect(dispatch({...request, commit:cloud.head})).rejects.toThrow();
-    expect(git(origin, "tag", "-l")).toBe("");
-    await dispatch();
-    expect(git(origin, "rev-parse", tag)).toBe(cloud.main);
-    git(origin, "update-ref", tag, cloud.head);
+    const first = await dispatch();
+    const second = await dispatch({...request, id:"ce8515e6-dcbd-4f9d-bb53-ba98d60a5092"});
+    expect(first.releaseCommit).not.toBe(second.releaseCommit);
+    expect(git(origin, "rev-parse", ref + "^")).toBe(cloud.main);
+    git(origin, "update-ref", ref, cloud.head);
     await expect(dispatch()).rejects.toThrow();
-    expect(git(origin, "rev-parse", tag)).toBe(cloud.head);
+    expect(git(origin, "rev-parse", ref)).toBe(cloud.head);
     expect(cloud.merges).toBe(0);
   });
 });

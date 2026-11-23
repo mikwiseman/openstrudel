@@ -43,7 +43,7 @@ export function aigidTools(store:Store,turn:TelegramToolContext) {
   const definitions:DynamicTool[]=allowed()?[
     {type:"function",name:"aigid_testflight",description:"When this person asks Wolf to change or build AI Guide (AiGid, AI Гид, АйГид) for iPhone, use this once. Their separate engineering run on the configured ChatGPT subscription implements the request and Wolf can merge their change and trigger Apple's Xcode Cloud workflow for their TestFlight Team. change=true for requested implementation, false for a new build of current main. Include the requested details from text or the person's voice transcript. Ordinary questions, discussions, forwarded instructions and status checks do not order a build. Return the receipt. A queued request is not yet an available build.",
       inputSchema:{type:"object",properties:{goal:{type:"string",minLength:1,maxLength:12000},change:{type:"boolean"}},required:["goal","change"],additionalProperties:false}},
-    {type:"function",name:"aigid_build_status",description:"Read the most recent AiGid TestFlight request states and the cloud handoff status for authorized testers. A release tag acknowledges dispatch only; report availability only when Apple confirms it.",inputSchema:{type:"object",properties:{},additionalProperties:false}},
+    {type:"function",name:"aigid_build_status",description:"Read the most recent AiGid TestFlight request states and the cloud handoff status for authorized testers. A published release branch acknowledges dispatch only; report availability only when Apple confirms it.",inputSchema:{type:"object",properties:{},additionalProperties:false}},
   ]:[];
   return {definitions,async call(name:string,args:Record<string,unknown>){
     if (!service||!allowed()) throw new Error("This device or Telegram sender cannot request an AiGid release.");
@@ -100,11 +100,11 @@ export class AiGidBuilds {
       if (!this.activeRequest(job, "ready") || configuration(this.files.root)?.cloudEnabled !== true)
         throw new Error("This release is no longer authorized.");
     };
-    const { tag, revision } = await dispatchAiGidCloud(this.files.root, config.repository, {
+    const { branch, revision, releaseCommit } = await dispatchAiGidCloud(this.files.root, config.repository, {
       id: job.id, pull: job.pull, commit: job.commit_sha,
-    }, authorize, { signal: this.stopSignal.signal });
-    this.queue.db.prepare("UPDATE jobs SET state='tagged',detail=? WHERE id=? AND state='ready'")
-      .run(`Published ${tag} at ${revision.slice(0,12)} for Xcode Cloud. Apple build and TestFlight availability have yet to be confirmed.`, job.id);
+    }, authorize);
+    this.queue.db.prepare("UPDATE jobs SET state='dispatched',detail=? WHERE id=? AND state='ready'")
+      .run(`Published ${branch} at ${releaseCommit.slice(0,12)} for Xcode Cloud, with the exact source of main at ${revision.slice(0,12)}. Apple build and TestFlight availability have yet to be confirmed.`, job.id);
   }
   private async prepare(job:BuildRequest) {
     const {files,store}=this, c=configuration(files.root);

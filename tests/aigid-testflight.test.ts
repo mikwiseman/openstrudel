@@ -34,8 +34,10 @@ it("holds candidates until Xcode Cloud is enabled and never replays a dispatched
     queue.db.prepare("UPDATE jobs SET state='ready' WHERE id='one'").run();
     expect(queue.next(false)).toBeUndefined();
     expect(queue.next(true)?.id).toBe("one");
-    queue.db.prepare("UPDATE jobs SET state='tagged' WHERE id='one'").run();
-    expect(queue.next(true)).toBeUndefined();
+    for (const completed of ["tagged", "dispatched"]) {
+      queue.db.prepare("UPDATE jobs SET state=? WHERE id='one'").run(completed);
+      expect(queue.next(true)).toBeUndefined();
+    }
   } finally { queue.db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
