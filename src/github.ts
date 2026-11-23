@@ -2,6 +2,7 @@ import { createSign } from "node:crypto";
 import { execFile } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statfsSync, type Stats } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import type { Store } from "./store.js";
 import type { DynamicTool } from "./types.js";
@@ -121,7 +122,8 @@ function botIdentity(app: App, access: string) {
 
 /** Only the AiGid release queue can call this. Never exposed as a general agent tool. */
 export async function dispatchAiGidCloud(root: string, fullName: string,
-  request: { id: string; pull: number | null; commit: string }, authorize: () => void, options: Pick<GitHubOptions, "remote"> = {}) {
+  request: { id: string; pull: number | null; commit: string }, authorize: () => void,
+  options: Pick<GitHubOptions, "remote"> & { signal?: AbortSignal; wait?: (ms: number) => Promise<void> } = {}) {
   const sha = /^[0-9a-f]{40}$/;
   if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(request.id) || !sha.test(request.commit))
     throw new Error("Invalid AiGid release identity.");
@@ -134,6 +136,7 @@ export async function dispatchAiGidCloud(root: string, fullName: string,
   const access = await token(app, repository.installation, { contents: "write", ...(request.pull !== null ? { pull_requests: "write" } : {}) }, repository.name);
   const base = `/repos/${fullName}`;
   let revision = request.commit;
+  let mergedAt: number | undefined;
   if (request.pull !== null) {
     if (!Number.isSafeInteger(request.pull) || request.pull < 1) throw new Error("Invalid AiGid pull request.");
     const path = `${base}/pulls/${request.pull}`, result = await api(path, access);
@@ -144,21 +147,29 @@ export async function dispatchAiGidCloud(root: string, fullName: string,
       throw new Error("The AiGid pull request no longer matches the authorized candidate.");
     if (pr.merged === true) {
       revision = pr.merge_commit_sha;
+      mergedAt = Math.min(Date.now(), Date.parse(pr.merged_at) || Date.now());
     } else {
       if (pr.state !== "open") throw new Error("The AiGid pull request was closed.");
       authorize();
       const merge = await api(path + "/merge", access, { method: "PUT", body: { sha: request.commit, merge_method: "merge" } });
       if (merge.status !== 200 || merge.data?.merged !== true) throw failure("merging the AiGid candidate", merge);
       revision = merge.data.sha;
+      mergedAt = Date.now();
     }
   }
   if (!sha.test(revision)) throw new Error("GitHub did not confirm the release revision.");
-  const ancestry = await api(`${base}/compare/${revision}...main`, access);
-  if (ancestry.status !== 200 || !["identical", "ahead"].includes(ancestry.data?.status))
-    throw new Error("The AiGid release revision does not belong to canonical main.");
   const tag = "wolf-testflight-" + request.id, ref = "refs/tags/" + tag;
   const read = () => api(`${base}/git/ref/tags/${tag}`, access);
   let observed = await read();
+  if (observed.status === 404 && mergedAt !== undefined) {
+    // Apple missed tags pushed alongside two PR merges. A separate push six minutes later started the same commit.
+    const remaining = mergedAt + 6 * 60_000 - Date.now();
+    if (remaining > 0) await (options.wait?.(remaining) ?? delay(remaining, undefined, { signal: options.signal }));
+    authorize();
+  }
+  const ancestry = await api(`${base}/compare/${revision}...main`, access);
+  if (ancestry.status !== 200 || !["identical", "ahead"].includes(ancestry.data?.status))
+    throw new Error("The AiGid release revision does not belong to canonical main.");
   if (observed.status === 404) {
     // Publish through Git so the source provider receives a tag push. Use only the verified canonical commit.
     const remote = options.remote?.(fullName) ?? repository.url + ".git";
