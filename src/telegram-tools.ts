@@ -85,7 +85,7 @@ export function telegramTools(store: Store, context: TelegramToolContext) {
       if (args.query != null && (typeof args.query !== "string" || args.query.length > 240)) throw new Error("Укажите короткое название чата.");
       const query = String(args.query ?? "").trim().toLocaleLowerCase();
       return {chats:chats(true).filter(chat => !query || chat.title.toLocaleLowerCase().includes(query) || chat.chatId === query)
-        .map(chat => ({chatId:chat.chatId,title:chat.title,type:Number(chat.chatId)<0?"group":"private", ...managementTurn(store,context) ? {profileId:chat.profileId,conversationId:chat.conversationId,enabled:chat.enabled,replyAccess:chat.access,allowedSenders:chat.allowedSenders} : {}}))};
+        .map(chat => ({chatId:chat.chatId,title:chat.title,type:Number(chat.chatId)<0?"group":"private", ...managementTurn(store,context) ? {profileId:chat.profileId,conversationId:chat.conversationId,enabled:chat.enabled,replyAccess:chat.access,allowedSenders:chat.allowedSenders,replies:chat.replies === "mentions" ? "mentions" : "all",transcripts:chat.transcripts} : {}}))};
     }
     if (name !== "send_telegram_message") throw new Error("Unknown Telegram tool");
     if (context.scheduled && store.getMessage(context.conversationId, context.messageId)?.externalId?.startsWith("correspondence:"))
