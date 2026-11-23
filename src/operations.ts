@@ -94,6 +94,12 @@ export function toolRecovered(event:EngineEvent):boolean {
   return item.type==="functionCallOutput" && item.name==="exec" && execOutcomes(item).some(o=>o.success);
 }
 
+/** A failed run's cause as a client words it in its own language. The account's two cases stand apart: each has its own way out. */
+export type FailureCode = ProblemCode | "sign_in" | "limit";
+export function failureCode(error:unknown):FailureCode {
+  const code=errorProblem(error), text=error instanceof Error?error.message:String(error);
+  return code!=="account" ? code : /лимит|quota|rate limit|usage limit/i.test(text) ? "limit" : /войдите|вход|unauthorized|sign.?in|log.?in/i.test(text) ? "sign_in" : "account";
+}
 export function errorProblem(error:unknown):ProblemCode {
   const text=error instanceof Error?error.message:String(error);
   return (Object.entries(problemText).find(([,message])=>message===text)?.[0] as ProblemCode|undefined) ?? infrastructureProblem(text) ?? (/ElevenLabs|распозна/i.test(text)?"voice":/лимит|войдите|аккаунт|unauthorized|quota|rate limit/i.test(text)?"account":/связь|соединение|Codex не ответил/i.test(text)?"connection":"execution");

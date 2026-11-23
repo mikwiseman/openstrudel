@@ -6,7 +6,7 @@ import type { MessageService } from "./messages.js";
 import type { Attachment, TelegramLinkButton } from "./types.js";
 import { agentTransfer } from "./agent-move.js";
 import { scheduleTiming } from "./schedule-timing.js";
-import { errorProblem, failedRun, quietReply, type ProblemCode } from "./operations.js";
+import { errorProblem, failureCode, failedRun, quietReply, type ProblemCode } from "./operations.js";
 import { privateSourceSchedule } from "./private-sources.js";
 import { checkInSummary, ensureCheckInTables, localDate, markPollClosed, openPolls, parsePoll, recordPoll, type SchedulePoll } from "./check-ins.js";
 import { dailyMetricsSummary, dailyMetricsReportConfig, dailyMetricsLaunchButton, readDailyMetrics } from "./daily-metrics.js";
@@ -32,6 +32,8 @@ const failureWords: Partial<Record<ProblemCode, string>> = {
 };
 /** The owner stopped the run himself: nobody waits for a notice about it. */
 const stopped = (reason: string) => reason === "Ответ остановлен" || reason === "Сообщение отменено.";
+/** A signed-out model account: its one card, who that card last named, and the chats already told about an employee. */
+const SIGNED_OUT_KEY = "account:sign_in", SIGNED_OUT_CARD = "schedule.signed_out.card", SIGNED_OUT_TOLD = "schedule.signed_out.told.";
 
 /** The clock only wakes the existing chat. Codex still owns the work. */
 export class Scheduler {
@@ -360,9 +362,12 @@ export class Scheduler {
     const reason = error instanceof Error ? error.message : String(error), code = errorProblem(error);
     this.store.db.prepare("UPDATE schedule_runs SET status='failed',error=? WHERE id=?").run(reason,id);
     const run=this.store.db.prepare("SELECT conversation_id,message_id FROM schedule_runs WHERE id=?").get(id);
+    // One signed-out account stops every schedule that needs it: that is one thing to tell, not one per schedule.
+    const signedOut = !stopped(reason) && failureCode(error) === "sign_in";
+    if (signedOut && await this.tellSignedOut(id)) return;
     const told = stopped(reason) ? undefined : await this.tellChat(id,code,reason);
-    // Accepted turns already report their failures and suppress owner cancellations.
-    if(run && (run.message_id || !this.store.findMessageByExternal("api","schedule:"+id))) {
+    // Accepted turns already report their failures and suppress owner cancellations. A signed-out account's turn left its notice to this place.
+    if(run && (signedOut || run.message_id || !this.store.findMessageByExternal("api","schedule:"+id))) {
       await this.messages.reportProblem(String(run.conversation_id),String(run.message_id ?? id),code,told,reason);
     }
   }
@@ -400,6 +405,56 @@ export class Scheduler {
     if (!run) return;
     this.store.deleteSetting("schedule.failure_told." + run.schedule_id);
     void this.messages.cards?.recovered(String(run.schedule_id)).catch(() => undefined);
+    // An account that works again: whoever it no longer stops may be news the next time, and with nobody stopped its card closes.
+    const still = this.signedOut(), waiting = new Set(still.map(row => `${SIGNED_OUT_TOLD}${row.chat}.${row.profile}`));
+    for (const row of this.store.db.prepare("SELECT key FROM settings WHERE substr(key,1,?)=?").all(SIGNED_OUT_TOLD.length, SIGNED_OUT_TOLD) as Row[]) if (!waiting.has(String(row.key))) this.store.deleteSetting(String(row.key));
+    if (!still.length && this.store.getSetting(SIGNED_OUT_CARD)) {
+      this.store.deleteSetting(SIGNED_OUT_CARD);
+      void this.messages.cards?.recovered(SIGNED_OUT_KEY).catch(() => undefined);
+    }
+  }
+
+  /** Who a signed-out model account has stopped: each enabled schedule whose latest finished run failed for it, with its employee
+   * and the chat that waits for it. */
+  private signedOut(): Array<{ profile: string; name: string; chat: string | null }> {
+    const rows = this.store.db.prepare(`SELECT s.conversation_id AS conversation, s.telegram_chat_id AS chat, s.delivery,
+      (SELECT r.status||char(10)||COALESCE(r.error,'') FROM schedule_runs r WHERE r.schedule_id=s.id AND r.status IN ('completed','quiet','failed','uncertain') ORDER BY r.scheduled_for DESC LIMIT 1) AS latest
+      FROM schedules s WHERE s.enabled=1`).all() as Row[];
+    return rows.flatMap(row => {
+      const [status, ...error] = String(row.latest ?? "").split("\n");
+      if (status !== "failed" || failureCode(error.join("\n")) !== "sign_in") return [];
+      const profile = this.store.getConversation(String(row.conversation))?.profileId ?? null;
+      return [{ profile: profile ?? "main", name: profile ? this.store.getProfile(profile)?.name ?? "Сотрудник" : "Помощник", chat: this.destination(String(row.conversation), row.chat, row.delivery) }];
+    });
+  }
+
+  /**
+   * A model account that needs its owner to sign in: one card in the owner's private chat that names who is stopped, and one
+   * line in each chat that waits for an employee, once for the whole outage. Nothing is said per schedule or per day.
+   * False when this Home has no owner chat to hold the card; the failure is then told the ordinary way.
+   */
+  private async tellSignedOut(runId: string): Promise<boolean> {
+    const owner = accessOwners(this.store)[0], cards = this.messages.cards;
+    const names = [...new Set(this.signedOut().map(row => row.name))].sort((a, b) => a.localeCompare(b, "ru"));
+    if (!owner || !cards || !names.length) return false;
+    const who = names.length > 1 ? `${names.slice(0, -1).join(", ")} и ${names.at(-1)}` : names[0]!;
+    // Told again only when someone else stops: an owner who answered the card is not asked every hour.
+    if (this.store.getSetting(SIGNED_OUT_CARD) !== who) {
+      try {
+        const conversation = this.store.getOrCreateConversation({ channel: "telegram", externalId: owner, title: this.store.getTelegramChat(owner)?.title ?? "Telegram " + owner });
+        await cards.failed({ key: SIGNED_OUT_KEY, conversationId: conversation.id, chatId: owner, title: "Нужен вход в аккаунт модели", reason: `Не работают: ${who}.`, nextTry: null, code: "sign_in" });
+      } catch { return false; }
+      this.store.setSetting(SIGNED_OUT_CARD, who);
+    }
+    const run = this.store.db.prepare("SELECT s.conversation_id,s.telegram_chat_id,s.delivery,r.private_source_fingerprint FROM schedule_runs r JOIN schedules s ON s.id=r.schedule_id WHERE r.id=?").get(runId) as Row | undefined;
+    const chat = run && this.destination(run.conversation_id, run.telegram_chat_id, run.delivery);
+    if (!run || !chat || chat === owner || !this.deliver || run.private_source_fingerprint != null || isRestrictedChat(this.store, chat) || isRestrictedSubject(this.store, chat)) return true;
+    const profile = this.store.getConversation(String(run.conversation_id))?.profileId ?? null, key = `${SIGNED_OUT_TOLD}${chat}.${profile ?? "main"}`;
+    if (this.store.getSetting(key)) return true;
+    this.store.setSetting(key, new Date().toISOString());
+    const name = profile ? this.store.getProfile(profile)?.name ?? "Сотрудник" : "Помощник";
+    await this.deliver(chat, `${name} не работает: нужен вход в аккаунт модели. Владелец знает; всё вернётся само.`, "signed-out:" + runId).catch(() => undefined);
+    return true;
   }
 }
 
