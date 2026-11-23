@@ -48,6 +48,7 @@ private struct ReaderView: View {
     @EnvironmentObject private var library: DeviceLibrary
     @EnvironmentObject private var client: HomeClient
     @EnvironmentObject private var marks: TeamReadMarks
+    @EnvironmentObject private var failures: TeamFailures
     @StateObject private var reader: ConversationReader
     let discuss: (ChatContext) -> Void
     @State private var details: EmployeeProfile?
@@ -84,11 +85,13 @@ private struct ReaderView: View {
         #endif
     }
     /// What the Home says wins; a Home that does not say is read from the runs themselves.
-    private var failure: (since: Date?, reason: String?)? {
+    private var failure: (since: Date?, reason: String?, code: String?)? {
         guard let profile, !client.isOffline(profile) else { return nil }
         let found = Team.failure(reader.runs, schedules: reader.schedules)
         guard profile.failing ?? (found != nil) else { return nil }
-        return (found?.since, found?.reason)
+        // The cause is the Home's own word for it, as the team list has it.
+        let told = failures.failure(profile.id, on: client)
+        return (found?.since ?? told?.since, found?.reason ?? told?.reason, told?.code)
     }
 
     var body: some View {
@@ -199,7 +202,7 @@ private struct ReaderView: View {
                     // Since when it has not worked, and why. The way to its schedules is one click away.
                     Button { details = profile } label: {
                         TimelineView(.everyMinute) { timeline in
-                            Label(TeamWords().failure(since: failure.since, reason: failure.reason, now: timeline.date), systemImage: "exclamationmark.triangle")
+                            Label(TeamWords().failure(since: failure.since, reason: failure.reason, code: failure.code, now: timeline.date), systemImage: "exclamationmark.triangle")
                                 .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
                         }
                         .frame(minHeight: 24).contentShape(Rectangle())

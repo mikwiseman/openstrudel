@@ -38,6 +38,14 @@ import Testing
         // A run's long complaint is cut between words, never mid-word.
         let long = NeedsYou.failing(scout, failure: .init(since: nil, reason: String(repeating: "слово ", count: 40)), words: words, now: Self.now)
         #expect(long.title.count <= 121 && long.title.hasSuffix("…"))
+        // A cause the Home names leads in the interface's own words, never in the run's sentence.
+        let since = Self.instant("2026-11-10T04:15:00.000Z"), raw = "Войдите в OpenAI на устройстве сотрудника: OpenStrudel → Настройки → Аккаунты."
+        let named = NeedsYou.failing(scout, failure: .init(since: since, reason: raw, code: "sign_in"), words: words, now: Self.now)
+        #expect(named.title == "Нужен вход в аккаунт модели" && named.text == "Не получается с 07:15." && named.id == told.id)
+        #expect(NeedsYou.failing(scout, failure: .init(since: since, reason: raw, code: "sign_in"), words: TeamWords(language: .english, calendar: Self.moscow), now: Self.now).title == "Needs a model sign-in")
+        // A cause without short words leaves since when alone.
+        let other = NeedsYou.failing(scout, failure: .init(since: since, reason: raw, code: "execution"), words: words, now: Self.now)
+        #expect(other.title == "Не получается с 07:15" && other.text == nil)
     }
 
     @Test func aShortQuestionIsAnsweredWhereItIsSeenAndALongOneInItsChat() throws {

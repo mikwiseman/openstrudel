@@ -253,11 +253,12 @@ struct TeamList {
     var shown: [Row] { pinned + live }
 }
 
-/// Why an employee's schedule is failing, as its Home's owner may read it: since when, and the first line of what the
-/// latest run said. A Home that does not say, or does not let this device ask, leaves the row with «Не получилось».
+/// Why an employee's schedule is failing, as its Home's owner may read it: since when, the cause the Home names, and the
+/// first line of what the latest run said. A Home that does not say, or does not let this device ask, leaves the row
+/// with «Не получилось».
 @MainActor
 final class TeamFailures: ObservableObject {
-    struct Failure: Equatable { let since: Date?; let reason: String? }
+    struct Failure: Equatable { let since: Date?; let reason: String?; var code: String? = nil }
     @Published private(set) var known: [String: Failure] = [:]
 
     static func key(_ profileID: String?, on client: HomeClient) -> String { client.catalogueIdentity + ":" + (profileID ?? "main") }
@@ -270,7 +271,7 @@ final class TeamFailures: ObservableObject {
         // The schedule that began failing last speaks for its employee.
         for schedule in schedules.sorted(by: { ($0.failure?.since ?? "") < ($1.failure?.since ?? "") }) {
             guard let failure = schedule.failure else { continue }
-            next[Self.key(schedule.profileId, on: client)] = Failure(since: Team.date(failure.since), reason: failure.reason)
+            next[Self.key(schedule.profileId, on: client)] = Failure(since: Team.date(failure.since), reason: failure.reason, code: failure.code)
         }
         if next != known { known = next }
     }
@@ -388,12 +389,25 @@ struct TeamWords {
         return (rhythm + " · " + next, more)
     }
 
-    /// «Не получается с 07:15: закончился лимит модели.» The day is named when it is not today.
-    func failure(since: Date?, reason: String?, now: Date = .now) -> String {
+    /// A failed run's cause in a few words of the interface language, for the causes a person can act on or wait out.
+    /// Nil for any other cause, and for a Home that names none.
+    func cause(_ code: String?) -> String? {
+        switch code {
+        case "sign_in": self("Нужен вход в аккаунт модели")
+        case "limit": self("Закончился лимит модели")
+        case "connection": self("Нет связи с моделью")
+        default: nil
+        }
+    }
+
+    /// «Не получается с 07:15: закончился лимит модели.» The day is named when it is not today. A cause the Home names
+    /// is said in the interface's own words; the run's own sentence is for a Home that names none.
+    func failure(since: Date?, reason: String?, code: String? = nil, now: Date = .now) -> String {
         guard let since else { return self("Последний запуск не получился.") }
         let when = calendar.isDate(since, inSameDayAs: now) ? time(since)
             : since.formatted(calendar.isDate(since, equalTo: now, toGranularity: .year) ? style.day().month(.wide) : style.day().month(.wide).year()) + ", " + time(since)
-        return reason.map { self("Не получается с \(when): \($0)") } ?? self("Не получается с \(when).")
+        let why = code == nil ? reason : cause(code).map { $0.prefix(1).lowercased(with: language.locale) + $0.dropFirst() + "." }
+        return why.map { self("Не получается с \(when): \($0)") } ?? self("Не получается с \(when).")
     }
 }
 

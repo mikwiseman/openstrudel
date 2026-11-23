@@ -728,6 +728,30 @@ private final class CredentialReadGate: @unchecked Sendable {
         #expect(client.telegram?.chats?.first?.profileId == "employee")
     }
 
+    @Test func aGroupsSwitchesAreChangedOneAtATimeAndReadBackFromItsHome() async throws {
+        let fixture = DevicesFixture()
+        fixture.bot = true; fixture.group = ["replies": "instructions", "transcripts": "on", "enabled": true]
+        let (client, cleanup) = makeClient(fixture)
+        defer { cleanup() }
+        await client.load()
+        let group = { client.telegram?.chats?.first { $0.chatId == "-100" } }
+        #expect(group()?.transcripts == "on" && group()?.replies == "instructions")
+        try await client.setTelegramGroupTranscripts("-100", posted: false)
+        #expect(group()?.transcripts == "off")
+        try await client.setTelegramGroupReplies("-100", mentionsOnly: true)
+        #expect(group()?.replies == "mentions")
+        try await client.setTelegramGroupReplies("-100", mentionsOnly: false)
+        try await client.setTelegramGroupEnabled("-100", enabled: false)
+        #expect(group()?.replies == "instructions" && group()?.enabled == false && group()?.transcripts == "off")
+        // Each call carries its one change, in the Home's own words.
+        #expect(fixture.groupChanges.map { $0.keys.sorted() } == [["transcripts"], ["replies"], ["replies"], ["enabled"]])
+        #expect(fixture.groupChanges[0]["transcripts"] as? Bool == false)
+        #expect(fixture.groupChanges[1]["replies"] as? String == "mentions" && fixture.groupChanges[2]["replies"] as? String == "all")
+        // A Home that has no such switch says nothing of it, and the group keeps its one button.
+        let older = try JSONDecoder().decode(TelegramChat.self, from: Data(#"{"chatId":"-7","title":"Old","conversationId":null,"profileId":null,"allowedSenders":[]}"#.utf8))
+        #expect(older.transcripts == nil && older.replies == nil)
+    }
+
     private func makeClient(_ fixture: DevicesFixture, saved: [String: String] = [:]) -> (HomeClient, () -> Void) {
         let suite = "OpenStrudel.devices-test." + UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
@@ -828,9 +852,13 @@ private final class KeychainLog: @unchecked Sendable {
     /// Telegram reads wait, then answer with what they saw on arrival, like a slow poll.
     var holdTelegram = false
     var heldTelegramReads = 0
+    /// A group -100 with its switches, when the test gives it any; every change the client asked for, in order.
+    var group: [String: Any]?
+    var groupChanges: [[String: Any]] = []
     private func telegram() -> [String: Any] {
-        ["configured": true, "running": true, "linkedChats": ["42"],
-         "chats": [["chatId": "42", "title": "Личный чат", "profileId": telegramResponder.map { $0 as Any } ?? NSNull(), "allowedSenders": ["42"], "enabled": true]]]
+        let own: [String: Any] = ["chatId": "42", "title": "Личный чат", "profileId": telegramResponder.map { $0 as Any } ?? NSNull(), "allowedSenders": ["42"], "enabled": true]
+        let shared = group.map { ["chatId": "-100", "title": "Команда", "conversationId": "group", "profileId": NSNull(), "allowedSenders": ["42"], "access": "members"].merging($0) { _, new in new } }
+        return ["configured": true, "running": true, "linkedChats": ["42"], "chats": [own] + (shared.map { [$0] } ?? [])]
     }
     private func readTelegram() async -> [String: Any] {
         let seen = telegram()
@@ -868,6 +896,14 @@ private final class KeychainLog: @unchecked Sendable {
         case ("GET", "/v1/mobile") where colleague: return (403, Data(#"{"error":"Откройте настройки на Mac"}"#.utf8))
         case ("GET", "/v1/integrations") where bot: return json(["telegram": await readTelegram()])
         case ("GET", "/v1/integrations"): return json(["telegram": ["configured": false, "running": false, "linkedChats": []]])
+        case ("PATCH", "/v1/integrations/telegram/chats/-100"):
+            let body = (try? JSONSerialization.jsonObject(with: Self.body(request))) as? [String: Any] ?? [:]
+            groupChanges.append(body)
+            // As the Home answers: the stored words, not the request's.
+            if let posted = body["transcripts"] as? Bool { group?["transcripts"] = posted ? "on" : "off" }
+            if let replies = body["replies"] as? String { group?["replies"] = replies == "mentions" ? "mentions" : "instructions" }
+            if let enabled = body["enabled"] as? Bool { group?["enabled"] = enabled }
+            return json(["telegram": telegram()])
         case ("PATCH", "/v1/integrations/telegram/chats/42"):
             telegramResponder = ((try? JSONSerialization.jsonObject(with: Self.body(request))) as? [String: Any])?["profileId"] as? String
             return json(["telegram": telegram()])

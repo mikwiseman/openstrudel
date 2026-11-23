@@ -154,6 +154,29 @@ import Testing
         #expect(Team.failure(failing, schedules: [radar, try schedule("morning", cron: "15 4 * * *", next: "2026-11-11T04:15:00.000Z", enabled: false)]) == nil)
     }
 
+    @Test func aCauseTheHomeNamesIsSaidInTheInterfaceLanguageNeverInTheHomesSentence() {
+        // Each language words the cause itself: an English screen never shows the Home's Russian sentence.
+        #expect(russian.cause("sign_in") == "Нужен вход в аккаунт модели" && english.cause("sign_in") == "Needs a model sign-in")
+        #expect(russian.cause("limit") == "Закончился лимит модели" && english.cause("limit") == "Model limit reached")
+        #expect(russian.cause("connection") == "Нет связи с моделью" && english.cause("connection") == "No connection to the model")
+        for language in AppLanguage.allCases {
+            for code in ["sign_in", "limit", "connection"] { #expect(TeamWords(language: language).cause(code)?.isEmpty == false) }
+        }
+        // Any other cause, a later one this version does not know, and none at all: the row says only that it did not work.
+        for code in ["account", "resources", "tools", "connector", "execution", "voice", "delivery", "something-newer", nil] as [String?] {
+            #expect(russian.cause(code) == nil)
+        }
+        // The page keeps since when. A named cause replaces the run's own sentence, a cause without short words leaves
+        // the time alone, and only a Home that names no cause is quoted.
+        let since = Self.instant("2026-11-10T04:15:00.000Z"), raw = "Войдите в OpenAI на устройстве сотрудника: OpenStrudel → Настройки → Аккаунты."
+        #expect(russian.failure(since: since, reason: raw, code: "sign_in", now: Self.now) == "Не получается с 07:15: нужен вход в аккаунт модели.")
+        #expect(english.failure(since: since, reason: raw, code: "sign_in", now: Self.now) == "Not working since \(english.time(since)): needs a model sign-in.")
+        #expect(russian.failure(since: since, reason: raw, code: "limit", now: Self.now) == "Не получается с 07:15: закончился лимит модели.")
+        #expect(russian.failure(since: since, reason: raw, code: "execution", now: Self.now) == "Не получается с 07:15.")
+        #expect(russian.failure(since: since, reason: raw, code: nil, now: Self.now) == "Не получается с 07:15: " + raw)
+        #expect(russian.failure(since: nil, reason: raw, code: "sign_in", now: Self.now) == "Последний запуск не получился.")
+    }
+
     @Test func anEditionIsHeadedByItsOwnNameOrByTheReadersWord() {
         let words = NewsWords(language: .russian, calendar: Self.moscow)
         var page = NewsDesk.Page(date: "2026-11-10", isToday: true)
@@ -396,6 +419,10 @@ import Testing
         #expect(failures.failure("tutor", on: client)?.reason == "Чат доставки изменился")
         #expect(failures.failure("coach", on: client) == nil)
         #expect(failures.failure(nil, on: client) == TeamFailures.Failure(since: Self.instant("2026-11-10T04:30:00.000Z"), reason: nil))
+        // A Home that names the cause is heard; one that does not leaves it nil.
+        #expect(failures.failure("tutor", on: client)?.code == nil)
+        failures.take([try listed("a", profile: "tutor", failure: #"{"since":"2026-11-09T15:30:00.000Z","reason":"Войдите в OpenAI на устройстве сотрудника.","code":"sign_in"}"#)], from: client)
+        #expect(failures.failure("tutor", on: client) == TeamFailures.Failure(since: Self.instant("2026-11-09T15:30:00.000Z"), reason: "Войдите в OpenAI на устройстве сотрудника.", code: "sign_in"))
         // An older Home says nothing about failures, and what it said before is forgotten when it stops failing.
         failures.take([try listed("a", profile: "tutor", failure: nil)], from: client)
         #expect(failures.known.isEmpty)
