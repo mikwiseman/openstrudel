@@ -919,7 +919,9 @@ export class TelegramAdapter {
     const byOwner = Number(chatId) > 0 && this.isOwner(message.from?.id);
     const cardAnswer = waitingCard && text.trim() ? this.messages.cards.words(waitingCard.id, text, { via: "telegram", userId: String(message.from!.id), name: author ?? String(message.from!.id) }) : null;
     const submission = { channel: "telegram" as const, conversationId: conversation.id, text: cardAnswer?.text ?? text, uploads:input.uploads, replyToAssistant, replyTo, telegramSenderId:message.from ? String(message.from.id) : undefined, author, externalId, externalChatId: chatId, title: message.chat.title ?? "Telegram " + chatId, byOwner,
-      ...cardAnswer || waitingCard ? { cardReply: true } : {} };
+      ...cardAnswer || waitingCard ? { cardReply: true } : {},
+      // A person who dictates sends words, not a file: the recording that was heard is the message's only upload. A video is a file first.
+      ...input.transcript && (message.voice || message.audio || message.video_note) ? { dictated: true } : {} };
     if (contextOnly) {
       await this.messages.submit({ ...submission, contextOnly:true });
       this.store.markTelegramUpdate(update.update_id); return;

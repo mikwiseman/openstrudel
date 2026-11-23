@@ -63,14 +63,14 @@ The Home tries to answer from memory first only when all of the following hold:
 
 - The setting `ask.enabled` is not "false".
 - The message is in the main assistant's own chat. The sender is the owner in the main chat of the app, or a person with access (a paired owner or a person on the access list) in their private Telegram chat.
-- The message is not a scheduled run, an event run or an answer to a card. It has no files, no attached context and no answer schema.
+- The message is not a scheduled run, an event run or an answer to a card. It has no files, no attached context and no answer schema. A dictated Telegram message is the exception. When a voice message, an audio or a round video was transcribed and that recording is the only file of the message, the Home uses the transcript as the question. A photo, a document, a video or any other file still sends the message to its normal turn.
 - No turn is running or waiting in the chat.
-- The message is at most 400 characters long, has no link, and reads like a question. It has a question mark, or one of its first words is a question word in Russian or English, e.g., "сколько" or "when". It does not start with a command to send, create, schedule, change or write something.
+- The message is at most 400 characters long, has no link, and reads like a question. It has a question mark, or one of its first words is a question word in Russian or English, e.g., "сколько" or "when". Dictated text often has no question mark, so the question word is enough, and the Home skips spoken openers such as "слушай" or "so" before it looks for the question word. The message does not start with a command to send, create, schedule, change or write something.
 - The chat has at least one memory.
 
 The Home stores the message as it stores any message. When the model answers within 26 seconds, the Home stores the answer as the reply to the message and delivers it the same way as any reply, in Telegram and in the app. The main thread reads the question and the answer as context the next time it runs, and it reads them once. The Home records the usage of the run in `turn_usage`, so the statistics count the request.
 
-When the model calls `hand_over`, fails or runs out of time, or when no memory answers, the message takes its normal turn in the main thread. The Home stores no second message and shows no error. The usage of both runs is then recorded for that one request.
+When the model calls `hand_over`, fails or runs out of time, or when no memory answers, the message takes its normal turn in the main thread. The Home stores no second message and shows no error, and a dictated message keeps its recording in both cases. The usage of both runs is then recorded for that one request.
 
 With `ask.enabled` set to "false", or with no memory connected, the Home handles every message exactly as it did before.
 

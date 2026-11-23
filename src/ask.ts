@@ -19,7 +19,8 @@ const ASKING = new Set(["кто", "что", "где", "когда", "сколь�
 /** These open one only as the first word: «I do not know» is not a question. */
 const OPENING = new Set(["did", "do", "does", "is", "are"]);
 /** Said before the point, in speech and in polite requests. */
-const FILLER = new Set(["а", "и", "ну", "так", "слушай", "скажи", "подскажи", "пожалуйста", "привет", "можешь", "можете", "сможешь", "please", "pls", "hey", "hi", "so", "and", "ok", "okay", "can", "could", "would", "will", "you"]);
+const FILLER = new Set(["а", "и", "ну", "так", "вот", "значит", "короче", "смотри", "слушай", "скажи", "подскажи", "пожалуйста", "привет", "ладно", "окей", "ок", "эм", "хм", "можешь", "можете", "сможешь",
+  "please", "pls", "hey", "hi", "so", "and", "well", "um", "uh", "listen", "ok", "okay", "can", "could", "would", "will", "you"]);
 /** A request to send, create, schedule, change or write is work for the main thread, with a question mark or without. */
 const COMMAND = /^(?:отправ(?:ь|ьте|ить)|пошли(?:те)?|послать|перешли(?:те)?|переслать|напиши(?:те)?|написать|запиши(?:те)?|записать|созда(?:й|йте|ть)|сдела(?:й|йте|ть)|состав(?:ь|ьте|ить)|подготов(?:ь|ьте|ить)|запланиру(?:й|йте)|запланировать|постав(?:ь|ьте|ить)|назнач(?:ь|ьте|ить)|измени(?:те|ть)?|поменя(?:й|йте|ть)|обнови(?:те|ть)?|удали(?:те|ть)?|добав(?:ь|ьте|ить)|перенес(?:и|ите|ти)|отмени(?:те|ть)?|send|create|make|schedule|change|write|draft|add|update|delete|remove|set|move|cancel|book|email|post|reply)$/;
 

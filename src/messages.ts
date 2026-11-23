@@ -178,7 +178,9 @@ export class MessageService {
     }
     // Asked first (docs/ask.md): a question in the main assistant's own chat, from its owner in the app or from a person with access
     // in their private Telegram chat, when nothing else is running there. Anything the lane does not answer takes the turn below.
-    const ask = this.ask && !this.drains.has(conversation.id) && !profile && !files.length && !question && !input.scheduled && !input.cardReply && !input.context && !input.outputSchema && !input.brief
+    // A dictated Telegram message is its transcript: its own recording is its only file and stays on the message either way.
+    const dictated = input.dictated === true && input.channel === "telegram" && !input.attachments?.length && files.length === 1 && isSpeechFile(files[0]!.name, files[0]!.mimeType);
+    const ask = this.ask && !this.drains.has(conversation.id) && !profile && (!files.length || dictated) && !question && !input.scheduled && !input.cardReply && !input.context && !input.outputSchema && !input.brief
       && !/^(?:schedule|correspondence|operations):/.test(input.externalId ?? "") && looksLikeQuestion(text) && this.ask.enabled() && !this.isGroupChat(conversation.id)
       && (input.channel === "telegram" ? Number(input.externalChatId) > 0 && hasAccess(this.store, input.telegramSenderId) : input.byOwner === true && conversation.externalId === "home")
       ? this.ask : undefined;
