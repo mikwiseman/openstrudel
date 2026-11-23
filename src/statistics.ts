@@ -1,5 +1,6 @@
 import { quiet, trimmed } from "./activity.js";
 import { HomeError } from "./home.js";
+import { failureCode, type FailureCode } from "./operations.js";
 import { providerInfo, providerInfos, subscriptionModels } from "./providers.js";
 import type { Store } from "./store.js";
 import { ownerTimezone } from "./timezone.js";
@@ -253,7 +254,7 @@ export interface ScheduleOverview {
     /** Whose schedule it is; null for the main assistant's. */
     profileId: string | null;
     /** An enabled schedule whose latest finished run failed: since which run, and the first line of what the latest one said. */
-    failure: { since: string; reason: string | null } | null }>;
+    failure: { since: string; reason: string | null; /** The cause, for a client to word in its own language. */ code: FailureCode | null } | null }>;
 }
 
 /** The owner's switchboard: each recurring schedule, its chat and this week's runs and cost. Switching one uses the chat's own schedule save. */
@@ -265,14 +266,14 @@ export function readScheduleOverview(store: Store, scheduler: Pick<Scheduler, "l
   // Since when an enabled schedule has not worked and what its latest failure said: the runs that failed after the
   // last one that worked. The owner reads the same errors on the schedule's own page.
   const finished = list.length ? store.db.prepare("SELECT status,scheduled_for,error FROM schedule_runs WHERE schedule_id=? AND status IN ('completed','quiet','failed','uncertain') ORDER BY scheduled_for DESC LIMIT 100") : null;
-  const failure = (id: string): { since: string; reason: string | null } | null => {
-    let since: string | null = null, reason: string | null = null;
+  const failure = (id: string): { since: string; reason: string | null; code: FailureCode | null } | null => {
+    let since: string | null = null, reason: string | null = null, code: FailureCode | null = null;
     for (const run of (finished?.all(id) ?? []) as Array<{ status: string; scheduled_for: string; error: string | null }>) {
       if (run.status !== "failed" && run.status !== "uncertain") break;
-      if (since === null) reason = String(run.error ?? "").split("\n").map(line => line.trim()).find(Boolean)?.slice(0, 240) ?? null;
+      if (since === null) { reason = String(run.error ?? "").split("\n").map(line => line.trim()).find(Boolean)?.slice(0, 240) ?? null; code = run.error ? failureCode(run.error) : null; }
       since = run.scheduled_for;
     }
-    return since === null ? null : { since, reason };
+    return since === null ? null : { since, reason, code };
   };
   return { checkedAt: now.toISOString(), schedules: list.map(schedule => {
     const spent = week.get(schedule.id);

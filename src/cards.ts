@@ -21,6 +21,7 @@ export type CardKind = typeof cardKinds[number];
 export interface CardChoice { id: string; label: string; role: "primary" | "plain" | "link"; needsText?: true; url?: string;
   /** "Always": the choice the person gave the last `times` times about the same thing. */ repeats?: string; times?: number }
 export interface CardContent { to?: string; via?: string; subject?: string | null; text?: string; details?: Array<{ label: string; value: string }>; due?: string; url?: string; nextTry?: string;
+  /** Why a message did not come, when the Home knows the cause by name. */ code?: string;
   /** What a question is about, when the same question comes back for it. */ about?: string; /** The Home rule an "always" saved. */ rule?: string }
 export interface CardAnswer { choice: string | null; label: string; text: string | null; by: string; via: "telegram" | "app" | "raiser"; at: string; outcome: string | null }
 export interface Card {
@@ -319,10 +320,10 @@ export class Cards {
 
   /** A scheduled message that did not come, said by the Home itself: one card per schedule while it keeps failing, with the
    * newest reason and next try. Nobody is told twice about a card still waiting. Returns whether Telegram shows it. */
-  async failed(input: { key: string; conversationId: string; chatId: string; title: string; reason: string; nextTry: string | null }): Promise<boolean> {
+  async failed(input: { key: string; conversationId: string; chatId: string; title: string; reason: string; nextTry: string | null; /** The cause, for a client to word in its own language. */ code?: string }): Promise<boolean> {
     const conversation = this.store.getConversation(input.conversationId);
     if (!conversation) return false;
-    const content: Kept = { key: input.key, ...input.nextTry ? { nextTry: input.nextTry } : {} };
+    const content: Kept = { key: input.key, ...input.nextTry ? { nextTry: input.nextTry } : {}, ...input.code ? { code: input.code } : {} };
     const waiting = this.rows("conversation_id=? AND kind='failed' AND state='open'", conversation.id).find(row => row.content.key === input.key);
     if (waiting) {
       this.store.db.prepare("UPDATE cards SET reason=?,content_json=? WHERE id=?").run(input.reason, JSON.stringify(content), waiting.id);

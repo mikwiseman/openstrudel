@@ -702,6 +702,36 @@ describe("where a card goes and who it reaches", { timeout: 30_000 }, () => {
     expect(tg.of("editMessageText").at(-1)).toMatchObject({ message_id: 501, reply_markup: { inline_keyboard: [] } });
   });
 
+  it("says a signed-out model account once: one card for the owner that names who is stopped, one line in a chat that waits, closed when it works again", async () => {
+    const { AccountUnavailableError } = await import("../src/account-errors.js");
+    const tg = telegramBeside();
+    let out = true;
+    const h = await served(async () => { if (out) throw new AccountUnavailableError("sign_in_required"); return { threadId: "t", response: "1. The first idea.", events: [] }; });
+    const store = h.runtime.store, saved = new Date("2030-01-15T05:00:00Z");
+    const news = store.createProfile({ name: "News", instructions: "Report" }), sales = store.createProfile({ name: "Sales", instructions: "Sell" });
+    const plan = (profile: string, name: string, chat: string) => h.runtime.scheduler.save({ conversationId: store.profileConversation(profile).id, name, prompt: "Report", cron: "0 * * * *", timezone: "UTC", delivery: "telegram", telegramChatId: chat }, saved);
+    plan(news.id, "Morning", "-100"); plan(news.id, "Radar", "-100"); plan(sales.id, "Pipeline", "42");
+    const run = async (at: string) => { await h.runtime.scheduler.tick(new Date(at)); await h.runtime.scheduler.idle(); };
+    const said = (chat: string) => tg.of("sendMessage").filter(message => message.chat_id === chat && /вход в аккаунт модели|Не получилось|Требует внимания/.test(message.text));
+    const cards = async () => (await (await h.call("/v1/cards")).json()).open;
+    // Three schedules of two employees fail for two hours, and again the next day.
+    for (const at of ["2030-01-15T06:00:30Z", "2030-01-15T07:00:30Z", "2030-01-16T06:00:30Z"]) await run(at);
+    // The chat that waits for editions hears it once for the whole outage, in the Home's own words, with nothing to press.
+    expect(said("-100")).toHaveLength(1);
+    expect(said("-100")[0].text).toBe("News не работает: нужен вход в аккаунт модели. Владелец знает; всё вернётся само.");
+    expect(said("-100")[0].reply_markup).toBeUndefined();
+    // The owner has one card for the cause, not one per schedule, and no notice beside it.
+    expect(await cards()).toEqual([expect.objectContaining({ kind: "failed", title: "Нужен вход в аккаунт модели", reason: "Не работают: News и Sales.", chat: { id: "42", title: "Den" }, content: { code: "sign_in" } })]);
+    expect(said("42")).toHaveLength(1);
+    expect(store.listMessages(store.primaryConversation().id).filter(message => message.kind === "notice")).toEqual([]);
+    // It works again: the card closes itself, and a later outage is news again.
+    out = false; await run("2030-01-16T07:00:30Z");
+    expect(await cards()).toEqual([]);
+    out = true; await run("2030-01-16T08:00:30Z");
+    expect(await cards()).toHaveLength(1);
+    expect(said("-100")).toHaveLength(2);
+  });
+
   it("gives the owner's own chat the reason on the card, and no second notice", async () => {
     const tg = telegramBeside();
     const h = await served(async () => ({ threadId: "t", response: "FAILED: the source did not answer", events: [] }));
