@@ -33,6 +33,7 @@ import { ServerShell } from "./server-shell.js";
 import { homeRulesPrompt } from "./home-management.js";
 import { ensureUsageTable, recordTurnUsage, type TurnRoute, type UsageReport } from "./usage.js";
 import { Cards } from "./cards.js";
+import { looksLikeQuestion, type Ask } from "./ask.js";
 
 type QueuedMessage = { id: string; channel: string; run: () => Promise<MessageResult>; resolve: (result: MessageResult) => void; reject: (error: unknown) => void };
 
@@ -52,6 +53,8 @@ export class MessageService {
   telegram?: TelegramAdapter;
   /** Separate executor: protected Telegram turns never enter the ordinary owner engine. */
   restrictedExecutor?: Pick<RestrictedExecutor, "run" | "close">;
+  /** Answers a question about the asker's own records from the connected memories, before the main thread (ask.ts). */
+  ask?: Ask;
   onAuthenticationError?: () => void;
   readonly files: ConversationFiles;
   readonly projects: Projects;
@@ -173,6 +176,14 @@ export class MessageService {
         }
       }
     }
+    // Asked first (docs/ask.md): a question in the main assistant's own chat, from its owner in the app or from a person with access
+    // in their private Telegram chat, when nothing else is running there. Anything the lane does not answer takes the turn below.
+    // A dictated Telegram message is its transcript: its own recording is its only file and stays on the message either way.
+    const dictated = input.dictated === true && input.channel === "telegram" && !input.attachments?.length && files.length === 1 && isSpeechFile(files[0]!.name, files[0]!.mimeType);
+    const ask = this.ask && !this.drains.has(conversation.id) && !profile && (!files.length || dictated) && !question && !input.scheduled && !input.cardReply && !input.context && !input.outputSchema && !input.brief
+      && !/^(?:schedule|correspondence|operations):/.test(input.externalId ?? "") && looksLikeQuestion(text) && this.ask.enabled() && !this.isGroupChat(conversation.id)
+      && (input.channel === "telegram" ? Number(input.externalChatId) > 0 && hasAccess(this.store, input.telegramSenderId) : input.byOwner === true && conversation.externalId === "home")
+      ? this.ask : undefined;
     let start!: () => void;
     const started = new Promise<void>(resolve => { start = resolve; });
     const completion = this.enqueue(conversation.id, inbound.id, input.channel, async () => {
@@ -198,6 +209,15 @@ export class MessageService {
         const groupContext = context.startsWith("group-");
         // Read at execution time too: removing someone also applies to their waiting messages.
         const access = input.channel !== "telegram" || hasAccess(this.store, input.telegramSenderId);
+        if (ask && access) {
+          start();
+          // What the lane spent is this request's spend too; put first, so a turn that follows stays the route on record.
+          const answered = await this.askFirst(ask, input, inbound.id, current.id, text, context, report => { spent.unshift(report); route ??= { provider: report.provider }; });
+          if (answered) { route ??= { provider: "chatgpt" }; return { ...receipt, messageId: answered.id, text: answered.text, attachments: answered.attachments }; }
+          // Stopped from the app, or the Home is closing: as for any running answer. Otherwise the message takes its normal turn.
+          if (this.active.get(current.id)?.abort.signal.aborted) throw new Error("Ответ остановлен");
+          if (this.closing) throw new Error("OpenStrudel завершает работу. Сообщение не запущено.");
+        }
         const correspondence = input.externalId?.startsWith("correspondence:") === true;
         if (correspondence && !correspondenceAudience(this.store, {
           conversationId: current.id, messageId: inbound.id, channel: input.channel, scope: context,
@@ -477,6 +497,26 @@ export class MessageService {
     return { receipt, completion };
   }
 
+  /** The ask lane for one message: the memories this asker may use, one answer, stored as the reply to the message. The main
+   * thread reads the exchange as context the next time it runs (Store.contextMessages). Undefined when the lane hands the
+   * message over (the model says it is not a question about records, or no memory answered), fails or runs out of time: nothing
+   * is stored then and nobody is told. */
+  private async askFirst(ask: Ask, input: MessageInput, messageId: string, conversationId: string, text: string, context: string, onUsage: (report: UsageReport) => void): Promise<Message | undefined> {
+    const abort = new AbortController();
+    this.active.set(conversationId, { engine: this.engine, messageId, channel: input.channel, abort });
+    try {
+      const owner = ownerTurn(this.store, { conversationId, messageId, channel: input.channel, byOwner: input.byOwner, telegramSenderId: input.telegramSenderId });
+      const memories = await ask.memories(context, { access: true, owner }, abort.signal);
+      if (!memories.length) return undefined;
+      const recent = this.store.listMessages(conversationId, 13).filter(m => m.id !== messageId && m.kind !== "notice" && m.status === "completed").slice(-6);
+      const answer = await ask.answer(text, memories, { recent, replyTo: input.replyTo?.text, signal: abort.signal, onUsage });
+      if (answer.answer === null || abort.signal.aborted || this.closing) return undefined;
+      const outbound = this.store.addMessage({ conversationId, channel: input.channel, direction: "outbound", replyToId: messageId, text: answer.text, externalId: "notification:ask:" + messageId });
+      this.store.setMessageStatus(messageId, "completed");
+      return outbound;
+    } catch { return undefined; }
+  }
+
   /** Recheck just before the Telegram adapter delivers a completed protected turn. */
   assertDelivery(input: MessageInput, messageId: string): void {
     const row = this.store.db.prepare("SELECT a.* FROM message_authorizations a JOIN messages m ON m.reply_to_id=a.message_id WHERE m.id=?").get(messageId);
@@ -573,7 +613,7 @@ export class MessageService {
 
   async close(): Promise<void> {
     this.closing = true;
-    this.interactions.close(); this.engine.close?.(); this.restrictedExecutor?.close();
+    this.interactions.close(); this.engine.close?.(); this.restrictedExecutor?.close(); this.ask?.close();
     await Promise.allSettled([...this.drains.values()]);
   }
 }

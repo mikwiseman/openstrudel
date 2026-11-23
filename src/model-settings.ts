@@ -130,6 +130,22 @@ export function restrictedModelSelection(store: Store, conversationId: string): 
   const device = resolveModelSelection(store, 'main'), restricted = readRestrictedModel(store);
   return { ...device, ...(restricted.reasoningEffort !== null ? { reasoningEffort: restricted.reasoningEffort } : {}), fast: restricted.fast };
 }
+/** The ask lane (ask.ts) writes a short answer from evidence the Home has already found, so it thinks as little as its
+ * model allows. `models.ask` is the owner's own choice of that model, stored as any other selection; a damaged value counts as none. */
+export function readAskModel(store: Store): ModelSelection | null {
+  try { const value = JSON.parse(store.getSetting('models.ask') ?? 'null'); return value?.model ? parseModelSelection(value,false) : null; } catch { return null; }
+}
+const effortOrder = ['none','minimal','low','medium','high','xhigh','max','ultra'];
+/** The owner's model for answers at its chosen level; otherwise the device's model at the direct chats' speed. A level the
+ * model does not offer, or none chosen, is the lowest it offers. `models` is the catalog of the engine that will run it. */
+export function askModelSelection(store: Store, models: ModelChoice[] = []): ModelSelection & { fast: boolean } {
+  const chosen = readAskModel(store), { reasoningEffort: level, ...route } = chosen ?? resolveModelSelection(store,'main');
+  const catalog = models.filter(m => (m.provider ?? 'chatgpt') === route.provider);
+  const offered = (route.model ? catalog.find(m => m.id === route.model) : catalog.length ? recommendedModel(catalog) : undefined)?.reasoningEfforts?.map(e => e.id) ?? [];
+  const rank = (id: string) => (effortOrder.indexOf(id) + effortOrder.length + 1) % (effortOrder.length + 1);
+  const reasoningEffort = chosen && level != null && offered.includes(level) ? level : [...offered].sort((a,b) => rank(a) - rank(b))[0];
+  return { ...route, ...(reasoningEffort ? { reasoningEffort } : {}), fast: !chosen && directFast(store) };
+}
 /** `models` is one provider's catalog. */
 export function validateModelSelection(value: Pick<ModelSelection, 'model' | 'serviceTier' | 'reasoningEffort'>, models: ModelChoice[]) {
   const model = value.model ? models.find(m=>m.id === value.model) : recommendedModel(models);

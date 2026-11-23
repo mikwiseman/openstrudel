@@ -14,6 +14,7 @@ import {mkdirSync,writeFileSync,renameSync} from "node:fs";
 import { createSetupServer } from "./setup.js";
 import { Accounts, AccountEngines } from "./accounts.js";
 import { RestrictedExecutor } from "./restricted-executor.js";
+import { Ask, codexAskEngine } from "./ask.js";
 import { isProtectedTelegramAudience } from "./authorization.js";
 
 export interface RuntimeOptions {
@@ -55,6 +56,7 @@ export class OpenStrudelRuntime {
     });
     this.messages = new MessageService(this.store, this.engine,options.rootDirectory);
     if (!options.engine) this.messages.restrictedExecutor = new RestrictedExecutor(this.accounts);
+    if (!options.engine) this.messages.ask = new Ask(this.store, this.accounts.root, codexAskEngine(this.accounts));
     if (!(this.engine instanceof AccountEngines)) this.messages.onAuthenticationError = () => this.account.invalidate();
     this.telegram = new TelegramAdapter(telegramToken, this.store, this.messages);
     this.messages.telegram=this.telegram;

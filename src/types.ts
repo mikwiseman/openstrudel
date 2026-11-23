@@ -213,6 +213,9 @@ export interface MessageInput {
   telegramSenderId?: string;
   /** Trusted adapter input: preserve group context without invoking the model. */
   contextOnly?: boolean;
+  /** Trusted adapter input: the text is the transcript of this message's own voice, audio or round video recording, and that
+   * recording is its only upload. Never accepted from a request body. */
+  dictated?: boolean;
   /** Background runs cannot wait forever for an interactive approval. */
   scheduled?: boolean;
   /** Trusted scheduler destination; null means app-only. Never accepted from a request body. */

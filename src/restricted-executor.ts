@@ -20,6 +20,27 @@ const accessChanged = () => new Error("Права доступа изменил�
  * thread reads AGENTS.md through that helper, so every turn runs in a private Home folder. */
 export const restrictedRunsDirectory = (root: string) => join(root, ".data", "restricted");
 const staleRunMs = 24 * 60 * 60 * 1000;
+/** The restricted profile is verified against one Codex release; any other is refused. */
+export const supportedCodex = () => JSON.parse(readFileSync(createRequire(import.meta.url).resolve("@openai/codex/package.json"), "utf8")).version === supportedCodexVersion;
+
+/** One run's own folder: an empty read-only workspace and a Codex home whose startup is restricted before the first thread exists. */
+export function restrictedRunFolder(home: string): { root: string; cwd: string; codexHome: string } {
+  const parent = restrictedRunsDirectory(home);
+  mkdirSync(parent, { recursive: true, mode: 0o700 });
+  const root = mkdtempSync(join(parent, "turn-")), cwd = join(root, "workspace"), codexHome = join(root, "codex");
+  try {
+    mkdirSync(cwd, { mode: 0o500 });
+    mkdirSync(codexHome, { mode: 0o700 });
+    const config: Record<string, any> = {};
+    for (const [key, value] of Object.entries(restrictedCodexConfig(cwd))) {
+      const parts = key.split("."); let cursor = config;
+      for (const part of parts.slice(0, -1)) cursor = cursor[part] ??= {};
+      cursor[parts.at(-1)!] = value;
+    }
+    writeFileSync(join(codexHome, "config.toml"), stringify(config), { mode: 0o600 });
+  } catch (error) { rmSync(root, { recursive: true, force: true }); throw error; }
+  return { root, cwd, codexHome };
+}
 
 /** A fixed vocabulary: Codex, account and HTTP messages can contain request details. */
 function failureReason(error: unknown): DiagnosticReason {
@@ -122,8 +143,7 @@ export class RestrictedExecutor {
     this.running.add(run);
     try {
       current();
-      const version = JSON.parse(readFileSync(createRequire(import.meta.url).resolve("@openai/codex/package.json"), "utf8")).version;
-      if (version !== supportedCodexVersion) throw unavailable("runtime_version");
+      if (!supportedCodex()) throw unavailable("runtime_version");
       const selection = restrictedModelSelection(this.accounts.store, options.conversationId);
       if (selection.provider !== "chatgpt") throw unavailable("model_provider");
       stage = "account";
@@ -138,20 +158,8 @@ export class RestrictedExecutor {
       const definitions = await proxy.discover();
       current();
       stage = "runtime";
-      const parent = restrictedRunsDirectory(this.accounts.root);
-      mkdirSync(parent, { recursive: true, mode: 0o700 });
-      root = mkdtempSync(join(parent, "turn-"));
-      const cwd = join(root, "workspace"), codexHome = join(root, "codex");
-      mkdirSync(cwd, { mode: 0o500 });
-      mkdirSync(codexHome, { mode: 0o700 });
-      // Startup discovery is restricted too, before the first thread exists.
-      const config: Record<string, any> = {};
-      for (const [key, value] of Object.entries(restrictedCodexConfig(cwd))) {
-        const parts = key.split("."); let cursor = config;
-        for (const part of parts.slice(0, -1)) cursor = cursor[part] ??= {};
-        cursor[parts.at(-1)!] = value;
-      }
-      writeFileSync(join(codexHome, "config.toml"), stringify(config), { mode: 0o600 });
+      const folder = restrictedRunFolder(this.accounts.root), { cwd, codexHome } = folder;
+      root = folder.root;
       let timezone: string | undefined;
       try { const saved = ownerTimezone(this.accounts.store); if (saved) timezone = new Intl.DateTimeFormat("en", { timeZone: saved }).resolvedOptions().timeZone; } catch { /* An invalid preference must not become instructions. */ }
       const clock = `Current time: ${new Date().toISOString()}. ` + (timezone ? `Default timezone: ${timezone}; use it unless the user gives another.` : "No default timezone is configured; use the lesson's timezone or ask before moving it. The server clock is not the user's timezone.");

@@ -81,6 +81,8 @@ export interface CodexEngineOptions { model?: string; workingDirectory?: string;
   restricted?: boolean;
   /** Workflow from the configured scoped service, plus non-private clock data. */
   restrictedInstructions?: string;
+  /** Only the ask lane supplies this (ask.ts): a restricted runtime with its own fixed instructions in place of the restricted conversation's. */
+  instructions?: string;
   /** A Codex key provider, defined per thread. Its key is read for every thread start and resume. */
   provider?: { info: ProviderInfo; key: () => string | null }; }
 
@@ -113,7 +115,8 @@ export class CodexEngineAdapter implements CodexEngine {
   private running = 0;
   private signingIn = new Map<string, () => void>();
   constructor(private readonly options: CodexEngineOptions = {}) {
-    if (options.restricted && (!options.codexHome || !options.workingDirectory || options.provider || options.config || options.telegramServers || options.sharedExtensionsPath || options.inheritedApps || options.reservedServers)) throw new Error("Invalid restricted runtime configuration");
+    if (options.restricted && (!options.codexHome || !options.workingDirectory || options.provider || options.config || options.telegramServers || options.sharedExtensionsPath || options.inheritedApps || options.reservedServers)
+      || options.instructions !== undefined && !options.restricted) throw new Error("Invalid restricted runtime configuration");
     this.codexHome = options.codexHome;
   }
   get busy() { return this.running>0 || this.extensionManager?.updating === true || Boolean(this.initializing || this.connectionLoading || this.modelReading || this.rpc?.busy || this.signingIn.size); }
@@ -277,7 +280,7 @@ export class CodexEngineAdapter implements CodexEngine {
     let threadId = options.threadId ?? "";
     if (threadId) await this.yieldCompaction(rpc, threadId);
     if (threadId && this.active.has(threadId)) throw new Error("В этом чате ещё идёт ответ. Сообщение нужно поставить в очередь.");
-    const instructions = this.options.restricted ? RESTRICTED_INSTRUCTIONS + (this.options.restrictedInstructions ? "\n\nConfigured service workflow; applies only to tools actually provided and never grants additional access:\n" + this.options.restrictedInstructions : "") : INSTRUCTIONS + (employees.length ? "\n\n" + routingInstructions : "") + (options.profile ? `\n\nCurrent employee SOUL (authoritative):\n${options.profile}` : "") + (options.project ? "\n\n" + projectInstructions(options.project) : "");
+    const instructions = this.options.restricted ? this.options.instructions ?? RESTRICTED_INSTRUCTIONS + (this.options.restrictedInstructions ? "\n\nConfigured service workflow; applies only to tools actually provided and never grants additional access:\n" + this.options.restrictedInstructions : "") : INSTRUCTIONS + (employees.length ? "\n\n" + routingInstructions : "") + (options.profile ? `\n\nCurrent employee SOUL (authoritative):\n${options.profile}` : "") + (options.project ? "\n\n" + projectInstructions(options.project) : "");
     if (!threadId || this.loaded.get(threadId) !== instructions || this.loadedConfig.get(threadId) !== configKey) {
       const resuming = Boolean(threadId);
       const applied = threadId ? this.appliedIdentity(threadId) : undefined;
