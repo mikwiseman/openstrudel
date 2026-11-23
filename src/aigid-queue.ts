@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
-export type BuildState = "queued" | "preparing" | "ready" | "tagged" | "failed";
+export type BuildState = "queued" | "preparing" | "ready" | "tagged" | "dispatched" | "failed";
 export interface BuildRequest {
   id: string; created: string; conversation: string; channel: "api" | "telegram"; actor: string;
   goal: string; changes: number; state: BuildState; commit_sha: string | null;

@@ -2,7 +2,6 @@ import { createSign } from "node:crypto";
 import { execFile } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statfsSync, type Stats } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import type { Store } from "./store.js";
 import type { DynamicTool } from "./types.js";
@@ -123,7 +122,7 @@ function botIdentity(app: App, access: string) {
 /** Only the AiGid release queue can call this. Never exposed as a general agent tool. */
 export async function dispatchAiGidCloud(root: string, fullName: string,
   request: { id: string; pull: number | null; commit: string }, authorize: () => void,
-  options: Pick<GitHubOptions, "remote"> & { signal?: AbortSignal; wait?: (ms: number) => Promise<void> } = {}) {
+  options: Pick<GitHubOptions, "remote"> = {}) {
   const sha = /^[0-9a-f]{40}$/;
   if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(request.id) || !sha.test(request.commit))
     throw new Error("Invalid AiGid release identity.");
@@ -136,7 +135,6 @@ export async function dispatchAiGidCloud(root: string, fullName: string,
   const access = await token(app, repository.installation, { contents: "write", ...(request.pull !== null ? { pull_requests: "write" } : {}) }, repository.name);
   const base = `/repos/${fullName}`;
   let revision = request.commit;
-  let mergedAt: number | undefined;
   if (request.pull !== null) {
     if (!Number.isSafeInteger(request.pull) || request.pull < 1) throw new Error("Invalid AiGid pull request.");
     const path = `${base}/pulls/${request.pull}`, result = await api(path, access);
@@ -147,55 +145,55 @@ export async function dispatchAiGidCloud(root: string, fullName: string,
       throw new Error("The AiGid pull request no longer matches the authorized candidate.");
     if (pr.merged === true) {
       revision = pr.merge_commit_sha;
-      mergedAt = Math.min(Date.now(), Date.parse(pr.merged_at) || Date.now());
     } else {
       if (pr.state !== "open") throw new Error("The AiGid pull request was closed.");
       authorize();
       const merge = await api(path + "/merge", access, { method: "PUT", body: { sha: request.commit, merge_method: "merge" } });
       if (merge.status !== 200 || merge.data?.merged !== true) throw failure("merging the AiGid candidate", merge);
       revision = merge.data.sha;
-      mergedAt = Date.now();
     }
   }
   if (!sha.test(revision)) throw new Error("GitHub did not confirm the release revision.");
-  const tag = "wolf-testflight-" + request.id, ref = "refs/tags/" + tag;
-  const read = () => api(`${base}/git/ref/tags/${tag}`, access);
-  let observed = await read();
-  if (observed.status === 404 && mergedAt !== undefined) {
-    // Apple missed tags pushed alongside two PR merges. A separate push six minutes later started the same commit.
-    const remaining = mergedAt + 6 * 60_000 - Date.now();
-    if (remaining > 0) await (options.wait?.(remaining) ?? delay(remaining, undefined, { signal: options.signal }));
-    authorize();
-  }
   const ancestry = await api(`${base}/compare/${revision}...main`, access);
   if (ancestry.status !== 200 || !["identical", "ahead"].includes(ancestry.data?.status))
     throw new Error("The AiGid release revision does not belong to canonical main.");
-  if (observed.status === 404) {
-    // Publish through Git so the source provider receives a tag push. Use only the verified canonical commit.
-    const remote = options.remote?.(fullName) ?? repository.url + ".git";
-    const work = resolve(root, ".data/github/work");
-    mkdirSync(work, { recursive: true, mode: 0o700 });
-    const temp = mkdtempSync(join(work, "release-"));
-    try {
-      await git(["init", "--bare", "--quiet", "--template=", temp]);
-      await git(["-C", temp, "fetch", "--quiet", "--no-tags", "--depth=1", "--filter=blob:none", remote, revision], { token: access });
+  const branch = "wolf-testflight/" + request.id, ref = "refs/heads/" + branch;
+  const remote = options.remote?.(fullName) ?? repository.url + ".git";
+  const read = () => api(`${base}/git/ref/heads/${branch}`, access);
+  const bot = await botIdentity(app, access);
+  const work = resolve(root, ".data/github/work");
+  mkdirSync(work, { recursive: true, mode: 0o700 });
+  const temp = mkdtempSync(join(work, "release-"));
+  try {
+    await git(["init", "--bare", "--quiet", "--template=", temp]);
+    await git(["-C", temp, "fetch", "--quiet", "--no-tags", "--depth=1", "--filter=blob:none", remote, revision], {token: access});
+    const [tree, date] = (await git(["-C", temp, "show", "-s", "--format=%T%n%ct", revision])).split("\n");
+    if (!tree || !sha.test(tree) || !date || !/^\d+$/.test(date)) throw new Error("Invalid canonical Git commit.");
+    // Each request introduces a real Git push event. The same request always yields the same commit.
+    const releaseCommit = await git(["-C", temp, "-c", "user.name=" + bot.name, "-c", "user.email=" + bot.email,
+      "commit-tree", tree, "-p", revision, "-m", "AiGid TestFlight " + request.id], {commitDate: date});
+    let observed = await read();
+    if (observed.status === 404) {
       authorize();
       let pushError: unknown;
-      try { await git(["-C", temp, "push", "--quiet", remote, revision + ":" + ref], { token: access }); }
-      catch (error) { pushError = error; }
+      try {
+        // An empty expected value makes the push create-only even if a conflicting branch arrives in flight.
+        await git(["-C", temp, "push", "--quiet", "--force-with-lease=" + ref + ":", remote, releaseCommit + ":" + ref], {token: access});
+      } catch (error) { pushError = error; }
       observed = await read();
       if (pushError && observed.status !== 200) throw pushError;
-    } finally { rmSync(temp, { recursive: true, force: true }); }
-  }
-  if (observed.status !== 200 || observed.data?.ref !== ref || observed.data?.object?.type !== "commit" || observed.data?.object?.sha !== revision)
-    throw new Error("GitHub did not confirm the release tag at the authorized revision.");
-  return { tag, revision };
+    }
+    if (observed.status !== 200 || observed.data?.ref !== ref || observed.data?.object?.type !== "commit" || observed.data?.object?.sha !== releaseCommit)
+      throw new Error("GitHub did not confirm the expected AiGid release branch.");
+    return {branch, revision, releaseCommit};
+  } finally { rmSync(temp, {recursive: true, force: true}); }
 }
 
 /** Home-side Git never reads system or user configuration. A token travels as a header in the environment, so it is never written to disk. */
-async function git(args: string[], options: { token?: string; timeout?: number; hide?: string[] } = {}): Promise<string> {
+async function git(args: string[], options: { token?: string; timeout?: number; hide?: string[]; commitDate?: string } = {}): Promise<string> {
   const env: NodeJS.ProcessEnv = { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
   for (const key of ["PATH", "HOME", "LANG", "LC_ALL", "TMPDIR"]) if (process.env[key]) env[key] = process.env[key];
+  if (options.commitDate) env.GIT_AUTHOR_DATE = env.GIT_COMMITTER_DATE = "@" + options.commitDate + " +0000";
   if (options.token) Object.assign(env, { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader",
     GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${Buffer.from("x-access-token:" + options.token).toString("base64")}` });
   try {
