@@ -40,7 +40,7 @@ const clip = (text: string, max = 4_000) => text.length > max ? text.slice(0, ma
 /** The chosen Codex release answers where the repository's code looks for its pinned one: a small launcher in its place.
  * The engine code is the repository's own and is not changed. */
 let launcher: string | undefined;
-function useCodexRelease(binary: string): void {
+export function useCodexRelease(binary: string): void {
   if (binary === "pinned" || launcher) return;
   if (!existsSync(binary)) throw new Error(`Codex is not at ${binary}. Set STRUDELBENCH_CODEX_BIN, or "pinned" for the repository's own release.`);
   launcher = join(tmpdir(), "strudelbench-codex-" + process.pid);

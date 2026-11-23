@@ -16,7 +16,7 @@ export async function main(argv: string[]): Promise<number> {
   const options = flags(argv), track = options.track ?? "employee", model = options.model, effort = options.effort ?? "low", trials = Number(options.trials ?? 1);
   const known = [...BUILTIN, ...CODEX_MODELS, ...CLAUDE_MODELS];
   if (!model || !known.includes(model) || !["employee", "builder"].includes(track) || !Number.isInteger(trials) || trials < 1) {
-    console.error(`Usage: node bench/run.mjs --track employee|builder --model <name> --effort <level> --trials N [--only id,id] [--judge <codex model>] [--keep] [--codex-bin <path>|pinned] [--out <file>]\nModels: ${known.join(", ")}`);
+    console.error(`Usage: node bench/run.mjs --track employee|builder --model <name> --effort <level> --trials N [--only id,id] [--judge <codex model>] [--keep] [--native] [--agent-seconds N] [--codex-bin <path>|pinned] [--out <file>]\nModels: ${known.join(", ")}`);
     return 2;
   }
   const run = options.out ? options.out.replace(/^.*\//, "").replace(/\.jsonl$/, "") : new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19) + "-" + track + "-" + model + "-" + effort;
@@ -35,7 +35,7 @@ export async function main(argv: string[]): Promise<number> {
       const { BUILDER_TASKS, runBuilderTrial } = await import("./builder.js");
       const tasks = BUILDER_TASKS.filter(task => !only || only.includes(task.id));
       for (const task of tasks) for (let trial = 1; trial <= trials; trial++) {
-        const result = await runBuilderTrial(task, model, effort, { run, trial, transcripts, keep: options.keep === "true", codexBin: options["codex-bin"], native: options.native === "true" });
+        const result = await runBuilderTrial(task, model, effort, { run, trial, transcripts, keep: options.keep === "true", codexBin: options["codex-bin"], native: options.native === "true", agentSeconds: options["agent-seconds"] ? Number(options["agent-seconds"]) : undefined });
         record(file, result); console.log(line(result));
         if (!result.pass) failed++;
       }

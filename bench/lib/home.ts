@@ -12,7 +12,7 @@ import { BOT, CHATS, PEOPLE, SOUL, TIMEZONE, type Chat, type Person } from "./wo
 export interface Snapshot {
   /** Settings and switches as `table/key/field` → value. A change of setting is a changed line here. */
   config: Record<string, string>;
-  schedules: Array<Record<string, any>>;
+  schedules: Array<Record<string, any> & { id: string; nextRunAt: string; enabled: boolean; cron: string }>;
   runs: Array<Record<string, any>>;
   cards: Array<Record<string, any>>;
   /** Files of the model's workspaces, by path, with a hash: a note left behind is seen here. */

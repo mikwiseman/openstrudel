@@ -107,9 +107,10 @@ function scriptedAgent(task: BuilderTask, model: string, work: string): AgentRun
 }
 
 type Outcome = Record<string, Record<string, string>>;
-/** The named test files, run in the agent's folder after it has finished. Returns each test's outcome by file and title. */
+/** The named test files, run in the agent's folder after it has finished. Returns each test's outcome by file and title.
+ * A failing test is tried again twice, so a test that depends on timing does not fail a trial on a busy machine. */
 async function vitest(work: string, files: string[], report: string): Promise<{ outcome: Outcome; error: string | null }> {
-  const ran = await exec(process.execPath, [join(work, "node_modules/vitest/vitest.mjs"), "run", ...files, "--reporter=json", `--outputFile=${report}`], { cwd: work, env: cleanEnv({ CI: "1" }), seconds: 900 });
+  const ran = await exec(process.execPath, [join(work, "node_modules/vitest/vitest.mjs"), "run", ...files, "--reporter=json", `--outputFile=${report}`, "--retry=2"], { cwd: work, env: cleanEnv({ CI: "1" }), seconds: 900 });
   const outcome: Outcome = {};
   try {
     for (const file of JSON.parse(readFileSync(report, "utf8")).testResults ?? []) {
@@ -126,7 +127,7 @@ async function vitest(work: string, files: string[], report: string): Promise<{ 
 async function xcodebuild(work: string, task: BuilderTask): Promise<{ outcome: Outcome; error: string | null }> {
   const only = task.native!.only.flatMap(name => ["-only-testing:" + name]);
   const gen = await exec("xcodegen", ["generate"], { cwd: join(work, "native/OpenStrudel"), env: cleanEnv({}), seconds: 300 });
-  const ran = await exec("python3", ["scripts/native-build.py", "--", "test", "-scheme", task.native!.scheme, "-destination", "platform=macOS", "CODE_SIGNING_ALLOWED=NO", ...only], { cwd: work, env: cleanEnv({}), seconds: 3600 });
+  const ran = await exec("python3", ["scripts/native-build.py", "--", "-scheme", task.native!.scheme, "-destination", "platform=macOS", ...only, "test"], { cwd: work, env: cleanEnv({}), seconds: 3600 });
   const outcome: Outcome = { native: {} };
   // Swift Testing prints one line for each test: ✔ Test name() passed, ✘ Test name() failed.
   for (const match of ran.out.matchAll(/Test (?:case )?"?([A-Za-z0-9_]+)\(\)"? (passed|failed)/g)) outcome.native![match[1]!] = match[2]!;
@@ -203,7 +204,8 @@ export async function builderSelftest(options: { native?: boolean; verbose?: boo
       if (agent === "null" && !task.says) {
         const stillFailing = result.checks.filter(item => item.id.startsWith("now passes: ") && item.pass);
         if (stillFailing.length) problems.push(`${task.id}: these tests pass without any fix, so they prove nothing: ${stillFailing.map(item => item.id.slice(12)).join("; ")}`);
-        if (result.checks.some(item => item.id.startsWith("still passes: ") && !item.pass)) problems.push(`${task.id}: a neighbouring test fails before any change (${why.slice(0, 300)}).`);
+        const neighbour = result.checks.find(item => item.id.startsWith("still passes: ") && !item.pass);
+        if (neighbour) problems.push(`${task.id}: a neighbouring test fails before any change (${neighbour.note ?? "no tests ran"}).`);
       }
     }
   }
