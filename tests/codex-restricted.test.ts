@@ -77,3 +77,21 @@ it("rejects native permission/command requests instead of offering owner approva
   wire.notify?.({ method: "turn/completed", params: { threadId: "restricted-thread", turn: { status: "completed" } } });
   await pending; engine.close();
 });
+
+it("runs the ask lane's own instructions in the same restricted runtime, on a thread that is never stored", async () => {
+  const root = mkdtempSync(join(tmpdir(), "restricted-adapter-test-")); roots.push(root);
+  const home = join(root, "codex"), cwd = join(root, "empty"); mkdirSync(home); mkdirSync(cwd);
+  fixture();
+  const engine = new CodexEngineAdapter({ restricted: true, codexHome: home, workingDirectory: cwd, instructions: "Answer only from the evidence." });
+  const tools = { definitions: [{ type: "function" as const, name: "hand_over", description: "Not a question about records.", inputSchema: { type: "object" } }], call: async () => ({}) };
+  try {
+    await engine.run("question", { employees: [], ephemeral: true, tools });
+    const start = wire.request.mock.calls.find(([method]) => method === "thread/start")![1];
+    expect(start).toMatchObject({ developerInstructions: "Answer only from the evidence.", ephemeral: true, approvalPolicy: "never", cwd, dynamicTools: tools.definitions });
+    expect(start.config).toMatchObject({ default_permissions: "restricted", "permissions.restricted.network.enabled": false, "features.shell_tool": false, "features.apps": false, "features.memories": false, web_search: "disabled" });
+    expect(Object.keys(start.config).some(key => key.startsWith("mcp_servers"))).toBe(false);
+    await expect(engine.run("question", { employees: [], profile: "Owner SOUL" })).rejects.toThrow("Invalid restricted turn");
+  } finally { engine.close(); }
+  // Only a restricted runtime takes instructions of its own.
+  expect(() => new CodexEngineAdapter({ instructions: "Anything" })).toThrow("Invalid restricted runtime configuration");
+});
