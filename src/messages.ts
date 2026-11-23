@@ -499,8 +499,8 @@ export class MessageService {
 
   /** The ask lane for one message: the memories this asker may use, one answer, stored as the reply to the message. The main
    * thread reads the exchange as context the next time it runs (Store.contextMessages). Undefined when the lane hands the
-   * message over (the model says it is not a question about records, or no memory answered), fails or runs out of time: nothing
-   * is stored then and nobody is told. */
+   * message over (it is not a question about records, the evidence does not hold the answer, or no memory answered), fails or
+   * runs out of time: nothing is stored then and nobody is told. */
   private async askFirst(ask: Ask, input: MessageInput, messageId: string, conversationId: string, text: string, context: string, onUsage: (report: UsageReport) => void): Promise<Message | undefined> {
     const abort = new AbortController();
     this.active.set(conversationId, { engine: this.engine, messageId, channel: input.channel, abort });

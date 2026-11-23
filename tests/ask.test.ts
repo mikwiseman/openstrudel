@@ -170,9 +170,6 @@ describe("memories", () => {
 });
 
 describe("a memory that cannot be reached", () => {
-  const silentRu = "Сейчас не удалось связаться с памятью «diary», поэтому не могу сказать, есть ли это в записях. Спросите ещё раз чуть позже.";
-  const silentEn = 'I could not reach "diary" right now, so I cannot tell whether this is on record. Please ask again in a little while.';
-
   it("stays a memory when its tool list stops answering, also after a restart, and is named instead of left out", async () => {
     const state: { down: Down; tools?: unknown[] } = { down: undefined };
     const company = await memory({ recall: () => ({ evidence: [payments] }) }), diary = await memory({ down: () => state.down, tools: () => state.tools! });
@@ -194,7 +191,7 @@ describe("a memory that cannot be reached", () => {
     expect(Object.values(JSON.parse(store.getSetting("ask.memories")!))).toEqual([["recall", "read_document"]]);
   });
 
-  it("is named to the model, and a gap is never called 'not on record' while it is silent", async () => {
+  it("is named to the model, and a gap the evidence leaves is handed over, never called 'not on record'", async () => {
     const state: { down: Down } = { down: "recall" };
     const company = await memory({ recall: () => ({ evidence: [payments] }) }), diary = await memory({ down: () => state.down, recall: () => ({ evidence: [] }) });
     const root = home({ company, diary }), store = database();
@@ -203,17 +200,16 @@ describe("a memory that cannot be reached", () => {
     expect(await ask.answer("How much did Lumen Studio pay in October?", found)).toMatchObject({ answer: "Lumen Studio paid 1,200 in October [1].", sources: [{ n: 1, memory: "company" }], notOnRecord: false, unreachable: ["diary"] });
     expect(cited.runs[0]!.input).toContain('Memories that answered, and what each searched:\n{"memory":"company"}\n\nMemories that could not be reached right now: diary. What they hold is unknown.');
     expect(cited.runs[0]!.input).not.toContain("Every memory answered.");
-    // The model calls the gap "not on record" all the same: the Home says what is true instead, in the question's language.
+    // The model hands the gap over, as it is told to.
+    const handing = new Ask(store, root, lane(async (_input, options) => { await options.tools!.call("hand_over", {}); return ""; }).open);
+    expect(await handing.answer("How much did they pay in November?", found)).toEqual({ answer: null, text: "", sources: [], notOnRecord: false, unreachable: ["diary"] });
+    // A model that calls the gap "not on record" all the same is not heard: an answer that names no source is a hand-over.
     const gap = new Ask(store, root, lane(() => "That is not on record: I searched the payments.").open);
-    expect(await gap.answer("How much did they pay in November?", found)).toEqual({ answer: silentEn, text: silentEn, sources: [], notOnRecord: false, unreachable: ["diary"] });
-    expect((await gap.answer("Сколько они заплатили в ноябре?", found)).text).toBe(silentRu);
+    expect(await gap.answer("How much did they pay in November?", found)).toEqual({ answer: null, text: "", sources: [], notOnRecord: false, unreachable: ["diary"] });
     // The same when every memory answered at first and one fell silent during a second look.
     state.down = undefined;
     const later = new Ask(store, root, lane(async (_input, options) => { state.down = "recall"; expect(await options.tools!.call("recall", { question: "November invoice" })).toMatchObject({ couldNotBeReached: ["diary"] }); return "Not on record."; }).open);
-    expect(await later.answer("How much did they pay in November?", found)).toMatchObject({ answer: silentEn, notOnRecord: false, unreachable: ["diary"] });
-    // With every memory answering, the same words are the model's to say.
-    state.down = undefined;
-    expect(await gap.answer("How much did they pay in November?", found)).toEqual({ answer: "That is not on record: I searched the payments.", text: "That is not on record: I searched the payments.", sources: [], notOnRecord: true, unreachable: [] });
+    expect(await later.answer("How much did they pay in November?", found)).toEqual({ answer: null, text: "", sources: [], notOnRecord: false, unreachable: ["diary"] });
   });
 
   it("means no answer at all when it was the only one: the message is handed over and no model runs", async () => {
@@ -225,13 +221,13 @@ describe("a memory that cannot be reached", () => {
     expect(engine.runs).toHaveLength(0);
   });
 
-  it("is said plainly in the chat when the others do not hold the answer", async () => {
+  it("leaves the question to the main thread when the others do not hold the answer", async () => {
     const company = await memory({ recall: () => ({ evidence: [payments] }) }), diary = await memory({ down: "recall" });
     const engine = lane(() => "Этого нет в записях."), { store, messages, thread } = service(home({ company, diary }), engine);
     const result = await messages.handle(owner("Сколько они заплатили в ноябре?"));
-    expect(result.text).toBe(silentRu);
-    expect(rows(store).map(row => [row.direction, row.text, row.status])).toEqual([["inbound", "Сколько они заплатили в ноябре?", "completed"], ["outbound", silentRu, "completed"]]);
-    expect(thread.runs).toHaveLength(0); expect(engine.runs).toHaveLength(1);
+    expect(result.text).toBe("Main thread answer");
+    expect(rows(store).map(row => [row.direction, row.text, row.status])).toEqual([["inbound", "Сколько они заплатили в ноябре?", "completed"], ["outbound", "Main thread answer", "completed"]]);
+    expect(thread.runs).toHaveLength(1); expect(engine.runs).toHaveLength(1);
   });
 });
 
@@ -319,16 +315,17 @@ describe("an answer", () => {
     expect(reports).toEqual([{ usage: usage(900, 60), model: "device-model", reasoningEffort: "low", provider: "chatgpt" }]);
   });
 
-  it("that names no source it was given is not on record, and gets no list", async () => {
+  it("is given only when it names a source it was given; 'not found' in any words is a hand-over", async () => {
     const company = await memory({ recall: () => ({ evidence: [{ ...payments, title: "Счёт [черновик] *v2*", url: "https://records.example/doc(1)" }] }) });
     const root = home({ company }), store = database();
     const cited = new Ask(store, root, lane(() => "В октябре Lumen Studio заплатили 1 200 [1].").open);
     const found = await cited.memories("personal", { access: true, owner: true });
     // A title or an address cannot break out of its line of the list.
     expect((await cited.answer("Сколько Lumen Studio заплатили в октябре?", found))!.text).toBe("В октябре Lumen Studio заплатили 1 200 [1].\n\n- [1] [Счёт \\[черновик\\] \\*v2\\*](https://records.example/doc%281%29) · 2026-10-14");
-    const missing = new Ask(store, root, lane(() => "Этого нет в записях: искал оплаты и встречи, про ноябрь там ничего [9].").open);
-    expect(await missing.answer("Сколько они заплатили в ноябре?", found)).toEqual({ answer: "Этого нет в записях: искал оплаты и встречи, про ноябрь там ничего [9].",
-      text: "Этого нет в записях: искал оплаты и встречи, про ноябрь там ничего [9].", sources: [], notOnRecord: true, unreachable: [] });
+    // Every memory answered and the evidence does not hold the answer: the lane still does not say so. No number, a number
+    // it was never given, or nothing at all are the same hand-over.
+    for (const words of ["Этого нет в записях: искал оплаты и встречи.", "Not found in the records.", "В ноябре они заплатили 900 [9].", "Они заплатили 900.", ""])
+      expect(await new Ask(store, root, lane(() => words).open).answer("Сколько они заплатили в ноябре?", found), words).toEqual({ answer: null, text: "", sources: [], notOnRecord: false, unreachable: [] });
   });
 
   it("can look again with other words and read one source in full, through read-only tools of that source's own memory", async () => {
@@ -432,6 +429,18 @@ describe("a question in the owner's chat", () => {
     expect(rows(store).map(row => [row.direction, row.text, row.status, row.error, row.external_id])).toEqual([["inbound", "Как дела?", "completed", null, null], ["outbound", "Main thread answer", "completed", null, null]]);
     // Both runs are what this request spent; the main thread's route is the one recorded.
     expect(store.db.prepare("SELECT model,input_tokens,output_tokens,engine_thread FROM turn_usage").all()).toEqual([{ model: "device-model", input_tokens: 50_900, output_tokens: 460, engine_thread: null }]);
+  });
+
+  it("never hears 'not found' from the lane: an answer without a source goes the normal way, and both runs are counted", async () => {
+    const company = await memory({ recall: () => ({ evidence: [payments] }) });
+    const engine = lane(() => "I could not find that in the records."), { store, messages, thread } = service(home({ company }), engine);
+    const result = await messages.handle(owner("Where did we put the keys to the office?"));
+    expect(result.text).toBe("Main thread answer");
+    expect(engine.runs).toHaveLength(1); expect(thread.runs).toHaveLength(1);
+    expect(thread.runs[0]!.input).toMatch(/Current user message:\nWhere did we put the keys to the office\?$/);
+    expect(rows(store).map(row => [row.direction, row.text, row.status, row.error, row.external_id])).toEqual([["inbound", "Where did we put the keys to the office?", "completed", null, null], ["outbound", "Main thread answer", "completed", null, null]]);
+    expect(JSON.stringify(rows(store))).not.toContain("could not find");
+    expect(store.db.prepare("SELECT model,input_tokens,output_tokens FROM turn_usage").all()).toEqual([{ model: "device-model", input_tokens: 50_900, output_tokens: 460 }]);
   });
 
   it.each(["the model fails", "the model does not finish in time", "no memory answers"])("goes the normal way with no error shown when %s", async failure => {
@@ -685,8 +694,9 @@ describe("POST /v1/ask", () => {
     expect(engine.runs[0]!.input).not.toContain("переносит запуск");
     await post({ question: "And when do they go live?", conversationId: runtime.store.primaryConversation().id });
     expect(engine.runs[1]!.input).toContain("переносит запуск");
+    // An answer that names no source is a hand-over here too, and nothing is ever reported as not on record.
     reply = "That is not on record: I searched payments and meetings.";
-    expect((await post({ question: "How much did they pay in November?" })).value).toMatchObject({ answer: reply, sources: [], notOnRecord: true, unreachable: [] });
+    expect((await post({ question: "How much did they pay in November?" })).value).toMatchObject({ answer: null, handedOver: true, sources: [], notOnRecord: false, unreachable: [], tokens: 960 });
     reply = "hand over";
     expect((await post({ question: "How are you?" })).value).toMatchObject({ answer: null, handedOver: true, sources: [], notOnRecord: false, unreachable: [] });
     expect(JSON.stringify([rows(runtime.store), runtime.store.db.prepare("SELECT * FROM turn_usage").all()])).toBe(before);
@@ -700,7 +710,7 @@ describe("POST /v1/ask", () => {
     expect(engine.runs).toHaveLength(4);
   });
 
-  it("names the memories it could not reach, and says 'not on record' only when every memory answered", async () => {
+  it("names the memories it could not reach, and hands over what the others do not hold", async () => {
     const { OpenStrudelRuntime } = await import("../src/runtime.js");
     const state: { down: Down } = { down: "recall" };
     const company = await memory({ down: () => state.down, recall: () => ({ evidence: [payments] }) }), diary = await memory({ down: "recall" });
@@ -717,7 +727,7 @@ describe("POST /v1/ask", () => {
     expect(await post("How much did they pay in November?")).toMatchObject({ answer: null, handedOver: true, sources: [], notOnRecord: false, unreachable: ["company", "diary"], tokens: 0 });
     expect(engine.runs).toHaveLength(0);
     state.down = undefined;
-    expect(await post("How much did they pay in November?")).toMatchObject({ answer: 'I could not reach "diary" right now, so I cannot tell whether this is on record. Please ask again in a little while.', sources: [], notOnRecord: false, unreachable: ["diary"] });
+    expect(await post("How much did they pay in November?")).toMatchObject({ answer: null, handedOver: true, sources: [], notOnRecord: false, unreachable: ["diary"] });
     reply = "Lumen Studio paid 1,200 in October [1].";
     expect(await post("How much did they pay in October?")).toMatchObject({ answer: reply, sources: [{ n: 1 }], notOnRecord: false, unreachable: ["diary"] });
     expect(thread.runs).toHaveLength(0);
