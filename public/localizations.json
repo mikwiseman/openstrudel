@@ -13056,15 +13056,15 @@
   },
   "Нужен вход в аккаунт модели": {
     "en": "Needs a model sign-in",
-    "fr": "Connexion au compte du modèle requise",
-    "es": "Hay que iniciar sesión en la cuenta del modelo",
+    "fr": "Compte du modèle déconnecté",
+    "es": "Sesión del modelo cerrada",
     "he": "נדרשת כניסה לחשבון המודל",
     "ru": "Нужен вход в аккаунт модели"
   },
   "Закончился лимит модели": {
     "en": "Model limit reached",
     "fr": "Limite du modèle atteinte",
-    "es": "Se alcanzó el límite del modelo",
+    "es": "Límite del modelo alcanzado",
     "he": "מכסת המודל נגמרה",
     "ru": "Закончился лимит модели"
   },

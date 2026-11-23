@@ -440,6 +440,12 @@ final class TeamUITests: XCTestCase {
         XCTAssertNil(value(failing).range(of: "[А-Яа-яЁё]", options: .regularExpression), value(failing))
         bring(failing, in: app)
         capture("failing-row-en", app)
+        // Its group's menu says the switches in English too.
+        try groupMenu(of: failing, in: app).tap()
+        for label in ["Publish transcripts of voice and video", "Answer every message", "Answer only when mentioned"] {
+            XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        }
+        capture("group-menu-en", app)
 
         // 2. The same row in Russian.
         app.terminate()
@@ -452,16 +458,7 @@ final class TeamUITests: XCTestCase {
         capture("failing-row-ru", app)
 
         // 3. The group's one control: the pause, its transcripts, when it answers.
-        open(failing, in: app)
-        let failure = app.buttons["readerFailing"]
-        XCTAssertTrue(failure.waitForExistence(timeout: 15), app.debugDescription); failure.tap()
-        let telegram = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Telegram")).firstMatch
-        XCTAssertTrue(telegram.waitForExistence(timeout: 10), app.debugDescription)
-        for _ in 0..<6 where !telegram.isHittable { app.swipeUp(velocity: .slow) }
-        telegram.tap()
-        let menu = app.buttons["telegramGroupMenu--4242"]
-        XCTAssertTrue(menu.waitForExistence(timeout: 15), app.debugDescription)
-        for _ in 0..<6 where !menu.isHittable { app.swipeUp(velocity: .slow) }
+        let menu = try groupMenu(of: failing, in: app)
         capture("group-row", app)
         menu.tap()
         let transcripts = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Публиковать расшифровки голосовых и видео")).firstMatch
@@ -501,6 +498,24 @@ final class TeamUITests: XCTestCase {
     }
 
     // MARK: Helpers
+
+    /// From the home to the menu of the failing employee's Telegram group: its page, the failure line, the settings sheet
+    /// and its Telegram page. The menu is returned closed.
+    @MainActor private func groupMenu(of row: XCUIElement, in app: XCUIApplication) throws -> XCUIElement {
+        open(row, in: app)
+        let failure = app.buttons["readerFailing"]
+        XCTAssertTrue(failure.waitForExistence(timeout: 15), app.debugDescription); failure.tap()
+        // An iPad's sheet is shorter than a phone's, and a row below its fold exists only once it is scrolled to.
+        let telegram = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Telegram")).firstMatch
+        XCTAssertTrue(app.buttons["saveEmployeeChanges"].waitForExistence(timeout: 10), app.debugDescription)
+        for _ in 0..<6 where !(telegram.exists && telegram.isHittable) { app.swipeUp(velocity: .slow) }
+        XCTAssertTrue(telegram.waitForExistence(timeout: 10), app.debugDescription)
+        telegram.tap()
+        let menu = app.buttons["telegramGroupMenu--4242"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 15), app.debugDescription)
+        for _ in 0..<6 where !menu.isHittable { app.swipeUp(velocity: .slow) }
+        return menu
+    }
 
     @MainActor private func launch(language: String = "ru") -> XCUIApplication {
         XCUIDevice.shared.appearance = environment["OPENSTRUDEL_APPEARANCE"] == "dark" ? .dark : .light
