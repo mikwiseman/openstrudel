@@ -191,7 +191,7 @@ final class ReleaseScenariosUITests: XCTestCase {
         try await Task.sleep(for: .seconds(6))
         XCTAssertFalse(app.buttons["addTelegramGroup"].exists)
         XCTAssertTrue(app.buttons["openPersonalTelegram"].exists)
-        XCTAssertTrue(toggle.exists)
+        XCTAssertTrue(menu.exists)
         capture("telegram-existing-without-private", app)
         _ = try await read(fixture + "/telegram-private?value=1")
         try backToEmployee(app)
