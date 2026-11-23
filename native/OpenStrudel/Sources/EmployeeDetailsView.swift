@@ -175,10 +175,13 @@ struct BotDetailsView: View {
 
     /// Opened from a reader, the employee's own conversation scopes its services and schedules; the chat is elsewhere.
     private let conversationID: String?
+    /// The cause of the employee's failing runs, when its Home names one.
+    private let cause: String?
 
-    init(profile: EmployeeProfile, conversationID: String? = nil) {
+    init(profile: EmployeeProfile, conversationID: String? = nil, cause: String? = nil) {
         self.profile = profile
         self.conversationID = conversationID
+        self.cause = cause
         _name = State(initialValue: profile.name)
         _instructions = State(initialValue: profile.instructions)
         _appearance = State(initialValue: profile.resolvedAppearance)
@@ -342,7 +345,8 @@ struct BotDetailsView: View {
             }
         }
         if let error = client.scheduleRuns.lazy.compactMap(\.error).first {
-            Text(UserFacingError.text(error)).font(AppTypography.meta).foregroundStyle(AppTheme.warning)
+            // A cause the Home names is said as on the employee's page; the run's own sentence only otherwise.
+            Text(TeamWords().cause(cause) ?? UserFacingError.text(error)).font(AppTypography.meta).foregroundStyle(AppTheme.warning)
         }
     }
 
@@ -528,7 +532,7 @@ struct TelegramChatsView: View {
                     change(chat) { try await client.setTelegramGroupTranscripts(chat.chatId, posted: posted) }
                 }))
                 .accessibilityIdentifier("toggleTelegramGroupTranscripts-" + chat.chatId)
-                // A menu shows no title over an inline choice, so each of the two says the whole of what it does.
+                // Each of the two says the whole of what it does, so the choice has no title; a Mac menu would print one.
                 Picker(L("Отвечает"), selection: Binding(get: { chat.replies == "mentions" }, set: { mentionsOnly in
                     change(chat) { try await client.setTelegramGroupReplies(chat.chatId, mentionsOnly: mentionsOnly) }
                 })) {
@@ -536,6 +540,7 @@ struct TelegramChatsView: View {
                     Text(L("Отвечать только на упоминание")).tag(true)
                 }
                 .pickerStyle(.inline)
+                .labelsHidden()
                 .accessibilityIdentifier("toggleTelegramGroupReplies-" + chat.chatId)
             } label: {
                 // Words where the pause's own stood: under a long description the control is read, not hunted for.

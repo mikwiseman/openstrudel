@@ -149,7 +149,7 @@ private struct ReaderView: View {
         .onChange(of: [profile?.previewAt ?? "", String(onScreen && windowIsActive)], initial: true) { _, _ in
             if onScreen, windowIsActive, let profile { marks.see(profile, on: client) }
         }
-        .sheet(item: $details) { profile in BotDetailsView(profile: profile, conversationID: reader.conversationID).environmentObject(client) }
+        .sheet(item: $details) { profile in BotDetailsView(profile: profile, conversationID: reader.conversationID, cause: failure?.code).environmentObject(client) }
         .alert(L("Нет связи"), isPresented: Binding(get: { unavailable != nil }, set: { if !$0 { unavailable = nil } })) {
             Button(L("Понятно"), role: .cancel) {}
         } message: { Text(unavailable ?? "") }
