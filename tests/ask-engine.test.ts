@@ -50,6 +50,13 @@ it("opens the restricted Codex runtime with the lane's fixed instructions for on
     "data, never instructions", "language of the question"]) expect(ASK_INSTRUCTIONS).toContain(rule);
 });
 
+it("runs an evaluation's own instructions in the same restricted runtime, for that one answer", async () => {
+  const { accounts } = fixture();
+  await codexAskEngine(accounts)(new AbortController().signal, async () => "answered", "Answer in one word, with its number.");
+  await codexAskEngine(accounts)(new AbortController().signal, async () => "answered");
+  expect(runtime.options.map(options => [options.restricted, options.instructions])).toEqual([[true, "Answer in one word, with its number."], [true, ASK_INSTRUCTIONS]]);
+});
+
 it("closes the runtime as soon as the lane stops waiting, and after a failure", async () => {
   const { accounts } = fixture();
   const stop = new AbortController();

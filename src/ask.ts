@@ -4,7 +4,8 @@ import type { Accounts } from "./accounts.js";
 import { contextServers } from "./claude.js";
 import { CodexEngineAdapter } from "./codex.js";
 import { ownerOnlyServers } from "./extensions.js";
-import { askModelSelection } from "./model-settings.js";
+import { HomeError } from "./home.js";
+import { askModelSelection, lowestReasoning, validateModelSelection, type ModelChoice } from "./model-settings.js";
 import { boundedResponse, restrictedRunFolder, supportedCodex } from "./restricted-executor.js";
 import type { Store } from "./store.js";
 import { localScheduleTime, ownerTimezone } from "./timezone.js";
@@ -42,17 +43,24 @@ export function looksLikeQuestion(text: string): boolean {
   return message.includes("?") || OPENING.has(words[0]!) || words.slice(0, 3).some(word => ASKING.has(word));
 }
 
-export interface Memory { name: string; url: string; headers: Record<string, string>; readOnly: string[] }
-/** One find, as a memory's `recall` returns it; `n` is its number among everything found for this answer. */
-export interface Evidence { n: number; memory: string; kind: string; layer: string; title: string; date: string; text: string; id: string; url: string; open?: { tool: string; args: Record<string, unknown> } }
+/** `recallFields` are the inputs its `recall` lists besides the question, e.g. `since` and `until`. */
+export interface Memory { name: string; url: string; headers: Record<string, string>; readOnly: string[]; recallFields?: string[] }
+/** One find, as a memory's `recall` returns it; `n` is its number among everything found for this answer. `later` marks an
+ * item that was said after the others on its subject. */
+export interface Evidence { n: number; memory: string; kind: string; layer: string; title: string; date: string; text: string; id: string; url: string; open?: { tool: string; args: Record<string, unknown> }; later?: true; flags?: string[] }
 /** `unreachable` names the memories that did not answer: no connection, no reply in time, or an error. */
 export interface Recalled { evidence: Evidence[]; searched: Array<{ memory: string; understood?: unknown; searched?: unknown; note?: string }>; unreachable: string[] }
 export interface AskSource { n: number; memory: string; title: string; date: string; url: string }
 /** `answer` is the words of the answer, null when the message is handed over; `text` adds the list of the sources they name.
  * `notOnRecord` stays in the shape and is always false: the lane never concludes that something is not on record. */
 export interface AskAnswer { answer: string | null; text: string; sources: AskSource[]; notOnRecord: boolean; unreachable: string[] }
-/** Opens the lane's own engine for one answer and closes it afterwards, or as soon as the signal says to stop. */
-export type AskEngine = <T>(signal: AbortSignal, work: (engine: Pick<CodexEngine, "run" | "models">) => Promise<T>) => Promise<T>;
+/** Opens the lane's own engine for one answer and closes it afterwards, or as soon as the signal says to stop. Instructions
+ * are given only by an evaluation (`AskTrial`); otherwise the engine runs the lane's fixed ones. */
+export type AskEngine = <T>(signal: AbortSignal, work: (engine: Pick<CodexEngine, "run" | "models">) => Promise<T>, instructions?: string) => Promise<T>;
+/** One evaluation request's own model, level, speed and instructions (POST /v1/ask). The chat path never has one. */
+export interface AskTrial { model?: string; reasoningEffort?: string; serviceTier?: string; instructions?: string }
+/** What one answer was made of, for an evaluation: the evidence the model was given, its own tool calls in order, what ran, and how long each part took. */
+export interface AskTrace { evidence: Evidence[]; calls: Array<{ tool: string; args: Record<string, unknown> }>; model: string | null; reasoningEffort: string | null; timings: { recall: number; model: number; total: number } }
 
 const CALL_MS = 6_000, MODEL_MS = 20_000, DISCOVERY_MS = 10 * 60_000, EVIDENCE_CHARS = 9_000, ITEM_CHARS = 2_400, OPEN_CHARS = 12_000;
 const record = (value: unknown): value is Record<string, any> => Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -83,7 +91,7 @@ function payload(result: Record<string, any>): unknown {
 }
 
 /** Which read-only tools each service listed, per address and credential, for ten minutes; a service that did not answer is asked again in one. */
-const listed = new Map<string, { until: number; readOnly?: string[] }>();
+const listed = new Map<string, { until: number; readOnly?: string[]; fields?: string[] }>();
 export const forgetMemories = () => listed.clear();
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 /** The services that have listed a read-only `recall`, by name and address, with their read-only tools. The Home keeps them
@@ -108,15 +116,18 @@ export async function memories(store: Store, root: string, context: string, aske
     let known = listed.get(key);
     if (!known || known.until <= Date.now()) {
       try {
-        const readOnly: string[] = [];
+        const readOnly: string[] = [], fields: string[] = [];
         let cursor: string | undefined;
         for (let page = 0; page < 20; page++) {
           const list = await rpc(server, "tools/list", cursor ? { cursor } : {}, CALL_MS, signal);
-          for (const tool of Array.isArray(list.tools) ? list.tools : []) if (record(tool) && typeof tool.name === "string" && tool.annotations?.readOnlyHint === true) readOnly.push(tool.name);
+          for (const tool of Array.isArray(list.tools) ? list.tools : []) if (record(tool) && typeof tool.name === "string" && tool.annotations?.readOnlyHint === true) {
+            readOnly.push(tool.name);
+            if (tool.name === "recall" && record(tool.inputSchema?.properties)) fields.push(...Object.keys(tool.inputSchema.properties).filter(field => field !== "question"));
+          }
           if (typeof list.nextCursor !== "string" || !list.nextCursor) break;
           cursor = list.nextCursor;
         }
-        known = { until: Date.now() + DISCOVERY_MS, readOnly };
+        known = { until: Date.now() + DISCOVERY_MS, readOnly, fields };
         const memory = readOnly.includes("recall");
         if (memory ? JSON.stringify(saved[id]) !== JSON.stringify(readOnly) : id in saved) { if (memory) saved[id] = readOnly; else delete saved[id]; changed = true; }
       } catch { known = { until: Date.now() + 60_000, ...(Array.isArray(saved[id]) ? { readOnly: saved[id].filter(tool => typeof tool === "string") } : {}) }; }
@@ -124,7 +135,7 @@ export async function memories(store: Store, root: string, context: string, aske
     }
     // The owner's own choice of a service's tools applies here as in a turn.
     const lists = service.toolLists, readOnly = (known.readOnly ?? []).filter(tool => !lists?.disabled?.includes(tool) && (!lists?.enabled || lists.enabled.includes(tool)));
-    return readOnly.includes("recall") ? [{ ...server, readOnly }] : [];
+    return readOnly.includes("recall") ? [{ ...server, readOnly, ...(known.fields?.length ? { recallFields: known.fields } : {}) }] : [];
   }));
   if (changed) store.setSetting("ask.memories", JSON.stringify(saved));
   return found.flat();
@@ -132,16 +143,20 @@ export async function memories(store: Store, root: string, context: string, aske
 
 /** Asks every memory at once. One that fails, answers with an error or stays silent is named, never fatal. Each memory ranks its own finds, so they
  * take turns in the merged list and one long transcript cannot crowd out another memory's line. */
-export async function recallAll(question: string, from: Memory[], options: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<Recalled> {
+export async function recallAll(question: string, from: Memory[], options: { signal?: AbortSignal; timeoutMs?: number; extra?: Record<string, unknown> } = {}): Promise<Recalled> {
   const answers = await Promise.all(from.map(async memory => {
     try {
-      const found = payload(await rpc(memory, "tools/call", { name: "recall", arguments: { question } }, options.timeoutMs ?? CALL_MS, options.signal));
+      // An input beyond the question goes only to a memory whose `recall` lists it.
+      const extra = Object.fromEntries(Object.entries(options.extra ?? {}).filter(([field]) => memory.recallFields?.includes(field)));
+      const found = payload(await rpc(memory, "tools/call", { name: "recall", arguments: { ...extra, question } }, options.timeoutMs ?? CALL_MS, options.signal));
       if (!record(found)) throw new Error("Unexpected recall.");
       const evidence = (Array.isArray(found.evidence) ? found.evidence : []).filter(record).map((item): Omit<Evidence, "n"> => ({
         memory: memory.name, kind: short(item.kind, 40), layer: short(item.layer, 40), title: short(item.title, 200), date: short(item.date, 40), text: short(item.text, ITEM_CHARS), id: short(item.id, 200),
         url: /^https?:\/\/\S+$/i.test(short(item.url, 1_000)) ? short(item.url, 1_000) : "",
         // A source is opened only through a read-only tool of its own memory.
         ...(record(item.open) && typeof item.open.tool === "string" && memory.readOnly.includes(item.open.tool) ? { open: { tool: item.open.tool, args: record(item.open.args) ? item.open.args : {} } } : {}),
+        ...(item.later === true ? { later: true as const } : {}),
+        ...(Array.isArray(item.flags) && item.flags.length ? { flags: item.flags.filter((flag: unknown) => typeof flag === "string").slice(0, 8).map((flag: string) => flag.slice(0, 40)) } : {}),
       })).filter(item => item.text || item.title);
       const note = short(found.note, 500);
       return { memory: memory.name, evidence, searched: { memory: memory.name, ...(found.understood !== undefined ? { understood: found.understood } : {}), ...(found.searched !== undefined ? { searched: found.searched } : {}), ...(note ? { note } : {}) } };
@@ -176,15 +191,15 @@ Otherwise answer only when the evidence holds the answer:
 - Answer in the language of the question, in plain words. Use the given time and timezone for relative dates.`;
 
 const TOOLS: DynamicTool[] = [
-  { type: "function", name: "recall", description: "Search the same memories again with different words. Returns new numbered evidence.",
-    inputSchema: { type: "object", properties: { question: { type: "string" } }, required: ["question"], additionalProperties: false } },
+  { type: "function", name: "recall", description: "Search the same memories again with different words. Returns new numbered evidence. since and until narrow the search to a period, each a day as YYYY-MM-DD or null; a memory that cannot narrow by date ignores them.",
+    inputSchema: { type: "object", properties: { question: { type: "string" }, since: { type: ["string", "null"] }, until: { type: ["string", "null"] } }, required: ["question", "since", "until"], additionalProperties: false } },
   { type: "function", name: "open", description: "Read one source in full by its evidence number. Only evidence marked \"open\":true can be opened.",
     inputSchema: { type: "object", properties: { n: { type: "integer" } }, required: ["n"], additionalProperties: false } },
   { type: "function", name: "hand_over", description: "The main assistant answers this message instead. Call it when the message is not a question about records (it asks to do something, is small talk, continues a task, or needs other tools), and when the evidence does not hold the answer. Write nothing after calling this.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false } },
 ];
 
-const line = (e: Evidence) => `[${e.n}] ` + JSON.stringify({ memory: e.memory, ...(e.kind ? { kind: e.kind } : {}), ...(e.layer ? { layer: e.layer } : {}), ...(e.title ? { title: e.title } : {}), ...(e.date ? { date: e.date } : {}), text: e.text, ...(e.open ? { open: true } : {}) });
+const line = (e: Evidence) => `[${e.n}] ${e.later ? "(said later) " : ""}` + JSON.stringify({ memory: e.memory, ...(e.kind ? { kind: e.kind } : {}), ...(e.layer ? { layer: e.layer } : {}), ...(e.title ? { title: e.title } : {}), ...(e.date ? { date: e.date } : {}), text: e.text, ...(e.open ? { open: true } : {}) });
 const plain = (title: string) => title.replace(/[\\[\]*`]/g, "\\$&");
 /** One line of the list under an answer: the number the answer used, the title as the link, the day. */
 const sourceLine = (s: AskSource) => `- [${s.n}] ` + (s.url ? `[${plain(s.title || s.url)}](${s.url.replace(/[()]/g, bracket => bracket === "(" ? "%28" : "%29")})` : plain(s.title || s.memory)) + (s.date ? " · " + (/^\d{4}-\d\d-\d\d/.test(s.date) ? s.date.slice(0, 10) : s.date) : "");
@@ -205,6 +220,34 @@ export interface AskOptions {
   signal?: AbortSignal;
   /** What the model run spent, as its engine reported it (`turn.usage`). */
   onUsage?: (report: UsageReport) => void;
+  /** An evaluation's own model, level, speed and instructions for this one answer. */
+  trial?: AskTrial;
+  /** An evaluation's look inside this one answer. */
+  onTrace?: (trace: AskTrace) => void;
+}
+
+const DAY = /^\d{4}-\d\d-\d\d$/;
+/** The evaluation fields of POST /v1/ask, checked for their shape as a saved model selection is. Whether the account offers
+ * the model, the level and the speed is checked against the engine's catalog when the answer starts. */
+export function askTrial(body: Record<string, unknown>): AskTrial | undefined {
+  const trial: AskTrial = {};
+  for (const [field, max, pattern] of [["model", 160, /\S/], ["serviceTier", 80, /\S/], ["reasoningEffort", 40, /^[a-z][a-z0-9_-]{0,39}$/], ["instructions", 8_000, /\S/]] as const) {
+    const value = body[field];
+    if (value == null) continue;
+    if (typeof value !== "string" || value.length > max || !pattern.test(value)) throw new HomeError("Проверьте модель, уровень обдумывания, скорость и инструкции для этого вопроса.");
+    trial[field] = value;
+  }
+  return Object.keys(trial).length ? trial : undefined;
+}
+/** An evaluation runs exactly what it names: a model, a level or a speed the account does not offer is refused, never
+ * replaced. A model named without a level runs at the lowest level it offers, as the lane's own does. */
+function trialSelection(base: ReturnType<typeof askModelSelection>, trial: AskTrial | undefined, models: ModelChoice[]): ReturnType<typeof askModelSelection> {
+  if (!trial?.model && !trial?.reasoningEffort && !trial?.serviceTier) return base;
+  const catalog = models.filter(model => (model.provider ?? "chatgpt") === "chatgpt"), model = trial.model ?? base.model;
+  const serviceTier = trial.serviceTier ?? (trial.model ? "default" : base.serviceTier ?? "default");
+  validateModelSelection({ model, serviceTier, reasoningEffort: trial.reasoningEffort }, catalog);
+  const reasoningEffort = trial.reasoningEffort ?? (trial.model ? lowestReasoning(catalog.find(choice => choice.id === trial.model)) : base.reasoningEffort);
+  return { provider: "chatgpt", model, serviceTier, ...(reasoningEffort ? { reasoningEffort } : {}), fast: trial.model || trial.serviceTier ? false : base.fast };
 }
 
 export class Ask {
@@ -228,24 +271,30 @@ export class Ask {
     try {
       signal.throwIfAborted();
       const stopped = new Promise<never>((_, reject) => signal.addEventListener("abort", () => reject(new Error("The answer from memory was stopped.")), { once: true }));
+      const started = Date.now(), trace: AskTrace = { evidence: [], calls: [], model: null, reasoningEffort: null, timings: { recall: 0, model: 0, total: 0 } };
       // The engine opens while the memories search.
-      const recalling = recallAll(question, from, { signal });
+      const recalling = recallAll(question, from, { signal }).then(first => { trace.timings.recall = Date.now() - started; return first; });
       const written = this.engine(signal, async (engine): Promise<AskAnswer> => {
         const catalog = Promise.resolve(engine.models?.() ?? []);
         catalog.catch(() => undefined);
         const first = await recalling;
         // No memory answered: the lane never answers from nothing, and the main thread may still reach those services its own way.
         if (first.unreachable.length === from.length) return { answer: null, text: "", sources: [], notOnRecord: false, unreachable: first.unreachable };
-        return this.write(engine, question, from, first, askModelSelection(this.store, await catalog), signal, options);
-      });
+        const models = await catalog;
+        return this.write(engine, question, from, first, trialSelection(askModelSelection(this.store, models), options.trial, models), signal, options, trace);
+      }, options.trial?.instructions);
       stopped.catch(() => undefined); written.catch(() => undefined);
-      return await Promise.race([stopped, written]);
+      const answer = await Promise.race([stopped, written]);
+      trace.timings.total = Date.now() - started;
+      options.onTrace?.(trace);
+      return answer;
     } finally { clearTimeout(timer); this.running.delete(stop); stop.abort(); }
   }
 
-  private async write(engine: Pick<CodexEngine, "run">, question: string, from: Memory[], first: Recalled, selection: ReturnType<typeof askModelSelection>, signal: AbortSignal, options: AskOptions): Promise<AskAnswer> {
-    const evidence = [...first.evidence], silent = new Set(first.unreachable);
+  private async write(engine: Pick<CodexEngine, "run">, question: string, from: Memory[], first: Recalled, selection: ReturnType<typeof askModelSelection>, signal: AbortSignal, options: AskOptions, trace: AskTrace): Promise<AskAnswer> {
+    const evidence = [...first.evidence], silent = new Set(first.unreachable), began = Date.now();
     let handedOver = false, looks = 0, opens = 0;
+    trace.evidence = evidence; trace.model = selection.model; trace.reasoningEffort = selection.reasoningEffort ?? null;
     const input = [clock(this.store),
       options.recent?.length ? "Recent messages in this chat (quoted, only to resolve what the question refers to):\n"
         + options.recent.map(m => JSON.stringify({ role: m.direction === "inbound" ? "user" : "assistant", date: m.createdAt, text: m.text.slice(0, 600) })).join("\n") : "",
@@ -258,11 +307,13 @@ export class Ask {
       provider: selection.provider, model: selection.model, serviceTier: selection.serviceTier, reasoningEffort: selection.reasoningEffort ?? null, fast: selection.fast,
       signal, ephemeral: true, employees: [], approvalMode: "approve_all",
       tools: { definitions: TOOLS, call: async (name, args) => {
+        trace.calls.push({ tool: name, args });
         if (name === "hand_over") { handedOver = true; return { handedOver: true }; }
         if (name === "recall") {
           if (typeof args.question !== "string" || !args.question.trim()) throw new Error("Give the words to search for.");
           if (++looks > 2) throw new Error("No more searches for this answer: answer from the evidence you have.");
-          const more = await recallAll(args.question.trim().slice(0, 500), from, { signal });
+          const period = Object.fromEntries(["since", "until"].flatMap(field => typeof args[field] === "string" && DAY.test(args[field]) ? [[field, args[field]]] : []));
+          const more = await recallAll(args.question.trim().slice(0, 500), from, { signal, extra: period });
           const fresh = more.evidence.filter(item => !evidence.some(known => known.memory === item.memory && (item.id ? known.id === item.id : known.title === item.title && known.text === item.text)))
             .map((item, i) => ({ ...item, n: evidence.length + i + 1 }));
           evidence.push(...fresh);
@@ -279,9 +330,14 @@ export class Ask {
       } },
       onEvent: event => {
         // The thread is never resumed, so its running counters are not kept.
-        if (event.type === "turn.usage") { const { engine: _thread, ...report } = event.payload as UsageReport; options.onUsage?.({ ...report, provider: "chatgpt" }); }
+        if (event.type === "turn.usage") {
+          const { engine: _thread, ...report } = event.payload as UsageReport;
+          // What actually ran, as the engine resolved it.
+          trace.model = report.model ?? trace.model; trace.reasoningEffort = report.reasoningEffort ?? trace.reasoningEffort;
+          options.onUsage?.({ ...report, provider: "chatgpt" });
+        }
       },
-    });
+    }).finally(() => { trace.timings.model = Date.now() - began; });
     const unreachable = [...silent];
     if (handedOver) return { answer: null, text: "", sources: [], notOnRecord: false, unreachable };
     const answer = result.response.trim();
@@ -300,10 +356,10 @@ export class Ask {
  * place of that turn's: the Home's ChatGPT account, an empty private folder, no shell, network, files or connected
  * services, and a thread that is never stored. */
 export function codexAskEngine(accounts: Accounts): AskEngine {
-  return async (signal, work) => {
+  return async (signal, work, instructions) => {
     if (!supportedCodex()) throw new Error("The restricted runtime is verified on another Codex release.");
     const chosen = await accounts.choose("main"), folder = restrictedRunFolder(accounts.root);
-    const engine = new CodexEngineAdapter({ restricted: true, workingDirectory: folder.cwd, codexHome: folder.codexHome, instructions: ASK_INSTRUCTIONS,
+    const engine = new CodexEngineAdapter({ restricted: true, workingDirectory: folder.cwd, codexHome: folder.codexHome, instructions: instructions ?? ASK_INSTRUCTIONS,
       authTokens: refresh => chosen.service.authTokens(refresh) });
     const close = () => engine.close();
     accounts.active.set(chosen.id, (accounts.active.get(chosen.id) ?? 0) + 1);

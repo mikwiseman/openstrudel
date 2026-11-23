@@ -45,6 +45,7 @@ import { resolveMessageContext } from "./message-context.js";
 import { Correspondence, choosesCorrespondenceModel, configureCorrespondence, correspondenceWebhook } from "./correspondence.js";
 import { GmailPush } from "./gmail-push.js";
 import type { UsageReport } from "./usage.js";
+import { askTrial, type AskTrace } from "./ask.js";
 
 const MAX_BODY_BYTES = 1_048_576;
 
@@ -1046,21 +1047,27 @@ export class HttpApi {
       }
       // One answer from the memories, for the owner, with nothing stored: what an evaluation of the ask lane calls (docs/ask.md).
       // Without a chat the question stands alone, from the main chat's memories; with one, that chat's memories and last messages.
+      // Only here may one request name its own model, level, speed and instructions, and ask to see inside the answer (`debug`).
       if (request.method === "POST" && path === "/v1/ask") {
         if (!canManageAccount) throw new HomeError("Спрашивать память может владелец устройства.", 403);
-        const body = await this.body(request, 16 * 1024), ask = this.messages.ask, question = typeof body.question === "string" ? body.question.trim() : "";
+        const body = await this.body(request, 64 * 1024), ask = this.messages.ask, question = typeof body.question === "string" ? body.question.trim() : "";
         if (!ask) throw new HomeError("Ответы по памяти на этом устройстве недоступны.", 501);
         if (!question || question.length > 2_000) throw new HomeError("Напишите вопрос.");
+        const trial = askTrial(body);
+        let trace: AskTrace | undefined;
         const conversation = body.conversationId == null ? null : this.store.getConversation(String(body.conversationId));
         if (body.conversationId != null && !conversation) throw new HomeError("Чат не найден.", 404);
         const memories = await ask.memories(conversation ? this.messages.contextFor(conversation.id) : "personal", { access: true, owner: true });
         if (!memories.length) throw new HomeError("К этому чату не подключена память: сервис с инструментом recall.", 404);
         const started = Date.now(), spent: UsageReport[] = [];
         const recent = conversation ? this.store.listMessages(conversation.id, 12).filter(m => m.kind !== "notice" && m.status === "completed").slice(-6) : [];
-        const answer = await ask.answer(question, memories, { recent, onUsage: report => spent.push(report) })
-          .catch(error => { throw new HomeError("Память не ответила: " + (error instanceof Error ? error.message : String(error)), 502); });
+        const answer = await ask.answer(question, memories, { recent, onUsage: report => spent.push(report), ...trial ? { trial } : {}, ...body.debug === true ? { onTrace: seen => { trace = seen; } } : {} })
+          // A model, a level or a speed the account does not offer is the caller's to correct.
+          .catch(error => { throw error instanceof HomeError ? error : new HomeError("Память не ответила: " + (error instanceof Error ? error.message : String(error)), 502); });
         this.send(response, 200, { answer: answer.answer, sources: answer.sources, notOnRecord: answer.notOnRecord, unreachable: answer.unreachable, ...answer.answer === null ? { handedOver: true } : {},
-          seconds: Math.round((Date.now() - started) / 100) / 10, tokens: spent.reduce((sum, report) => sum + (report.usage.inputTokens ?? 0) + (report.usage.outputTokens ?? 0), 0) });
+          seconds: Math.round((Date.now() - started) / 100) / 10, tokens: spent.reduce((sum, report) => sum + (report.usage.inputTokens ?? 0) + (report.usage.outputTokens ?? 0), 0),
+          ...trace ? { evidence: trace.evidence.map(e => ({ n: e.n, memory: e.memory, kind: e.kind, layer: e.layer, title: e.title, date: e.date, text: e.text.slice(0, 300), ...e.later ? { later: true } : {}, ...e.flags ? { flags: e.flags } : {} })),
+            calls: trace.calls, model: trace.model, reasoningEffort: trace.reasoningEffort, timings: trace.timings } : {} });
         return;
       }
       if (request.method === "POST" && path === "/v1/messages") {
