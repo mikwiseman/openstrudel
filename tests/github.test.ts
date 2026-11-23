@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { githubTools, type GitHubOptions } from "../src/github.js";
+import { githubTools, dispatchAiGidCloud, type GitHubOptions } from "../src/github.js";
 import { ConversationFiles } from "../src/files.js";
 import { Store } from "../src/store.js";
 import type { TelegramToolContext } from "../src/telegram-tools.js";
@@ -39,6 +39,8 @@ function fixture(options: { configured?: boolean } = {}) {
   // GitHub's REST API: the App's JWT for app routes, an installation token for the rest.
   const tokens: Array<{ token: string; permissions: Record<string, string>; repositories?: string[] }> = [];
   const pulls: any[] = [];
+  const main = "a".repeat(40), head = "b".repeat(40), merge = "c".repeat(40);
+  const cloud = { id: "8366a125-adb6-42e3-8318-90d7a450b31c", head, main, merge, tags: new Map<string,string>(), merges: 0 };
   vi.stubGlobal("fetch", async (input: string, init: RequestInit = {}) => {
     const url = new URL(input), method = init.method ?? "GET", auth = String((init.headers as Record<string, string>).authorization ?? "").replace(/^Bearer /, "");
     const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -61,6 +63,23 @@ function fixture(options: { configured?: boolean } = {}) {
     if (method === "GET" && decodeURIComponent(url.pathname) === "/users/wai-wolf[bot]") return json(200, { id: 4242 });
     if (method === "GET" && repository && url.pathname.endsWith("/installation")) return json(200, { id: 7 });
     if (method === "GET" && repository && url.pathname === repository[0]) return json(200, { full_name: `o/${repository[2]!.toLowerCase()}`, default_branch: "main" });
+    if (url.pathname.endsWith("/pulls/11")) return json(200, {user:{login:"wai-wolf[bot]"},draft:false,state:cloud.merges?"closed":"open",merged:!!cloud.merges,
+      merge_commit_sha:cloud.merges?merge:null,head:{sha:head,ref:"wolf/aigid-"+cloud.id,repo:{full_name:"o/r"}},base:{ref:"main",repo:{full_name:"o/r"}}});
+    if (method === "PUT" && url.pathname.endsWith("/pulls/11/merge")) {
+      if (JSON.parse(String(init.body)).sha !== head) return json(409, {});
+      cloud.merges++; return json(200, {merged:true,sha:merge});
+    }
+    if (url.pathname.includes("/compare/")) return json(200,{status:[main,merge].some(x=>url.pathname.endsWith(x+"...main"))?"ahead":"diverged"});
+    if (method === "POST" && url.pathname.endsWith("/git/refs")) {
+      const {ref,sha} = JSON.parse(String(init.body));
+      if (cloud.tags.has(ref)) return json(422,{});
+      cloud.tags.set(ref,sha); return json(201, {ref, object:{type:"commit",sha}});
+    }
+    if (url.pathname.includes("/git/ref/tags/")) {
+      const ref = "refs/" + url.pathname.split("/git/ref/")[1];
+      const sha = cloud.tags.get(ref);
+      return sha ? json(200,{ref,object:{type:"commit",sha}}) : json(404,{});
+    }
     if (method === "POST" && repository && url.pathname.endsWith("/pulls")) {
       const body = JSON.parse(String(init.body));
       if (pulls.some(p => p.head === body.head)) return json(422, { message: "Validation Failed" });
@@ -74,7 +93,7 @@ function fixture(options: { configured?: boolean } = {}) {
   const context: TelegramToolContext = { conversationId: conversation.id, messageId: request.id, channel: "api", byOwner: true, scope: "personal", access: true, files };
   const tools = (overrides: Partial<TelegramToolContext> = {}, extra: GitHubOptions = {}) => githubTools(store, { ...context, ...overrides }, { remote: upstream, minimumFree: 0, ...extra });
   const copy = join(root, ".data/workspace/personal/github/o/r");
-  return { dir, root, store, files, upstream, tokens, pulls, context, tools, copy };
+  return { cloud, dir, root, store, files, upstream, tokens, pulls, context, tools, copy };
 }
 
 describe("GitHub repositories through the Home's App", () => {
@@ -208,3 +227,28 @@ describe("GitHub repositories through the Home's App", () => {
 });
 
 function readdir(path: string): string[] { return execFileSync("ls", ["-A", path], { encoding: "utf8" }).split("\n").filter(Boolean); }
+
+
+describe("AiGid cloud handoff", () => {
+  it("merges only the recorded Wolf candidate, and retries the same release tag", async () => {
+    const { root, cloud } = fixture();
+    const request = { id: cloud.id, pull: 11, commit: cloud.head };
+    await expect(dispatchAiGidCloud(root, "o/r", { ...request, commit: cloud.main }, () => {})).rejects.toThrow();
+    expect(cloud.merges).toBe(0);
+    await expect(dispatchAiGidCloud(root, "o/r", request, () => { throw Error("revoked"); })).rejects.toThrow("revoked");
+    const first = await dispatchAiGidCloud(root, "o/r", request, () => {});
+    expect(await dispatchAiGidCloud(root, "o/r", request, () => {})).toEqual(first);
+    expect(cloud.merges).toBe(1);
+    expect([...cloud.tags.values()]).toEqual([cloud.merge]);
+  });
+  it("accepts a build-only revision from main and refuses a conflicting existing tag", async () => {
+    const { root, cloud } = fixture();
+    const request = { id: cloud.id, pull: null, commit: cloud.main };
+    await expect(dispatchAiGidCloud(root, "o/r", {...request, commit:cloud.head}, () => {})).rejects.toThrow();
+    expect(cloud.tags.size).toBe(0);
+    await dispatchAiGidCloud(root, "o/r", request, () => {});
+    cloud.tags.set("refs/tags/wolf-testflight-" + cloud.id, cloud.head);
+    await expect(dispatchAiGidCloud(root, "o/r", request, () => {})).rejects.toThrow();
+    expect(cloud.merges).toBe(0);
+  });
+});

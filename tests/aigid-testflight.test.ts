@@ -24,21 +24,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BuildQueue } from "../src/aigid-queue.js";
 
-it("one delivery creates one durable request and a stale worker cannot reopen a released build", () => {
-  const root=mkdtempSync(join(tmpdir(),"wolf-testflight-"));
-  const q=new BuildQueue(root);
+it("holds candidates until Xcode Cloud is enabled and never replays a dispatched request", () => {
+  const root = mkdtempSync(join(tmpdir(), "wolf-testflight-"));
+  const queue = new BuildQueue(root);
   try {
-    q.add("one","chat","telegram","20","Release",false);
-    q.add("one","chat","telegram","20","Release",false);
-    expect(q.next()?.id).toBe("one");
-    expect(q.worker({action:"list"})).toEqual([]);
-    q.db.prepare("UPDATE jobs SET state='ready',commit_sha=? WHERE id='one'").run("a".repeat(40));
-    const rows=q.worker({action:"list"}) as Record<string,unknown>[];
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).not.toHaveProperty("goal");
-    expect(()=>q.worker({action:"report",id:"one",state:"external",detail:"Premature"})).toThrow();
-    for(const state of ["building","team","external"]) q.worker({action:"report",id:"one",state,detail:state});
-    expect(()=>q.worker({action:"report",id:"one",state:"building",detail:"stale"})).toThrow();
-    expect(q.worker({action:"list"})).toEqual([]);
-  } finally {q.db.close();rmSync(root,{recursive:true,force:true});}
+    queue.add("one", "chat", "telegram", "20", "Release", false);
+    queue.add("one", "chat", "telegram", "20", "Release", false);
+    expect(queue.next(false)?.id).toBe("one");
+    queue.db.prepare("UPDATE jobs SET state='ready' WHERE id='one'").run();
+    expect(queue.next(false)).toBeUndefined();
+    expect(queue.next(true)?.id).toBe("one");
+    queue.db.prepare("UPDATE jobs SET state='tagged' WHERE id='one'").run();
+    expect(queue.next(true)).toBeUndefined();
+  } finally { queue.db.close(); rmSync(root, { recursive: true, force: true }); }
 });

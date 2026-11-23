@@ -119,6 +119,58 @@ function botIdentity(app: App, access: string) {
   return identity;
 }
 
+/** Only the AiGid release queue can call this. Never exposed as a general agent tool. */
+export async function dispatchAiGidCloud(root: string, fullName: string,
+  request: { id: string; pull: number | null; commit: string }, authorize: () => void) {
+  const sha = /^[0-9a-f]{40}$/;
+  if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(request.id) || !sha.test(request.commit))
+    throw new Error("Invalid AiGid release identity.");
+  authorize();
+  const app = readApp(root);
+  if (!app) throw new Error("The GitHub App is unavailable.");
+  const repository = await resolveRepository(app, fullName);
+  if (repository.fullName !== fullName || repository.defaultBranch !== "main")
+    throw new Error("AiGid requires the configured canonical repository and main.");
+  const access = await token(app, repository.installation, { contents: "write", ...(request.pull !== null ? { pull_requests: "write" } : {}) }, repository.name);
+  const base = `/repos/${fullName}`;
+  let revision = request.commit;
+  if (request.pull !== null) {
+    if (!Number.isSafeInteger(request.pull) || request.pull < 1) throw new Error("Invalid AiGid pull request.");
+    const path = `${base}/pulls/${request.pull}`, result = await api(path, access);
+    if (result.status !== 200) throw failure("reading the AiGid pull request", result);
+    const pr = result.data, bot = await botIdentity(app, access);
+    if (pr?.draft !== false || pr.user?.login !== bot.name || pr.base?.ref !== "main" || pr.base?.repo?.full_name !== fullName ||
+      pr.head?.repo?.full_name !== fullName || pr.head?.ref !== `wolf/aigid-${request.id}` || pr.head?.sha !== request.commit)
+      throw new Error("The AiGid pull request no longer matches the authorized candidate.");
+    if (pr.merged === true) {
+      revision = pr.merge_commit_sha;
+    } else {
+      if (pr.state !== "open") throw new Error("The AiGid pull request was closed.");
+      authorize();
+      const merge = await api(path + "/merge", access, { method: "PUT", body: { sha: request.commit, merge_method: "merge" } });
+      if (merge.status !== 200 || merge.data?.merged !== true) throw failure("merging the AiGid candidate", merge);
+      revision = merge.data.sha;
+    }
+  }
+  if (!sha.test(revision)) throw new Error("GitHub did not confirm the release revision.");
+  const ancestry = await api(`${base}/compare/${revision}...main`, access);
+  if (ancestry.status !== 200 || !["identical", "ahead"].includes(ancestry.data?.status))
+    throw new Error("The AiGid release revision does not belong to canonical main.");
+  const tag = "wolf-testflight-" + request.id, ref = "refs/tags/" + tag;
+  const read = () => api(`${base}/git/ref/tags/${tag}`, access);
+  let observed = await read();
+  if (observed.status === 404) {
+    authorize();
+    const created = await api(base + "/git/refs", access, {method: "POST", body: {ref, sha: revision}});
+    // A retry can race with the first request. Read the immutable ref back in either case.
+    if (![201, 422].includes(created.status)) throw failure("creating the Xcode Cloud release tag", created);
+    observed = await read();
+  }
+  if (observed.status !== 200 || observed.data?.ref !== ref || observed.data?.object?.type !== "commit" || observed.data?.object?.sha !== revision)
+    throw new Error("GitHub did not confirm the release tag at the authorized revision.");
+  return { tag, revision };
+}
+
 /** Home-side Git never reads system or user configuration. A token travels as a header in the environment, so it is never written to disk. */
 async function git(args: string[], options: { token?: string; timeout?: number; hide?: string[] } = {}): Promise<string> {
   const env: NodeJS.ProcessEnv = { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
