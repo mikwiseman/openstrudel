@@ -102,7 +102,7 @@ export class AiGidBuilds {
     };
     const { tag, revision } = await dispatchAiGidCloud(this.files.root, config.repository, {
       id: job.id, pull: job.pull, commit: job.commit_sha,
-    }, authorize);
+    }, authorize, { signal: this.stopSignal.signal });
     this.queue.db.prepare("UPDATE jobs SET state='tagged',detail=? WHERE id=? AND state='ready'")
       .run(`Published ${tag} at ${revision.slice(0,12)} for Xcode Cloud. Apple build and TestFlight availability have yet to be confirmed.`, job.id);
   }
