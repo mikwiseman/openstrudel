@@ -12,6 +12,8 @@ export interface TelegramToolContext {
   scheduled?: boolean;
   scheduleTelegramChatId?: string | null;
   byOwner?: boolean;
+  /** Authenticated paired device, supplied by the Home transport. */
+  deviceId?: string;
   telegramSenderId?: string;
   /** False when the Telegram sender is not on this Home's access list. */
   access?: boolean;

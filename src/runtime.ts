@@ -1,3 +1,4 @@
+import { AiGidBuilds } from "./aigid-testflight.js";
 import { resolve } from "node:path";
 import { CodexAccountService } from "./account.js";
 import { createEngine } from "./codex.js";
@@ -34,6 +35,7 @@ export class OpenStrudelRuntime {
   readonly api: HttpApi;
   readonly telegram: TelegramAdapter;
   readonly scheduler: Scheduler;
+  private aigid?:AiGidBuilds;
   private readonly startTelegram: boolean;
   private started = false;
   private readonly publishLocalConnection: boolean;
@@ -119,6 +121,7 @@ export class OpenStrudelRuntime {
         this.store.db.exec("COMMIT");
       } catch(error) { this.store.db.exec("ROLLBACK"); throw error; }
     }
+    this.aigid=AiGidBuilds.start(this.store,this.messages.files,this.account);
     if (this.startTelegram) await this.telegram.start();
     if (this.engine instanceof AccountEngines) this.accounts.startQuotaChecks();
     this.scheduler.start();
@@ -141,6 +144,7 @@ export class OpenStrudelRuntime {
     this.api.correspondence.stop();
     await this.accounts.stopQuotaChecks();
     this.telegram.stop();
+    await this.aigid?.close();
     await this.messages.close();
     await this.scheduler.idle();
     await this.api.close();
