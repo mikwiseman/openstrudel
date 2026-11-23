@@ -39,8 +39,11 @@ function fixture(options: { configured?: boolean } = {}) {
   // GitHub's REST API: the App's JWT for app routes, an installation token for the rest.
   const tokens: Array<{ token: string; permissions: Record<string, string>; repositories?: string[] }> = [];
   const pulls: any[] = [];
-  const main = "a".repeat(40), head = "b".repeat(40), merge = "c".repeat(40);
-  const cloud = { id: "8366a125-adb6-42e3-8318-90d7a450b31c", head, main, merge, tags: new Map<string,string>(), merges: 0 };
+  const origin = upstream("o/r");
+  const main = git(origin, "rev-parse", "main");
+  const head = git(origin, "commit-tree", "main^{tree}", "-p", main, "-m", "Candidate");
+  const merge = git(origin, "commit-tree", "main^{tree}", "-p", main, "-p", head, "-m", "Merge candidate");
+  const cloud = { id: "8366a125-adb6-42e3-8318-90d7a450b31c", head, main, merge, merges: 0 };
   vi.stubGlobal("fetch", async (input: string, init: RequestInit = {}) => {
     const url = new URL(input), method = init.method ?? "GET", auth = String((init.headers as Record<string, string>).authorization ?? "").replace(/^Bearer /, "");
     const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -67,17 +70,13 @@ function fixture(options: { configured?: boolean } = {}) {
       merge_commit_sha:cloud.merges?merge:null,head:{sha:head,ref:"wolf/aigid-"+cloud.id,repo:{full_name:"o/r"}},base:{ref:"main",repo:{full_name:"o/r"}}});
     if (method === "PUT" && url.pathname.endsWith("/pulls/11/merge")) {
       if (JSON.parse(String(init.body)).sha !== head) return json(409, {});
+      git(origin, "update-ref", "refs/heads/main", merge, main);
       cloud.merges++; return json(200, {merged:true,sha:merge});
     }
     if (url.pathname.includes("/compare/")) return json(200,{status:[main,merge].some(x=>url.pathname.endsWith(x+"...main"))?"ahead":"diverged"});
-    if (method === "POST" && url.pathname.endsWith("/git/refs")) {
-      const {ref,sha} = JSON.parse(String(init.body));
-      if (cloud.tags.has(ref)) return json(422,{});
-      cloud.tags.set(ref,sha); return json(201, {ref, object:{type:"commit",sha}});
-    }
     if (url.pathname.includes("/git/ref/tags/")) {
       const ref = "refs/" + url.pathname.split("/git/ref/")[1];
-      const sha = cloud.tags.get(ref);
+      const sha = git(origin, "for-each-ref", "--format=%(objectname)", ref);
       return sha ? json(200,{ref,object:{type:"commit",sha}}) : json(404,{});
     }
     if (method === "POST" && repository && url.pathname.endsWith("/pulls")) {
@@ -231,24 +230,32 @@ function readdir(path: string): string[] { return execFileSync("ls", ["-A", path
 
 describe("AiGid cloud handoff", () => {
   it("merges only the recorded Wolf candidate, and retries the same release tag", async () => {
-    const { root, cloud } = fixture();
+    const { root, cloud, upstream } = fixture();
+    const origin = upstream("o/r"), tag = "refs/tags/wolf-testflight-" + cloud.id;
+    const hook = join(origin, "hooks/post-receive");
+    writeFileSync(hook, "#!/bin/sh\ncat >>wolf-pushes\n", { mode: 0o755 });
     const request = { id: cloud.id, pull: 11, commit: cloud.head };
-    await expect(dispatchAiGidCloud(root, "o/r", { ...request, commit: cloud.main }, () => {})).rejects.toThrow();
+    const dispatch = (input = request, authorize = () => {}) => dispatchAiGidCloud(root, "o/r", input, authorize, { remote: upstream });
+    await expect(dispatch({ ...request, commit: cloud.main })).rejects.toThrow();
     expect(cloud.merges).toBe(0);
-    await expect(dispatchAiGidCloud(root, "o/r", request, () => { throw Error("revoked"); })).rejects.toThrow("revoked");
-    const first = await dispatchAiGidCloud(root, "o/r", request, () => {});
-    expect(await dispatchAiGidCloud(root, "o/r", request, () => {})).toEqual(first);
+    await expect(dispatch(request, () => { throw Error("revoked"); })).rejects.toThrow("revoked");
+    const first = await dispatch();
+    expect(await dispatch()).toEqual(first);
     expect(cloud.merges).toBe(1);
-    expect([...cloud.tags.values()]).toEqual([cloud.merge]);
+    expect(readFileSync(join(origin, "wolf-pushes"), "utf8").trim()).toBe(`${"0".repeat(40)} ${cloud.merge} ${tag}`);
   });
   it("accepts a build-only revision from main and refuses a conflicting existing tag", async () => {
-    const { root, cloud } = fixture();
+    const { root, cloud, upstream } = fixture();
+    const origin = upstream("o/r"), tag = "refs/tags/wolf-testflight-" + cloud.id;
     const request = { id: cloud.id, pull: null, commit: cloud.main };
-    await expect(dispatchAiGidCloud(root, "o/r", {...request, commit:cloud.head}, () => {})).rejects.toThrow();
-    expect(cloud.tags.size).toBe(0);
-    await dispatchAiGidCloud(root, "o/r", request, () => {});
-    cloud.tags.set("refs/tags/wolf-testflight-" + cloud.id, cloud.head);
-    await expect(dispatchAiGidCloud(root, "o/r", request, () => {})).rejects.toThrow();
+    const dispatch = (input = request) => dispatchAiGidCloud(root, "o/r", input, () => {}, { remote: upstream });
+    await expect(dispatch({...request, commit:cloud.head})).rejects.toThrow();
+    expect(git(origin, "tag", "-l")).toBe("");
+    await dispatch();
+    expect(git(origin, "rev-parse", tag)).toBe(cloud.main);
+    git(origin, "update-ref", tag, cloud.head);
+    await expect(dispatch()).rejects.toThrow();
+    expect(git(origin, "rev-parse", tag)).toBe(cloud.head);
     expect(cloud.merges).toBe(0);
   });
 });

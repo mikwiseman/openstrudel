@@ -121,7 +121,7 @@ function botIdentity(app: App, access: string) {
 
 /** Only the AiGid release queue can call this. Never exposed as a general agent tool. */
 export async function dispatchAiGidCloud(root: string, fullName: string,
-  request: { id: string; pull: number | null; commit: string }, authorize: () => void) {
+  request: { id: string; pull: number | null; commit: string }, authorize: () => void, options: Pick<GitHubOptions, "remote"> = {}) {
   const sha = /^[0-9a-f]{40}$/;
   if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(request.id) || !sha.test(request.commit))
     throw new Error("Invalid AiGid release identity.");
@@ -160,11 +160,21 @@ export async function dispatchAiGidCloud(root: string, fullName: string,
   const read = () => api(`${base}/git/ref/tags/${tag}`, access);
   let observed = await read();
   if (observed.status === 404) {
-    authorize();
-    const created = await api(base + "/git/refs", access, {method: "POST", body: {ref, sha: revision}});
-    // A retry can race with the first request. Read the immutable ref back in either case.
-    if (![201, 422].includes(created.status)) throw failure("creating the Xcode Cloud release tag", created);
-    observed = await read();
+    // Publish through Git so the source provider receives a tag push. Use only the verified canonical commit.
+    const remote = options.remote?.(fullName) ?? repository.url + ".git";
+    const work = resolve(root, ".data/github/work");
+    mkdirSync(work, { recursive: true, mode: 0o700 });
+    const temp = mkdtempSync(join(work, "release-"));
+    try {
+      await git(["init", "--bare", "--quiet", "--template=", temp]);
+      await git(["-C", temp, "fetch", "--quiet", "--no-tags", "--depth=1", "--filter=blob:none", remote, revision], { token: access });
+      authorize();
+      let pushError: unknown;
+      try { await git(["-C", temp, "push", "--quiet", remote, revision + ":" + ref], { token: access }); }
+      catch (error) { pushError = error; }
+      observed = await read();
+      if (pushError && observed.status !== 200) throw pushError;
+    } finally { rmSync(temp, { recursive: true, force: true }); }
   }
   if (observed.status !== 200 || observed.data?.ref !== ref || observed.data?.object?.type !== "commit" || observed.data?.object?.sha !== revision)
     throw new Error("GitHub did not confirm the release tag at the authorized revision.");
