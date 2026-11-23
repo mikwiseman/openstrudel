@@ -242,6 +242,11 @@ final class TeamUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Утренний выпуск"].exists)
         XCTAssertEqual(app.buttons["readerTitle"].value as? String, "Startups")
         capture("second-desk", app)
+        // A desk's settings open from its title, as an employee's do.
+        app.buttons["readerTitle"].tap()
+        let close = app.buttons["saveEmployeeChanges"]
+        XCTAssertTrue(close.waitForExistence(timeout: 10), app.debugDescription); close.tap()
+        XCTAssertTrue(app.scrollViews["newsToday"].waitForExistence(timeout: 10), app.debugDescription)
         back(app)
 
         // 10. Statistics opens from the foot of the home, which says the fullest limit as a figure; the limits in full

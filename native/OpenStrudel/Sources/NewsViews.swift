@@ -280,6 +280,7 @@ extension View {
 /// itself. On the Mac a sheet attached to the first page of the desk does not open while another page is pushed over
 /// it, so the page in front has to be the one that presents.
 private struct NewsToolbar: ViewModifier {
+    @EnvironmentObject private var failures: TeamFailures
     @ObservedObject var feed: NewsFeed
     let chrome: NewsChrome
     let title: String
@@ -317,7 +318,8 @@ private struct NewsToolbar: ViewModifier {
                 }
             }
             .sheet(item: $details) { profile in
-                BotDetailsView(profile: profile, conversationID: feed.conversationID).environmentObject(feed.client)
+                BotDetailsView(profile: profile, conversationID: feed.conversationID, cause: failures.failure(profile.id, on: feed.client)?.code)
+                    .environmentObject(feed.client)
             }
             .sheet(item: $composing) { request in
                 NewsPostSheet(feed: feed, posts: feed.posts, request: request, appearance: chrome.profile?.resolvedAppearance)
