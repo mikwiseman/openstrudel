@@ -136,14 +136,18 @@ export function readAskModel(store: Store): ModelSelection | null {
   try { const value = JSON.parse(store.getSetting('models.ask') ?? 'null'); return value?.model ? parseModelSelection(value,false) : null; } catch { return null; }
 }
 const effortOrder = ['none','minimal','low','medium','high','xhigh','max','ultra'];
+/** The lowest reasoning level a model offers; none when it offers no choice. */
+export function lowestReasoning(model?: ModelChoice): string | undefined {
+  const rank = (id: string) => (effortOrder.indexOf(id) + effortOrder.length + 1) % (effortOrder.length + 1);
+  return [...model?.reasoningEfforts?.map(e => e.id) ?? []].sort((a,b) => rank(a) - rank(b))[0];
+}
 /** The owner's model for answers at its chosen level; otherwise the device's model at the direct chats' speed. A level the
  * model does not offer, or none chosen, is the lowest it offers. `models` is the catalog of the engine that will run it. */
 export function askModelSelection(store: Store, models: ModelChoice[] = []): ModelSelection & { fast: boolean } {
   const chosen = readAskModel(store), { reasoningEffort: level, ...route } = chosen ?? resolveModelSelection(store,'main');
   const catalog = models.filter(m => (m.provider ?? 'chatgpt') === route.provider);
-  const offered = (route.model ? catalog.find(m => m.id === route.model) : catalog.length ? recommendedModel(catalog) : undefined)?.reasoningEfforts?.map(e => e.id) ?? [];
-  const rank = (id: string) => (effortOrder.indexOf(id) + effortOrder.length + 1) % (effortOrder.length + 1);
-  const reasoningEffort = chosen && level != null && offered.includes(level) ? level : [...offered].sort((a,b) => rank(a) - rank(b))[0];
+  const model = route.model ? catalog.find(m => m.id === route.model) : catalog.length ? recommendedModel(catalog) : undefined;
+  const reasoningEffort = chosen && level != null && model?.reasoningEfforts?.some(e => e.id === level) ? level : lowestReasoning(model);
   return { ...route, ...(reasoningEffort ? { reasoningEffort } : {}), fast: !chosen && directFast(store) };
 }
 /** `models` is one provider's catalog. */

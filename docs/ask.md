@@ -15,7 +15,9 @@ A memory is a connected HTTP service that lists a read-only tool named exactly `
 }
 ```
 
-`understood` says how the memory read the question, e.g., the period and the people that the question is about. `searched` says where the memory looked. The Home passes `understood`, `searched` and `note` to the model as the memory returned them. Any field may be missing, and the Home keeps an item of evidence that has a text or a title. `open` names a read-only tool of the same memory that returns the whole source.
+`understood` says how the memory read the question, e.g., the period and the people that the question is about. `searched` says where the memory looked. The Home passes `understood`, `searched` and `note` to the model as the memory returned them. Any field may be missing, and the Home keeps an item of evidence that has a text or a title. `open` names a read-only tool of the same memory that returns the whole source. An item may also carry `later: true`, which means that it was said after the other items on the same subject. The Home then writes "(said later)" beside the number of the item in the text for the model.
+
+`recall` may list more inputs than the question in its input schema, e.g., `since` and `until` as days in the form YYYY-MM-DD. The Home sends such an input only to a memory whose `recall` lists it.
 
 The Home sends a memory one JSON-RPC request in each HTTP POST (`tools/list` or `tools/call`), with the service's own header or bearer token and without a session. The memory may reply with JSON or with one server-sent event. The Home waits 6 seconds for a reply, and the work memory in production answers `recall` in 1 to 4 seconds. The Home reads at most 1 MB and refuses a reply that contains the service's own credential. The Home keeps the tool list of each service for ten minutes.
 
@@ -41,7 +43,7 @@ The model never says that something is not on record or was not found. When the 
 
 The model has three tools:
 
-- `recall(question)` searches every memory again with different words. The model may call it twice.
+- `recall(question, since, until)` searches every memory again with different words. `since` and `until` narrow the search to a period, and the Home passes them only to the memories whose `recall` lists them. The model may call `recall` twice.
 - `open(n)` reads one source in full through the read-only tool that the item names, on the memory that returned the item. The model may call it three times.
 - `hand_over()` gives the message to the main assistant. The model calls it when the message is not a question about records, e.g., a request to do something or small talk, and when the evidence does not hold the answer.
 
@@ -85,6 +87,12 @@ The owner sets two Home settings in the store, and the app has no screen for the
 
 ## Evaluation
 
-`POST /v1/ask` takes `{ question, conversationId? }` from the owner and returns `{ answer, sources: [{ n, memory, title, date, url }], notOnRecord, unreachable, seconds, tokens }`. The Home stores nothing for this request, and the request works when `ask.enabled` is "false". Without `conversationId` the Home uses the memories of the main chat and no earlier messages. With `conversationId` the Home uses the memories and the last six messages of that chat. `unreachable` lists the names of the memories that could not be reached. When the model hands the message over, when its answer names no source, or when no memory answered, `answer` is null and `handedOver` is true. `notOnRecord` stays in the reply for older callers and is always false.
+`POST /v1/ask` takes `{ question, conversationId? }` from the owner and returns `{ answer, sources: [{ n, memory, title, date, url }], notOnRecord, unreachable, seconds, tokens }`. The Home stores nothing for this request, and the request works when `ask.enabled` is "false". Without `conversationId` the Home uses the memories of the main chat and no earlier messages. With `conversationId` the Home uses the memories and the last six messages of that chat. The request may carry evaluation fields, so that the owner can try a change without a new release. The Home uses them for the one request and stores none of them, and a message in a chat never takes them:
+
+- `model`, `reasoningEffort` and `serviceTier` replace the model, the reasoning level and the speed of the run. The Home refuses a model, a level or a speed that the account does not offer. A model without a level runs at the lowest level that the model offers.
+- `instructions` is a text of at most 8,000 characters that replaces the fixed instructions.
+- `debug: true` adds four parts to the reply. `evidence` lists the items that the model was given, each with its number, memory, kind, layer, title, date, the first 300 characters of its text, and `later` and `flags` when the memory sent them. `calls` lists the tool calls of the model in order with their arguments. `model` and `reasoningEffort` say what ran. `timings` gives the milliseconds of the first `recall`, of the model run and of the whole request.
+
+`unreachable` lists the names of the memories that could not be reached. When the model hands the message over, when its answer names no source, or when no memory answered, `answer` is null and `handedOver` is true. `notOnRecord` stays in the reply for older callers and is always false.
 
 Checks: `tests/ask.test.ts`, `tests/ask-engine.test.ts`.

@@ -73,14 +73,15 @@ const usage = (input: number, output: number) => ({ inputTokens: input, cachedRe
 
 /** The lane's own engine: a script instead of a model. */
 function lane(script: (input: string, options: RunOptions) => Promise<string> | string = () => "Lumen Studio paid 1,200 in October [1].") {
-  const runs: Array<{ input: string; options: RunOptions }> = [];
+  const runs: Array<{ input: string; options: RunOptions }> = [], instructions: Array<string | undefined> = [];
   const engine = { models: async () => catalog, run: async (input: string, options: RunOptions = {}) => {
     runs.push({ input, options });
     try { return { threadId: "ask-thread", response: await script(input, options), events: [] }; }
-    finally { options.onEvent?.({ type: "turn.usage", payload: { usage: usage(900, 60), model: "device-model", reasoningEffort: "low", engine: { thread: "ask-thread", totals: {} } } }); }
+    finally { options.onEvent?.({ type: "turn.usage", payload: { usage: usage(900, 60), model: options.model ?? "device-model", reasoningEffort: options.reasoningEffort ?? "low", engine: { thread: "ask-thread", totals: {} } } }); }
   } };
-  const open: AskEngine = (_signal, work) => work(engine);
-  return { runs, open };
+  // The engine is opened with an evaluation's own instructions, or with none for the lane's fixed ones.
+  const open: AskEngine = (_signal, work, own) => { instructions.push(own); return work(engine); };
+  return { runs, instructions, open };
 }
 
 /** The main thread's engine, as other tests mock it. */
@@ -666,6 +667,115 @@ describe("a voice message in Telegram", () => {
     const inbound = store.listMessages(store.getTelegramChat("42")!.conversationId!).filter(m => m.direction === "inbound");
     expect(inbound.map(m => [m.text, m.status, m.attachments!.map(file => file.name)])).toEqual([["Привет", "completed", []],
       ["сколько Lumen Studio заплатили в октябре", "completed", ["voice.ogg"]], ["отправь Анне договор", "completed", ["voice.ogg"]], ["сколько Lumen Studio заплатили в октябре", "completed", ["video.mp4"]]]);
+  });
+});
+
+describe("an evaluation through POST /v1/ask", () => {
+  const dated = { ...readOnly("recall"), inputSchema: { type: "object", properties: { question: { type: "string" }, since: { type: "string" }, until: { type: "string" } }, required: ["question"] } };
+  const correction = { n: 2, kind: "message", layer: "raw", title: "Message from Lumen Studio", date: "2026-10-20", text: "Correction: the October payment was 1,250. " + "More detail. ".repeat(40), id: "msg-9", later: true, flags: ["correction"] };
+  const question = "How much did Lumen Studio pay in October?";
+
+  async function evaluation(script?: Parameters<typeof lane>[0]) {
+    const { OpenStrudelRuntime } = await import("../src/runtime.js");
+    const work = await memory({ tools: [dated, readOnly("read_document")], recall: () => ({ evidence: [payments, correction] }) }), plain = await memory({ recall: () => ({ evidence: [] }) });
+    const root = home({ work, plain }), thread = main(), engine = lane(script);
+    const runtime = new OpenStrudelRuntime({ dbPath: ":memory:", rootDirectory: root, startTelegram: false, apiToken: "owner", engine: thread.engine });
+    runtime.messages.ask = new Ask(runtime.store, root, engine.open);
+    const address = await runtime.api.listen("127.0.0.1", 0);
+    closers.push(() => runtime.stop());
+    const post = async (body: unknown, headers: Record<string, string> = { authorization: "Bearer owner" }, path = "/v1/ask") => {
+      const response = await fetch(`http://127.0.0.1:${address.port}${path}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+      return { status: response.status, value: await response.json() as any };
+    };
+    return { runtime, store: runtime.store, post, engine, thread, work, plain, address };
+  }
+  const stored = (store: Store) => JSON.stringify([rows(store), store.db.prepare("SELECT * FROM turn_usage").all(), store.db.prepare("SELECT key,value FROM settings WHERE key NOT LIKE 'home.%' ORDER BY key").all()]);
+
+  it("runs one question on the model, level, speed and instructions it names, and stores none of them", async () => {
+    const { store, post, engine } = await evaluation();
+    expect((await post({ question })).status).toBe(200);
+    const before = stored(store);
+    expect((await post({ question, model: "small-model", reasoningEffort: "medium", serviceTier: "default", instructions: "Answer in one word, with its number." })).value).toMatchObject({ answer: "Lumen Studio paid 1,200 in October [1]." });
+    expect(engine.runs[1]!.options).toMatchObject({ provider: "chatgpt", model: "small-model", reasoningEffort: "medium", serviceTier: "default", fast: false });
+    expect(engine.instructions[1]).toBe("Answer in one word, with its number.");
+    // A model named without a level runs at the lowest level it offers; a level alone keeps the lane's model and speed.
+    await post({ question, model: "small-model" });
+    expect(engine.runs[2]!.options).toMatchObject({ model: "small-model", reasoningEffort: "minimal", serviceTier: "default", fast: false });
+    await post({ question, reasoningEffort: "high" });
+    expect(engine.runs[3]!.options).toMatchObject({ model: null, reasoningEffort: "high", fast: true });
+    // Nothing of it outlives its request: the next question runs as the lane is set up, and the Home keeps no trace.
+    await post({ question });
+    expect(engine.runs[4]!.options).toMatchObject({ model: null, reasoningEffort: "low", fast: true });
+    expect(engine.instructions).toEqual([undefined, "Answer in one word, with its number.", undefined, undefined, undefined]);
+    expect(stored(store)).toBe(before);
+    expect(store.getSetting("models.ask")).toBeNull();
+  });
+
+  it("refuses what the account does not offer and what is malformed, before any model runs, and answers only the owner", async () => {
+    const { store, post, engine, runtime, address } = await evaluation();
+    const before = stored(store);
+    for (const fields of [{ model: "missing-model" }, { model: "small-model", reasoningEffort: "xhigh" }, { model: "small-model", serviceTier: "priority" }, { reasoningEffort: "minimal" }])
+      expect((await post({ question, ...fields })).status, JSON.stringify(fields)).toBe(409);
+    for (const fields of [{ model: 5 }, { model: " " }, { model: "m".repeat(161) }, { reasoningEffort: "HIGH" }, { reasoningEffort: ["low"] }, { serviceTier: "" }, { instructions: "x".repeat(8_001) }, { instructions: "  " }, { instructions: { text: "x" } }])
+      expect((await post({ question, ...fields })).status, JSON.stringify(fields).slice(0, 60)).toBe(400);
+    expect(engine.runs).toHaveLength(0);
+    expect(JSON.parse(stored(store))[0]).toEqual(JSON.parse(before)[0]);
+    expect((await post({ question, instructions: "x".repeat(8_000) })).status).toBe(200);
+    const session = await fetch(`http://127.0.0.1:${address.port}/auth/session`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: runtime.api.web.invite(false).key }) });
+    const member = { cookie: session.headers.get("set-cookie")!.split(";")[0]!, "x-openstrudel-csrf": (await session.json() as any).csrf };
+    expect((await post({ question, model: "small-model", instructions: "Say anything.", debug: true }, member)).status).toBe(403);
+    expect((await post({ question, model: "small-model", debug: true }, {})).status).toBe(401);
+    expect(engine.runs).toHaveLength(1);
+  });
+
+  it("shows inside one answer with debug: the evidence, the model's own calls, what ran and how long it took", async () => {
+    const { post, engine, work, plain } = await evaluation(async (_input, options) => {
+      await options.tools!.call("recall", { question: "October payment", since: "2026-10-01", until: "2026-10-31" });
+      await options.tools!.call("open", { n: 1 });
+      return "Lumen Studio paid 1,250 in October [2], corrected from 1,200 [1].";
+    });
+    const plainReply = (await post({ question })).value;
+    expect(Object.keys(plainReply).sort()).toEqual(["answer", "notOnRecord", "seconds", "sources", "tokens", "unreachable"]);
+    const { value } = await post({ question, model: "small-model", reasoningEffort: "medium", debug: true });
+    expect(value).toMatchObject({ answer: "Lumen Studio paid 1,250 in October [2], corrected from 1,200 [1].", sources: [{ n: 1 }, { n: 2 }], notOnRecord: false, unreachable: [], model: "small-model", reasoningEffort: "medium" });
+    expect(value.evidence).toEqual([
+      { n: 1, memory: "work", kind: "payment", layer: "truth", title: "Payments, October", date: "2026-10-14T09:30:00Z", text: payments.text },
+      { n: 2, memory: "work", kind: "message", layer: "raw", title: "Message from Lumen Studio", date: "2026-10-20", text: correction.text.slice(0, 300), later: true, flags: ["correction"] },
+    ]);
+    expect(value.evidence[1].text).toHaveLength(300);
+    expect(value.calls).toEqual([{ tool: "recall", args: { question: "October payment", since: "2026-10-01", until: "2026-10-31" } }, { tool: "open", args: { n: 1 } }]);
+    expect(value.timings).toEqual({ recall: expect.any(Number), model: expect.any(Number), total: expect.any(Number) });
+    expect(value.timings.total).toBeGreaterThanOrEqual(Math.max(value.timings.recall, value.timings.model));
+    // The model reads which item was said later, beside its number.
+    expect(engine.runs[1]!.input).toContain('[2] (said later) {"memory":"work","kind":"message"');
+    expect(engine.runs[1]!.input).toContain('[1] {"memory":"work","kind":"payment"');
+    // A period goes only to the memory whose recall lists since and until; the Home's own first search names none.
+    expect(engine.runs[1]!.options.tools!.definitions[0]!.inputSchema).toMatchObject({ properties: { question: { type: "string" }, since: { type: ["string", "null"] }, until: { type: ["string", "null"] } } });
+    expect(work.calls.filter(c => c.tool === "recall").slice(-2).map(c => c.args)).toEqual([{ question }, { question: "October payment", since: "2026-10-01", until: "2026-10-31" }]);
+    expect(plain.calls.filter(c => c.tool === "recall").slice(-2).map(c => c.args)).toEqual([{ question }, { question: "October payment" }]);
+  });
+
+  it("drops a period that is not two days, and shows a hand-over as the model's call", async () => {
+    const { post, work } = await evaluation(async (_input, options) => {
+      await options.tools!.call("recall", { question: "October payment", since: "October", until: null });
+      await options.tools!.call("hand_over", {});
+      return "";
+    });
+    const { value } = await post({ question, debug: true });
+    expect(value).toMatchObject({ answer: null, handedOver: true, calls: [{ tool: "recall", args: { question: "October payment", since: "October", until: null } }, { tool: "hand_over", args: {} }], model: "device-model", reasoningEffort: "low" });
+    expect(work.calls.filter(c => c.tool === "recall").at(-1)!.args).toEqual({ question: "October payment" });
+  });
+
+  it("is the only door: a message in the chat that carries the same fields is answered as the lane is set up", async () => {
+    const { post, engine, thread, store } = await evaluation();
+    const { status, value } = await post({ text: question, model: "small-model", reasoningEffort: "medium", serviceTier: "default", instructions: "Say anything.", debug: true }, { authorization: "Bearer owner" }, "/v1/messages");
+    expect(status).toBe(200);
+    expect(value.text).toContain("Lumen Studio paid 1,200 in October [1].");
+    expect(Object.keys(value).sort()).toEqual(["attachments", "conversationId", "messageId", "text"]);
+    expect(engine.runs[0]!.options).toMatchObject({ model: null, reasoningEffort: "low", fast: true });
+    expect(engine.instructions).toEqual([undefined]);
+    expect(thread.runs).toHaveLength(0);
+    expect(JSON.stringify(rows(store))).not.toContain("Say anything.");
   });
 });
 
