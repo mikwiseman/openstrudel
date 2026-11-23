@@ -865,8 +865,10 @@ export class HttpApi {
       const bindingMatch=path.match(/^\/v1\/integrations\/telegram\/chats\/(-?\d+)$/);
       if(request.method==="PATCH" && bindingMatch) {
         const body=await this.body(request);
-        if ([body.profileId,body.enabled,body.replyAccess].filter(value=>value!==undefined).length>1 || body.allowedSenders!==undefined && body.replyAccess===undefined) throw new HomeError("Измените одно: сотрудника, состояние группы или кому отвечает бот.",400);
+        if ([body.profileId,body.enabled,body.replyAccess,body.replies,body.transcripts].filter(value=>value!==undefined).length>1 || body.allowedSenders!==undefined && body.replyAccess===undefined) throw new HomeError("Измените одно: сотрудника, состояние группы, кому и когда отвечает бот или расшифровки.",400);
         if (body.replyAccess !== undefined) this.telegram.setGroupReplyAccess(bindingMatch[1]!,body.replyAccess,body.allowedSenders);
+        else if (body.replies !== undefined) this.telegram.setGroupReplies(bindingMatch[1]!,body.replies);
+        else if (body.transcripts !== undefined) this.telegram.setGroupTranscripts(bindingMatch[1]!,body.transcripts);
         else if (typeof body.enabled === "boolean") this.telegram.setGroupEnabled(bindingMatch[1]!, body.enabled);
         else this.telegram.bindChat(bindingMatch[1]!,body.profileId == null ? null : String(body.profileId));
         this.send(response,200,{telegram:this.telegram.status()}); return;

@@ -143,6 +143,8 @@ export class Store {
     // Existing groups keep their approved participants and participation rules.
     if (!telegramColumns.has("access")) this.db.exec("ALTER TABLE telegram_chats ADD COLUMN access TEXT NOT NULL DEFAULT 'approved'");
     if (!telegramColumns.has("replies")) this.db.exec("ALTER TABLE telegram_chats ADD COLUMN replies TEXT NOT NULL DEFAULT 'instructions'");
+    // Whether the bot posts the text of a voice or video message into the chat. It hears the recording either way.
+    if (!telegramColumns.has("transcripts")) this.db.exec("ALTER TABLE telegram_chats ADD COLUMN transcripts TEXT NOT NULL DEFAULT 'on'");
     for (const row of this.db.prepare("SELECT id, external_id FROM conversations WHERE external_id LIKE '%::employee::%' AND profile_id IS NULL").all() as Row[]) {
       const profile = String(row.external_id).split("::employee::")[1];
       if (profile && this.getProfile(profile)) this.db.prepare("UPDATE conversations SET profile_id=? WHERE id=?").run(profile, String(row.id));
@@ -238,7 +240,7 @@ export class Store {
       ON CAST(t.chat_id AS INTEGER)>0 AND t.profile_id IS NULL AND c.profile_id IS NULL
       AND c.channel='telegram' AND c.external_id=t.chat_id
       WHERE t.chat_id=?`).get(chatId) as Row | undefined;
-    return row ? { chatId: String(row.chat_id), title: String(row.title), conversationId: row.conversation_id == null ? null : String(row.conversation_id), profileId: row.profile_id == null ? null : String(row.profile_id), allowedSenders: jsonArray(row.allowed_senders_json as string), access: row.access === "members" ? "members" : "approved", replies: row.replies === "mentions" ? "mentions" : "instructions", enabled: this.getSetting("telegram.paused." + String(row.chat_id)) !== "true" } : null;
+    return row ? { chatId: String(row.chat_id), title: String(row.title), conversationId: row.conversation_id == null ? null : String(row.conversation_id), profileId: row.profile_id == null ? null : String(row.profile_id), allowedSenders: jsonArray(row.allowed_senders_json as string), access: row.access === "members" ? "members" : "approved", replies: row.replies === "mentions" ? "mentions" : "instructions", transcripts: row.transcripts === "off" ? "off" : "on", enabled: this.getSetting("telegram.paused." + String(row.chat_id)) !== "true" } : null;
   }
 
   telegramChats(): TelegramChat[] {

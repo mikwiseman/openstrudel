@@ -41,12 +41,19 @@ it("rejects unapproved messages before any model, tool, attachment or transcript
   expect(run).toHaveBeenCalledOnce();
 });
 
-it("only the owner can choose the group senders, without granting services or Home management",async () => {
+it("only the owner and administrators choose the group senders, without granting services or Home management",async () => {
   const {store,adapter,run,update,tools} = fixture();
   store.setSetting("access.managers",JSON.stringify(["77"]));
-  for (const context of [{telegramSenderId:"77"},{telegramSenderId:"42",scheduled:true},{channel:"api"}]) {
+  // Never a schedule, an app turn that is not the owner's, or someone who only has service access.
+  store.setSetting("access.people",JSON.stringify(["88"]));
+  for (const context of [{telegramSenderId:"88"},{telegramSenderId:"42",scheduled:true},{telegramSenderId:"77",scheduled:true},{channel:"api"}]) {
     await expect(tools(context).call("configure_telegram_chat",{chatId:"-100",replyAccess:"approved",allowedSenders:["42","77"]})).rejects.toThrow();
   }
+  expect(store.getTelegramChat("-100")?.allowedSenders).toEqual(["42"]);
+  await expect(tools({telegramSenderId:"77"}).call("configure_telegram_chat",{chatId:"-100",replyAccess:"approved",allowedSenders:["42","99"]})).resolves.toMatchObject({saved:true,chat:{access:"approved",allowedSenders:["42","99"]}});
+  // Choosing senders is not a way to add an administrator or anyone's services.
+  expect(store.getSetting("access.managers")).toBe(JSON.stringify(["77"]));
+  expect(store.getSetting("access.people")).toBe(JSON.stringify(["88"]));
   await expect(tools().call("configure_telegram_chat",{chatId:"-100",replyAccess:"approved",allowedSenders:["42","77","77"]})).resolves.toMatchObject({saved:true,chat:{access:"approved",allowedSenders:["42","77"]}});
   store.deleteSetting("access.managers");
   await adapter.processUpdate(update(1,77));
@@ -88,7 +95,9 @@ it("refuses an unrelated access change during work and withholds a reply after e
   const {store,adapter,run,update} = fixture();
   let finish!: (value: {threadId:string;response:string;events:never[]}) => void;
   run.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
-  const running = adapter.processUpdate(update(1,42));
+  // An approved participant: the group's list is what admits them.
+  store.db.prepare("UPDATE telegram_chats SET allowed_senders_json=? WHERE chat_id='-100'").run(JSON.stringify(["42","77"]));
+  const running = adapter.processUpdate(update(1,77));
   await vi.waitFor(() => expect(run).toHaveBeenCalledOnce());
   expect(() => adapter.setGroupReplyAccess("-100","approved",[])).toThrow("Дождитесь");
   // Another authorized process may revoke a sender while the model is running.
@@ -96,6 +105,22 @@ it("refuses an unrelated access change during work and withholds a reply after e
   finish({threadId:"native",response:"Private result",events:[]});
   await running;
   expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith("/sendMessage"))).toBe(false);
+});
+
+it("withholds a reply from an administrator who stopped being one while the model was running",async () => {
+  const {store,adapter,run,update} = fixture();
+  // Heard as an administrator only: the group's list does not name them.
+  store.setSetting("access.managers",JSON.stringify(["78"]));
+  let finish!: (value: {threadId:string;response:string;events:never[]}) => void;
+  run.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const running = adapter.processUpdate(update(1,78));
+  await vi.waitFor(() => expect(run).toHaveBeenCalledOnce());
+  store.setSetting("access.managers","[]");
+  finish({threadId:"native",response:"Private result",events:[]});
+  await running;
+  expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith("/sendMessage"))).toBe(false);
+  await adapter.processUpdate(update(2,78));
+  expect(run).toHaveBeenCalledOnce();
 });
 
 it("does not infer a private sender's identity from the destination chat id",() => {
@@ -114,4 +139,16 @@ it("does not pair a private account without its matching human sender identity",
   expect(fetch).not.toHaveBeenCalled();
   await adapter.processUpdate({update_id:4,message:{message_id:4,chat:{id:77,type:"private"},from:{id:77},text:"/start " + link.code}});
   expect(store.getTelegramChat("77")?.allowedSenders).toEqual(["77"]);
+});
+
+it("always hears the Home's owner and administrators in their own groups, and nobody else",async () => {
+  const {store,adapter,run,update} = fixture();
+  store.setSetting("access.managers",JSON.stringify(["77","78"]));
+  // An administrator connected this group, so the list names only them: the owner and the other administrator were ignored.
+  store.db.prepare("UPDATE telegram_chats SET access='approved',allowed_senders_json=? WHERE chat_id='-100'").run(JSON.stringify(["77"]));
+  await adapter.processUpdate(update(1,42));
+  await adapter.processUpdate(update(2,78));
+  expect(run).toHaveBeenCalledTimes(2);
+  await adapter.processUpdate(update(3,99));
+  expect(run).toHaveBeenCalledTimes(2);
 });

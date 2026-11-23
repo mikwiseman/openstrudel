@@ -215,3 +215,40 @@ it("does not let an owner operations pipeline acquire interactive management rig
   await messages.handle({channel:"api",profile:profile.id,byOwner:true,externalId:"operations:test",text:"Run the saved work"});
   expect(store.getProfile(profile.id)!.instructions).toBe("Keep sources");
 });
+
+it("switches a group's posted transcripts off on an administrator's request, and still hears the voice", async () => {
+  const { store, run, adapter, tools, update } = setup();
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => url.includes("/file/") ? new Response("audio")
+    : Response.json({ ok: true, result: url.endsWith("getFile") ? { file_path: "voice.ogg" } : { message_id: 999 } })));
+  adapter.transcribe = vi.fn(async () => "Купи хлеба");
+  const sent = () => vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith("/sendMessage")).map(([, init]) => JSON.parse(String(init!.body)).text as string);
+  expect(store.getTelegramChat("-100")!.transcripts).toBe("on");
+  expect(await tools().call("configure_telegram_chat", { chatId: "-100", transcripts: false })).toMatchObject({ saved: true, chat: { transcripts: "off" } });
+  await adapter.processUpdate(update(1, 77, { text: undefined, voice: { file_id: "v1", file_size: 900 } }));
+  expect(run.mock.calls[0]![0]).toContain("Купи хлеба");
+  expect(sent().some(text => text.startsWith("📝"))).toBe(false);
+  await tools().call("configure_telegram_chat", { chatId: "-100", transcripts: true });
+  await adapter.processUpdate(update(2, 77, { text: undefined, voice: { file_id: "v2", file_size: 900 } }));
+  expect(sent()).toContain("📝 Купи хлеба");
+});
+
+it("lets an administrator choose whether a group is answered always or only when addressed, and reads the switches back", async () => {
+  const { store, tools } = setup();
+  await tools().call("configure_telegram_chat", { chatId: "-100", replies: "mentions" });
+  expect(store.getTelegramChat("-100")!.replies).toBe("mentions");
+  const listed = (await tools().call("list_telegram_chats", { query: "Team" }) as any).chats[0];
+  expect(listed).toMatchObject({ chatId: "-100", replies: "mentions", transcripts: "on" });
+  await tools().call("configure_telegram_chat", { chatId: "-100", replies: "all" });
+  expect(store.getTelegramChat("-100")!.replies).toBe("instructions");
+  // Someone with service access but no administration changes nothing.
+  await expect(tools({ telegramSenderId: "88" }).call("configure_telegram_chat", { chatId: "-100", transcripts: false })).rejects.toThrow();
+  expect(store.getTelegramChat("-100")!.transcripts).toBe("on");
+});
+
+it("gives a Home administrator the owner's say over who a group answers", async () => {
+  const { store, tools } = setup();
+  await tools().call("configure_telegram_chat", { chatId: "-100", replyAccess: "approved", allowedSenders: ["55"] });
+  expect(store.getTelegramChat("-100")).toMatchObject({ access: "approved", allowedSenders: ["55"] });
+  await expect(tools({ telegramSenderId: "88" }).call("configure_telegram_chat", { chatId: "-100", replyAccess: "members" })).rejects.toThrow();
+  expect(store.getTelegramChat("-100")!.access).toBe("approved");
+});

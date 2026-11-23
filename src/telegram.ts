@@ -14,6 +14,7 @@ import type { MessageService } from "./messages.js";
 import type { Store } from "./store.js";
 import { agentTransfer, assertAgentWritable } from "./agent-move.js";
 import { isEnabledScopedGroup, isProtectedTelegramAudience, isRestrictedChat, isRestrictedSubject, telegramAuthorization, migrateScopedChat, protectScopedTelegramTransport } from "./authorization.js";
+import { managementPeople } from "./telegram-tools.js";
 import { recordAnswer, type SchedulePoll } from "./check-ins.js";
 import { recordReaction } from "./news.js";
 import { buttonStory, draftFromCard } from "./news-telegram.js";
@@ -307,6 +308,26 @@ export class TelegramAdapter {
     if (enabled) { this.store.connectTelegramGroup(chatId); this.store.deleteSetting("telegram.paused." + chatId); }
     else this.store.setSetting("telegram.paused." + chatId, "true");
     if (request) this.controlReplies.set(request,enabled ? "Бот в этой группе включён." : "Бот в этой группе приостановлен.");
+  }
+
+  /** When an ordinary group is answered: every message it should act on, or only a mention or a reply to the bot. */
+  setGroupReplies(chatId: string, replies: unknown, origin?: { conversationId: string; messageId: string }): void {
+    if (Number(chatId) >= 0 || !this.store.getTelegramChat(chatId) || isProtectedTelegramAudience(this.store,chatId)) throw new Error("Выберите обычную подключённую группу этого Home.");
+    if (replies !== "all" && replies !== "mentions") throw new Error("Выберите, когда отвечает бот: всегда или только на обращение.");
+    const request = this.controlRequest(chatId,origin);
+    if (this.activeChats.has(chatId) && !request) throw new Error("Дождитесь текущего ответа и повторите.");
+    this.store.db.prepare("UPDATE telegram_chats SET replies=? WHERE chat_id=?").run(replies === "mentions" ? "mentions" : "instructions",chatId);
+    if (request) this.controlReplies.set(request,replies === "mentions" ? "Бот отвечает здесь только на упоминание или ответ на своё сообщение." : "Бот снова читает все сообщения этой группы.");
+  }
+
+  /** Whether the bot posts the text of a voice or video message into the group. It hears the recording either way,
+   * and the switch is read when a transcript is about to be posted, so it never waits for a running answer. */
+  setGroupTranscripts(chatId: string, on: unknown, origin?: { conversationId: string; messageId: string }): void {
+    if (Number(chatId) >= 0 || !this.store.getTelegramChat(chatId)) throw new Error("Группа Telegram не найдена");
+    if (typeof on !== "boolean") throw new Error("Укажите, публиковать ли расшифровки в этой группе.");
+    this.store.db.prepare("UPDATE telegram_chats SET transcripts=? WHERE chat_id=?").run(on ? "on" : "off",chatId);
+    const request = this.controlRequest(chatId,origin);
+    if (request) this.controlReplies.set(request,on ? "Расшифровки голосовых и видео в этой группе снова публикуются." : "Расшифровки голосовых и видео в этой группе больше не публикуются.");
   }
 
   linkStatus(code: string): { status: "waiting" | "connected" | "expired"; error?: string } {
@@ -875,7 +896,7 @@ export class TelegramAdapter {
       return {text,uploads};
     }).then(async input => {
       const current = this.store.getTelegramChat(chatId);
-      if (input.transcript && !contextOnly && this.authorizedSender(chatId,message.from?.id) && current && current.enabled !== false && current.profileId === binding?.profileId && current.conversationId === binding?.conversationId) {
+      if (input.transcript && !contextOnly && this.authorizedSender(chatId,message.from?.id) && current && current.transcripts !== "off" && current.enabled !== false && current.profileId === binding?.profileId && current.conversationId === binding?.conversationId) {
         // Keep the preview inside the existing preparation FIFO: later text
         // must not overtake its voice message while Telegram sends the preview.
         await this.sendMessage(chatId, "📝 " + input.transcript, "transcript:" + message.message_id)
@@ -1210,7 +1231,9 @@ export class TelegramAdapter {
     if (config.chats[chatId]) return realSender && Boolean(chat && chat.enabled !== false);
     if (subject && Number(chatId) > 0) return realSender && String(sender) === chatId && subject.enabled && Boolean(chat && chat.enabled !== false);
     if (subject && Number(chatId) < 0 && !config.chats[chatId]) return false;
-    return actual !== undefined && actual > 0 && Boolean(chat && (chat.allowedSenders.includes(String(actual)) || Number(chatId) < 0 && chat.access === "members"));
+    // The Home's own owner and administrators are always heard in its ordinary groups, whoever connected the group.
+    const own = Number(chatId) < 0 && (this.isOwner(actual) || managementPeople(this.store).includes(String(actual)));
+    return actual !== undefined && actual > 0 && Boolean(chat && (own || chat.allowedSenders.includes(String(actual)) || Number(chatId) < 0 && chat.access === "members"));
   }
   private replyConversation(chatId:string,messageId:number) {
     const row=this.store.db.prepare("SELECT key FROM telegram_outbox WHERE chat_id=? AND message_id=? AND status='delivered'").get(chatId,String(messageId));
