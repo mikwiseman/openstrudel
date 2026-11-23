@@ -219,6 +219,8 @@ export interface MessageInput {
   scheduleTelegramChatId?: string | null;
   /** Trusted: the device owner sent this message. Set by the server and the Telegram adapter, never from a request body. */
   byOwner?: boolean;
+  /** Authenticated device fingerprint, never taken from the message body. */
+  deviceId?: string;
   /** Trusted: a verified answer to a card. It continues the conversation that raised the card, whatever chat it was shown in. Never from a request body. */
   cardReply?: boolean;
   attachments?: string[];

@@ -12,6 +12,7 @@ import { deskConversation, editionTool, newsChat, publishEdition, publishStory, 
 import { deliverEdition, deliverStory } from "./news-telegram.js";
 import { contextSummary } from "./message-context.js";
 import { documentSigningTools } from "./document-signing.js";
+import { aigidTools } from "./aigid-testflight.js";
 import { githubTools } from "./github.js";
 import type { Projects } from "./projects.js";
 import { privateSourceAudience, privateSourceTools } from "./private-sources.js";
@@ -33,6 +34,7 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
   const telegram = telegramTools(store, context);
   const signing = documentSigningTools(store, context);
   const github = githubTools(store, context);
+  const aigid = aigidTools(store, context);
   const management = homeManagementTools(store, engine, context);
   const projects = context.projects?.tools(context);
   // Like a command of the agent's own, a server command asks first unless the owner chose to work without confirmations.
@@ -44,6 +46,7 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
     ...telegram.definitions,
     ...signing.definitions,
     ...github.definitions,
+    ...aigid.definitions,
     ...(projects?.definitions ?? []),
     ...(server?.definitions ?? []),
     ...(privateSources?.definitions ?? []),
@@ -91,6 +94,7 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
       scheduled: context.scheduled, scheduleTelegramChatId: context.scheduleTelegramChatId, access: context.access, sendable: chatId => reachableChats(store, context).some(chat => chat.chatId === chatId) });
     if (telegram.definitions.some(t => t.name === name)) return telegram.call(name,args);
     if (signing.definitions.some(t => t.name === name)) return signing.call(args);
+    if (aigid.definitions.some(t => t.name === name)) return aigid.call(name, args);
     if (github.definitions.some(t => t.name === name)) return github.call(name,args);
     if (projects?.definitions.some(t => t.name === name)) return projects.call(name,args);
     if (server?.definitions.some(t => t.name === name)) return server.call(args);

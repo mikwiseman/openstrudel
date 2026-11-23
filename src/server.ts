@@ -1060,6 +1060,7 @@ export class HttpApi {
           attachments: body.attachments as string[] | undefined,
           replyToId: body.replyToId == null ? undefined : String(body.replyToId),
           byOwner: canManageAccount,
+          deviceId: paired && !webSession && !localExecution && owner ? digest(request.headers.authorization?.replace(/^Bearer /, "") ?? "").slice(0, 20) : undefined,
           context,
           outputSchema,
           reasoningEffort,
