@@ -38,3 +38,11 @@ it("holds candidates until Xcode Cloud is enabled and never replays a dispatched
     expect(queue.next(true)).toBeUndefined();
   } finally { queue.db.close(); rmSync(root, { recursive: true, force: true }); }
 });
+
+import { candidateSummary } from "../src/aigid-candidate.js";
+
+it("dispatches a build-only inspection while reserving implementation readiness for change requests", () => {
+  expect(candidateSummary({notes:"Test the current map.", checks:"Native QA runs at Apple."}, false).notes).toBe("Test the current map.");
+  expect(() => candidateSummary({notes:"Map change", checks:"Change incomplete.", ready:false}, true)).toThrow("Change incomplete");
+  expect(() => candidateSummary({notes:""}, false)).toThrow();
+});
