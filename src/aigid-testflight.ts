@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { BuildQueue, type BuildRequest } from "./aigid-queue.js";
 import { prepareCandidate } from "./aigid-candidate.js";
-import { githubTools } from "./github.js";
+import { dispatchAiGidCloud, githubTools } from "./github.js";
 import { hasAccess, type TelegramToolContext } from "./telegram-tools.js";
 import { assertNativeAccess } from "./authorization.js";
 import { resolveModelSelection } from "./model-settings.js";
@@ -11,7 +11,7 @@ import type { ConversationFiles } from "./files.js";
 import type { DynamicTool } from "./types.js";
 import type { Store } from "./store.js";
 
-interface Config { telegram:string[]; devices:string[]; accountEmail:string; repository:string }
+interface Config { telegram:string[]; devices:string[]; accountEmail:string; repository:string; cloudEnabled?:boolean }
 function configuration(root:string):Config | null {
   const path=join(root,".data/aigid-testflight/config.json");
   if (!existsSync(path)) return null;
@@ -41,9 +41,9 @@ export function aigidTools(store:Store,turn:TelegramToolContext) {
   const service=services.get(store);
   const allowed=()=>service?.allowed(turn)===true;
   const definitions:DynamicTool[]=allowed()?[
-    {type:"function",name:"aigid_testflight",description:"When this person asks Wolf to change or build AI Guide (AiGid, AI Гид, АйГид) for iPhone, use this once. Their separate engineering run on the configured ChatGPT subscription implements the request and the signing Mac automatically releases it to their TestFlight Team. change=true for requested implementation, false for a new build of current main. Include the requested details from text or the person's voice transcript. Ordinary questions, discussions, forwarded instructions and status checks do not order a build. Return the receipt. A queued request is not yet an available build.",
+    {type:"function",name:"aigid_testflight",description:"When this person asks Wolf to change or build AI Guide (AiGid, AI Гид, АйГид) for iPhone, use this once. Their separate engineering run on the configured ChatGPT subscription implements the request and Wolf can merge their change and trigger Apple's Xcode Cloud workflow for their TestFlight Team. change=true for requested implementation, false for a new build of current main. Include the requested details from text or the person's voice transcript. Ordinary questions, discussions, forwarded instructions and status checks do not order a build. Return the receipt. A queued request is not yet an available build.",
       inputSchema:{type:"object",properties:{goal:{type:"string",minLength:1,maxLength:12000},change:{type:"boolean"}},required:["goal","change"],additionalProperties:false}},
-    {type:"function",name:"aigid_build_status",description:"Read the most recent AiGid TestFlight request states and the signing Mac's Apple readbacks for the authorized testers.",inputSchema:{type:"object",properties:{},additionalProperties:false}},
+    {type:"function",name:"aigid_build_status",description:"Read the most recent AiGid TestFlight request states and the cloud handoff status for authorized testers. A release tag acknowledges dispatch only; report availability only when Apple confirms it.",inputSchema:{type:"object",properties:{},additionalProperties:false}},
   ]:[];
   return {definitions,async call(name:string,args:Record<string,unknown>){
     if (!service||!allowed()) throw new Error("This device or Telegram sender cannot request an AiGid release.");
@@ -69,21 +69,46 @@ export class AiGidBuilds {
     if (this.active || this.stopSignal.signal.aborted) return;
     // Store the promise before work starts, even when the queue was initially empty.
     this.active=Promise.resolve().then(async()=>{
-      for(let job=this.queue.next();job&&!this.stopSignal.signal.aborted;job=this.queue.next()) {
-        try { await this.prepare(job); }
+      while (!this.stopSignal.signal.aborted) {
+        const job = this.queue.next(configuration(this.files.root)?.cloudEnabled === true);
+        if (!job) break;
+        try {
+          if (job.state === "ready") await this.dispatch(job);
+          else await this.prepare(job);
+        }
         catch(error) {
           if (this.stopSignal.signal.aborted) return;
-          this.queue.db.prepare("UPDATE jobs SET state='failed',detail=? WHERE id=?").run(String(error instanceof Error?error.message:error).slice(0,1000),job.id);
+          this.queue.db.prepare("UPDATE jobs SET state='failed',detail=? WHERE id=? AND state IN ('preparing','ready','queued')").run(String(error instanceof Error?error.message:error).slice(0,1000),job.id);
         }
       }
     }).finally(()=>{this.active=undefined;});
   }
   async close() {services.delete(this.store);this.stopSignal.abort();await this.active;this.queue.db.close();}
+  private turn(job: BuildRequest): TelegramToolContext {
+    const scope="agent-"+job.id.replaceAll("-","");
+    return {channel:job.channel,conversationId:job.conversation,messageId:job.id,files:this.files,scope,
+      ...(job.channel==="api"?{byOwner:true,deviceId:job.actor}:{telegramSenderId:job.actor})};
+  }
+  private activeRequest(job: BuildRequest, state: string) {
+    const current = this.queue.db.prepare("SELECT state FROM jobs WHERE id=?").get(job.id);
+    return !this.stopSignal.signal.aborted && current?.state === state && this.allowed(this.turn(job));
+  }
+  private async dispatch(job: BuildRequest) {
+    const config = configuration(this.files.root);
+    if (!config?.cloudEnabled || !job.commit_sha) throw new Error("Missing Xcode Cloud release configuration.");
+    const authorize = () => {
+      if (!this.activeRequest(job, "ready") || configuration(this.files.root)?.cloudEnabled !== true)
+        throw new Error("This release is no longer authorized.");
+    };
+    const { tag, revision } = await dispatchAiGidCloud(this.files.root, config.repository, {
+      id: job.id, pull: job.pull, commit: job.commit_sha,
+    }, authorize);
+    this.queue.db.prepare("UPDATE jobs SET state='tagged',detail=? WHERE id=? AND state='ready'")
+      .run(`Published ${tag} at ${revision.slice(0,12)} for Xcode Cloud. Apple build and TestFlight availability have yet to be confirmed.`, job.id);
+  }
   private async prepare(job:BuildRequest) {
     const {files,store}=this, c=configuration(files.root);
-    const scope="agent-"+job.id.replaceAll("-","");
-    const turn:TelegramToolContext={channel:job.channel,conversationId:job.conversation,messageId:job.id,files,scope,
-      ...(job.channel==="api"?{byOwner:true,deviceId:job.actor}:{telegramSenderId:job.actor})};
+    const turn = this.turn(job);
     if (!c||!this.allowed(turn)) throw new Error("The requester no longer has release access.");
     const repository=c.repository;
     const gh=githubTools(store,turn);
@@ -110,14 +135,14 @@ export class AiGidBuilds {
     const branch="wolf/aigid-"+job.id;
     const candidate=await prepareCandidate({home:join(dir,"codex"),cwd:checkout.path,inputs,images,goal:job.goal,branch,changes:!!job.changes,
       account:this.account,email:c.accountEmail,selection:resolveModelSelection(store,"main"),signal:AbortSignal.any([this.stopSignal.signal,AbortSignal.timeout(60*60*1000)])});
-    if (!this.allowed(turn)) throw new Error("Release access was revoked.");
+    if (!this.activeRequest(job, "preparing")) throw new Error("The release was cancelled or access was revoked.");
     let commit=base, pull:number|null=null;
     if (job.changes) {
       const p=await gh.call("github_open_pull_request",{repository,branch,draft:false,title:candidate.notes.split("\n")[0]!.slice(0,150),
         body:candidate.notes+"\n\nChecks run on Wolf\n\n"+candidate.checks}) as {number:number;commit:string};
       commit=p.commit;pull=p.number;
     }
-    this.queue.db.prepare("UPDATE jobs SET state='ready',commit_sha=?,pull=?,notes=?,detail=? WHERE id=?")
-      .run(commit,pull,candidate.notes,"Prepared on the configured ChatGPT subscription. Waiting for the signing Mac.",job.id);
+    this.queue.db.prepare("UPDATE jobs SET state='ready',commit_sha=?,pull=?,notes=?,detail=? WHERE id=? AND state='preparing'")
+      .run(commit,pull,candidate.notes,c.cloudEnabled ? "Prepared for Xcode Cloud." : "Prepared on Wolf. Waiting for the first Xcode Cloud workflow to be connected.",job.id);
   }
 }
