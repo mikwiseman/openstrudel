@@ -19,18 +19,26 @@ const ASKING = new Set(["кто", "что", "где", "когда", "сколь�
 /** These open one only as the first word: «I do not know» is not a question. */
 const OPENING = new Set(["did", "do", "does", "is", "are"]);
 /** Said before the point, in speech and in polite requests. */
-const FILLER = new Set(["а", "и", "ну", "так", "вот", "значит", "короче", "смотри", "слушай", "скажи", "подскажи", "пожалуйста", "привет", "ладно", "окей", "ок", "эм", "хм", "можешь", "можете", "сможешь",
+const FILLER = new Set(["а", "и", "ну", "так", "вот", "значит", "короче", "смотри", "слушай", "скажи", "пожалуйста", "привет", "ладно", "окей", "ок", "эм", "хм", "можешь", "можете", "сможешь",
   "please", "pls", "hey", "hi", "so", "and", "well", "um", "uh", "listen", "ok", "okay", "can", "could", "would", "will", "you"]);
+/** A request to find, show, tell, remind, list or give something asks for a record too, when it is the first word. */
+const RETRIEVE = new Set(["найди", "найдите", "найти", "поищи", "поищите", "покажи", "покажите", "расскажи", "расскажите", "напомни", "напомните", "подскажи", "подскажите", "перечисли", "перечислите", "выведи", "выведите", "дай", "дайте",
+  "find", "show", "tell", "remind", "list"]);
 /** A request to send, create, schedule, change or write is work for the main thread, with a question mark or without. */
-const COMMAND = /^(?:отправ(?:ь|ьте|ить)|пошли(?:те)?|послать|перешли(?:те)?|переслать|напиши(?:те)?|написать|запиши(?:те)?|записать|созда(?:й|йте|ть)|сдела(?:й|йте|ть)|состав(?:ь|ьте|ить)|подготов(?:ь|ьте|ить)|запланиру(?:й|йте)|запланировать|постав(?:ь|ьте|ить)|назнач(?:ь|ьте|ить)|измени(?:те|ть)?|поменя(?:й|йте|ть)|обнови(?:те|ть)?|удали(?:те|ть)?|добав(?:ь|ьте|ить)|перенес(?:и|ите|ти)|отмени(?:те|ть)?|send|create|make|schedule|change|write|draft|add|update|delete|remove|set|move|cancel|book|email|post|reply)$/;
+const COMMAND_RU = /^(?:отправ(?:ь|ьте|ить)|пошли(?:те)?|послать|перешли(?:те)?|переслать|напиши(?:те)?|написать|запиши(?:те)?|записать|созда(?:й|йте|ть)|сдела(?:й|йте|ть)|состав(?:ь|ьте|ить)|подготов(?:ь|ьте|ить)|запланиру(?:й|йте)|запланировать|постав(?:ь|ьте|ить)|назнач(?:ь|ьте|ить)|измени(?:те|ть)?|поменя(?:й|йте|ть)|обнови(?:те|ть)?|удали(?:те|ть)?|добав(?:ь|ьте|ить)|перенес(?:и|ите|ти)|отмени(?:те|ть)?)$/;
+/** The English ones are nouns as well («show me the email»), so after the first word they count only where a verb stands. */
+const COMMAND_EN = /^(?:send|create|make|schedule|change|write|draft|add|update|delete|remove|set|move|cancel|book|email|post|reply)$/;
 
-/** A cheap first look: a short message with a question mark, or a question word near its start, that is not a command.
- * Whether it really asks about records is the model's call (`hand_over`). */
+/** A cheap first look: a short message that is not a command and has a question mark, a question word near its start, or a
+ * request to find or show something as its first word. Whether it really asks about records is the model's call (`hand_over`). */
 export function looksLikeQuestion(text: string): boolean {
   const message = text.trim();
   if (!message || message.length > 400 || message.startsWith("/") || /https?:\/\//i.test(message)) return false;
-  const words = (message.toLowerCase().match(/[\p{L}\p{N}'’-]+/gu) ?? []).filter(word => !FILLER.has(word));
-  if (!words.length || COMMAND.test(words[0]!)) return false;
+  const spoken = message.toLowerCase().match(/[\p{L}\p{N}'’-]+/gu) ?? [], words = spoken.filter(word => !FILLER.has(word));
+  if (!words.length || COMMAND_RU.test(words[0]!) || COMMAND_EN.test(words[0]!)) return false;
+  // «Найди и отправь …» is work to do: a command after the request to find wins.
+  if (RETRIEVE.has(words[0]!) || words[0] === "look" && words[1] === "up")
+    return !spoken.some((word, i) => COMMAND_RU.test(word) || COMMAND_EN.test(word) && ["and", "then", "to"].includes(spoken[i - 1]!));
   return message.includes("?") || OPENING.has(words[0]!) || words.slice(0, 3).some(word => ASKING.has(word));
 }
 

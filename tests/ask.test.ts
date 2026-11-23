@@ -122,12 +122,20 @@ describe("the question check", () => {
     "What did we agree with the client?", "how much did they pay in October", "when is the call with Anna", "did they sign the contract", "is the invoice paid", "who is responsible for the launch",
     "so which plan are they on", "Are we still meeting on Friday", "They paid already?",
     "вот смотри а когда у нас созвон с Lumen Studio", "так значит сколько мы им должны", "ну короче какой у них бюджет", "well um how much did they pay",
+    // A request to find or show something asks for a record too.
+    "Найди список от Lumen Studio", "Покажи разворот книги про шрифты", "Расскажи про маму Анны", "Напомни, о чём договорились с Lumen Studio", "Дай пропорцию для теста", "подскажи бюджет Lumen Studio",
+    "так, поищи договор с Lumen Studio", "Перечисли оплаты за октябрь", "выведи все счета за ноябрь", "дайте реквизиты Lumen Studio", "Найдите письмо про запуск",
+    "find the list from Lumen Studio", "show me the email from Anna", "tell me about the launch plan", "remind me what we agreed with Lumen Studio", "list the payments for October", "look up the contract date",
+    "please show me the schedule for Friday",
   ])("takes %j for a question", text => expect(looksLikeQuestion(text)).toBe(true));
 
   it.each([
     "Отправь Анне договор", "можешь отправить Анне договор?", "напиши клиенту, что мы согласны", "создай задачу на завтра", "запланируй созвон на пятницу", "перенеси встречу на 15:00",
     "Пожалуйста, измени время созвона", "сделай как в прошлый раз", "спасибо", "ок, договорились", "привет", "",
     "так, отправь Анне договор", "ну короче создай задачу на завтра", "listen, send the contract to Anna",
+    // Sending, creating, scheduling, changing and writing win when a request to find comes with them.
+    "Найди и отправь Анне договор", "Покажи договор и измени в нём дату", "найди счёт, а потом перешли его Анне", "напомни мне завтра отправить счёт", "расскажи Анне и запиши её ответ",
+    "find the contract and send it to Anna", "show me the invoice then email it to Anna", "remind me to send the invoice tomorrow", "look up the contract and update the date", "look at this",
     "send the contract to Anna", "can you schedule a call with Anna?", "please write a reply to the client", "change the meeting to Friday", "Could you create a task for tomorrow?",
     "Thanks, that is what I needed", "I do not know where the file is", "/help", "/start what", "посмотри https://example.com/page?id=1",
     "Что думаешь об этом тексте? " + "Длинный текст для разбора. ".repeat(30),
