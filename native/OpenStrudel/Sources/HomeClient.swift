@@ -1404,8 +1404,15 @@ final class HomeClient: ObservableObject, Identifiable {
         } catch { errorMessage = error.localizedDescription }
     }
 
-    func setTelegramGroupEnabled(_ chatID: String, enabled: Bool) async throws {
-        let body = try JSONSerialization.data(withJSONObject: ["enabled": enabled])
+    func setTelegramGroupEnabled(_ chatID: String, enabled: Bool) async throws { try await changeTelegramGroup(chatID, ["enabled": enabled]) }
+    /// Whether the bot posts the text of voice and video messages in the group. It hears them either way.
+    func setTelegramGroupTranscripts(_ chatID: String, posted: Bool) async throws { try await changeTelegramGroup(chatID, ["transcripts": posted]) }
+    /// When the group is answered: every message it should act on, or only a mention or a reply to the bot.
+    func setTelegramGroupReplies(_ chatID: String, mentionsOnly: Bool) async throws { try await changeTelegramGroup(chatID, ["replies": mentionsOnly ? "mentions" : "all"]) }
+
+    /// One setting of a group per call, as its Home takes them.
+    private func changeTelegramGroup(_ chatID: String, _ change: [String: Any]) async throws {
+        let body = try JSONSerialization.data(withJSONObject: change)
         let response: TelegramEnvelope = try await request("/v1/integrations/telegram/chats/" + chatID + employeeDeviceQuery, method: "PATCH", body: body)
         telegramGeneration += 1; telegram = response.telegram
     }

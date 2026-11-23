@@ -13053,5 +13053,61 @@
     "es": "Decidido",
     "he": "הוחלט",
     "ru": "Решено"
+  },
+  "Нужен вход в аккаунт модели": {
+    "en": "Needs a model sign-in",
+    "fr": "Connexion au compte du modèle requise",
+    "es": "Hay que iniciar sesión en la cuenta del modelo",
+    "he": "נדרשת כניסה לחשבון המודל",
+    "ru": "Нужен вход в аккаунт модели"
+  },
+  "Закончился лимит модели": {
+    "en": "Model limit reached",
+    "fr": "Limite du modèle atteinte",
+    "es": "Se alcanzó el límite del modelo",
+    "he": "מכסת המודל נגמרה",
+    "ru": "Закончился лимит модели"
+  },
+  "Нет связи с моделью": {
+    "en": "No connection to the model",
+    "fr": "Pas de connexion au modèle",
+    "es": "Sin conexión con el modelo",
+    "he": "אין חיבור למודל",
+    "ru": "Нет связи с моделью"
+  },
+  "Публиковать расшифровки голосовых и видео": {
+    "en": "Publish transcripts of voice and video",
+    "fr": "Publier les transcriptions des messages vocaux et vidéo",
+    "es": "Publicar transcripciones de voz y vídeo",
+    "he": "לפרסם תמלול של הודעות קוליות ווידאו",
+    "ru": "Публиковать расшифровки голосовых и видео"
+  },
+  "Отвечает": {
+    "en": "Answers",
+    "fr": "Répond",
+    "es": "Responde",
+    "he": "עונה",
+    "ru": "Отвечает"
+  },
+  "Отвечать на каждое сообщение": {
+    "en": "Answer every message",
+    "fr": "Répondre à chaque message",
+    "es": "Responder a cada mensaje",
+    "he": "לענות לכל הודעה",
+    "ru": "Отвечать на каждое сообщение"
+  },
+  "Отвечать только на упоминание": {
+    "en": "Answer only when mentioned",
+    "fr": "Répondre seulement sur mention",
+    "es": "Responder solo cuando lo mencionan",
+    "he": "לענות רק כשמזכירים אותו",
+    "ru": "Отвечать только на упоминание"
+  },
+  "Настройки группы «{0}»": {
+    "en": "Settings for group “{0}”",
+    "fr": "Réglages du groupe « {0} »",
+    "es": "Ajustes del grupo «{0}»",
+    "he": "הגדרות הקבוצה ״{0}״",
+    "ru": "Настройки группы «{0}»"
   }
 }

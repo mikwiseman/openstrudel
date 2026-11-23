@@ -91,9 +91,10 @@ enum NeedsYou {
     /// The buttons the app itself carries out, on what an older Home can already tell.
     static let open = "open", later = "later", option = "option:"
 
-    /// An employee whose runs keep failing. The card says why when the Home does, and since when.
+    /// An employee whose runs keep failing. The card says why when the Home does, and since when: a cause the Home
+    /// names in the interface's own words, the run's own sentence only from a Home that names none.
     static func failing(_ member: TeamMember, failure: TeamFailures.Failure?, words: TeamWords = TeamWords(), now: Date = .now) -> NeedCard {
-        let reason = failure?.reason.map { Shelf.clipped($0, to: 120) }
+        let reason = failure?.code == nil ? failure?.reason.map { Shelf.clipped($0, to: 120) } : words.cause(failure?.code)
         let since = words.failure(since: failure?.since, reason: nil, now: now).trimmingCharacters(in: CharacterSet(charactersIn: "."))
         return NeedCard(id: "failing:" + member.route.id, home: member.route.connectionID, kind: .failed, origin: .failing(member.route),
                         profileID: member.profile.id, employee: member.profile.name,

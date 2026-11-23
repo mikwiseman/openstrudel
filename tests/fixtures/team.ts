@@ -178,14 +178,16 @@ store.db.prepare("UPDATE messages SET created_at=? WHERE id=?").run(at(0, "08:10
 const work = () => { first.held.add(recipesChat.id); void runtime.messages.handle({ channel: "api", text: "Собери меню на неделю", profile: recipes.id }).catch(() => undefined); };
 work();
 
-// Failing: the run before worked, yesterday's did not.
+// Failing: the run before worked, yesterday's did not. Its error is the Home's own sentence for a model account that
+// was signed out; the Home names that cause `sign_in`, and the app words it in its own language.
+const signedOut = "Войдите в OpenAI на устройстве сотрудника: OpenStrudel → Настройки → Аккаунты. История сохранена; после входа повторите сообщение.";
 const tutor = store.createProfile({ name: "Репетитор", instructions: "Готовь короткие задания по английскому.", purpose: "Каждый вечер присылает десять слов и одно задание", appearance: { version: 1, kind: "wave", tone: 1 } });
 const tutorChat = store.profileConversation(tutor.id);
 const tutorEvening = runtime.scheduler.save({ conversationId: tutorChat.id, name: "Слова на вечер", prompt: "Подготовить слова", cron: "30 18 * * *", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
 produced(tutorEvening, at(2, "18:30"), "Десять слов на сегодня готовы. Тема — **путешествия**.\n\n1. itinerary — маршрут\n2. layover — пересадка\n3. fare — тариф");
-ran(tutorEvening, at(1, "18:30"), "failed", "Закончился лимит модели.");
+ran(tutorEvening, at(1, "18:30"), "failed", signedOut);
 // The Home reports the failure as it does for a real run, so the home's «Что важно» has someone who needs the owner.
-await runtime.messages.reportProblem(tutorChat.id, `fixture-${tutorEvening.id}-${at(1, "18:30")}`, "execution", undefined, "Закончился лимит модели.");
+await runtime.messages.reportProblem(tutorChat.id, `fixture-${tutorEvening.id}-${at(1, "18:30")}`, "execution", undefined, signedOut);
 
 // A new result arrives when the control port is asked: a plan with a link written as the Home writes links.
 const coach = store.createProfile({ name: "Тренер", instructions: "Составляй короткие тренировки.", purpose: "Утренний план тренировки на двадцать минут", appearance: { version: 1, kind: "fold", tone: 6 } });
@@ -273,6 +275,8 @@ const control = createServer(async (req, res) => {
   if (url.pathname === "/work") work();
   if (url.pathname === "/ask") void runtime.messages.handle({ channel: "api", text: "Отправь письмо в «Лодку» с новыми условиями аренды", byOwner: true }).catch(() => undefined);
   res.end(JSON.stringify({ news: news.id, startups: startups.id, working: recipes.id, failing: tutor.id, fresh: coach.id, gardener: gardener.id, main: main.id, polls: circle,
+    // The group's switches as the Home keeps them, so a test reads back what a menu changed.
+    group: (({ replies, transcripts, enabled }) => ({ replies, transcripts, enabled }))(store.getTelegramChat("-4242")!),
     team: store.listTeam().map(p => ({ id: p.id, name: p.name, news: p.news, working: p.working, failing: p.failing, nextRunAt: p.nextRunAt, previewAt: p.previewAt })) }));
 });
 await new Promise<void>(done => control.listen(0, "127.0.0.1", done));

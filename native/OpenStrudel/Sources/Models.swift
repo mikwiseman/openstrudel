@@ -202,6 +202,8 @@ struct TelegramChat: Codable, Identifiable {
     let allowedSenders: [String]
     var access: String? = nil
     var replies: String? = nil
+    /// Whether the bot posts the text of voice and video messages: "on" or "off". Nil on a Home that has no such switch.
+    var transcripts: String? = nil
     var enabled: Bool? = nil
     var id: String { chatId }
     var isGroup: Bool { chatId.hasPrefix("-") }
@@ -271,7 +273,8 @@ struct ScheduleResponse: Decodable { let schedule: ChatSchedule }
 /// One recurring schedule of a Home with its chat and what it ran and spent this week (`GET /v1/schedules`).
 struct HomeSchedule: Decodable, Identifiable {
     struct Week: Decodable, Equatable { let runs: Int; let quiet: Int; let failed: Int; let tokens: Int; let costUsd: Double? }
-    struct Failure: Decodable, Equatable { let since: String; let reason: String? }
+    /// `code` names the cause for the interface to word in its own language; a Home that names none leaves it nil.
+    struct Failure: Decodable, Equatable { let since: String; let reason: String?; var code: String? = nil }
     let schedule: ChatSchedule
     let chat: HomeStatistics.Chat
     let week: Week

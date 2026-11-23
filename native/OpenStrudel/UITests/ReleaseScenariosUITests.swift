@@ -172,15 +172,18 @@ final class ReleaseScenariosUITests: XCTestCase {
         XCTAssertEqual(privateChat(restored)?["enabled"] as? Bool, true)
         XCTAssertEqual(privateChat(restored)?["conversationId"] as? String, direct)
         waitUntil(responder, shows: "Общий помощник")
-        let toggle = app.buttons["toggleTelegramGroup--100"]
-        try reveal(toggle, in: app)
+        // The group's one control is a menu: the pause, its transcripts and when it answers.
+        let menu = app.buttons["telegramGroupMenu--100"], toggle = app.buttons["toggleTelegramGroup--100"]
+        try reveal(menu, in: app)
         capture("telegram-auto-connected", app)
         let before = try await read(fixture + "/state")["telegram"] as? [[String: Any]]
         let conversation = before?.first { $0["chatId"] as? String == "-100" }?["conversationId"] as? String
         XCTAssertNotNil(conversation)
-        toggle.tap()
+        menu.tap()
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5), app.debugDescription); toggle.tap()
         XCTAssertTrue(app.staticTexts["На паузе · переписка сохранена"].waitForExistence(timeout: 10))
-        toggle.tap()
+        menu.tap()
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5), app.debugDescription); toggle.tap()
         XCTAssertTrue(app.staticTexts["Помощник сам подбирает сотрудника по задаче"].waitForExistence(timeout: 10))
         let after = try await read(fixture + "/state")["telegram"] as? [[String: Any]]
         XCTAssertEqual(conversation, after?.first { $0["chatId"] as? String == "-100" }?["conversationId"] as? String)
@@ -359,7 +362,7 @@ final class ReleaseScenariosUITests: XCTestCase {
         try reveal(telegram, in: app); telegram.tap()
         XCTAssertTrue(app.buttons["addTelegramGroup"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["Связать мой Telegram"].exists)
-        XCTAssertTrue(app.buttons["toggleTelegramGroup--100"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["telegramGroupMenu--100"].waitForExistence(timeout: 5))
         capture("employee-telegram", app)
         try backToEmployee(app)
         let name = app.textFields["Имя сотрудника"]

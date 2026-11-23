@@ -17,8 +17,8 @@ struct TeamRowContent: Equatable {
     /// A News desk's stories not yet seen.
     var count = 0
     var nextRun: Date?
-    /// Why its latest run failed, when its Home says.
-    var reason: String?
+    /// The cause of its latest failed run, as its Home names it.
+    var cause: String?
     /// Pinned to the top of the list on this device.
     var pinned = false
     /// The Home an employee lives on, said when the list holds several Homes and this is not the chat's own.
@@ -75,7 +75,8 @@ struct TeamRow: View {
         switch content.state {
         case .offline: L("Нет связи")
         case .working: L("Работает…")
-        case .failing: content.reason.map { L("Не получилось: \($0)") } ?? L("Не получилось")
+        // A few words of the interface's own for a cause with a way out; never the Home's sentence.
+        case .failing: TeamWords().cause(content.cause) ?? L("Не получилось")
         case .resting: content.preview
         }
     }
@@ -242,13 +243,13 @@ struct TeamMemberRow: View {
     var body: some View {
         if member.isDesk {
             TeamDeskRow(member: member, source: source, feed: newsroom.feed(member.route, on: source), selected: selected, pinned: pinned, home: home,
-                        reason: failures.failure(member.profile.id, on: source)?.reason, waits: waits)
+                        cause: failures.failure(member.profile.id, on: source)?.code, waits: waits)
         } else {
             let profile = member.profile
             TeamRow(content: TeamRowContent(name: profile.name, appearance: profile.resolvedAppearance,
                                             preview: profile.previewText.isEmpty ? profile.roleText : profile.previewText, date: Team.date(profile.previewAt),
                                             state: Team.state(profile, offline: source.isOffline(profile)), unread: marks.isUnread(profile, on: source),
-                                            nextRun: Team.date(profile.nextRunAt), reason: failures.failure(profile.id, on: source)?.reason, pinned: pinned, home: home,
+                                            nextRun: Team.date(profile.nextRunAt), cause: failures.failure(profile.id, on: source)?.code, pinned: pinned, home: home,
                                             waits: waits),
                     selected: selected)
         }
@@ -262,7 +263,7 @@ private struct TeamDeskRow: View {
     let selected: Bool
     var pinned = false
     var home: String?
-    var reason: String?
+    var cause: String?
     var waits = false
 
     var body: some View {
@@ -273,7 +274,7 @@ private struct TeamDeskRow: View {
         TeamRow(content: TeamRowContent(name: profile.name, appearance: profile.resolvedAppearance,
                                         preview: feed.headline ?? (profile.previewText.isEmpty ? profile.roleText : profile.previewText),
                                         date: Team.date(profile.previewAt), state: state, count: feed.unseen,
-                                        nextRun: Team.date(profile.nextRunAt ?? feed.status?.nextRunAt), reason: reason, pinned: pinned, home: home, waits: waits),
+                                        nextRun: Team.date(profile.nextRunAt ?? feed.status?.nextRunAt), cause: cause, pinned: pinned, home: home, waits: waits),
                 selected: selected)
     }
 }

@@ -50,7 +50,9 @@ final class TeamUITests: XCTestCase {
         for row in [lead] + rows { XCTAssertGreaterThanOrEqual(row.frame.height, 44) }
         let failing = rows[2], working = rows[3], fresh = rows[4]
         try await expect(working, says: "Работает…")
-        try await expect(failing, says: "Не получилось")
+        // The Home names the cause; the row words it itself and never shows the Home's sentence.
+        try await expect(failing, says: "Нужен вход в аккаунт модели")
+        XCTAssertFalse(value(failing).contains("Войдите"), value(failing))
         XCTAssertFalse(value(fresh).contains("Есть новое"), "Everything written before the first meeting counts as seen")
         // A result that says what is now true is shown by that line, not by the report's first words.
         try await expect(fresh, says: "План на утро готов: двадцать минут.")
@@ -138,7 +140,7 @@ final class TeamUITests: XCTestCase {
         let calm = app.buttons["needsCalm"]
         XCTAssertTrue(calm.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(card.exists)
-        try await expect(failing, says: "Не получилось")
+        try await expect(failing, says: "Нужен вход в аккаунт модели")
         capture("home-calm", app)
 
         // 3. The shelf holds answers: each desk's lead, the polls, the next run. No gauges: the limit is a figure at the
@@ -203,7 +205,7 @@ final class TeamUITests: XCTestCase {
         open(failing, in: app)
         let failure = app.buttons["readerFailing"]
         XCTAssertTrue(failure.waitForExistence(timeout: 15), app.debugDescription)
-        XCTAssertTrue(failure.label.contains("Не получается с") && failure.label.contains("Закончился лимит модели."), failure.label)
+        XCTAssertTrue(failure.label.contains("Не получается с") && failure.label.contains("нужен вход в аккаунт модели.") && !failure.label.contains("Войдите"), failure.label)
         capture("employee-failing", app)
         back(app)
 
@@ -417,12 +419,93 @@ final class TeamUITests: XCTestCase {
         }
     }
 
+    /// The Home names why a run failed; the row words it in the interface's own language and never shows the Home's
+    /// sentence. A group's switches live in one menu, and its Home keeps what is chosen there.
+    @MainActor
+    func testANamedCauseSpeaksTheInterfaceLanguageAndAGroupHasItsSwitches() async throws {
+        continueAfterFailure = false
+        guard let fixture = environment["OPENSTRUDEL_TEAM_FIXTURE"] else { throw XCTSkip("Start tests/fixtures/team.ts and pass its control URL.") }
+        control = fixture
+        var app = launch(language: "en")
+        try await pair(app, "/invite")
+        let consent = app.buttons["acceptAIDataSharing"]
+        if consent.waitForExistence(timeout: 5) { consent.tap() }
+        let state = try await read("/")
+        let tutor = "teamMember-" + (try XCTUnwrap(state["failing"] as? String))
+
+        // 1. An English screen: English words, none of the Home's Russian.
+        var failing = app.buttons[tutor]
+        XCTAssertTrue(failing.waitForExistence(timeout: 40), app.debugDescription)
+        try await expect(failing, says: "Needs a model sign-in", within: 60)
+        XCTAssertNil(value(failing).range(of: "[А-Яа-яЁё]", options: .regularExpression), value(failing))
+        bring(failing, in: app)
+        capture("failing-row-en", app)
+
+        // 2. The same row in Russian.
+        app.terminate()
+        app = launch()
+        failing = app.buttons[tutor]
+        XCTAssertTrue(failing.waitForExistence(timeout: 40), app.debugDescription)
+        try await expect(failing, says: "Нужен вход в аккаунт модели", within: 60)
+        XCTAssertFalse(value(failing).contains("Войдите"), value(failing))
+        bring(failing, in: app)
+        capture("failing-row-ru", app)
+
+        // 3. The group's one control: the pause, its transcripts, when it answers.
+        open(failing, in: app)
+        let failure = app.buttons["readerFailing"]
+        XCTAssertTrue(failure.waitForExistence(timeout: 15), app.debugDescription); failure.tap()
+        let telegram = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Telegram")).firstMatch
+        XCTAssertTrue(telegram.waitForExistence(timeout: 10), app.debugDescription)
+        for _ in 0..<6 where !telegram.isHittable { app.swipeUp(velocity: .slow) }
+        telegram.tap()
+        let menu = app.buttons["telegramGroupMenu--4242"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 15), app.debugDescription)
+        for _ in 0..<6 where !menu.isHittable { app.swipeUp(velocity: .slow) }
+        capture("group-row", app)
+        menu.tap()
+        let transcripts = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Публиковать расшифровки голосовых и видео")).firstMatch
+        XCTAssertTrue(transcripts.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["toggleTelegramGroup--4242"].exists, app.debugDescription)
+        for label in ["Отвечать на каждое сообщение", "Отвечать только на упоминание"] {
+            XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch.exists, app.debugDescription)
+        }
+        capture("group-menu", app)
+        // Switched off, it stays off: its Home keeps the choice, and the menu reads the Home's own answer back.
+        _ = await XCTWaiter().fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: transcripts)], timeout: 10)
+        transcripts.tap()
+        _ = await XCTWaiter().fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: menu)], timeout: 10)
+        capture("group-row-after-transcripts", app)
+        try await kept("transcripts", "off")
+        menu.tap()
+        XCTAssertTrue(transcripts.waitForExistence(timeout: 5), app.debugDescription)
+        capture("group-menu-transcripts-off", app)
+        let only = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Отвечать только на упоминание")).firstMatch
+        _ = await XCTWaiter().fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: only)], timeout: 10)
+        only.tap()
+        try await kept("replies", "mentions")
+        XCTAssertTrue(app.staticTexts["Отвечает на @упоминание и ответы боту"].waitForExistence(timeout: 10), app.debugDescription)
+        capture("group-row-mentions", app)
+        try await kept("transcripts", "off")
+    }
+
+    /// Waits until the fixture's Home keeps a switch of its group as said.
+    @MainActor private func kept(_ key: String, _ value: String, file: StaticString = #filePath, line: UInt = #line) async throws {
+        var seen = ""
+        for _ in 0..<40 {
+            seen = ((try await read("/"))["group"] as? [String: Any])?[key] as? String ?? ""
+            if seen == value { return }
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        XCTFail("The Home keeps \(key) as «\(seen)», not «\(value)»", file: file, line: line)
+    }
+
     // MARK: Helpers
 
-    @MainActor private func launch() -> XCUIApplication {
+    @MainActor private func launch(language: String = "ru") -> XCUIApplication {
         XCUIDevice.shared.appearance = environment["OPENSTRUDEL_APPEARANCE"] == "dark" ? .dark : .light
         let app = XCUIApplication()
-        app.launchArguments = ["-openstrudel.language", "ru", "-AppleLanguages", "(ru)"]
+        app.launchArguments = ["-openstrudel.language", language, "-AppleLanguages", "(\(language))"]
         if let size = environment["OPENSTRUDEL_TEXT_SIZE"] { app.launchArguments += ["-UIPreferredContentSizeCategoryName", size] }
         app.launch()
         return app
@@ -472,9 +555,9 @@ final class TeamUITests: XCTestCase {
     }
 
     /// The catalogue is polled, so a row changes within a few seconds.
-    @MainActor private func expect(_ row: XCUIElement, says text: String, file: StaticString = #filePath, line: UInt = #line) async throws {
+    @MainActor private func expect(_ row: XCUIElement, says text: String, within timeout: TimeInterval = 15, file: StaticString = #filePath, line: UInt = #line) async throws {
         let said = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", text), object: row)
-        let result = await XCTWaiter().fulfillment(of: [said], timeout: 15)
+        let result = await XCTWaiter().fulfillment(of: [said], timeout: timeout)
         XCTAssertEqual(result, .completed, "\(row.label): \(value(row))", file: file, line: line)
     }
 

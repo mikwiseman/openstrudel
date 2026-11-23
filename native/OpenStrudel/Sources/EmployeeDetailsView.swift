@@ -516,14 +516,43 @@ struct TelegramChatsView: View {
         }
     }
 
+    /// The group's one control. A Home that has more to switch than the pause gathers it in a menu; an older Home keeps
+    /// the single button.
     @ViewBuilder private func groupAction(_ chat: TelegramChat) -> some View {
         if busyGroup == chat.chatId { ProgressView().controlSize(.small) }
+        else if chat.transcripts == nil { pause(chat) }
         else {
-            Button(chat.enabled == false ? L("Продолжить") : L("Приостановить")) { toggle(chat) }
-                .disabled(busyGroup != nil)
-                .accessibilityLabel((chat.enabled == false ? L("Продолжить в группе «") : L("Приостановить в группе «")) + chat.title + "»")
-                .accessibilityIdentifier("toggleTelegramGroup-" + chat.chatId)
+            Menu {
+                pause(chat)
+                Toggle(L("Публиковать расшифровки голосовых и видео"), isOn: Binding(get: { chat.transcripts != "off" }, set: { posted in
+                    change(chat) { try await client.setTelegramGroupTranscripts(chat.chatId, posted: posted) }
+                }))
+                .accessibilityIdentifier("toggleTelegramGroupTranscripts-" + chat.chatId)
+                // A menu shows no title over an inline choice, so each of the two says the whole of what it does.
+                Picker(L("Отвечает"), selection: Binding(get: { chat.replies == "mentions" }, set: { mentionsOnly in
+                    change(chat) { try await client.setTelegramGroupReplies(chat.chatId, mentionsOnly: mentionsOnly) }
+                })) {
+                    Text(L("Отвечать на каждое сообщение")).tag(false)
+                    Text(L("Отвечать только на упоминание")).tag(true)
+                }
+                .pickerStyle(.inline)
+                .accessibilityIdentifier("toggleTelegramGroupReplies-" + chat.chatId)
+            } label: {
+                // Words where the pause's own stood: under a long description the control is read, not hunted for.
+                Text(L("Настройки"))
+            }
+            .fixedSize()
+            .disabled(busyGroup != nil)
+            .accessibilityLabel(L("Настройки группы «\(chat.title)»"))
+            .accessibilityIdentifier("telegramGroupMenu-" + chat.chatId)
         }
+    }
+
+    private func pause(_ chat: TelegramChat) -> some View {
+        Button(chat.enabled == false ? L("Продолжить") : L("Приостановить")) { toggle(chat) }
+            .disabled(busyGroup != nil)
+            .accessibilityLabel((chat.enabled == false ? L("Продолжить в группе «") : L("Приостановить в группе «")) + chat.title + "»")
+            .accessibilityIdentifier("toggleTelegramGroup-" + chat.chatId)
     }
 
     private func groupDescription(_ chat: TelegramChat) -> String {
@@ -533,10 +562,15 @@ struct TelegramChatsView: View {
     }
 
     private func toggle(_ chat: TelegramChat) {
+        change(chat) { try await client.setTelegramGroupEnabled(chat.chatId, enabled: chat.enabled == false) }
+    }
+
+    /// One change of a group at a time; what its Home refuses is said under the list.
+    private func change(_ chat: TelegramChat, _ save: @escaping () async throws -> Void) {
         busyGroup = chat.chatId; error = nil
         Task {
             defer { busyGroup = nil }
-            do { try await client.setTelegramGroupEnabled(chat.chatId, enabled: chat.enabled == false) }
+            do { try await save() }
             catch { self.error = UserFacingError.text(error.localizedDescription) }
         }
     }
