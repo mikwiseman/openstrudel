@@ -67,20 +67,52 @@ const record = (value: unknown): value is Record<string, any> => Boolean(value &
 const short = (value: unknown, max: number) => typeof value === "string" ? value.trim().slice(0, max) : "";
 
 /** One JSON-RPC exchange per POST, as the memories answer it: JSON or one server-sent event, bounded in size and time.
- * A reply that echoes the service's own credential is refused whole, and a refusal's body is never read. */
+ * A service that keeps sessions refuses a request without one (400) or with one it has forgotten (404); then a session is
+ * opened once and the request is sent again. A reply that echoes the service's own credential is refused whole, and a
+ * refusal's body is never read. */
 async function rpc(server: Pick<Memory, "url" | "headers">, method: string, params: Record<string, unknown>, timeoutMs: number, signal?: AbortSignal): Promise<Record<string, any>> {
-  const headers = new Headers(server.headers);
-  for (const key of [...headers.keys()]) if (/^host$|^content-length$|^connection$|^mcp-/i.test(key)) headers.delete(key);
-  headers.set("content-type", "application/json");
-  headers.set("accept", "application/json, text/event-stream");
-  const response = await fetch(server.url, { method: "POST", redirect: "error", headers, signal: AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]),
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
+  const key = digest([server.url, Object.entries(server.headers).sort()]);
+  const deadline = AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]);
+  const send = (message: Record<string, unknown>, session?: Session) => {
+    const headers = new Headers(server.headers);
+    for (const name of [...headers.keys()]) if (/^host$|^content-length$|^connection$|^mcp-/i.test(name)) headers.delete(name);
+    headers.set("content-type", "application/json");
+    headers.set("accept", "application/json, text/event-stream");
+    if (session) { headers.set("mcp-session-id", session.id); headers.set("mcp-protocol-version", session.version); }
+    return fetch(server.url, { method: "POST", redirect: "error", headers, signal: deadline, body: JSON.stringify(message) });
+  };
+  const read = async (response: Response) => {
+    const body = await boundedResponse(response, 1), serialized = JSON.stringify(body);
+    if (Object.values(server.headers).some(value => [value, value.replace(/^Bearer\s+/i, "")].some(secret => secret.length >= 8 && serialized.includes(secret)))) throw new Error("The service echoed its credential.");
+    if (!record(body) || body.error || !record(body.result)) throw new Error("Unexpected reply.");
+    return body.result;
+  };
+  const open = async (): Promise<Session> => {
+    const response = await send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: PROTOCOL, capabilities: {}, clientInfo: { name: "openstrudel-ask", version: "1" } } });
+    if (!response.ok) { await response.body?.cancel(); throw new Error("HTTP " + response.status); }
+    const id = response.headers.get("mcp-session-id"), result = await read(response);
+    if (!id || !/^[\x21-\x7e]{1,512}$/.test(id)) throw new Error("The service gave no session.");
+    const session = { id, version: typeof result.protocolVersion === "string" && result.protocolVersion.length < 32 ? result.protocolVersion : PROTOCOL };
+    const ready = await send({ jsonrpc: "2.0", method: "notifications/initialized", params: {} }, session);
+    await ready.body?.cancel();
+    if (!ready.ok) throw new Error("HTTP " + ready.status);
+    sessions.set(key, session);
+    return session;
+  };
+  const message = { jsonrpc: "2.0", id: 1, method, params };
+  let response = await send(message, sessions.get(key));
+  if (response.status === 400 || response.status === 404) {
+    await response.body?.cancel();
+    sessions.delete(key);
+    response = await send(message, await open());
+  }
   if (!response.ok) { await response.body?.cancel(); throw new Error("HTTP " + response.status); }
-  const body = await boundedResponse(response, 1), serialized = JSON.stringify(body);
-  if (Object.values(server.headers).some(value => [value, value.replace(/^Bearer\s+/i, "")].some(secret => secret.length >= 8 && serialized.includes(secret)))) throw new Error("The service echoed its credential.");
-  if (!record(body) || body.error || !record(body.result)) throw new Error("Unexpected reply.");
-  return body.result;
+  return read(response);
 }
+type Session = { id: string; version: string };
+const PROTOCOL = "2025-06-18";
+/** Open sessions of the services that keep them, per address and credential. */
+const sessions = new Map<string, Session>();
 
 /** What a tool returned: its structured content, else its text, read as JSON where it is JSON. */
 function payload(result: Record<string, any>): unknown {
@@ -92,7 +124,7 @@ function payload(result: Record<string, any>): unknown {
 
 /** Which read-only tools each service listed, per address and credential, for ten minutes; a service that did not answer is asked again in one. */
 const listed = new Map<string, { until: number; readOnly?: string[]; fields?: string[] }>();
-export const forgetMemories = () => listed.clear();
+export const forgetMemories = () => { listed.clear(); sessions.clear(); };
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 /** The services that have listed a read-only `recall`, by name and address, with their read-only tools. The Home keeps them
  * across restarts, so that a memory which cannot be reached is still asked and named as unreachable, never left out. */
