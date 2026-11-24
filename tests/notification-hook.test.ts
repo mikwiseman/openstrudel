@@ -399,6 +399,29 @@ it("ignores routes that are malformed, name an unknown employee or a chat the cr
   expect(page(store, meetings.id)).toEqual([]);
 });
 
+it("routes a notification to its employee's own group, which the credential does not list, and nowhere else", async () => {
+  const { post, store, send } = await setup();
+  const money = store.createProfile({ name: "Финансист" });
+  store.linkTelegramChat({ chatId: "-300", title: "Finance", allowedSenders: [] }); store.connectTelegramGroup("-300"); store.bindTelegramChat("-300", money.id);
+  routed(store, [{ keyPrefix: "finance-review:", employee: money.id, chatIds: ["-300"] }, { keyPrefix: "finance-recorded:", employee: money.id, chatIds: ["-300"] }]);
+  expect((await post({ text: "Нужно уточнить платежи Wise" }, "finance-review:1")).status).toBe(200);
+  expect((await post({ text: "Записано: такси 2 €" }, "finance-recorded:1")).status).toBe(200);
+  expect(sentTo(send)).toEqual(["-300", "-300"]);
+  expect(page(store, money.id).map(m => m.text)).toEqual(["Нужно уточнить платежи Wise", "Записано: такси 2 €"]);
+  // A meeting no route matches still goes to the credential's own chats, never to the employee's group.
+  send.mockClear();
+  expect((await post({ text: "Встреча" }, "meeting-card:7:v1")).status).toBe(200);
+  expect(sentTo(send)).toEqual(["42", "-100"]);
+  // A group of another employee, or one that is not connected, is not a route's to name.
+  const other = store.createProfile({ name: "Юрист" });
+  store.linkTelegramChat({ chatId: "-400", title: "Legal", allowedSenders: [] }); store.connectTelegramGroup("-400"); store.bindTelegramChat("-400", other.id);
+  for (const chatIds of [["-400"], ["-999"]]) {
+    routed(store, [{ keyPrefix: "finance-review:", employee: money.id, chatIds }]); send.mockClear();
+    expect((await post({ text: "Нужно уточнить " + chatIds[0] }, "finance-review:" + chatIds[0])).status).toBe(200);
+    expect(sentTo(send)).toEqual(["42", "-100"]);
+  }
+});
+
 it("moves a route's chats to the supergroup when Telegram upgrades the group", async () => {
   const { post, store, send } = await setup();
   const meetings = store.createProfile({ name: "Встречи" });

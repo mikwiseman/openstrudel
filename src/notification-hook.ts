@@ -52,11 +52,13 @@ function routes(settings: Record<string, unknown>): Route[] {
   return valid.length === list.length ? valid : [];
 }
 
-/** The first route whose prefix starts the identity applies only while its employee exists and it names chats of the credential itself. */
+/** The first route whose prefix starts the identity applies only while its employee exists and it names chats of the
+ * credential itself or the employee's own connected groups: the Finance employee's notices may go to the Finance group. */
 function notificationRoute(store: Store, chatIds: string[], idempotencyKey: string): { chatIds: string[]; page?: EmployeeProfile } {
   const route = routes(hookSettings(store)).find(candidate => idempotencyKey.startsWith(candidate.keyPrefix));
   const page = route ? store.getProfile(route.employee) : null;
-  if (!route || !page || !route.chatIds.every(id => chatIds.includes(id))) return { chatIds };
+  const own = (id: string) => { const chat = store.getTelegramChat(id); return Boolean(page && chat && Number(id) < 0 && chat.enabled !== false && chat.profileId === page.id); };
+  if (!route || !page || !route.chatIds.every(id => chatIds.includes(id) || own(id))) return { chatIds };
   return { chatIds: route.chatIds, page };
 }
 
