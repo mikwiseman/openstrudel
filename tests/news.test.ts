@@ -156,6 +156,31 @@ describe("News stories", () => {
     store.close();
   });
 
+  it("lets the owner's main assistant read a desk by name in his own private chat, and find its older stories by words", async () => {
+    const { store, tools } = newsDesk();
+    const old = await tools().call("publish_story", story({ storyId: "old-launch", title: "Старый запуск модели Orion", edition: null, rank: null })) as { messageId: string };
+    age(store, old.messageId, 24 * 30);
+    await tools().call("publish_story", story());
+    const main = (changes: Record<string, unknown> = {}) => employeeTools(store, {} as CodexEngine, new Interactions(),
+      { profile: null, conversationId: store.primaryConversation().id, messageId: "m", channel: "api", scope: "personal", byOwner: true, ...changes });
+    expect(main().definitions.find(d => d.name === "read_news")?.inputSchema).toMatchObject({ required: ["desk"] });
+    expect(main().definitions.some(d => d.name === "publish_story" || d.name === "publish_edition")).toBe(false);
+    // The last 72 hours, as the desk itself reads them; an older story is found by its words, in any word form.
+    expect(await main().call("read_news", { desk: "News" })).toMatch(/^granola-voice-typing \| /);
+    expect(await main().call("read_news", { desk: "News" })).not.toMatch(/old-launch/);
+    expect(await main().call("read_news", { desk: "news", query: "запуски Orion" })).toMatch(/^old-launch \| /);
+    expect(await main().call("read_news", { desk: "News", query: "квантовый компьютер" })).toBe("No story matches these words.");
+    expect(await main().call("read_news", { desk: "News", storyId: "old-launch" })).toMatchObject({ story: { title: "Старый запуск модели Orion" } });
+    // The main assistant has no reader of its own: a call without a desk names the desks.
+    await expect(main().call("read_news", {})).rejects.toThrow(/Доступны: News/);
+    // Anyone else's turn in the main chat, and an unapproved schedule, are not offered it.
+    expect(main({ byOwner: false }).definitions.some(d => d.name === "read_news")).toBe(false);
+    expect(main({ scheduled: true }).definitions.some(d => d.name === "read_news")).toBe(false);
+    // Reading leaves the desk as it was.
+    expect(newsStamp(store, store.primaryConversation().id)).toBeNull();
+    store.close();
+  });
+
   it("lets a colleague of the same domain read a desk's stories, and nobody else", async () => {
     const store = new Store(":memory:");
     const colleague = (name: string, domain: "work" | "personal") => {
