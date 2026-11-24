@@ -133,8 +133,9 @@ it("tells a turn with access when the group it answers in also lets people witho
   await adapter.processUpdate(message(5, "What is the retainer?", 42, 42));
   const profiles = run.mock.calls.map(call => String((call as any[])[1].profile));
   const warned = /people without access to this Strudel's records can read this group/;
-  // A member without access may write in the first group, and anyone in the open one; whoever asks, the group reads the answer.
-  expect(profiles.map(text => warned.test(text))).toEqual([true, true, false, true, false]);
+  // A member without access may write in the first group, and anyone in the open one: a colleague with access is warned there.
+  // The owner decides what he shares in his own groups: his turn there carries no such warning.
+  expect(profiles.map(text => warned.test(text))).toEqual([true, false, false, true, false]);
   expect(profiles[0]).toMatch(/whoever asks/i);
 });
 
