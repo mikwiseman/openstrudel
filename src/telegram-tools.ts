@@ -61,6 +61,11 @@ export function assertManagement(store: Store, context: TelegramToolContext): vo
 }
 /** Only from the adapter's verified sender id: a paired owner or someone on the access list. */
 export const hasAccess = (store: Store, sender?: string) => Boolean(sender && !isRestrictedSubject(store, sender) && (paired(store, sender) || accessPeople(store).includes(sender) || managementPeople(store).includes(sender)));
+/** A group where someone without access may write: everyone in it, or a listed sender who is not on the access list. Every reply there reaches them. */
+export function groupWithoutAccess(store: Store, chatId?: string): boolean {
+  const chat = chatId && Number(chatId) < 0 ? store.getTelegramChat(chatId) : null;
+  return Boolean(chat && (chat.access === "members" || chat.allowedSenders.some(id => !hasAccess(store, id))));
+}
 
 /** Chats this turn may send to through the Home's bot: the owner and administrators, any connected chat; a schedule, its own
  * destination; anyone else, the chat they are in. A model turn never posts to a protected audience, even the owner's. */
