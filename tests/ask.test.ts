@@ -14,7 +14,7 @@ import { telegramText } from "../src/telegram-format.js";
 import type { CodexEngine } from "../src/types.js";
 
 type RunOptions = NonNullable<Parameters<CodexEngine["run"]>[1]>;
-type Call = { method: string; tool?: string; args?: any; authorization?: string };
+type Call = { method: string; tool?: string; args?: any; authorization?: string; session?: string };
 type Fake = { url: string; calls: Call[]; recalls: () => string[] };
 
 const closers: Array<() => Promise<unknown> | unknown> = [];
@@ -28,14 +28,25 @@ const call = { n: 2, kind: "meeting", layer: "raw", title: "Call with Lumen Stud
 
 /** A tiny memory: one JSON-RPC exchange per POST, as JSON or as one server-sent event. */
 type Down = "always" | "recall" | undefined;
-async function memory(options: { recall?: (question: string) => unknown; tools?: unknown[] | (() => unknown[]); sse?: boolean; down?: Down | (() => Down); hold?: () => Promise<unknown>; read?: (args: any) => string } = {}): Promise<Fake> {
+async function memory(options: { recall?: (question: string) => unknown; tools?: unknown[] | (() => unknown[]); sse?: boolean; down?: Down | (() => Down); hold?: () => Promise<unknown>; read?: (args: any) => string; session?: { id: () => string } } = {}): Promise<Fake> {
   const calls: Call[] = [];
   const server = createServer((request, response) => {
     let raw = "";
     request.on("data", chunk => { raw += chunk; });
     request.on("end", async () => {
       const body = JSON.parse(raw);
-      calls.push({ method: body.method, tool: body.params?.name, args: body.params?.arguments, authorization: request.headers.authorization });
+      calls.push({ method: body.method, tool: body.params?.name, args: body.params?.arguments, authorization: request.headers.authorization, ...(options.session ? { session: request.headers["mcp-session-id"] as string | undefined } : {}) });
+      // A stateful server: initialize opens a session, and anything else needs that session's id.
+      if (options.session) {
+        if (body.method === "initialize") {
+          response.writeHead(200, { "content-type": "application/json", "mcp-session-id": options.session.id() })
+            .end(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "fake", version: "1" } } }));
+          return;
+        }
+        const current = options.session.id();
+        if (request.headers["mcp-session-id"] !== current) { response.writeHead(request.headers["mcp-session-id"] ? 404 : 400).end("Bad Request: Missing session ID " + request.headers.authorization); return; }
+        if (body.id === undefined) { response.writeHead(202).end(); return; }
+      }
       const down = typeof options.down === "function" ? options.down() : options.down;
       if (down === "always" || down === "recall" && body.params?.name === "recall") { response.writeHead(500).end("refused " + request.headers.authorization); return; }
       let result: unknown;
@@ -155,6 +166,22 @@ describe("memories", () => {
     vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(Date.now() + 10 * 60_000 + 1);
     expect((await find(root)).map(m => m.name)).toEqual(["company"]);
     expect([company, writer, tracker].map(m => m.calls.length)).toEqual([2, 2, 2]);
+  });
+
+  it("opens a session with a service that needs one, keeps it, and opens a new one when the service forgets it", async () => {
+    let session = "s-1";
+    const archive = await memory({ session: { id: () => session }, recall: () => ({ evidence: [{ n: 1, kind: "message", title: "Chat with Lumen Studio", date: "2026-10-20", text: "Invoice sent.", id: "m-1" }] }) });
+    const found = await find(home({ archive }));
+    expect(found.map(m => m.name)).toEqual(["archive"]);
+    expect((await recallAll("What did Lumen Studio say?", found)).evidence.map(e => e.id)).toEqual(["m-1"]);
+    // One initialize, then the session is used: the list and the call carry its id.
+    expect(archive.calls.map(c => [c.method, c.session])).toEqual([["tools/list", undefined], ["initialize", undefined], ["notifications/initialized", "s-1"], ["tools/list", "s-1"], ["tools/call", "s-1"]]);
+    // The service restarts and forgets the session: the next call opens a new one once and goes through.
+    session = "s-2";
+    expect((await recallAll("Anything new?", found)).evidence.map(e => e.id)).toEqual(["m-1"]);
+    expect(archive.calls.slice(5).map(c => [c.method, c.session])).toEqual([["tools/call", "s-1"], ["initialize", undefined], ["notifications/initialized", "s-2"], ["tools/call", "s-2"]]);
+    // No refusal body was read: the credential that the fake echoes in its refusal never reached the evidence.
+    expect(JSON.stringify(await recallAll("again", found))).not.toContain("synthetic-archive-token");
   });
 
   it("keeps a service the owner kept to himself from everyone else, and gives a sender without access nothing", async () => {
