@@ -16,9 +16,20 @@ import Testing
         #expect(UserDefaults(suiteName: suite)?.object(forKey: "AppleTextDirection") as? Bool == true)
     }
     @Test func localizesServiceCopyWithoutReplacingInterpolatedNames() {
-        #expect(L10n.serviceText("Удалить «Работа {1}»?", language: .english) == "Delete “Работа {1}”?")
+        #expect(L10n.serviceText("«Работа {1}» пока не на связи. Подключимся автоматически.", language: .english) == "“Работа {1}” is offline. We’ll reconnect automatically.")
         #expect(L10n.serviceText("Обновите OpenStrudel на устройстве сотрудника, чтобы выбирать модель.", language: .english) == "Update OpenStrudel on this assistant’s device to choose a model.")
         #expect(L10n.serviceText("Сервис не ответил.", language: .english) == "Couldn’t get a response. Try again.")
+    }
+    /// Short keys such as «{0} в {1}» once matched any Russian sentence with « в » and printed «Войдите at OpenAI…».
+    @Test func aHomeSentenceIsNeverHalfTranslated() {
+        let signIn = "Войдите в OpenAI на устройстве сотрудника: OpenStrudel → Настройки → Аккаунты. История сохранена; после входа повторите сообщение."
+        #expect(L10n.serviceText(signIn, language: .russian) == signIn)
+        for language in AppLanguage.allCases where language != .russian {
+            let text = L10n.serviceText(signIn, language: language)
+            #expect(text.range(of: "[А-Яа-яЁё]", options: .regularExpression) == nil, "\(language): \(text)")
+            #expect(text == L10n.text("Не удалось получить ответ. Попробуйте ещё раз.", language: language))
+        }
+        #expect(L10n.serviceText("Codex не завершил ответ: stream closed", language: .english) == "Codex did not finish the reply: stream closed")
     }
     @Test func interpolationDoesNotTreatUserContentAsAnotherPlaceholder() {
         #expect(L10n.text("{0} {1}", arguments: ["{1}", "actual"], language: .english) == "{1} actual")

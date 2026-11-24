@@ -85,9 +85,14 @@ final class L10n: Observable, Sendable {
         }
         return result
     }()
+    // A key is a pattern only when its own words identify a sentence: «{0} в {1}» matched any Russian sentence with « в »
+    // and printed «Войдите at OpenAI…». The shortest sentence the Home sends with a slot, «{0} не завершил ответ: {1}», has three.
     private static let servicePatterns: [(String, NSRegularExpression)] = {
         let slot = try! NSRegularExpression(pattern: #"\{\d+\}"#)
-        return catalog.keys.filter { $0.contains("{0}") && !$0.contains("<") }.sorted().compactMap { key in
+        func words(_ key: String) -> Int {
+            slot.stringByReplacingMatches(in: key, range: NSRange(key.startIndex..., in: key), withTemplate: " ").split { !$0.isLetter }.count
+        }
+        return catalog.keys.filter { $0.contains("{0}") && !$0.contains("<") && words($0) >= 3 }.sorted().compactMap { key in
             var parts: [String] = [], start = key.startIndex
             for match in slot.matches(in: key, range: NSRange(key.startIndex..., in: key)) {
                 guard let range = Range(match.range, in: key) else { continue }
