@@ -49,14 +49,17 @@ const cleanEnv = (extra: Record<string, string>): NodeJS.ProcessEnv => ({ ...Obj
 async function codexAgent(task: BuilderTask, model: string, effort: string, work: string, directory: string, options: BuilderOptions): Promise<AgentRun> {
   const home = join(directory, "codex-home"), tokens = await codexTokens(), binary = options.codexBin && options.codexBin !== "pinned" ? options.codexBin : CODEX_BIN;
   mkdirSync(home, { recursive: true, mode: 0o700 });
-  writeFileSync(join(home, "auth.json"), JSON.stringify({ auth_mode: "chatgpt", OPENAI_API_KEY: null, tokens: { id_token: JSON.parse(readFileSync(join(process.env.STRUDELBENCH_CODEX_HOME ?? join(homedir(), ".openaccs/codex/64466aec9b5a0f59/Home"), "auth.json"), "utf8")).tokens.id_token,
+  const idToken: string = JSON.parse(readFileSync(join(process.env.STRUDELBENCH_CODEX_HOME ?? join(homedir(), ".openaccs/codex/64466aec9b5a0f59/Home"), "auth.json"), "utf8")).tokens.id_token;
+  writeFileSync(join(home, "auth.json"), JSON.stringify({ auth_mode: "chatgpt", OPENAI_API_KEY: null, tokens: { id_token: idToken,
     access_token: tokens.accessToken, refresh_token: "", account_id: tokens.chatgptAccountId }, last_refresh: new Date().toISOString() }), { mode: 0o600 });
   writeFileSync(join(home, "config.toml"), 'web_search = "disabled"\ncheck_for_update_on_startup = false\n[features]\napps = false\nplugins = false\nmemories = false\n');
   const ran = await exec(binary, ["exec", "--json", "--skip-git-repo-check", "--sandbox", "workspace-write", "-C", work, "-m", model, "-c", `model_reasoning_effort="${effort}"`, PROMPT(task)],
     { cwd: work, env: cleanEnv({ CODEX_HOME: home }), seconds: options.agentSeconds ?? 2400 });
   rmSync(join(home, "auth.json"), { force: true });
-  const run: AgentRun = { message: "", tokens: { input: 0, cached: 0, output: 0 }, toolCalls: 0, events: ran.out, error: ran.timedOut ? "The agent ran out of time." : null };
-  for (const row of ran.out.split("\n")) {
+  // The agent's shell can read its own Codex home. Whatever it printed, the account's tokens never reach a saved transcript.
+  const out = [tokens.accessToken, idToken].filter(Boolean).reduce((text, secret) => text.split(secret).join("[token]"), ran.out);
+  const run: AgentRun = { message: "", tokens: { input: 0, cached: 0, output: 0 }, toolCalls: 0, events: out, error: ran.timedOut ? "The agent ran out of time." : null };
+  for (const row of out.split("\n")) {
     let event: any; try { event = JSON.parse(row); } catch { continue; }
     const item = event.item;
     if (event.type === "item.completed" && item?.type === "agent_message" && typeof item.text === "string") run.message = item.text;

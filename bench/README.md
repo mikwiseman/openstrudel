@@ -116,5 +116,5 @@ Builder: `b171` group switches and administrators (pull request 171) · `b173` a
 - `b176` is graded by the native unit tests and is skipped by the self-test unless `--native` is given. Its reference has not been verified here.
 - `claude -p` for the builder track is written and has not been run against a model.
 - A Claude run writes its sessions into the signed-in profile's `projects/` folder, under the trial folder's name. Nothing else in that profile is touched.
-- A Codex agent in the employee track can still reach the network from its shell, and a builder agent can read outside its folder. The harness looks for the repository's path in the builder's transcript, but it does not prevent the read.
+- A Codex agent in the employee track can still reach the network from its shell, and a builder agent can read outside its folder. The harness looks for the repository's path in the builder's transcript, but it does not prevent the read. A builder agent can also read the Codex home made for its trial; the account's tokens are removed from the transcript before it is saved.
 - `tests/operations.test.ts` has one test that fails on this machine with and without any change. It is not counted.
