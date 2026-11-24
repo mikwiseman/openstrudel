@@ -168,7 +168,8 @@ final class AccountRecoveryUITests: XCTestCase {
 
 @MainActor extension XCUIApplication {
     func openFirstDeviceDetails() {
-        let details = buttons["deviceDetails"].firstMatch
+        // A disclosure row joins its label's identifier onto its own.
+        let details = buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "deviceDetails")).firstMatch
         XCTAssertTrue(details.waitForExistence(timeout: 10))
         details.tap()
     }
