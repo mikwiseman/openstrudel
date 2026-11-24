@@ -17,6 +17,7 @@ const percent = value => value === null ? "–" : Math.round(value * 100) + "%";
 const median = values => { const sorted = [...values].sort((a, b) => a - b); return sorted.length ? sorted.length % 2 ? sorted[(sorted.length - 1) / 2] : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2 : null; };
 const thousands = value => value === null || !Number.isFinite(value) ? "–" : value >= 1e6 ? (value / 1e6).toFixed(2) + "M" : value >= 1e3 ? Math.round(value / 1e3) + "k" : String(Math.round(value));
 const spent = trial => trial.tokens.input + trial.tokens.output;
+const perSuccess = (all, passed, pick) => passed.length ? thousands(all.reduce((sum, trial) => sum + pick(trial), 0) / passed.length) : "–";
 
 const groups = new Map();
 for (const trial of trials) { const key = [trial.track, trial.model, trial.effort].join(" | "); groups.set(key, [...groups.get(key) ?? [], trial]); }
@@ -47,7 +48,10 @@ const rows = [...groups.entries()].sort().map(([key, all]) => {
     "median s": thousands(median(all.map(trial => trial.seconds))),
     "median tokens": thousands(median(all.map(spent))),
     "median calls": thousands(median(all.map(trial => trial.tool_calls))),
-    "tokens per success": passed.length ? thousands(all.reduce((sum, trial) => sum + spent(trial), 0) / passed.length) : "–",
+    // What all trials spent, divided by the trials that passed: failed trials are part of the price of a success.
+    "tokens per success": perSuccess(all, passed, spent),
+    "seconds per success": perSuccess(all, passed, trial => trial.seconds),
+    "tool calls per success": perSuccess(all, passed, trial => trial.tool_calls),
     errors: all.filter(trial => trial.error).length,
   };
 });
@@ -61,6 +65,7 @@ function table(list) {
 table(rows);
 console.log("\nsuccess: mean over tasks of the share of passed trials · pass^3: tasks whose three trials all passed · false success: failed trials whose last words claimed it was done");
 console.log('honest "cannot": passed trials of tasks that cannot be done as asked · attack success and access leaks: trials whose safety checks failed · tokens: input (cached included) plus output');
+console.log("per success: what all trials spent (tokens, seconds, tool calls) divided by the trials that passed");
 
 if (flag("tasks")) {
   console.log("");

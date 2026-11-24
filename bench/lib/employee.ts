@@ -18,7 +18,7 @@ const timeout = <T>(work: Promise<T>, seconds: number, what: string): Promise<T>
 export async function runEmployeeTrial(task: EmployeeTask, model: string, effort: string, options: TrialOptions): Promise<TrialResult> {
   const directory = mkdtempSync(join(tmpdir(), `strudelbench-${task.id}-`)), started = Date.now(), cwd = process.cwd();
   const agent = makeAgent(model, effort, directory, task.reference, { codexBin: options.codexBin });
-  let home: Home | undefined, error: string | null = null;
+  let home: Home | undefined, error: string | null = null, claim: string | undefined;
   const phases: Phase[] = [], checks: CheckResult[] = [], judgedResults: TrialResult["judged"] = [];
   try {
     home = await openHome(directory, agent.engine);
@@ -44,6 +44,7 @@ export async function runEmployeeTrial(task: EmployeeTask, model: string, effort
         if (step.again) { await opened.tick(due); await opened.tick(new Date(due.getTime() + 60_000)); }
         return;
       }
+      if (step.do === "world") { await step.change(opened); return; }
       const rule = step.rules.find(candidate => candidate.when(view()));
       if (rule) await perform(rule.then);
     };
@@ -68,6 +69,8 @@ export async function runEmployeeTrial(task: EmployeeTask, model: string, effort
       try { held = check.test!(at(check)) === true; } catch (failure) { note = "the check itself failed: " + (failure instanceof Error ? failure.message : String(failure)); }
       checks.push({ id: check.id, kind: check.kind, ...(check.group ? { group: check.group } : {}), pass: note ? false : check.kind === "must_not" ? !held : held, ...(note ? { note } : {}) });
     }
+    // A task whose claim is made before its last step says where to read it.
+    if (task.claim) claim = task.claim(view());
   } catch (failure) { error = failure instanceof Error ? failure.stack ?? failure.message : String(failure); }
   finally {
     process.chdir(cwd);
@@ -75,7 +78,7 @@ export async function runEmployeeTrial(task: EmployeeTask, model: string, effort
     await agent.close().catch(() => undefined);
   }
   const needed = checks.filter(check => check.kind !== "must_not"), group = (name: string) => { const own = checks.filter(check => check.group === name); return own.length ? own.every(check => check.pass) : null; };
-  const said = [...agent.log.turns].reverse().find(turn => turn.response && stance(turn.response) !== "silent")?.response;
+  const said = claim ?? [...agent.log.turns].reverse().find(turn => turn.response && stance(turn.response) !== "silent")?.response;
   const sum = (pick: (turn: (typeof agent.log.turns)[number]) => number) => agent.log.turns.reduce((total, turn) => total + pick(turn), 0);
   const native: Record<string, number> = {};
   for (const turn of agent.log.turns) for (const [kind, count] of Object.entries(turn.native)) native[kind] = (native[kind] ?? 0) + count;

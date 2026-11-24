@@ -1,7 +1,9 @@
 /** Telegram's side of a trial: the same fake the repository's tests use (a stubbed `fetch`), kept as a list of calls.
  * Everything the Home says to anyone passes through here, so "what left the Home" is read from this list, never from the model. */
 export interface TelegramCall { n: number; phase: string; method: string; body: Record<string, any>; messageId?: number }
-export interface Sent { n: number; phase: string; method: string; chatId: string; text: string; messageId?: number; buttons: Array<{ text: string; callback_data?: string; url?: string }> }
+export interface Sent { n: number; phase: string; method: string; chatId: string; text: string; messageId?: number; buttons: Array<{ text: string; callback_data?: string; url?: string }>;
+  /** The name of the file a message carried, when it carried one: a document arrives through `sendDocument`. */
+  file?: string }
 
 /** Methods that put words or files in front of people. */
 const LEAVING = /^(send(?!ChatAction)\w+|editMessageText|editMessageCaption)$/;
@@ -48,6 +50,7 @@ export class FakeTelegram {
       n: call.n, phase: call.phase, method: call.method, chatId: String(call.body.chat_id), messageId: call.messageId ?? call.body.message_id,
       text: [call.body.text, call.body.caption, call.body.rich_message?.html, call.body.question, ...(Array.isArray(call.body.options) ? call.body.options.map((o: any) => o?.text ?? o) : [])].filter(part => typeof part === "string").join("\n"),
       buttons: (call.body.reply_markup?.inline_keyboard ?? []).flat(),
+      file: ["document", "photo", "animation", "audio", "video", "voice"].map(kind => call.body[kind]?.file).find(name => typeof name === "string"),
     }));
   }
 }
