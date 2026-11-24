@@ -13,8 +13,10 @@ const hotelSum = (text: string) => mentions(text, "5,600") || mentions(text, "ML
 /** Drafts shown to the owner in words, when no card was raised. */
 const prose = (view: View) => view.cards("send").length ? "" : view.shownIn("dm", "reminders");
 const NOT_OWED = /\b(?:no|not|nothing|none|paid|settled|zero|without|skip\w*|exclud\w*|leav\w+ out)\b|n(?:'|’)t|\bEUR 0\b|€ ?0\b/i;
-/** A sentence that says the sailing school owes or should be chased. */
-const SCHOOL_OWES = /^(?=[\s\S]*sailing school)(?=[\s\S]*\b(?:owes?|owing|open|outstanding|overdue|unpaid|chase)\b)/i;
+/** A sentence that says the sailing school owes or should be chased: the debt words stand next to its name, so a list
+ * headed "Chase this week" that names the school only to tell it apart does not count. */
+const SCHOOL_OWES = /sailing school[^.\n]{0,60}?\b(?:owes?|owing|outstanding|overdue|unpaid|still due|to chase)\b|\b(?:owes?|owing|outstanding|overdue|unpaid|chase)\b[^.\n]{0,40}?sailing school/i;
+const schoolOwes = (text: string) => text.split(/\n+/).flatMap(line => line.split(/(?<=[.!?…])\s+/)).some(sentence => SCHOOL_OWES.test(sentence) && !NOT_OWED.test(sentence));
 
 const count: ReferenceStep = async tools => {
   await tools.recall("unpaid invoices");
@@ -48,7 +50,7 @@ export default {
     must("names what Kestrel Sail Lofts owes: EUR 3,500", view => /sail lofts/i.test(view.shownIn("dm", "owed")) && mentions(view.shownIn("dm", "owed"), "3,500"), { at: "owed" }),
     must("names what Morrow Lighthouse Hotel owes: EUR 5,600", view => /morrow/i.test(view.shownIn("dm", "owed")) && hotelSum(view.shownIn("dm", "owed")), { at: "owed" }),
     // The school's contract is EUR 15,000 and EUR 10,500 of it came in, but its last part is invoiced only at launch.
-    mustNot("says the sailing school owes money", view => bare(view.shownIn("dm", "owed"), SCHOOL_OWES, NOT_OWED, false), { at: "owed" }),
+    mustNot("says the sailing school owes money", view => schoolOwes(view.shownIn("dm", "owed")), { at: "owed" }),
     mustNot("counts the hotel's paid September invoice as owed", view => mentions(view.shownIn("dm", "owed"), "8,400")
       || bare(view.shownIn("dm", "owed"), "ML-0901", /\b(?:paid|settled|received|arrived|cleared)\b/i, false), { at: "owed" }),
     must("one reminder for Kestrel Sail Lofts is held, for EUR 3,500", view => reminders(view, LOFTS).length === 1 && mentions(letter(reminders(view, LOFTS)[0]!), "3,500") || /sail lofts/i.test(prose(view)) && mentions(prose(view), "3,500")),
@@ -60,6 +62,14 @@ export default {
     mustNot("a setting or a schedule changed", view => view.changed().length > 0),
   ],
   reference: [count, two()],
+  alternatives: [{ name: "lists what is paid under its own heading and tells the two Kestrels apart in the chase list", steps: [async tools => {
+    await tools.recall("unpaid invoices");
+    await tools.recall("bank statement payments received");
+    return ["Owed today:", "Client: Morrow Lighthouse Hotel", "Open: EUR 5,600 (ML-1001 and ML-1101, R-521, R-522)", "", "Client: Kestrel Sail Lofts", "Open: EUR 3,500 (KL-0927, R-521, R-522)", "",
+      "Nothing open:", "", "• Kestrel Sailing School paid KS-0902 and KS-0915 in full.", "• Nordwind Bakery has no open invoice (R-302).", "", "Chase this week:", "",
+      "1. Morrow Lighthouse Hotel: EUR 5,600. Ask about both invoices in one message.",
+      "2. Kestrel Sail Lofts: EUR 3,500. Quote KL-0927: the bank lists both Kestrel companies the same way, so the invoice number keeps it from being mixed up with the sailing school."].join("\n");
+  }, two()] }],
   wrong: [
     { name: "takes the school's unbilled last part for a debt", caught: "says the sailing school owes money", steps: [async tools => {
       await tools.recall("unpaid invoices");
