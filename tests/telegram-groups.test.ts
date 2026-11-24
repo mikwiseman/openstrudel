@@ -119,6 +119,25 @@ it("marks only the paired owner's private chat as the owner's turn", async () =>
   expect(options()[3].profile).not.toContain("access list");
 });
 
+it("tells a turn with access when the group it answers in also lets people without access write", async () => {
+  const { store, adapter, profile, run } = setup();
+  store.setSetting("access.people", JSON.stringify(["77"]));
+  store.linkTelegramChat({ chatId: "-100", title: "Team", allowedSenders: ["42", "77", "88"] }); store.bindTelegramChat("-100", profile.id);
+  store.linkTelegramChat({ chatId: "-200", title: "Core", allowedSenders: ["42", "77"] }); store.bindTelegramChat("-200", profile.id);
+  store.linkTelegramChat({ chatId: "-300", title: "Open", allowedSenders: ["42"] }); store.bindTelegramChat("-300", profile.id);
+  adapter.setGroupReplyAccess("-300", "members", undefined);
+  await adapter.processUpdate(message(1, "@strudel_bot what is the retainer?", -100, 77));
+  await adapter.processUpdate(message(2, "@strudel_bot what is the retainer?", -100, 42));
+  await adapter.processUpdate(message(3, "@strudel_bot what is the retainer?", -200, 77));
+  await adapter.processUpdate(message(4, "@strudel_bot what is the retainer?", -300, 77));
+  await adapter.processUpdate(message(5, "What is the retainer?", 42, 42));
+  const profiles = run.mock.calls.map(call => String((call as any[])[1].profile));
+  const warned = /people without access to this Strudel's records can read this group/;
+  // A member without access may write in the first group, and anyone in the open one; whoever asks, the group reads the answer.
+  expect(profiles.map(text => warned.test(text))).toEqual([true, true, false, true, false]);
+  expect(profiles[0]).toMatch(/whoever asks/i);
+});
+
 it("preserves existing groups and requires explicit replacement in the app", async () => {
   const { store, adapter, profile } = setup(); const original = store.createProfile({ name: "Wolf" });
   store.linkTelegramChat({ chatId: "-100", title: "Test group", allowedSenders: ["42", "77"] });
