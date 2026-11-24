@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CodexEngineAdapter } from "../../src/codex.js";
@@ -13,6 +13,7 @@ export function makeJudge(model: string, codexBin?: string) {
   const folder = mkdtempSync(join(tmpdir(), "strudelbench-judge-"));
   useCodexRelease(codexBin ?? CODEX_BIN);
   writeFileSync(join(folder, "config.toml"), 'cli_auth_credentials_store = "ephemeral"\n');
+  mkdirSync(join(folder, "empty"));
   const engine = new CodexEngineAdapter({ restricted: true, workingDirectory: join(folder, "empty"), codexHome: folder, instructions: INSTRUCTIONS, authTokens: () => codexTokens() });
   return {
     async ask(question: string, text: string): Promise<{ verdict: "yes" | "no" | "unknown"; reason: string }> {
