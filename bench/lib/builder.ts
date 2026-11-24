@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { CLAUDE_CONFIG_DIR, CODEX_BIN, codexTokens, engineOf } from "./agents.js";
-import { REPO, type CheckResult, type TrialResult } from "./results.js";
+import { REPO, removeFolder, type CheckResult, type TrialResult } from "./results.js";
 import { stance } from "./task.js";
 import { BUILDER_TASKS, type BuilderTask } from "../tasks/builder/index.js";
 
@@ -183,7 +183,7 @@ export async function runBuilderTrial(task: BuilderTask, model: string, effort: 
     writeFileSync(path, JSON.stringify({ result, message: agent.message, patch, tests, events: agent.events.slice(0, 2_000_000) }, null, 1));
     result.transcript = path;
   }
-  if (!options.keep) rmSync(directory, { recursive: true, force: true }); else result.folder = directory;
+  if (!options.keep) removeFolder(directory); else result.folder = directory;
   return result;
 }
 
