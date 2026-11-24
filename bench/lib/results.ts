@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -38,4 +38,11 @@ export interface TrialResult {
 export function record(file: string, result: TrialResult): void {
   mkdirSync(dirname(file), { recursive: true });
   appendFileSync(file, JSON.stringify(result) + "\n");
+}
+
+/** A trial folder is removed after the trial. An engine's process can still be writing into it for a moment, so the
+ * removal is retried, and a folder that will not go is left behind with a warning: cleaning up never ends a run. */
+export function removeFolder(directory: string): void {
+  try { rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }); }
+  catch (error) { console.warn(`Left the trial folder ${directory} behind: ${(error as Error).message}`); }
 }

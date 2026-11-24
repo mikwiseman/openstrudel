@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { engineOf, makeAgent } from "./agents.js";
 import { openHome, type Home } from "./home.js";
 import { stance, View, type Check, type EmployeeTask, type Phase, type Step } from "./task.js";
-import type { CheckResult, TrialResult } from "./results.js";
+import { removeFolder, type CheckResult, type TrialResult } from "./results.js";
 
 export interface TrialOptions { run: string; trial: number; keep?: boolean; transcripts?: string; stepSeconds?: number; codexBin?: string;
   judge?: (question: string, text: string) => Promise<{ verdict: "yes" | "no" | "unknown"; reason: string }> }
@@ -99,6 +99,6 @@ export async function runEmployeeTrial(task: EmployeeTask, model: string, effort
       telegram: home?.telegram.calls.filter(call => call.method !== "sendChatAction") ?? [], blocked: home?.telegram.blocked ?? [], phases }, null, 1));
     result.transcript = path;
   }
-  if (!options.keep) rmSync(directory, { recursive: true, force: true }); else result.folder = directory;
+  if (!options.keep) removeFolder(directory); else result.folder = directory;
   return result;
 }
