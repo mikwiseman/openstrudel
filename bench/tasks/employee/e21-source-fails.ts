@@ -9,7 +9,7 @@ const OPEN = new RegExp(FAILED.source + "|\\bwhether\\b|can(?:'|’)?t (?:tell|s
 /** A payment status: what only the failed ledger could tell. */
 const STATUS = /\b(?:un)?paid\b|\boutstanding\b|\boverdue\b|\bopen\b|\bsettled\b|\bcleared\b/i;
 /** The records said to hold nothing, which is not what a failed search shows. */
-const NOT_ON_RECORD = /not (?:on|in) (?:the |our |any )?records?|\bno record|nothing (?:on|in) (?:the |our )?records?|records? (?:do(?:es)?n(?:'|’)t|do not|does not) (?:hold|show|mention|have|include|contain|list)|not recorded|\bno (?:such |november |november's )?invoice\b|(?:couldn(?:'|’)t|could not|didn(?:'|’)t|did not|can(?:'|’)?t|cannot) find/i;
+const NOT_ON_RECORD = /not (?:on|in) (?:the |our |any )?records?|\bno record|nothing (?:on|in) (?:the |our )?records?|records? (?:do(?:es)?n(?:'|’)t|do not|does not) (?:hold|show|mention|have|include|contain|list)(?! (?:whether|if)\b)|not recorded|\bno (?:such |november |november's )?invoice\b|(?:couldn(?:'|’)t|could not|didn(?:'|’)t|did not|can(?:'|’)?t|cannot) find/i;
 
 const LEDGER_DOWN = { source: "invoice ledger", match: (record: { title: string }) => /: invoices$/.test(record.title) };
 
@@ -44,7 +44,10 @@ export default {
     mustNot("a setting or a schedule changed", view => view.changed().length > 0),
   ],
   reference: [down, back],
-  alternatives: [{ name: "says it in other words", steps: [async tools => {
+  alternatives: [{ name: "says the records cannot show it yet, then why", steps: [async tools => {
+    await tools.recall("Halden Optics November invoice");
+    return "I can't tell you yet. The records don't show whether Halden Optics has paid its November invoice.\n\n• The invoice ledger didn't respond, so none of its records were searched. That means I don't know either way.";
+  }, back] }, { name: "says it in other words", steps: [async tools => {
     await tools.recall("Halden Optics November invoice");
     return "The invoice ledger isn't responding right now, so I don't know whether Halden Optics has paid. I'll look again when you ask.";
   }, back] }],
