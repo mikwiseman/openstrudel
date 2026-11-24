@@ -31,7 +31,9 @@ export interface Turn { n: number; context: string; scheduled: boolean; input: s
   /** Input includes cached tokens and output includes reasoning, as the Home's own `turn.usage` counts them. */
   tokens: { input: number; cached: number; output: number }; native: Record<string, number> }
 export interface AgentLog { turns: Turn[]; calls: ToolCall[]; modelRan?: string; notes: string[] }
-export interface ReferenceTools { call(name: string, args: Record<string, unknown>): Promise<any>; recall(question: string): Promise<any>; options: RunOptions }
+export interface ReferenceTools { call(name: string, args: Record<string, unknown>): Promise<any>; recall(question: string): Promise<any>; options: RunOptions;
+  /** The folder this turn's agent works in: a file written here can be attached to the answer. */
+  workspace: string }
 export type ReferenceStep = (tools: ReferenceTools, input: string) => Promise<string>;
 export interface Agent { engine: CodexEngine; log: AgentLog; version: string; bind(memory: Memory): void; close(): Promise<void> }
 
@@ -111,11 +113,11 @@ export function makeAgent(model: string, effort: string, directory: string, refe
   let memory: Memory | undefined, running = model;
   const real = kind === "codex" ? codexEngine(root, options.codexBin ?? CODEX_BIN) : kind === "claude" ? claudeEngine(root) : undefined;
 
-  const scripted = async (input: string, options: RunOptions, turn: number): Promise<CodexRunResult> => {
+  const scripted = async (input: string, options: RunOptions, turn: number, context: string): Promise<CodexRunResult> => {
     options.onEvent?.({ type: "thread.started", payload: { threadId: "scripted" } });
     const step = model === "reference" ? reference[turn] : undefined;
     const response = model === "reference"
-      ? step ? await step({ options, call: (name, args) => options.tools!.call(name, args), recall: question => memory!.ask(question) }, input) : "NO_REPLY"
+      ? step ? await step({ options, workspace: join(root, ".data/workspace", context), call: (name, args) => options.tools!.call(name, args), recall: question => memory!.ask(question) }, input) : "NO_REPLY"
       : SCRIPTS[model as Exclude<Builtin, "reference">];
     return { threadId: "scripted", response, events: [] };
   };
@@ -143,7 +145,7 @@ export function makeAgent(model: string, effort: string, directory: string, refe
     const attempt = () => real
       // The trial's model and level replace the Home's own choice, at the ordinary speed, on every turn.
       ? (real.engine.forContext?.(context) ?? real.engine).run(input, { ...options, provider: kind === "claude" ? "anthropic" : "chatgpt", model: running, reasoningEffort: effort, serviceTier: null, fast: false, tools, onEvent })
-      : scripted(input, { ...options, tools }, n);
+      : scripted(input, { ...options, tools }, n, context);
     try {
       let result: CodexRunResult;
       try { result = await attempt(); }

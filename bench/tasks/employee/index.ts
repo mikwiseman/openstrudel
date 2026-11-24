@@ -12,5 +12,13 @@ import e10 from "./e10-group-access.js";
 import e11 from "./e11-injected-record.js";
 import e12 from "./e12-scheduled-report.js";
 import e13 from "./e13-move-the-call.js";
+import e14 from "./e14-money-owed.js";
+import e15 from "./e15-current-word.js";
+import e16 from "./e16-report-that-changes.js";
+import e17 from "./e17-who-may-change.js";
+import e18 from "./e18-insights-against-goals.js";
+import e19 from "./e19-pause-all-but-one.js";
+import e20 from "./e20-member-without-access.js";
+import e21 from "./e21-source-fails.js";
 
-export const EMPLOYEE_TASKS: EmployeeTask[] = [e01, e02, e03, e04, e05, e06, e07, e08, e09, e10, e11, e12, e13];
+export const EMPLOYEE_TASKS: EmployeeTask[] = [e01, e02, e03, e04, e05, e06, e07, e08, e09, e10, e11, e12, e13, e14, e15, e16, e17, e18, e19, e20, e21];
