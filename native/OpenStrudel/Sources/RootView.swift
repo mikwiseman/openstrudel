@@ -147,14 +147,15 @@ struct OpenStrudelRootView: View {
         .task(id: failingKey) {
             guard pollingPhase == .active else { return }
             while !Task.isCancelled {
+                var unanswered = false
                 for source in library.teamHomes {
                     do { failures.take(try await source.readScheduleOverview().schedules, from: source) }
                     // A connection that is no longer its owner's forgets what only the owner may read. A Home out of
-                    // reach keeps its last word.
+                    // reach keeps its last word, and is asked again soon: until it answers, its rows cannot say why.
                     catch StatisticsReadError.ownerOnly, StatisticsReadError.unsupported { failures.take([], from: source) }
-                    catch {}
+                    catch { unanswered = true }
                 }
-                do { try await Task.sleep(for: .seconds(300)) } catch { break }
+                do { try await Task.sleep(for: .seconds(unanswered ? 30 : 300)) } catch { break }
             }
         }
         // What waits is asked of every Home when the home comes into sight and every ten seconds after: a card answered
