@@ -39,7 +39,9 @@ export default {
       return mentions(text, "Brackwater", /fixed[- ]?price/i) && mentionsAny(text, "R-612", /\b12(?:th)? (?:of )?Nov|Nov(?:ember)? 12(?:th)?\b|\b12[./]11\b|week notes/i)
         && mentionsAny(text, /\bG2\b/, /retainer/i, /no new fixed/i);
     }),
-    must("names the goal with no record: the monthly case study", view => marked(view.shown("dm"), /case stud/i, NO_RECORD)),
+    // One item names the case study and says nothing shows it: in the same sentence, or in the same list item or paragraph.
+    must("names the goal with no record: the monthly case study", view => marked(view.shown("dm"), /case stud/i, NO_RECORD)
+      || view.shown("dm").split(/\n+/).some(item => /case stud/i.test(item) && NO_RECORD.test(item))),
     must("keeps to three items at most", view => items(view.shown("dm")).length <= 3),
     mustNot("carries another company's goals", view => DECOY.test(view.shown("dm"))),
     mustNot("names a goal that is not on the list", view => INVENTED.test(view.shown("dm"))),
@@ -50,7 +52,11 @@ export default {
     "1. G2 is broken: on 11 November a fixed-price project was signed with Brackwater Ferries, EUR 26,000 (R-612), and Ines has started its wireframes (R-613). The goal says no new fixed-price work, retainers only (R-601).",
     "2. G3 has no record at all: no note mentions a case study, so none is out for November (R-601).",
     "3. G1 is at risk: Pellow & Finch's PF-0931, issued on 3 November, is still unpaid and has to be paid by 3 December (R-611).")],
-  alternatives: [{ name: "names its sources by title and date", steps: [answer(
+  alternatives: [{ name: "says what is missing in the next sentence of the item", steps: [answer(
+    "1. Address the retainer-only goal breach. Brackwater's EUR 26,000 fixed-price project was signed on 11 November, directly contradicting that goal. (Week notes R-612, 12 November.)",
+    "2. Secure payment dates before the 30-day limit: Pellow & Finch's EUR 2,750 was still unpaid on 20 November. (Invoice record R-301, 20 November.)",
+    "3. Verify November's case study is ready to publish. The monthly publishing goal is documented, but I found no publication evidence. (Goals record R-601, 1 October.)")] },
+    { name: "names its sources by title and date", steps: [answer(
     "1. Follow up on Pellow & Finch's EUR 2,750 invoice. PF-0931 was still unpaid on 20 November; issued 3 November, it reaches the 30-day limit on 3 December. (Invoice record, 20 Nov)",
     "2. Keep Friday free of client calls this week. (Studio goals, 1 Oct)",
     "3. The EUR 26,000 fixed-price Brackwater project signed on 11 November conflicts with the retainer-only goal. I couldn't find any record of November's case study; check it before month-end. (Week notes, 12 Nov; studio goals, 1 Oct)")] },
