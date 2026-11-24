@@ -188,9 +188,9 @@ const READ_NEWS_BYTES = 18_000;
 export type StoryMessage = Message & { story: NewsStory };
 
 /** The latest version of each story published or updated in the last 72 hours, most recently changed first. */
-export function latestStories(store: Store, conversationId: string): StoryMessage[] {
+export function latestStories(store: Store, conversationId: string, days = 3): StoryMessage[] {
   const latest = new Map<string, StoryMessage>();
-  for (const message of storyMessages(store, conversationId, 3)) {
+  for (const message of storyMessages(store, conversationId, days)) {
     if (!message.story) continue;
     latest.delete(message.story.id);
     latest.set(message.story.id, message as StoryMessage);
@@ -274,8 +274,9 @@ const encoded = (line: string) => Buffer.byteLength(JSON.stringify(line));
  * when the story has any, then "+N older stories omitted" when the rest does not fit. With a storyId, that story's latest full version
  * at any age. */
 /** A colleague's reader by the employee's name. Employees of one domain read each other's desks; a desk of the other domain is as absent as a wrong name. */
-export function deskConversation(store: Store, reader: EmployeeProfile, name: string): string {
-  const desks = store.listProfiles().filter(p => p.news && p.domain === reader.domain && !store.getSetting("employee.deleted." + p.id));
+export function deskConversation(store: Store, reader: EmployeeProfile | null | undefined, name: string): string {
+  // An employee reads the desks of its own domain; the main assistant, in the owner's private chat, reads any.
+  const desks = store.listProfiles().filter(p => p.news && (!reader || p.domain === reader.domain) && !store.getSetting("employee.deleted." + p.id));
   const desk = desks.find(p => p.name.toLocaleLowerCase() === name.trim().toLocaleLowerCase());
   if (!desk) throw new Error(`Нет редакции «${name}». Доступны: ${desks.map(p => p.name).join(", ") || "ни одной"}.`);
   return store.profileConversation(desk.id).id;
@@ -291,8 +292,15 @@ export function readNews(store: Store, conversationId: string, args: Record<stri
     const reacted = reactions(store, conversationId).get(message.story.id);
     return { messageId: message.id, updatedAt: message.createdAt, telegram: telegramTimes(store, conversationId, chatId).get(message.story.id) ?? null, ...reacted ? { reactions: reacted } : {}, story: message.story };
   }
-  const stories = latestStories(store, conversationId);
-  if (!stories.length) return "No stories in the last 72 hours.";
+  if (args.query != null && typeof args.query !== "string") throw new Error("query — слова, которые нужно найти в историях.");
+  // Words are compared without their endings, so «запуски» finds «запуск».
+  const fold = (text: string) => text.toLocaleLowerCase().replaceAll("ё", "е");
+  const wanted = fold(args.query ?? "").split(/[^\p{L}\p{N}]+/u).filter(word => word.length >= 3).slice(0, 8).map(word => word.length > 5 ? word.slice(0, -2) : word);
+  const stories = !wanted.length ? latestStories(store, conversationId) : latestStories(store, conversationId, 365).filter(({ story }) => {
+    const text = fold([story.title, story.summary, story.body, story.section, ...story.topics ?? []].join(" "));
+    return wanted.every(word => text.includes(word));
+  });
+  if (!stories.length) return wanted.length ? "No story matches these words." : "No stories in the last 72 hours.";
   const sent = telegramTimes(store, conversationId, chatId), reacted = reactions(store, conversationId);
   const lines = stories.map(({ story }) => [story.id, eventTime(story.eventAt), oneLine(story.title), oneLine(story.section),
     sent.has(story.id) ? `Telegram ${minute(sent.get(story.id)!)}` : "not in Telegram", story.sources[0]?.url ?? "", ...reacted.has(story.id) ? [reacted.get(story.id)!] : []].join(" | "));
