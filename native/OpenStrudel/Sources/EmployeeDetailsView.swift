@@ -556,7 +556,7 @@ struct TelegramChatsView: View {
     private func pause(_ chat: TelegramChat) -> some View {
         Button(chat.enabled == false ? L("Продолжить") : L("Приостановить")) { toggle(chat) }
             .disabled(busyGroup != nil)
-            .accessibilityLabel((chat.enabled == false ? L("Продолжить в группе «") : L("Приостановить в группе «")) + chat.title + "»")
+            .accessibilityLabel(chat.enabled == false ? L("Продолжить в группе «\(chat.title)»") : L("Приостановить в группе «\(chat.title)»"))
             .accessibilityIdentifier("toggleTelegramGroup-" + chat.chatId)
     }
 

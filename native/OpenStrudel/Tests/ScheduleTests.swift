@@ -26,8 +26,14 @@ struct ScheduleTests {
              "enabled":false,"nextRunAt":"2026-10-26T09:00:00.000Z"}
             """.utf8))
         }
-        #expect(try recurring("0 12 * * *").rhythm == String(format: L("Ежедневно в %02d:%02d"), 12, 0) + " · " + L("Москва"))
-        #expect(try recurring("30 18 * * 6").rhythm?.hasPrefix(L("По субботам")) == true)
+        // The time of day reads as the employee's page writes it in the interface's language, not as a fixed 24-hour clock.
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = .gmt
+        let words = TeamWords(calendar: calendar)
+        let time = { (hour: Int, minute: Int) in words.time(calendar.date(from: DateComponents(year: 2001, month: 1, day: 1, hour: hour, minute: minute))!) }
+        #expect(try recurring("0 12 * * *").rhythm == L("Ежедневно в \(time(12, 0))") + " · " + L("Москва"))
+        let saturday = try recurring("30 18 * * 6").rhythm
+        #expect(saturday?.hasPrefix(L("По субботам")) == true)
+        #expect(saturday?.contains(time(18, 30)) == true, "\(saturday ?? "")")
         // Any other cron is known only by its next run, which a switched-off schedule no longer has.
         let quarterly = try recurring("*/15 * * * *")
         #expect(quarterly.rhythm == nil)

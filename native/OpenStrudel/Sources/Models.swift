@@ -244,13 +244,21 @@ struct ChatSchedule: Codable, Identifiable {
     var rhythm: String? {
         let fields = cron.split(separator: " ")
         if fields.count == 5, let minute = Int(fields[0]), let hour = Int(fields[1]), fields[2...] == ["*", "*", "*"] {
-            return String(format: L("Ежедневно в %02d:%02d"), hour, minute) + " · " + timeZoneLabel
+            return L("Ежедневно в \(clock(hour, minute))") + " · " + timeZoneLabel
         }
         if fields.count == 5, let minute = Int(fields[0]), let hour = Int(fields[1]), fields[2] == "*", fields[3] == "*", let day = Int(fields[4]), (0...7).contains(day) {
             let names = [L("По воскресеньям"), L("По понедельникам"), L("По вторникам"), L("По средам"), L("По четвергам"), L("По пятницам"), L("По субботам"), L("По воскресеньям")]
-            return names[day] + String(format: L(" в %02d:%02d"), hour, minute) + " · " + timeZoneLabel
+            return names[day] + L(" в \(clock(hour, minute))") + " · " + timeZoneLabel
         }
         return nil
+    }
+    /// «18:30» or «6:30 PM», as the interface's language writes a time of day.
+    private func clock(_ hour: Int, _ minute: Int) -> String {
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = .gmt
+        let date = calendar.date(from: DateComponents(year: 2001, month: 1, day: 1, hour: hour, minute: minute)) ?? .now
+        var style = Date.FormatStyle.dateTime.hour().minute().locale(L10n.locale)
+        style.timeZone = .gmt
+        return date.formatted(style)
     }
     private var nextTime: String {
         guard let date = try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(nextRunAt) else { return L("по расписанию") }
