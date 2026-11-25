@@ -173,6 +173,28 @@ export async function memories(store: Store, root: string, context: string, aske
   return found.flat();
 }
 
+function draftService(root: string, name: string, method: string): Memory {
+  const service = contextServers(root,"personal",{access:true})[name];
+  if (service?.type !== "http" || !service.url || service.toolLists?.disabled?.includes(method)
+    || service.toolLists?.enabled && !service.toolLists.enabled.includes(method)) throw new Error("The "+name+" connection does not offer "+method+".");
+  return {name,url:service.url,headers:{...service.headers},readOnly:[method]};
+}
+
+/** A draft sends a named person's question only to its selected existing connection. */
+export async function recallDraftContext(root: string, space: "personal" | "company", question: string): Promise<Recalled> {
+  const name = space === "company" ? "company" : "mik-mcp";
+  return recallAll(question,[draftService(root,name,"recall")]);
+}
+export async function readDraftPaymentLinks(root: string, args: Record<string,unknown>) {
+  const id=typeof args.id==="string" ? args.id.trim() : "";
+  const project=args.project ?? null, offset=args.offset ?? 0;
+  if (id.length>160 || project!==null && !["TRINITY","SCHOOL","COMBINATOR"].includes(String(project))
+    || !Number.isSafeInteger(offset) || Number(offset)<0) throw new Error("Invalid payment lookup.");
+  const name=id ? "company_payment_link_get" : "company_payment_links_list";
+  const server=draftService(root,"company",name);
+  return payload(await rpc(server,"tools/call",{name,arguments:id ? {id} : {project,limit:15,offset}},CALL_MS));
+}
+
 /** Asks every memory at once. One that fails, answers with an error or stays silent is named, never fatal. Each memory ranks its own finds, so they
  * take turns in the merged list and one long transcript cannot crowd out another memory's line. */
 export async function recallAll(question: string, from: Memory[], options: { signal?: AbortSignal; timeoutMs?: number; extra?: Record<string, unknown> } = {}): Promise<Recalled> {

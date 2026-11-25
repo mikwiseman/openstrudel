@@ -254,3 +254,48 @@ it("writes to the owner only when he has something to do, and ends every other r
   expect(text).toContain("Never describe what you did not do");
   expect(text).not.toContain("Return only a short private outcome, or NO_REPLY when nothing changed");
 });
+
+it("limits manual draft lookups to the configured owner and preserves this choice in older clients", async () => {
+  const f = fixture();
+  const { correspondenceOwner, correspondenceDrafts } = await import("../src/correspondence.js");
+  const turn = { conversationId: f.conversation.id, messageId: "manual", channel: "api" as const, scope: "personal", byOwner: true };
+  expect(correspondenceOwner(f.store, turn)).toBe(false);
+  configureCorrespondence(f.store, true, { ...f.input, drafts: { ownerTelegram: null } });
+  expect(correspondenceOwner(f.store, turn)).toBe(true);
+  for (const changed of [{ byOwner: false }, { scope: "work" }, { scheduled: true }, { conversationId: "someone-else" }, { channel: "telegram" as const }, { access: false }])
+    expect(correspondenceOwner(f.store, { ...turn, ...changed })).toBe(false);
+  expect(() => configureCorrespondence(f.store, true, { ...f.input, drafts: { ownerTelegram: "-123" } })).toThrow();
+  configureCorrespondence(f.store, true, f.input);
+  expect(correspondenceDrafts(f.store)).toEqual({ ownerTelegram: null });
+  configureCorrespondence(f.store, true, { ...f.input, drafts: null });
+  expect(correspondenceOwner(f.store, turn)).toBe(false);
+});
+
+it("requires a successful lookup in the permitted brain for a draft or owner decision", async () => {
+  const f=fixture();
+  configureCorrespondence(f.store,true,{...f.input,drafts:{ownerTelegram:null}});
+  f.worker.receive(f.source(),f.event());
+  await vi.advanceTimersByTimeAsync(45_000);
+  const message=f.store.findMessageByExternal("api",f.calls[0]!.externalId!)!;
+  const turn={conversationId:f.conversation.id,messageId:message.id,channel:"api" as const,scope:"personal",scheduled:true};
+  const {correspondenceContext, correspondenceDecision}=await import("../src/correspondence.js");
+  expect(()=>correspondenceCheckpoint(f.store,turn,"draft")).toThrow(/context/i);
+  await expect(correspondenceContext(f.store,turn,"company","Agreement",async()=>({evidence:[],searched:[],unreachable:["company"]}))).rejects.toThrow(/did not answer/);
+  expect(()=>correspondenceCheckpoint(f.store,turn,"draft")).toThrow(/context/i);
+  const read=vi.fn(async()=>({evidence:[{id:"doc-42",title:"Agreement",text:"Private terms"}],searched:[{memory:"company"}],unreachable:[]}));
+  await correspondenceContext(f.store,turn,"company","Terms for Andrew’s confirmed project",read);
+  expect(read).toHaveBeenCalledWith("company","Terms for Andrew’s confirmed project");
+  expect(correspondenceCheckpoint(f.store,turn,"draft").current).toBe(true);
+  expect(correspondenceDecision(f.store,turn)).toMatchObject({source:"telegram",thread:"123",revision:1});
+  expect(JSON.stringify(f.store.db.prepare("SELECT * FROM correspondence_contexts").all())).not.toContain("Private terms");
+  f.worker.receive(f.source(),{...f.event("later"),threadId:"123"});
+  expect(()=>correspondenceDecision(f.store,turn)).toThrow(/newer/i);
+  await f.finishRun();
+});
+
+it("gives a Telegram or Gmail drafter concrete memory, billing and private decision tools in its instructions", async () => {
+  const f=fixture(); configureCorrespondence(f.store,true,{...f.input,drafts:{ownerTelegram:null}});
+  f.worker.receive(f.source(),f.event());await vi.advanceTimersByTimeAsync(45_000);
+  for (const phrase of ["correspondence_context","company_payment_links_list","correspondence_question","human or unknown draft"]) expect(f.calls[0]!.text).toContain(phrase);
+  await f.finishRun();
+});

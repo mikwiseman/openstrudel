@@ -1,3 +1,4 @@
+import { decisionCurrent, type CorrespondenceOrigin } from "./correspondence.js";
 import { randomBytes } from "node:crypto";
 import type { Store } from "./store.js";
 import type { MessageService } from "./messages.js";
@@ -32,12 +33,13 @@ export interface Card {
 }
 /** What the Home keeps beside the shown content: where its own bot would send, the service action an approval stands for,
  * and whether a press still lets one matching service call through. Never sent to a client. */
-type Kept = CardContent & { chatId?: string; action?: Pick<SendAction, "server" | "tool" | "params">; grant?: "ready" | "used"; /** What the Home's own card stands for, such as a schedule. */ key?: string };
+type Kept = CardContent & { correspondence?: CorrespondenceOrigin; chatId?: string; action?: Pick<SendAction, "server" | "tool" | "params">; grant?: "ready" | "used"; /** What the Home's own card stands for, such as a schedule. */ key?: string };
 type Row = { id: string; kind: CardKind; conversation_id: string; profile_id: string | null; message_id: string | null; chat_id: string | null; telegram_message_id: number | null;
   people: string[] | null; title: string; reason: string | null; content: Kept; choices: CardChoice[]; state: "open" | "answered"; answer: CardAnswer | null;
   interaction_id: string | null; created_at: string; answered_at: string | null; told: number };
 export type CardPerson = { via: "telegram"; userId: string; name: string } | { via: "app" };
 export interface RaiseContext {
+  correspondence?: CorrespondenceOrigin & {needsDetails:boolean};
   conversationId: string; messageId: string; channel: "api" | "telegram"; profile: EmployeeProfile | null;
   scheduled?: boolean; scheduleTelegramChatId?: string | null; access?: boolean;
   /** A chat this turn may itself send to through the Home's bot. */
@@ -142,8 +144,16 @@ export class Cards {
       if (nextTry) content.nextTry = new Date(nextTry).toISOString();
       choices = [{ id: "ok", label: word("ok", ru), role: "primary" }];
     }
+    if (context.correspondence) {
+      const {needsDetails,source,thread,revision}=context.correspondence;
+      content.correspondence={source,thread,revision};
+      if (needsDetails) choices=[{...choices[0]!,needsText:true},choices[1]!];
+      const previous=this.rows("conversation_id=? AND kind='answer'",context.conversationId)
+        .find(row=>row.content.correspondence?.source===source && row.content.correspondence.thread===thread && row.content.correspondence.revision===revision);
+      if (previous) return {id:previous.id,state:previous.state,alreadyAsked:true};
+    }
     // Still waiting: the same thing is never shown twice.
-    const same = this.rows("conversation_id=? AND state='open'", context.conversationId).find(row => row.kind === kind && row.title === title && (row.content.text ?? "") === (content.text ?? ""));
+    const same = this.rows("conversation_id=? AND state='open'", context.conversationId).find(row => !context.correspondence && !row.content.correspondence && row.kind === kind && row.title === title && (row.content.text ?? "") === (content.text ?? ""));
     if (same) { this.pointed.add(`${context.messageId}:${same.chat_id}`); return { id: same.id, state: "open", alreadyOpen: true, shown: this.shownTo(same) }; }
     if (this.rows("conversation_id=? AND state='open'", context.conversationId).length >= OPEN_LIMIT) throw new Error(`${OPEN_LIMIT} cards from this chat still wait for an answer. Raise no more until some are answered.`);
     const destination = this.destination(args.person, context);
@@ -285,6 +295,7 @@ export class Cards {
     const answer = row.answer;
     if (answer) add(`\n\n✓ ${answer.outcome ?? answer.label} · ${answer.by}, ${this.clock(answer.at)}`);
     else if (note) add("\n\n" + note);
+    if (row.content.correspondence) { add("\n\n"); add(ru ? "Отправлено AI-помощником." : "Sent by an AI assistant.", "italic"); }
     return { text, entities };
   }
   private fits(row: Row): boolean { return !this.telegramText({ ...row, answer: null }).text.endsWith(word("long", speaksRussian(row))); }
@@ -411,7 +422,17 @@ export class Cards {
       .run(JSON.stringify(answer), at, JSON.stringify(rule ? { ...row.content, rule } : row.content), row.id).changes;
     return Number(changed) ? this.row(row.id) : null;
   }
-  private answerLine(row: Row): string { return `«${row.title}»: ${row.answer?.text ?? row.answer?.label ?? ""}`; }
+  private answerLine(row: Row): string {
+    const answer = `«${row.title}»: ${row.answer?.text ?? row.answer?.label ?? ""}`;
+    const origin=row.content.correspondence;
+    if (!origin) return answer;
+    if (!decisionCurrent(this.store, row.conversation_id, origin)) return "This correspondence decision expired when the conversation changed. Take no action from the old answer.";
+    const approved = row.answer?.choice === "c0";
+    return [answer, "Private correspondence reference: " + JSON.stringify({ ...origin, terms: row.reason, decisionId: row.id }),
+      approved ? "Re-read the thread, current draft and service records. Only apply the displayed terms if they still match. Use the decision ID for idempotency. Verify the provider result, then save and verify the recipient's draft."
+        : "The owner supplied information. Re-read the source and look for an existing match. Show the exact terms for a separate approval before creating anything.",
+      "Sending requires a separate request."].join("\n");
+  }
   private markTold(ids: string[]): void { for (const id of ids) this.store.db.prepare("UPDATE cards SET told=1 WHERE id=?").run(id); }
   private keep(row: Row, content: Kept, outcome?: string): Row {
     this.store.db.prepare("UPDATE cards SET content_json=?,answer_json=? WHERE id=?").run(JSON.stringify(content), row.answer ? JSON.stringify(outcome ? { ...row.answer, outcome } : row.answer) : null, row.id);
@@ -422,12 +443,17 @@ export class Cards {
   private ownSend(row: Row): boolean { return row.kind === "send" && row.answer?.choice === "send" && Boolean(row.content.chatId) && !row.content.action; }
   /** The raiser has to act on this answer now: a choice or words, a connection to check, a send through its own service. */
   private needsTurn(row: Row): boolean {
+    if (row.content.correspondence && row.answer?.choice==="c1") return false;
     return !this.ownSend(row) && (row.kind === "answer" || row.kind === "connect" || row.answer?.text != null || row.kind === "send" && row.answer?.choice === "send");
   }
 
   /** What follows an answer: the Home acts itself where the button was the whole instruction, otherwise the raiser's chat gets the answer. */
   private async carry(row: Row, by: CardPerson): Promise<void> {
     const choice = row.answer!.choice, ru = speaksRussian(row);
+    if (row.content.correspondence && !decisionCurrent(this.store,row.conversation_id,row.content.correspondence)) {
+      const updated=this.keep(row,row.content,ru ? "Переписка изменилась." : "The conversation has changed.");
+      this.markTold([row.id]); await this.redraw(updated); return;
+    }
     const live = row.interaction_id ? this.messages.interactions.get(row.interaction_id) : undefined;
     if (live) {
       // The waiting turn gets its answer and goes on by itself.
@@ -461,7 +487,7 @@ export class Cards {
   private async continue(row: Row, by: CardPerson): Promise<void> {
     const telegram = this.messages.telegram, chat = row.chat_id ? this.store.getTelegramChat(row.chat_id) : null;
     const submission: MessageInput = by.via === "telegram" && chat
-      ? { channel: "telegram", conversationId: row.conversation_id, text: this.answerLine(row), externalId: `${chat.chatId}:card:${row.id}`, externalChatId: chat.chatId, title: chat.title,
+      ? { channel: "telegram", conversationId: row.content.correspondence && chat.conversationId ? chat.conversationId : row.conversation_id, text: this.answerLine(row), externalId: `${chat.chatId}:card:${row.id}`, externalChatId: chat.chatId, title: chat.title,
           telegramSenderId: by.userId, author: by.name, byOwner: Number(chat.chatId) > 0 && accessOwners(this.store).includes(by.userId), cardReply: true }
       : { channel: "api", conversationId: row.conversation_id, text: this.answerLine(row), externalId: `card:${row.id}`, externalChatId: "home", byOwner: true, cardReply: true };
     const stopTyping = chat && telegram?.enabled() ? telegram.showTyping(chat.chatId) : () => {};
@@ -498,7 +524,7 @@ export class Cards {
 
   private view(row: Row): Card {
     const chat = row.chat_id ? this.store.getTelegramChat(row.chat_id) : null, owners = accessOwners(this.store);
-    const { chatId: _chatId, action: _action, grant: _grant, key: _key, ...content } = row.content;
+    const { chatId: _chatId, action: _action, grant: _grant, key: _key, correspondence: _origin, ...content } = row.content;
     return { id: row.id, kind: row.kind, state: row.state, createdAt: row.created_at, raiser: { profileId: row.profile_id, name: this.raiserName(row) ?? "OpenStrudel" },
       conversationId: row.conversation_id, messageId: row.message_id, title: row.title, reason: row.reason, content, choices: row.choices, chat: chat ? { id: chat.chatId, title: chat.title } : null,
       for: row.people?.map(id => ({ id, name: this.name(id) })) ?? null, canAnswer: !row.people || row.people.some(id => owners.includes(id)), answer: row.answer };
