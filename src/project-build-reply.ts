@@ -55,6 +55,8 @@ export function buildReply(job: BuildRequest, request: string): BuildReply | nul
   const russian = projectUsesRussian(request);
   const t = (en:string,ru:string)=>russian ? ru : en;
   const name = projectName(job.repository);
+  const number = "apple_build_number" in job ? job.apple_build_number : undefined;
+  const numbered = typeof number === "number" && Number.isSafeInteger(number) && number > 0;
   const lines = (job.detail ?? "").split("\n");
   const urls = lines.flatMap(line=>link(line.trim()) ?? []);
   const github = (url:URL) => url.origin === "https://github.com" && url.pathname.startsWith("/"+job.repository+"/");
@@ -70,7 +72,8 @@ export function buildReply(job: BuildRequest, request: string): BuildReply | nul
   }
   if (job.state === "failed") {
     if (!job.repository && lines[0] === "Apple reported a TestFlight workflow failure.")
-      return result(t("AiGid’s Xcode Cloud workflow failed.", "Сбой сборки AiGid в Xcode Cloud."),
+      return result(numbered ? t("Xcode Cloud failed for AiGid build "+number+".","Сбой сборки AiGid №"+number+" в Xcode Cloud.")
+        : t("AiGid’s Xcode Cloud workflow failed.", "Сбой сборки AiGid в Xcode Cloud."),
         action(t("View build log","Открыть журнал"),apple),
         t("Check the failed action in Xcode Cloud. The workflow status doesn’t confirm whether a build was uploaded.", "Откройте этап с ошибкой в Xcode Cloud. Статус запуска не показывает, была ли сборка загружена."));
     const buildLog=urls.find(url=>github(url) && !url.search && !url.hash && /\/(?:actions\/runs\/\d+|pull\/\d+|commit\/[a-f\d]{40})$/iu.test(url.pathname));
@@ -81,7 +84,8 @@ export function buildReply(job: BuildRequest, request: string): BuildReply | nul
     const appId=apple && applePath.exec(apple.pathname)?.[1];
     const links=appId ? [...action(t("Open TestFlight","Открыть TestFlight"),new URL("https://testflight.apple.com/v1/app/"+appId)),
       ...action(t("Build details","Детали сборки"),apple)] : action(t("Join public beta","Вступить в публичную бету"),invite);
-    return result(t("AiGid finished building in Xcode Cloud.","Сборка AiGid завершена в Xcode Cloud."),links,
+    return result(numbered ? t("AiGid build "+number+" finished in Xcode Cloud.","Сборка AiGid №"+number+" завершена в Xcode Cloud.")
+      : t("AiGid finished building in Xcode Cloud.","Сборка AiGid завершена в Xcode Cloud."),links,
       t("In TestFlight, open AiGid and tap Update when it appears.", "В TestFlight откройте AiGid и нажмите «Обновить», когда появится кнопка."));
   }
   if (job.package_target) {

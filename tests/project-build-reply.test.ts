@@ -34,6 +34,17 @@ describe("the result people receive in the project chat", () => {
     const legacy=buildReply(job({detail:"Apple completed the AiGid TestFlight workflow.\n"+testflight}),"Build it")!;
     expect(legacy.actions).toEqual([{text:"Join public beta",url:testflight}]);
   });
+  it("displays only a positive recorded Apple build number in success and failure replies", () => {
+    const success=job({detail:"Apple completed the AiGid TestFlight workflow.\n"+log});
+    const failure=job({state:"failed",detail:"Apple reported a TestFlight workflow failure.\n"+log});
+    const success185={...success,apple_build_number:185}, failed182={...failure,apple_build_number:182};
+    expect(buildReply(success185,"Build AiGid")!.title).toContain("AiGid build 185");
+    expect(buildReply(failed182,"Собери AiGid")!.title).toContain("AiGid №182");
+    for (const number of [undefined,null,0,-1,1.5]) {
+      const legacy={...success,apple_build_number:number};
+      expect(buildReply(legacy,"Build AiGid")!.title).toBe(buildReply(success,"Build AiGid")!.title);
+    }
+  });
   it("gives each desktop installer the right button even when the runner returns Linux first", () => {
     const block=(platform:string,id:number)=>"openramble-"+platform+"-"+revision+" · 95.1 MiB\n"+run+"/artifacts/"+id+"\nSHA-256 "+"5".repeat(64);
     const reply=buildReply(job({repository,package_target:"desktop",detail:block("linux",2)+"\n\n"+block("windows",1)+"\nRevision "+revision}),"Build both")!;
