@@ -13,6 +13,17 @@ export function projectDeliveryEvent(repository:string,route:string,secret:strin
   if (!["pull_request","issue_comment","deployment_status","workflow_run"].includes(event??"")) return null;
   const value=JSON.parse(body.toString("utf8"));
   if (value.repository?.full_name!==repository) return null;
+  if(route==="pages" && event==="deployment_status"){
+    const d=value.deployment,s=value.deployment_status;
+    if(d?.performed_via_github_app?.id!==34598 || d.performed_via_github_app.slug!=="github-pages" ||
+      d.environment!=="github-pages" || s?.environment!=="github-pages" || d.ref!==value.repository.default_branch ||
+      !sha.test(d.sha) || !["success","failure","error"].includes(s.state)) return null;
+    const [owner,project]=repository.toLowerCase().split("/");
+    const site="https://"+owner+".github.io/"+(project===owner+".github.io"?"":project+"/");
+    if(s.state==="success" && s.environment_url?.toLowerCase()!==site) return null;
+    return {kind:"result",source:"commit",key:d.sha,state:s.state==="success"?"completed":"failed",
+      detail:(s.state==="success" ? "GitHub Pages published the website.\n"+site : "GitHub Pages reported a deployment failure.")+"\nRevision "+d.sha};
+  }
   if(route==="push" && event==="workflow_run"){
     const run=value.workflow_run;
     if(value.action!=="completed" || run?.status!=="completed" || run.event!=="push" ||

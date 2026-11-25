@@ -52,3 +52,14 @@ it("reports only a completed default-branch push of the registered deployment wo
  expect(send({conclusion:"failure"})).toMatchObject({state:"failed"});
  for(const other of [{event:"pull_request"},{head_branch:"preview"},{path:".github/workflows/test.yml"},{head_repository:{full_name:"someone/fork"}},{status:"in_progress"},{head_sha:"bad"}])expect(send(other)).toBeNull();
 });
+
+it("confirms the actual GitHub Pages release of the checked default-branch commit",()=>{
+ const repo="owner/site",repository={full_name:repo,default_branch:"main"};
+ const deployment={sha:merged,ref:"main",environment:"github-pages",performed_via_github_app:{id:34598,slug:"github-pages"}};
+ const status={state:"success",environment:"github-pages",environment_url:"https://owner.github.io/site/"};
+ const send=(d:object,s:object)=>event(repo,"pages","deployment_status",{repository,deployment:d,deployment_status:s});
+ expect(send(deployment,status)).toMatchObject({state:"completed",key:merged,detail:expect.stringContaining(status.environment_url)});
+ expect(send(deployment,{...status,state:"error"})).toMatchObject({state:"failed"});
+ for(const d of [{...deployment,ref:"other"},{...deployment,performed_via_github_app:{id:2}},{...deployment,environment:"Preview"}])expect(send(d,status)).toBeNull();
+ expect(send(deployment,{...status,environment_url:"https://owner.github.io/another/"})).toBeNull();
+});
