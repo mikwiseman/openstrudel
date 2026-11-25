@@ -145,8 +145,9 @@ export class Cards {
       choices = [{ id: "ok", label: word("ok", ru), role: "primary" }];
     }
     if (context.correspondence) {
-      const {needsDetails,source,thread,revision}=context.correspondence;
-      content.correspondence={source,thread,revision};
+      const {needsDetails, ...origin}=context.correspondence;
+      const {source, thread, revision}=origin;
+      content.correspondence=origin;
       if (needsDetails) choices=[{...choices[0]!,needsText:true},choices[1]!];
       const previous=this.rows("conversation_id=? AND kind='answer'",context.conversationId)
         .find(row=>row.content.correspondence?.source===source && row.content.correspondence.thread===thread && row.content.correspondence.revision===revision);
@@ -384,7 +385,8 @@ export class Cards {
   /** An open card this person may answer in words by replying to its message. */
   waiting(chatId: string, messageId: number, userId?: number): { id: string; conversationId: string } | null {
     const row = this.rows("chat_id=? AND telegram_message_id=? AND state='open'", chatId, messageId)[0];
-    return row && ["answer", "due", "send"].includes(row.kind) && this.mayAnswer(row, userId === undefined ? undefined : String(userId), chatId) ? { id: row.id, conversationId: row.conversation_id } : null;
+    if (!row || !["answer", "due", "send"].includes(row.kind) || !this.mayAnswer(row, userId === undefined ? undefined : String(userId), chatId)) return null;
+    return { id: row.id, conversationId: this.telegramReplyConversation(row) };
   }
 
   /** The person's words as the answer. The caller sends `text` on as that person's own message in the card's conversation. */
@@ -426,12 +428,20 @@ export class Cards {
     const answer = `«${row.title}»: ${row.answer?.text ?? row.answer?.label ?? ""}`;
     const origin=row.content.correspondence;
     if (!origin) return answer;
-    if (!decisionCurrent(this.store, row.conversation_id, origin)) return "This correspondence decision expired when the conversation changed. Take no action from the old answer.";
+    if (!this.currentDecision(row)) return "This correspondence decision expired when the conversation changed. Take no action from the old answer.";
     const approved = row.answer?.choice === "c0";
     return [answer, "Private correspondence reference: " + JSON.stringify({ ...origin, terms: row.reason, decisionId: row.id }),
       approved ? "Re-read the thread, current draft and service records. Only apply the displayed terms if they still match. Use the decision ID for idempotency. Verify the provider result, then save and verify the recipient's draft."
         : "The owner supplied information. Re-read the source and look for an existing match. Show the exact terms for a separate approval before creating anything.",
       "Sending requires a separate request."].join("\n");
+  }
+  private currentDecision(row: Row): boolean {
+    const origin = row.content.correspondence;
+    // Older cards recorded their recipient only in the delivery address.
+    return !origin || decisionCurrent(this.store, row.conversation_id, { ...origin, ownerTelegram: origin.ownerTelegram ?? row.chat_id });
+  }
+  private telegramReplyConversation(row: Row): string {
+    return row.content.correspondence && row.chat_id ? this.store.getTelegramChat(row.chat_id)?.conversationId ?? row.conversation_id : row.conversation_id;
   }
   private markTold(ids: string[]): void { for (const id of ids) this.store.db.prepare("UPDATE cards SET told=1 WHERE id=?").run(id); }
   private keep(row: Row, content: Kept, outcome?: string): Row {
@@ -450,7 +460,7 @@ export class Cards {
   /** What follows an answer: the Home acts itself where the button was the whole instruction, otherwise the raiser's chat gets the answer. */
   private async carry(row: Row, by: CardPerson): Promise<void> {
     const choice = row.answer!.choice, ru = speaksRussian(row);
-    if (row.content.correspondence && !decisionCurrent(this.store,row.conversation_id,row.content.correspondence)) {
+    if (!this.currentDecision(row)) {
       const updated=this.keep(row,row.content,ru ? "Переписка изменилась." : "The conversation has changed.");
       this.markTold([row.id]); await this.redraw(updated); return;
     }
@@ -487,7 +497,7 @@ export class Cards {
   private async continue(row: Row, by: CardPerson): Promise<void> {
     const telegram = this.messages.telegram, chat = row.chat_id ? this.store.getTelegramChat(row.chat_id) : null;
     const submission: MessageInput = by.via === "telegram" && chat
-      ? { channel: "telegram", conversationId: row.content.correspondence && chat.conversationId ? chat.conversationId : row.conversation_id, text: this.answerLine(row), externalId: `${chat.chatId}:card:${row.id}`, externalChatId: chat.chatId, title: chat.title,
+      ? { channel: "telegram", conversationId: this.telegramReplyConversation(row), text: this.answerLine(row), externalId: `${chat.chatId}:card:${row.id}`, externalChatId: chat.chatId, title: chat.title,
           telegramSenderId: by.userId, author: by.name, byOwner: Number(chat.chatId) > 0 && accessOwners(this.store).includes(by.userId), cardReply: true }
       : { channel: "api", conversationId: row.conversation_id, text: this.answerLine(row), externalId: `card:${row.id}`, externalChatId: "home", byOwner: true, cardReply: true };
     const stopTyping = chat && telegram?.enabled() ? telegram.showTyping(chat.chatId) : () => {};
