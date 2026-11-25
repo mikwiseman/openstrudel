@@ -85,7 +85,9 @@ def build(payload):
                      "--mount","type=bind,src="+str(source)+",dst=/wolf-source,readonly",
                      "--mount","type=bind,src="+str(export)+",dst=/export"]
             if target=="android":
-                command.extend(["--mount","type=bind,src=/opt/wolf-android,dst=/opt/android,readonly"])
+                command.extend(["--env","JAVA_TOOL_OPTIONS=-Duser.home=/work",
+                                "--env","ANDROID_USER_HOME=/work/.android",
+                                "--mount","type=bind,src=/opt/wolf-android,dst=/opt/android,readonly"])
             command.extend([cfg["image"],target,subdir,sha])
             try:
                 # The package tools need public registries. The dedicated bridge blocks the host and private networks.
