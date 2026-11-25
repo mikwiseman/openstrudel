@@ -1,3 +1,5 @@
+import { buildsFor } from "./aigid-testflight.js";
+import { planAddress, planPresentation } from "./project-plan-telegram.js";
 import { ownerTimezone } from "./timezone.js";
 import { fastChat, readConversationModelSelection, resolveModelSelection } from "./model-settings.js";
 import type { CodexEngine, Message, MessageInput, MessageResult } from "./types.js";
@@ -21,7 +23,7 @@ import { isSpeechFile, transcribeRecording } from "./speech.js";
 import { connectorOutcome, reportConnectorIssues, errorProblem, failureCode, failedRun, quietReply, splitOutcome, problemText, reportIssue, resolveIssue, resolveVoiceIssue, runtimeIssues, toolProblem, toolRecovered, type ProblemCode, type ConnectorOutcome } from "./operations.js";
 import { ownerKnowledge, audienceConversation, workingMemory } from "./knowledge.js";
 import { privateSourceAudience } from "./private-sources.js";
-import { correspondenceAudience, correspondenceModel } from "./correspondence.js";
+import { correspondenceAudience, correspondenceCheckpoint, correspondenceModel } from "./correspondence.js";
 import { writeJsonLines } from "./history-export.js";
 import { groupWithoutAccess, hasAccess, ownerTurn } from "./telegram-tools.js";
 import { newsStamp, storyQuestion } from "./news.js";
@@ -181,7 +183,8 @@ export class MessageService {
     // in their private Telegram chat, when nothing else is running there. Anything the lane does not answer takes the turn below.
     // A dictated Telegram message is its transcript: its own recording is its only file and stays on the message either way.
     const dictated = input.dictated === true && input.channel === "telegram" && !input.attachments?.length && files.length === 1 && isSpeechFile(files[0]!.name, files[0]!.mimeType);
-    const ask = this.ask && !this.drains.has(conversation.id) && !profile && (!files.length || dictated) && !question && !input.scheduled && !input.cardReply && !input.context && !input.outputSchema && !input.brief
+    const planReply=input.channel==="telegram" && input.externalChatId && input.replyTo && buildsFor(this.store) ? planAddress(this.store,input.externalChatId,input.replyTo.messageId) : undefined;
+    const ask = this.ask && !planReply && !this.drains.has(conversation.id) && !profile && (!files.length || dictated) && !question && !input.scheduled && !input.cardReply && !input.context && !input.outputSchema && !input.brief
       && !/^(?:schedule|correspondence|operations):/.test(input.externalId ?? "") && !requestsDocumentSigning(input.telegramDirectText) && looksLikeQuestion(text) && this.ask.enabled() && !this.isGroupChat(conversation.id)
       && (input.channel === "telegram" ? Number(input.externalChatId) > 0 && hasAccess(this.store, input.telegramSenderId) : input.byOwner === true && conversation.externalId === "home")
       ? this.ask : undefined;
@@ -189,6 +192,7 @@ export class MessageService {
     const started = new Promise<void>(resolve => { start = resolve; });
     const completion = this.enqueue(conversation.id, inbound.id, input.channel, async () => {
       let problem:ProblemCode|undefined;
+      let supersededToolFailure=false;
       let projectRun: ProjectRun | undefined, projectOutcome: "completed" | "failed" = "failed";
       // A scheduled run's cards for its own chat wait for its report; with no report to come they are shown when the run ends.
       let reportFollows = false;
@@ -275,10 +279,11 @@ export class MessageService {
         const nativeSources = selection.provider === "chatgpt" || providerInfo(selection.provider ?? "")?.engine === "codex";
         projectRun = await this.projects.begin(currentProfile?.id ?? "main", { conversationId:current.id,messageId:inbound.id,channel:input.channel,scope:context,scheduled,byOwner:input.byOwner,telegramSenderId:input.telegramSenderId,access }, nativeSources);
         const tools = employeeTools(this.store, engine, this.interactions, { deviceId: input.deviceId, profile: currentProfile, conversationId: current.id, messageId: inbound.id, channel: input.channel, scheduler: this.scheduler, projects:this.projects, serverShell:this.serverShell, scheduled,scheduleTelegramChatId:input.scheduleTelegramChatId,files:this.files,scope:context,telegram:this.telegram,byOwner:input.byOwner,telegramSenderId:input.telegramSenderId,access,cards:this.cards,
+          telegramReplyMessageId: input.channel==="telegram" ? input.replyTo?.messageId : undefined,
           telegramDirectText: !input.cardReply && text === input.text.trim() ? input.telegramDirectText : undefined,
           modelEngine: (agent, conversationId) => { const scope = conversationId ? this.contextFor(conversationId) : this.store.getSetting("employee.context." + agent) ?? this.store.getProfile(agent)?.domain ?? "personal"; return this.engine.forAgent?.(agent,scope,conversationId) ?? this.engine.forContext?.(scope) ?? this.engine; } });
         const fast = !scheduled && fastChat(this.store, currentProfile?.id ?? "main", current.id, groupContext);
-        const issues = !currentProfile && input.byOwner && !groupContext ? runtimeIssues(this.store) : [];
+        const issues = !currentProfile && input.byOwner && !groupContext ? runtimeIssues(this.store,input.channel==="telegram" ? input.telegramSenderId ?? "" : undefined) : [];
         // The current running receipt, saved grant and live audience authorize only
         // these source paths. A schedule never becomes an owner/management turn.
         const privateSourceAccess = nativeSources && !currentProfile && scheduled && privateSourceAudience(this.store, {
@@ -363,7 +368,16 @@ export class MessageService {
             },
           });
         if (result.threadId && !fresh) { this.store.setConversationThread(current.id, result.threadId); projectRun?.observe({type:"thread.started",payload:{threadId:result.threadId}}); }
-        if(problem)throw new Error(problemText[problem]);
+        if(problem){
+          // Keep an interrupted inbox batch for review. Its successor checks the same thread;
+          // an isolated tool error from the finished, obsolete turn needs no separate alert.
+          if(correspondence && problem==="tools" && !connectors.some(call=>call.failed)){
+            supersededToolFailure=!correspondenceCheckpoint(this.store,{
+              conversationId:current.id,messageId:inbound.id,channel:input.channel,scope:context,scheduled,access,
+            }).current;
+          }
+          throw new Error(problemText[problem]);
+        }
         if (text !== "/help") cardNotes.seen();
         if (correspondence && !correspondenceAudience(this.store, {
           conversationId: current.id, messageId: inbound.id, channel: input.channel, scope: this.contextFor(current.id),
@@ -372,6 +386,11 @@ export class MessageService {
         if (text !== "/help" && !fresh) this.store.advanceContextCheckpoint(current.id, inbound.id);
         // A scheduled result opens with its one line of what is now true.
         const answer = input.scheduled ? splitOutcome(result.response) : { text: result.response, outcome: null };
+        const plan=buildsFor(this.store)?.queue.proposal(inbound.id,current.id);
+        if (plan?.state==="pending") {
+          const shown=planPresentation(plan);
+          answer.text=shown.text+(input.channel==="api" ? (/[а-яё]/iu.test(plan.goal) ? "\n\nНапишите правку или ответьте «Одобряю»." : "\n\nReply with edits or say “Approve”.") : "");
+        }
         const outbound = this.store.addMessage({ conversationId: current.id, channel: input.channel, direction: "outbound", replyToId: inbound.id, text: answer.text, outcome: answer.outcome, attachments:tools.attachments, ...question ? { storyId: question.story.id } : {} });
         const hidden = (input.scheduled || groupContext && input.channel === "telegram") && quietReply(answer.text) || input.scheduled && failedRun(answer.text);
         if (hidden) this.store.db.prepare("UPDATE messages SET hidden=1 WHERE id=?").run(outbound.id);
@@ -394,7 +413,7 @@ export class MessageService {
         // A schedule's failure is said in the chat it was meant for, so an owner's private chat is not told twice,
         // and nobody saw the run, so its notice names the reason. A refusal quotes the model's path, not a cause.
         // The clock says a signed-out account once for every schedule it stops.
-        if (!this.active.get(conversation.id)?.abort.signal.aborted && !(input.externalId?.startsWith("schedule:") && failureCode(error) === "sign_in")) await this.reportProblem(conversation.id,inbound.id,problem ?? (error instanceof AcpRefusal ? "execution" : errorProblem(error)),input.channel==="telegram" ? input.externalChatId : input.scheduleTelegramChatId ?? undefined,
+        if (!supersededToolFailure && !this.active.get(conversation.id)?.abort.signal.aborted && !(input.externalId?.startsWith("schedule:") && failureCode(error) === "sign_in")) await this.reportProblem(conversation.id,inbound.id,problem ?? (error instanceof AcpRefusal ? "execution" : errorProblem(error)),input.channel==="telegram" ? input.externalChatId : input.scheduleTelegramChatId ?? undefined,
           error instanceof ProviderIncident || error instanceof AccountUnavailableError ? error.message : input.scheduled && !(error instanceof AcpRefusal) ? message : undefined);
         if (error instanceof HomeError || error instanceof AccountUnavailableError || error instanceof ProviderIncident) throw error;
         if (isOpenAIAuthenticationError(error)) throw new AccountUnavailableError("sign_in_required");

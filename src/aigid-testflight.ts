@@ -1,3 +1,4 @@
+import { approvesPlan, planAddress, reflectPlanDecision } from "./project-plan-telegram.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { readPagesDelivery, projectDeliveryEvent } from "./project-delivery.js";
 import { buildReply, nativeBuildReply, telegramBuildReply } from "./project-build-reply.js";
@@ -6,9 +7,9 @@ import { cloudStatus } from "./aigid-cloud-status.js";
 import { HomeError } from "./home.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { BuildQueue, requestId, packageTargets, isPackageTarget, type BuildRequest, type PackageTarget } from "./aigid-queue.js";
+import { BuildQueue, requestId, packageTargets, isPackageTarget, type BuildRequest, type PackageTarget, type ProposedBuild } from "./aigid-queue.js";
 import { prepareCandidate, projectModel } from "./aigid-candidate.js";
-import { dispatchAiGidCloud, githubTools, workerReadAccess, mergeWorkerCandidate, cloudPackages } from "./github.js";
+import { dispatchAiGidCloud, githubTools, installedWorkerRepository, workerReadAccess, mergeWorkerCandidate, cloudPackages } from "./github.js";
 import { hasAccess, type TelegramToolContext } from "./telegram-tools.js";
 import { assertNativeAccess } from "./authorization.js";
 import { resolveModelSelection } from "./model-settings.js";
@@ -48,7 +49,8 @@ export function releaseChat(store:Store,turn:TelegramToolContext) {
   const chat=boundChat(store,turn.conversationId);
   if (!chat) return;
   const source=store.getMessage(turn.conversationId,turn.messageId)?.externalId?.split(":");
-  const replyTo=source?.length===2 && source[0]===chat.chatId && /^[1-9]\d*$/.test(source[1]!) ? Number(source[1]) : undefined;
+  const last=source?.at(-1);
+  const replyTo=source?.[0]===chat.chatId && (source.length===2 || source.length===3 && source[1]==="plan") && last && /^[1-9]\d*$/.test(last) ? Number(last) : undefined;
   return {chatId:chat.chatId,replyTo};
 }
 export function feedbackFiles(store:Store,conversation:string,message:string,references:unknown):string[] {
@@ -74,17 +76,22 @@ function permitted(store:Store,c:Pick<Config,"telegram"|"devices"|"groups">,turn
   return owners.some(hash=>hash.slice(0,20)===turn.deviceId);
 }
 
+const projectArguments = {
+  repository:{type:"string"}, goal:{type:"string",minLength:1,maxLength:12000}, change:{type:"boolean"},
+  release:{type:"boolean"}, destination:{type:["string","null"],enum:["website",null]},
+  packages:{type:["array","null"],items:{type:"string",enum:[...packageTargets]}},
+};
+const proposalArgument = {type:"object",properties:{proposal:{type:"string"}},required:["proposal"],additionalProperties:false};
+const canonicalProject = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}\/[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$/;
+
 const delivery = "Wolf automatically posts the outcome in this conversation. Acknowledge the requested outcome in one short sentence in the user’s language, then release the chat.";
 
 export function reportParts(text: string) {
-  const footer="Sent by an AI assistant.";
-  return plainText(text,4096-footer.length-2).map(part=>({
-    text:part.text+"\n\n"+footer,
-    entities:[{type:"italic",offset:part.text.length+2,length:footer.length}],
-  }));
+  return plainText(text);
 }
 
 const services=new WeakMap<Store,AiGidBuilds>();
+export const buildsFor=(store:Store)=>services.get(store);
 export async function receiveCloudStatus(store:Store,event:string|undefined,body:Buffer,signature:string|undefined) {
   const service=services.get(store);
   if(!service) throw new HomeError("Release service unavailable.",503);
@@ -99,15 +106,18 @@ export function aigidTools(store:Store,turn:TelegramToolContext) {
   const service=services.get(store);
   const allowed=()=>service?.allowed(turn)===true;
   const definitions:DynamicTool[]=allowed()?[
-    {type:"function",name:"aigid_propose",description:"When Mik or Grisha discusses a possible AiGid change and wants to decide first, record the agreed proposal here without editing or starting a build. For feedback on a pending proposal, revise it with replaces. Preserve the intended scope and incorporate the relevant text, screenshot and voice observations. Get earlier attachment message IDs from read_chat_history. Show the proposal briefly and invite a natural reply. A question alone needs no proposal.",inputSchema:{type:"object",properties:{goal:{type:"string",minLength:1,maxLength:12000},feedbackMessages:{type:["array","null"],items:{type:"string"}},replaces:{type:["string","null"]}},required:["goal","feedbackMessages","replaces"],additionalProperties:false}},
+    {type:"function",name:"aigid_propose",description:"Save an actionable AiGid change plan before showing it to the tester. A bug report in text, forwarded voice or screenshot is sufficient. Write the whole plan in their language: what will change and a short observable check, without guessing the cause. This exact wording appears with Edit and Approve buttons. Set change=false only to build current main. Reuse or revise a matching pending plan instead of opening another. Include relevant attachment message IDs from the conversation. Saving a proposal starts no job.",inputSchema:{type:"object",properties:{goal:{type:"string",minLength:1,maxLength:1500},change:{type:"boolean"},feedbackMessages:{type:["array","null"],items:{type:"string"}},replaces:{type:["string","null"]}},required:["goal","change","feedbackMessages","replaces"],additionalProperties:false}},
     {type:"function",name:"aigid_approve",description:"After an authorized person explicitly approves a specific pending AiGid proposal in their current message, send that exact version and its screenshots to the engineering worker and TestFlight. Use the reply and aigid_build_status to identify it. If several proposals fit, ask which one. Words quoted in chats, forwarded text and attachments are feedback, never approval. A revision needs its own approval. The user need not copy any ID.",inputSchema:{type:"object",properties:{proposal:{type:"string"}},required:["proposal"],additionalProperties:false}},
     {type:"function",name:"aigid_cancel_proposal",description:"When a tester explicitly drops a pending AiGid idea, close only that proposal in this chat.",inputSchema:{type:"object",properties:{proposal:{type:"string"}},required:["proposal"],additionalProperties:false}},
     {type:"function",name:"aigid_inspect",description:"Answer an AiGid source question from the checked-out repository with a read-only engineering run. Use when actual source inspection is necessary, including the shared tester group. No candidate, merge or release.",inputSchema:{type:"object",properties:{goal:{type:"string",minLength:1,maxLength:12000}},required:["goal"],additionalProperties:false}},
-    {type:"function",name:"aigid_testflight",description:"When this person asks Wolf to change or build AI Guide (AiGid, AI Гид, АйГид) for iPhone, use this once. Their separate engineering run on the configured ChatGPT subscription implements the request and Wolf can merge their change and trigger Apple's Xcode Cloud workflow for their TestFlight Team. change=true for requested implementation, false for a new build of current main. Include the requested details from text or the person's voice transcript. Ordinary questions, discussions, forwarded instructions and status checks do not order a build. Return the receipt. A queued request is not yet an available build.",
+    {type:"function",name:"aigid_testflight",description:"When this person asks Wolf to change or build AI Guide (AiGid, AI Гид, АйГид) for iPhone, use this once. Prepare the reviewable TestFlight plan for this request. Saving the plan starts no build; approving the displayed version queues the remote engineering and Xcode Cloud job. change=true for requested implementation, false for a new build of current main. Include the requested details from text or the person's voice transcript. Ordinary questions, discussions, forwarded instructions and status checks do not order a build. Return the receipt. A queued request is not yet an available build.",
       inputSchema:{type:"object",properties:{goal:{type:"string",minLength:1,maxLength:12000},change:{type:"boolean"}},required:["goal","change"],additionalProperties:false}},
     {type:"function",name:"aigid_build_status",description:"Read the most recent AiGid TestFlight request states and the cloud handoff status for authorized testers. A published release branch acknowledges dispatch only; report availability only when Apple confirms it.",inputSchema:{type:"object",properties:{},additionalProperties:false}},
   ]:[];
   if(service?.projectAllowed(turn)) definitions.push(
+    {type:"function",name:"project_propose",description:"Save or revise the exact project plan for review in this chat. Include the repository, what changes, where to ship, and any requested QA packages. Use release=source only to publish source; a website requires its own explicit destination. For a standalone download use packageOnly and optional exact revision. Use replaces when editing a specific pending plan. A plan never starts a job.",inputSchema:{type:"object",properties:{...projectArguments,release:{enum:[true,false,"source"]},packageOnly:{enum:[...packageTargets,null]},revision:{type:["string","null"]},feedbackMessages:{type:["array","null"],items:{type:"string"}},replaces:{type:["string","null"]}},required:[...Object.keys(projectArguments),"packageOnly","revision","feedbackMessages","replaces"],additionalProperties:false}},
+    {type:"function",name:"project_approve",description:"Approve the exact saved version in this conversation only when the requester explicitly agrees to that plan.",inputSchema:proposalArgument},
+    {type:"function",name:"project_cancel_proposal",description:"Close the named pending plan when the requester drops it.",inputSchema:proposalArgument},
     {type:"function",name:"project_publish_source",description:"For an explicitly requested change and merge to the default branch of a project without a registered deployment, prepare and verify its source, publish the exact revision to GitHub and send the commit link. Existing repository workflows may run. Store, site or binary delivery requires the corresponding registered destination. Use project_build for projects with a configured deployment and for inspection or preparation alone.",inputSchema:{type:"object",properties:{repository:{type:"string"},goal:{type:"string",minLength:1,maxLength:12000}},required:["repository","goal"],additionalProperties:false}},
     {type:"function",name:"project_repositories",description:"Find named projects registered in the owner's additional server checkouts. Use github_repositories for GitHub App installations. Only this owner can see the additional projects.",inputSchema:{type:"object",properties:{query:{type:"string"}},required:["query"],additionalProperties:false}},
     {type:"function",name:"project_build",description:"Use for the owner's request to inspect, change, build or deploy a named GitHub project on the remote engineering server. Codex is the default. Use project_repositories and github_repositories to resolve the canonical owner/name. For projects with automatic deployment on a branch, a change without release stays on the personal project server. For AiGid iPhone use aigid_testflight. Use one call per repository. For a change and a download, include the requested targets in packages in this call (desktop builds Windows and Linux together) so they build the exact changed revision. change=true prepares a checked candidate. release=true only when the requester expressly asks to ship or deploy. Set destination=website when this request explicitly asks to deploy a website. A GitHub Pages route publishes only its website. Builds use the project's own tooling and delivery route. Include relevant text or voice transcription. Check the receipt before reporting a result.",inputSchema:{type:"object",properties:{repository:{type:"string"},goal:{type:"string",minLength:1,maxLength:12000},change:{type:"boolean"},release:{type:"boolean"},destination:{type:["string","null"],enum:["website",null]},packages:{type:["array","null"],items:{type:"string",enum:[...packageTargets]}}},required:["repository","goal","change","release","destination","packages"],additionalProperties:false}},
@@ -118,56 +128,85 @@ export function aigidTools(store:Store,turn:TelegramToolContext) {
       inputSchema:{type:"object",properties:{repository:{type:"string"},target:{type:"string",enum:[...packageTargets]},revision:{type:["string","null"]}},required:["repository","target","revision"],additionalProperties:false}}
   );
   return {definitions,sharedGroup:service?.sharedGroup(turn)===true,async call(name:string,args:Record<string,unknown>){
+    const savePlan=async(build:ProposedBuild,goal:string)=>{
+      if(goal.length>1500)throw new Error("Keep the proposal under 1500 characters so the tester can review its full scope.");
+      if(build.repository && build.release && service)build={...build,route:service.releaseRoute(build.repository) ?? "source"};
+      if(service)build=await service.resolveCandidatePlan(turn,build);
+      if(!service?.canRunPlan(turn,build)) throw new Error("This project or delivery destination is unavailable for the requester. Check the registered repository, website route and requested packages.");
+      return service.queue.propose(turn.messageId,turn.conversationId,goal,
+        feedbackFiles(store,turn.conversationId,turn.messageId,args.feedbackMessages),service.revision(turn,args.replaces),build);
+    };
     if(name==="project_package"){
-      const repository=String(args.repository??""),target=args.target,revision=args.revision;
-      if(!isPackageTarget(target) || !service?.canPackage(turn,repository,target)) throw new Error("This package target is unavailable for the requester.");
-      if(revision!=null && (typeof revision!=="string" || !/^[a-f0-9]{40}$/.test(revision))) throw new Error("Specify an exact commit, or null for the current default branch.");
-      const actor=(turn.channel==="api"?turn.deviceId:turn.telegramSenderId)!;
-      const receipt=service.queue.addPackage(turn.messageId,turn.conversationId,turn.channel,actor,repository,target,typeof revision==="string"?revision:undefined);
-      service.kick();return {...receipt,delivery};
+      const repository=args.repository,target=args.target,revision=args.revision;
+      if(typeof repository!=="string" || !isPackageTarget(target) || (revision!=null && typeof revision!=="string")) throw new Error("Choose the registered repository, package target and optional exact commit.");
+      const goal=store.getMessage(turn.conversationId,turn.messageId)?.text.trim().slice(0,1500) || `Build ${target} for ${repository}`;
+      return savePlan({repository,change:false,packageOnly:target,...typeof revision==="string"?{revision}:{}},goal);
     }
-    if(name==="project_build" || name==="project_build_status" || name==="project_repositories" || name==="project_publish_source"){
+    if(name==="project_propose" || name==="project_build" || name==="project_build_status" || name==="project_repositories" || name==="project_publish_source"){
       if(!service?.projectAllowed(turn)) throw new Error("This requester cannot use the project worker.");
       const actor=(turn.channel==="api"?turn.deviceId:turn.telegramSenderId)!;
-      if(name==="project_build_status") return service.projectStatus(actor);
+      if(name==="project_build_status") return {builds:service.projectStatus(actor),proposals:service.queue.pending(turn.conversationId).filter(p=>p.build.repository && service.canRunPlan(turn,p.build))};
       if(name==="project_repositories") return service.portfolio(String(args.query??""));
       const sourceOnly=name==="project_publish_source";
-      if(sourceOnly) args={...args,change:true,release:false,packages:[]};
-      if(typeof args.repository!=="string" || !/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}\/[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$/.test(args.repository) ||
-         typeof args.change!=="boolean" || typeof args.release!=="boolean" || typeof args.goal!=="string" || !args.goal.trim() || args.goal.length>12000)
+      if(sourceOnly) args={...args,change:true,release:"source",packages:[]};
+      const {repository,change,release,goal,destination,packageOnly,revision}=args;
+      if(typeof repository!=="string" || !canonicalProject.test(repository) || typeof change!=="boolean" ||
+        !(typeof release==="boolean" || (sourceOnly || name==="project_propose") && release==="source") ||
+        typeof goal!=="string" || !goal.trim() || goal.length>12000 || (destination!=null && destination!=="website"))
         throw new Error("Give the canonical repository and the requested project work.");
-      if(args.release && service.releaseRoute(args.repository)==="pages" && args.destination!=="website") throw new Error("This route publishes the GitHub Pages website. Select the website destination only for an explicit website release request.");
-      if(args.release && !args.change && ["push","branch","vercel","pages"].includes(service.releaseRoute(args.repository)??"")) throw new Error("This project's delivery starts on a source push. Request a change, or run a build of the existing revision without deploying.");
-      if(args.release && !service.releaseRoute(args.repository)) throw new Error("This repository has no registered automatic release destination. Request a build or a source change to prepare a candidate on the server.");
-      if(sourceOnly && !service.canPublishSource(args.repository)) throw new Error("This repository uses a different release route or has no registered source publication rights.");
-      const targets = args.packages ?? [];
-      if (!Array.isArray(targets) || targets.length > packageTargets.length || !targets.every(t => isPackageTarget(t) && service.canPackage(turn,args.repository as string,t)))
-        throw new Error("This project has no authorized package recipe for one or more requested platforms.");
-      const receipt=service.queue.add(turn.messageId,turn.conversationId,turn.channel,actor,args.goal.trim(),args.change,args.repository,sourceOnly?"source":args.release,[...new Set<PackageTarget>(targets)]);
+      const packages=args.packages??[];
+      if(!Array.isArray(packages) || packages.length>packageTargets.length || !packages.every(isPackageTarget) ||
+        packageOnly!=null && !isPackageTarget(packageOnly) || revision!=null && typeof revision!=="string")
+        throw new Error("Choose registered package targets and an optional exact package revision.");
+      const build:ProposedBuild={repository,change,release,packages:[...new Set<PackageTarget>(packages)],
+        ...destination==="website"?{destination}:{},...isPackageTarget(packageOnly)?{packageOnly}:{},...typeof revision==="string"?{revision}:{}};
+      if(name==="project_build" && !change && !release && !packages.length && !build.packageOnly && !build.revision){
+        service.assertSourceQuestion(turn);
+        const receipt=service.queue.add(turn.messageId,turn.conversationId,turn.channel,actor,goal.trim(),false,repository);
+        service.kick();return {...receipt,delivery};
+      }
+      return savePlan(build,goal.trim());
+    }
+    if (["aigid_approve","aigid_cancel_proposal","project_approve","project_cancel_proposal"].includes(name)) {
+      const id=String(args.proposal??""), plan=service?.queue.proposal(id,turn.conversationId);
+      if (!service || !plan || Boolean(plan.build.repository)!==name.startsWith("project_") || !service.canRunPlan(turn,plan.build)) throw new Error("Choose an authorized plan in this conversation.");
+      const target=service.replyPlan(turn);
+      if (target && (target.id!==id || target.edit)) throw new Error("This reply belongs to a different proposal or is an edit. Show the current plan.");
+      const words=turn.channel==="telegram" ? turn.telegramDirectText : store.getMessage(turn.conversationId,turn.messageId)?.text;
+      if (!words?.trim()) throw new Error("A decision must come from the tester, not a forward or quote.");
+      if (name.includes("cancel")) {
+        const result=service.queue.cancel(id,turn.conversationId);
+        await service.reflectDecision(turn,plan,true);
+        return result;
+      }
+      if (!approvesPlan(words,plan.build)) throw new Error("A clear affirmative is required. Ask the tester to approve the plan or use its button.");
+      if (!target && plan.state==="pending" && service.queue.pending(turn.conversationId).length>1)
+        throw new Error("Several plans are open. Ask the tester to reply to one plan or press its approval button.");
+      const actor=(turn.channel==="api"?turn.deviceId:turn.telegramSenderId)!;
+      const receipt=service.queue.approve(id,turn.messageId,turn.conversationId,turn.channel,actor);
+      if(plan.state==="pending") await service.reflectDecision(turn,plan,false);
       service.kick();return {...receipt,delivery};
     }
     if (!service||!allowed()) throw new Error("This device or Telegram sender cannot request an AiGid release.");
-    if (name==="aigid_build_status") return {builds:service.status(turn.conversationId),proposals:service.queue.pending(turn.conversationId)};
-    if(name==="aigid_cancel_proposal") return service.queue.cancel(String(args.proposal??""),turn.conversationId);
+    if (name==="aigid_build_status") return {builds:service.status(turn.conversationId),proposals:service.queue.pending(turn.conversationId).filter(p=>!p.build.repository)};
     const actor=(turn.channel==="api"?turn.deviceId:turn.telegramSenderId)!;
-    if(name==="aigid_approve"){
-      if(typeof args.proposal!=="string") throw new Error("Choose the approved proposal from this conversation.");
-      const receipt=service.queue.approve(args.proposal,turn.messageId,turn.conversationId,turn.channel,actor);
-      service.kick();return {...receipt,delivery};
-    }
     if(name==="aigid_propose" || name==="aigid_inspect"){
       if(typeof args.goal!=="string" || !args.goal.trim() || args.goal.length>12000) throw new Error("Describe the requested AiGid work.");
       if(name==="aigid_inspect"){
+        service.assertSourceQuestion(turn);
         const receipt=service.queue.add(turn.messageId,turn.conversationId,turn.channel,actor,args.goal.trim(),false,service.aigidRepository());
         service.kick();return {...receipt,delivery};
       }
-      if(args.replaces!=null && typeof args.replaces!=="string") throw new Error("Choose the proposal to revise.");
-      return service.queue.propose(turn.messageId,turn.conversationId,args.goal.trim(),feedbackFiles(store,turn.conversationId,turn.messageId,args.feedbackMessages),args.replaces??undefined);
+      if(args.goal.length>1500 || args.change!=null && typeof args.change!=="boolean") throw new Error("Give the concise plan as the tester will read it.");
+      const replaces=service.revision(turn,args.replaces);
+      if(replaces && service.queue.proposal(replaces,turn.conversationId)?.build.repository) throw new Error("Use the proposal tools for that repository.");
+      return service.queue.propose(turn.messageId,turn.conversationId,args.goal.trim(),feedbackFiles(store,turn.conversationId,turn.messageId,args.feedbackMessages),replaces,
+        typeof args.change==="boolean" ? {change:args.change} : undefined);
     }
     if (name!=="aigid_testflight" || typeof args.change!=="boolean" || typeof args.goal!=="string" || !args.goal.trim() || args.goal.length>12000) throw new Error("Give the requested AiGid build or change.");
-    if(args.change && service.queue.pending(turn.conversationId).length) throw new Error("This chat has a pending proposal. Approve the intended version or propose a separate change.");
-    const receipt=service.queue.add(turn.messageId,turn.conversationId,turn.channel,actor,args.goal.trim(),args.change);
-    service.kick();return {...receipt,delivery};
+    const replaces=service.revision(turn,null);
+    if(replaces && service.queue.proposal(replaces,turn.conversationId)?.build.repository) throw new Error("Use the proposal tools for that repository.");
+    return service.queue.propose(turn.messageId,turn.conversationId,args.goal.trim(),feedbackFiles(store,turn.conversationId,turn.messageId,[]),replaces,{change:args.change});
   }};
 }
 
@@ -183,6 +222,26 @@ export class AiGidBuilds {
     const pending = service.queue.db.prepare("SELECT * FROM jobs WHERE state='dispatched' AND release_project=1 AND repository IS NOT NULL").all();
     for (const row of pending) service.watchPages(row as unknown as BuildRequest);
     service.kick();return service;
+  }
+  async reflectDecision(turn:TelegramToolContext, plan:NonNullable<ReturnType<BuildQueue["proposal"]>>,cancelled:boolean) {
+    const chat=boundChat(this.store,turn.conversationId);
+    if (this.telegram && chat) await reflectPlanDecision(this.store,this.telegram,chat.chatId,plan,cancelled).catch(()=>undefined);
+  }
+  assertSourceQuestion(turn:TelegramToolContext) {
+    if (turn.channel==="telegram" && !turn.telegramDirectText?.trim() || this.replyPlan(turn)?.edit || this.queue.proposal(turn.messageId,turn.conversationId))
+      throw new Error("Save or revise the actionable feedback as a plan. A read-only job requires a separate original source question.");
+  }
+  replyPlan(turn:TelegramToolContext) {
+    const chat=turn.channel==="telegram" && turn.telegramReplyMessageId ? boundChat(this.store,turn.conversationId) : null;
+    return chat && turn.telegramReplyMessageId ? planAddress(this.store,chat.chatId,turn.telegramReplyMessageId) : undefined;
+  }
+  revision(turn:TelegramToolContext,replaces:unknown) {
+    if (replaces!=null && typeof replaces!=="string") throw new Error("Choose the plan to revise.");
+    const target=this.replyPlan(turn);
+    if (target && replaces && target.id!==replaces) throw new Error("Revise the exact plan this message answers.");
+    const id=target?.id ?? (typeof replaces==="string"?replaces:undefined);
+    if (id && this.queue.proposal(id,turn.conversationId)?.state!=="pending") throw new Error("This plan is no longer current. Show the latest version before editing.");
+    return id;
   }
   allowed(turn:TelegramToolContext) { const c=configuration(this.files.root);return !!c && permitted(this.store,c,turn); }
   sharedGroup(turn:TelegramToolContext) {
@@ -206,7 +265,31 @@ export class AiGidBuilds {
     if(!worker?.packages[repository]?.includes(target)) return false;
     return this.projectAllowed(turn) || (repository===configuration(this.files.root)?.repository && this.allowed(turn));
   }
+  async resolveCandidatePlan(turn:TelegramToolContext,build:ProposedBuild):Promise<ProposedBuild> {
+    const repo=build.repository;
+    if(!repo || build.release || build.packageOnly || build.packages?.length || build.destination || build.revision || !this.projectAllowed(turn) || this.portfolio(repo).some(p=>p.repository===repo))return build;
+    // An installation outside the release catalog can still prepare a candidate. The worker verifies GitHub again before checkout and publication.
+    return {...build,repository:await installedWorkerRepository(this.files.root,repo),githubOnly:true};
+  }
+  canRunPlan(turn:TelegramToolContext,build:ProposedBuild):boolean {
+    const {repository,change,release,packages=[],packageOnly,revision,destination}=build;
+    if(!repository) return this.allowed(turn);
+    if(!canonicalProject.test(repository)) return false;
+    if(packageOnly) return !change && !release && !packages.length && !destination && this.canPackage(turn,repository,packageOnly)
+      && (revision===undefined || /^[a-f0-9]{40}$/.test(revision));
+    if(revision || !this.projectAllowed(turn)) return false;
+    if(build.githubOnly) return !release && !destination && !packages.length;
+    if(!this.portfolio(repository).some(project=>project.repository===repository)) return false;
+    if(!packages.every(target=>this.canPackage(turn,repository,target))) return false;
+    const route=this.releaseRoute(repository);
+    if(build.route!==undefined && build.route!==(route ?? "source")) return false;
+    if(release==="source") return change && !destination && this.canPublishSource(repository);
+    if(destination && (!release || route!=="pages" && route!=="vercel")) return false;
+    return !release || Boolean(route && (route!=="pages" || destination==="website") && (change || route==="home"));
+  }
   private jobAllowed(job:BuildRequest,turn:TelegramToolContext) {
+    const plan=this.queue.approvedBuild(job.parent_request ?? job.id);
+    if(plan && !this.canRunPlan(turn,plan)) return false;
     if(job.package_target && job.repository) return this.canPackage(turn,job.repository,job.package_target);
     if(!job.repository) return this.allowed(turn);
     return this.projectAllowed(turn) || (!job.changes && !job.release_project && job.repository===configuration(this.files.root)?.repository && this.allowed(turn));
@@ -244,7 +327,7 @@ export class AiGidBuilds {
   }
   private async report(job:BuildRequest) {
     const current=this.queue.db.prepare("SELECT * FROM jobs WHERE id=?").get(job.id) as unknown as BuildRequest | undefined;
-    if (!current || !["completed","failed"].includes(current.state)) return;
+    if (!current || !["completed","failed","dispatched"].includes(current.state)) return;
     const turn=this.turn(current);
     if (!this.jobAllowed(current,turn)) return;
     const source=current.source_message ?? current.id;
@@ -261,7 +344,7 @@ export class AiGidBuilds {
     const parts=legacy ? reportParts(saved.text) : telegramBuildReply(reply);
     for (const [index,part] of parts.entries())
       await this.telegram?.sendMessage(target.chatId,part,index ? key+":"+index : key,target.replyTo,
-        !legacy && index===0 && reply.actions.length ? {buttons:[reply.actions]} : undefined);
+        {silent: current.state === "dispatched", ...(!legacy && index===0 && reply.actions.length ? {buttons:[reply.actions]} : {})});
   }
   async projectDelivery(repository:string,event:string|undefined,body:Buffer,signature:string|undefined) {
     const route=this.releaseRoute(repository);

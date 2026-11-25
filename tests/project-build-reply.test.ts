@@ -15,15 +15,18 @@ const job = (values: Partial<BuildRequest> = {}): BuildRequest => ({
 });
 
 describe("the result people receive in the project chat", () => {
-  it("stays quiet between the acknowledgement and the result", () => {
-    expect(buildReply(job({state:"dispatched",detail:"Published wolf-testflight/GUID at deadbeef."}),"Ship it")).toBeNull();
+  it("reports the cloud handoff once the release source is published", () => {
+    const reply=buildReply(job({state:"dispatched",detail:"Published wolf-testflight/GUID at deadbeef."}),"Собери AiGid")!;
+    expect(reply.title).toContain("Xcode Cloud");
+    expect(reply.actions).toEqual([]);
+    expect(telegramBuildReply(reply)[0]!.text).not.toMatch(/deadbeef|GUID|готова/);
     expect(buildReply(job({state:"preparing"}),"Ship it")).toBeNull();
   });
-  it("opens TestFlight in one tap, with a labeled native link and an italic Telegram attribution", () => {
+  it("opens TestFlight in one tap, with a labeled native link", () => {
     const reply=buildReply(job({detail:"Apple completed the AiGid TestFlight workflow.\n"+testflight+"\n"+log}),"Ship it")!;
     const [part]=telegramBuildReply(reply);
-    expect(part!.text).toBe("AiGid build complete.\n\nSent by an AI assistant.");
-    expect(part!.entities.map(e=>[e.type,part!.text.slice(e.offset,e.offset+e.length)])).toEqual([["bold","AiGid build complete."],["italic","Sent by an AI assistant."]]);
+    expect(part!.text).toBe("AiGid build complete.");
+    expect(part!.entities.map(e=>[e.type,part!.text.slice(e.offset,e.offset+e.length)])).toEqual([["bold","AiGid build complete."]]);
     expect(reply.actions).toEqual([{text:"Open TestFlight",url:testflight}]);
     expect(nativeBuildReply(reply)).toContain("[Open TestFlight]("+testflight+")");
     expect(nativeBuildReply(reply)).not.toContain("appstoreconnect");
@@ -32,7 +35,7 @@ describe("the result people receive in the project chat", () => {
     const block=(platform:string,id:number)=>"openramble-"+platform+"-"+revision+" · 95.1 MiB\n"+run+"/artifacts/"+id+"\nSHA-256 "+"5".repeat(64);
     const reply=buildReply(job({repository,package_target:"desktop",detail:block("linux",2)+"\n\n"+block("windows",1)+"\nRevision "+revision}),"Build both")!;
     expect(reply.actions).toEqual([{text:"Windows",url:run+"/artifacts/1"},{text:"Linux",url:run+"/artifacts/2"}]);
-    expect(telegramBuildReply(reply)[0]!.text).toBe("OpenRamble installers are ready.\n\nSent by an AI assistant.");
+    expect(telegramBuildReply(reply)[0]!.text).toBe("OpenRamble installers are ready.");
   });
   it("keeps an actual project answer and preserves its substantive Markdown", () => {
     const notes="Use **Export** in Settings.\n\nChoose a folder and save.";
@@ -45,7 +48,7 @@ describe("the result people receive in the project chat", () => {
     const reply=buildReply(job({state:"failed",detail:"Apple reported a TestFlight workflow failure.\n"+log}),"Собери для нас")!;
     expect(reply.title).toContain("AiGid");
     expect(reply.actions).toEqual([{text:"Открыть журнал",url:log}]);
-    expect(telegramBuildReply(reply)[0]!.text.endsWith("Отправлено AI-помощником.")).toBe(true);
+    expect(telegramBuildReply(reply)[0]!.text.includes("AI-помощником")).toBe(false);
   });
   it("never advertises installation from an unconfirmed or spoofed link", () => {
     for (const impostor of ["https://testflight.apple.com.evil.example/join/xxx","https://name@testflight.apple.com/join/foo",log]) {

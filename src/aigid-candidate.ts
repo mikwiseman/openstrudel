@@ -9,7 +9,8 @@ import type { ModelSelection } from "./model-settings.js";
 export function candidateSummary(result: Record<string, unknown>, changes: boolean) {
   if (changes && result.ready !== true) throw new Error(String(result.checks || "The requested change is incomplete.").slice(0,800));
   if (typeof result.notes !== "string" || !result.notes.trim()) throw new Error("Codex returned no TestFlight notes.");
-  return {notes:result.notes.trim().slice(0,1800),checks:typeof result.checks === "string" ? result.checks.slice(0,3000) : ""};
+  if (result.notes.trim().length > 1800) throw new Error("The worker summary exceeds the delivery limit.");
+  return {notes:result.notes.trim(),checks:typeof result.checks === "string" ? result.checks.slice(0,3000) : ""};
 }
 
 type WorkerModel = Pick<ModelSelection,"model"|"reasoningEffort">;
@@ -99,8 +100,9 @@ export async function prepareCandidate(input: {
       ? "Implement the requested source change and verify it with the available offline tools. Wolf runs registered package and deployment checks separately, using their installed SDKs and dependency access. Source readiness means the implementation is committed and its locally available checks pass. Name any checks delegated to the package or deployment runner. A locally observed source failure blocks publication. Start notes with a concise pull request title describing the change. Put Git details and test results in checks. Commit only the requested files on branch "+input.branch+". If the checkout already contains your changes from a prior attempt, verify and finish them. Leave a clean checkout. If the task could not be completed, report ready=false."
       : input.project ? "Carry out the requested inspection or build of exactly this revision without source edits. Run the requested checks and return their actual results. Generated build files are allowed. Report ready=false if the requested checks failed or could not run."
       : "The user requests a new build of canonical main without source changes. Read the current revision and give a brief factual What to Test note. Wolf already verified the checkout. The release checks run on Apple after this handoff.";
+    const summaryStyle="Write notes for the person testing the project in the language of the request. Lead with the result. For a bug, distinguish what you reproduced from a possible cause and give the next test. Prefer two or three complete sentences. Keep notes within 1800 characters; put diagnostic evidence in checks.";
     const params={threadId:parent,model,serviceTier:"default",...(input.selection.reasoningEffort?{effort:input.selection.reasoningEffort}:{}),
-      approvalPolicy:"never",input:[{type:"text",text:provenance+task+"\nRequested scope:\n"+input.goal+"\nAttachments from this request are in "+input.inputs},...input.images.map(path=>({type:"localImage",path}))],
+      approvalPolicy:"never",input:[{type:"text",text:provenance+task+"\n"+summaryStyle+"\nRequested scope:\n"+input.goal+"\nAttachments from this request are in "+input.inputs},...input.images.map(path=>({type:"localImage",path}))],
       outputSchema:input.changes||input.project
         ? {type:"object",properties:{ready:{type:"boolean"},notes:{type:"string"},checks:{type:"string"}},required:["ready","notes","checks"],additionalProperties:false}
         : {type:"object",properties:{notes:{type:"string"},checks:{type:"string"}},required:["notes","checks"],additionalProperties:false}};
@@ -108,14 +110,14 @@ export async function prepareCandidate(input: {
       const report=JSON.parse(text.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/,"$1"));
       if(!report || typeof report.notes!=="string" || typeof report.checks!=="string" ||
           (input.changes || input.project) && typeof report.ready!=="boolean") throw new Error("Incomplete worker report.");
+      if(report.ready!==false && report.notes.trim().length>1800) throw new Error("Shorten the summary.");
       return report;
     }
     const first=await turn(params);
     let report;
     try {report=parseReport(first);}
     catch {
-      // Recover only a malformed envelope. A real failed check must stay failed.
-      const text="Format the result of the work you already completed as the exact JSON object required by the output schema. Do not run commands, retry checks, or modify any files. Preserve failed checks and pending provider checks.";
+      const text="Format the result of the work you already completed as the exact JSON object required by the output schema. "+summaryStyle+" Do not run commands, retry checks, or modify any files. Preserve failed checks and pending provider checks.";
       report=parseReport(await turn({...params,input:[{type:"text",text}]}));
     }
     const summary=candidateSummary(report,input.changes || !!input.project);

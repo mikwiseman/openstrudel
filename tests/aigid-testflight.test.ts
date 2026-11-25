@@ -60,14 +60,13 @@ it("passes the selected ChatGPT deployment and refuses a worker reasoning downgr
   expect(()=>confirmedCandidateModel(selection,{...confirmed,serviceTier:"priority"})).toThrow(/speed/);
 });
 
-it("delivers long project reports with Telegram's length limit and an intact attribution on each part", () => {
-  const body="🧰".repeat(2600), footer="Sent by an AI assistant.";
+it("delivers long project reports verbatim across Telegram's length limit", () => {
+  const body="🧰".repeat(2600);
   const chunks=reportParts(body);
   expect(chunks.length).toBe(2);
   for(const chunk of chunks) {
     expect(chunk.text.length).toBeLessThanOrEqual(4096);
-    expect(chunk.text.slice(chunk.entities[0]!.offset)).toBe(footer);
-    expect(chunk.entities[0]!.type).toBe("italic");
+    expect(chunk.entities).toEqual([]);
   }
-  expect(chunks.map(chunk=>chunk.text.slice(0,-footer.length-2)).join("")).toBe(body);
+  expect(chunks.map(chunk=>chunk.text).join("")).toBe(body);
 });

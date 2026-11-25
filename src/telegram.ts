@@ -1,3 +1,5 @@
+import { buildsFor } from "./aigid-testflight.js";
+import { planAddress, pressPlan, sendPlanVersion } from "./project-plan-telegram.js";
 import { recordDiagnostic } from "./diagnostics.js";
 import { randomBytes, randomUUID } from "node:crypto";
 import { sha256, sleep } from "./util.js";
@@ -10,6 +12,7 @@ import { join } from "node:path";
 import { plainText, telegramText, type TelegramText } from "./telegram-format.js";
 import { isSpeechFile, transcribeRecording } from "./speech.js";
 import { errorProblem, quietReply, resolveVoiceIssue } from "./operations.js";
+import { isCorrespondenceNotice, mayDeliverCorrespondenceNotice } from "./correspondence.js";
 import type { MessageService } from "./messages.js";
 import type { Store } from "./store.js";
 import { agentTransfer, assertAgentWritable } from "./agent-move.js";
@@ -59,9 +62,8 @@ function directTelegramWords(message: TelegramMessage, transcript?: string, user
   return [words, (message.voice || message.video_note) && transcript].filter(Boolean).join("\n").trim() || undefined;
 }
 
-function signingNotice(body: string): TelegramText {
-  const attribution = "Отправлено AI-помощником.";
-  return { text: body + "\n\n" + attribution, entities:[{ type:"italic", offset:body.length+2, length:attribution.length }] };
+function attributedNotice(body: string): TelegramText {
+  return { text: body, entities: [] };
 }
 
 interface TelegramResponse<T> { ok: boolean; result: T; description?: string; error_code?: number; parameters?: { retry_after?: number } }
@@ -189,9 +191,10 @@ export class TelegramAdapter {
   /** Operational notices use the existing outbox and only explicitly paired owners. */
   async notifyOwner(notice: {id:string;text:string}, exceptChatId?: string): Promise<void> {
     if(!this.token)return;
+    const saved=this.store.db.prepare("SELECT external_id FROM messages WHERE id=? AND kind='notice'").get(notice.id);
     for(const chat of this.store.telegramChats()) {
-      if(chat.chatId===exceptChatId || !this.isOwner(Number(chat.chatId)) || chat.enabled===false || this.store.getSetting("telegram.paused."+chat.chatId)==="true")continue;
-      try {await this.sendMessage(chat.chatId,notice.text,"operation:"+notice.id);}
+      if(chat.chatId===exceptChatId || !this.isOwner(Number(chat.chatId)) || chat.enabled===false || this.store.getSetting("telegram.paused."+chat.chatId)==="true" || !mayDeliverCorrespondenceNotice(this.store,saved?.external_id,chat.chatId))continue;
+      try {await this.sendMessage(chat.chatId,isCorrespondenceNotice(saved?.external_id)?attributedNotice(notice.text):notice.text,"operation:"+notice.id);}
       catch {this.lastError="Не удалось подтвердить доставку уведомления владельцу. Оно сохранено в главном чате.";}
     }
   }
@@ -206,10 +209,10 @@ export class TelegramAdapter {
       for(const row of rows){
         const match=String(row.key).match(/^\d+:operation:([a-f0-9-]+):\d+$/),chat=this.store.getTelegramChat(String(row.chat_id));
         if(!match || !chat || !this.isOwner(Number(chat.chatId)) || chat.enabled===false || this.store.getSetting("telegram.paused."+chat.chatId)==="true")continue;
-        const notice=this.store.db.prepare("SELECT id,text FROM messages WHERE id=? AND kind='notice'").get(match[1]!);
-        const delivery=chat.chatId+":"+match[1];if(!notice || attempted.has(delivery))continue;attempted.add(delivery);
+        const notice=this.store.db.prepare("SELECT id,text,external_id FROM messages WHERE id=? AND kind='notice'").get(match[1]!);
+        const delivery=chat.chatId+":"+match[1];if(!notice || attempted.has(delivery) || !mayDeliverCorrespondenceNotice(this.store,notice.external_id,chat.chatId))continue;attempted.add(delivery);
         this.store.db.prepare("UPDATE telegram_outbox SET status='pending' WHERE chat_id=? AND key LIKE ? AND status IN ('unknown','not_sent')").run(chat.chatId,chat.chatId+":operation:"+match[1]+":%");
-        try{await this.sendMessage(chat.chatId,String(notice.text),"operation:"+notice.id);}
+        try{await this.sendMessage(chat.chatId,isCorrespondenceNotice(notice.external_id)?attributedNotice(String(notice.text)):String(notice.text),"operation:"+notice.id);}
         catch{this.lastError="Уведомление сохранено в главном чате. Повторим доставку при восстановлении Telegram.";break;}
       }
     })().finally(()=>{this.flushingOwnerNotices=undefined;});
@@ -445,7 +448,7 @@ export class TelegramAdapter {
   /** Every text message goes out here, through the durable outbox: an answer, a News post, a card, an approval. `text` is Markdown,
    * or a text already laid out with its entities. `buttons` are rows under the first part: links, and presses that come back to
    * `pressed`. Returns Telegram's id of the first part. */
-  async sendMessage(chatId: string | number, text: string | TelegramText, deliveryKey: string = randomUUID(), replyToMessageId?: number, options: { silent?: boolean; linkPreview?: boolean; preview?: string; rich?: string; assertCurrent?: () => void; buttons?: TelegramButton[][]; threadId?:number; retryRejected?:boolean;
+  async sendMessage(chatId: string | number, text: string | TelegramText, deliveryKey: string = randomUUID(), replyToMessageId?: number, options: { silent?: boolean; linkPreview?: boolean; preview?: string; rich?: string; assertCurrent?: () => void; buttons?: TelegramButton[][]; forceReply?:string; threadId?:number; retryRejected?:boolean;
     /** The text exactly as written: nothing in it is read as formatting. */ plain?: boolean } = {}): Promise<number | undefined> {
     if (!this.token) throw new Error("Telegram не подключён");
     if (typeof text === "string" && options.rich && await this.sendRich(chatId, options.rich, deliveryKey, replyToMessageId, options)) return;
@@ -457,7 +460,7 @@ export class TelegramAdapter {
       // A named page shows as a large preview under the first part; otherwise a preview is the sender's choice.
       const payload=JSON.stringify({chat_id:chatId,...chunk,link_preview_options:options.preview && index === 0 ? {url:options.preview,prefer_large_media:true} : {is_disabled:options.linkPreview !== true || Boolean(options.preview)},
         ...(options.threadId ? {message_thread_id:options.threadId} : {}),
-        ...(index === 0 && options.buttons ? {reply_markup:{inline_keyboard:options.buttons}} : {}),
+        ...(index === 0 && options.buttons ? {reply_markup:{inline_keyboard:options.buttons}} : index === 0 && options.forceReply ? {reply_markup:{force_reply:true,input_field_placeholder:options.forceReply}} : {}),
         ...(options.silent ? { disable_notification:true } : {}),
         // The owner's words still reach the group if the original was deleted.
         ...(index === 0 && replyToMessageId ? { reply_parameters: { message_id: replyToMessageId, allow_sending_without_reply: true } } : {})});
@@ -729,7 +732,7 @@ export class TelegramAdapter {
   private async sendSigningDocument(id: string, ownerId: string, document: Parameters<SigningTransport["sendSigningResult"]>[0]["document"], stage: "review"|"result"|"needs-review", text: string, buttons?: TelegramButton[][]): Promise<number> {
     const assertOwner = () => { if (!signingOwner(this.store,this.messages.files,ownerId,ownerId)) throw new Error("Личный чат владельца недоступен."); };
     assertOwner();
-    const caption = signingNotice(text), key = ownerId + ":signing:" + id + ":" + stage;
+    const caption = attributedNotice(text), key = ownerId + ":signing:" + id + ":" + stage;
     const payload = JSON.stringify({ name:document.name, digest:sha256(document.contentBase64), caption, buttons });
     this.store.db.prepare("INSERT OR IGNORE INTO telegram_outbox(key,chat_id,payload,status) VALUES(?,?,?,'pending')").run(key,ownerId,payload);
     const row = this.store.db.prepare("SELECT payload,status,message_id FROM telegram_outbox WHERE key=?").get(key)!;
@@ -773,7 +776,7 @@ export class TelegramAdapter {
   }
   async sendSigningStatus(input: Parameters<SigningTransport["sendSigningStatus"]>[0]) {
     const text = input.state === "signed" ? "Документ готов. PDF у Мика." : input.state === "declined" ? "Мик отклонил запрос." : "Документ требует проверки Миком.";
-    return this.sendMessage(input.chatId,signingNotice(text),"signing-status:"+input.id+":"+input.state,input.replyToMessageId,{threadId:input.messageThreadId,retryRejected:true});
+    return this.sendMessage(input.chatId,attributedNotice(text),"signing-status:"+input.id+":"+input.state,input.replyToMessageId,{threadId:input.messageThreadId,retryRejected:true});
   }
 
   private async downloadTelegramFile(media: TelegramFile): Promise<{ bytes:Uint8Array; path:string }> {
@@ -814,7 +817,7 @@ export class TelegramAdapter {
     const marks=requestedSigningMarks(words,!ownerGroup);
     if (!marks || !words) return false;
     const threadId=message.is_topic_message ? message.message_thread_id : undefined;
-    const reply=(body:string)=>this.sendMessage(chat,signingNotice(body),"signing-request:"+message.message_id,message.message_id,{threadId,retryRejected:true});
+    const reply=(body:string)=>this.sendMessage(chat,attributedNotice(body),"signing-request:"+message.message_id,message.message_id,{threadId,retryRejected:true});
     if (!doc?.file_id || !doc.file_name || message.media_group_id || target?.media_group_id || (message.document && target?.document)) {
       await reply("Приложите один документ с поручением или ответьте на сообщение с нужным файлом."); return true;
     }
@@ -962,7 +965,8 @@ export class TelegramAdapter {
       this.store.markTelegramUpdate(update.update_id); return;
     }
     const replyAuthor = message.reply_to_message?.from;
-    const replyToBot = Boolean(replyAuthor && (replyAuthor.id === this.bot?.id || replyAuthor.is_bot && username && replyAuthor.username?.toLowerCase() === username.toLowerCase()));
+    const planReply = message.reply_to_message && buildsFor(this.store) ? planAddress(this.store,chatId,message.reply_to_message.message_id) : undefined;
+    const replyToBot = Boolean(planReply) || Boolean(replyAuthor && (replyAuthor.id === this.bot?.id || replyAuthor.is_bot && username && replyAuthor.username?.toLowerCase() === username.toLowerCase()));
     const mentioned = Boolean(username && new RegExp(`@${username}(?![\\w])`, "i").test(text));
     const replyToOtherBot = Number(chatId) < 0 && replyAuthor?.is_bot && !replyToBot && !mentioned;
     const protectedAudience = isProtectedTelegramAudience(this.store, chatId);
@@ -1039,6 +1043,7 @@ export class TelegramAdapter {
     // Only the paired owner in a private chat; a group's audience is never just the owner.
     const byOwner = Number(chatId) > 0 && this.isOwner(message.from?.id);
     const cardAnswer = waitingCard && text.trim() ? this.messages.cards.words(waitingCard.id, text, { via: "telegram", userId: String(message.from!.id), name: author ?? String(message.from!.id) }) : null;
+    if (waitingCard && text.trim() && !cardAnswer) { this.store.markTelegramUpdate(update.update_id); return; }
     const telegramDirectText = !waitingCard && !contextOnly ? directTelegramWords(message,input.transcript,username) : undefined;
     let uploads: MessageInput["uploads"] = input.uploads;
     const document = target?.document;
@@ -1053,7 +1058,7 @@ export class TelegramAdapter {
         uploads = [...(uploads ?? []), { id:telegramUploadId(chatId,message.message_id,document.file_id), name:document.file_name,
           mimeType:document.mime_type, contentBase64:Buffer.from(bytes).toString("base64") }];
       } catch {
-        await this.sendMessage(chatId,signingNotice("Не удалось открыть документ из сообщения. Приложите его к запросу на подпись."),"signing-file:"+message.message_id,message.message_id);
+        await this.sendMessage(chatId,attributedNotice("Не удалось открыть документ из сообщения. Приложите его к запросу на подпись."),"signing-file:"+message.message_id,message.message_id);
         this.store.markTelegramUpdate(update.update_id); return;
       }
     }
@@ -1086,7 +1091,11 @@ export class TelegramAdapter {
       if (!control && (!currentBinding || currentBinding.profileId !== binding?.profileId)) throw new Error("Подключение этого чата изменилось. Ответ не отправлен в Telegram.");
       assertCurrent();
       readyToSend = true;
-      if (control) await this.sendMessage(chatId,control,`control:${externalId}`,message.message_id, { assertCurrent });
+      const builds=buildsFor(this.store);
+      const source=builds && this.store.getMessage(result.conversationId,result.messageId)?.replyToId;
+      const plan=source && builds?.queue.proposal(source,result.conversationId);
+      if (builds && plan && plan.state==="pending") await sendPlanVersion(this.store,builds,this,chatId,result.conversationId,plan,message.message_id,assertCurrent);
+      else if (control) await this.sendMessage(chatId,control,`control:${externalId}`,message.message_id, { assertCurrent });
       else if (!quietReply(result.text) || Number(chatId) >= 0 && !this.messages.cards.raisedInto(chatId, externalId)) await this.sendAnswer(message.chat.id, result.text, result.attachments, `reply:${result.messageId}`, Number(chatId) < 0 ? message.message_id : undefined, assertCurrent);
     }
     catch (error) {
@@ -1139,6 +1148,15 @@ export class TelegramAdapter {
    * press already taken; what the press started (a send, a draft, the raiser's turn) follows. */
   private async pressed(updateId: number, query: NonNullable<TelegramUpdate["callback_query"]>): Promise<void> {
     const data = query.data ?? "", chatId = String(query.message?.chat.id ?? ""), sender = query.from?.id;
+    if (data.startsWith("plan:")) {
+      const outcome:{toast:string;alert:boolean;carry?:()=>Promise<void>}=sender && !query.from?.is_bot && Number.isSafeInteger(sender) && sender>0 && this.authorizedSender(chatId,sender) && query.message?.message_id
+        ? pressPlan(this.store,buildsFor(this.store),this,{chatId,messageId:query.message.message_id,sender:String(sender),data})
+        : {toast:"План недоступен.",alert:true};
+      await this.call("answerCallbackQuery",{callback_query_id:query.id,text:outcome.toast,show_alert:outcome.alert}).catch(()=>undefined);
+      this.store.markTelegramUpdate(updateId);
+      await outcome.carry?.();
+      return;
+    }
     if (data.startsWith("signreq:")) {
       const match=/^signreq:([a-f0-9]{32}):(approve|decline)$/.exec(data);
       const owner=!!sender && !query.from?.is_bot && Number.isSafeInteger(sender) && String(sender)===chatId && query.message?.chat.type==="private" && this.isOwner(sender);
@@ -1146,7 +1164,7 @@ export class TelegramAdapter {
       if (owner && match && query.message?.message_id) {
         const result=await decideSigningRequest(this.store,this.messages.files,{id:match[1]!,approve:match[2]==="approve",ownerTelegramId:String(sender),ownerChatId:chatId,approvalMessageId:query.message.message_id},this);
         if (result.state==="unavailable") {
-          if (signingOwner(this.store,this.messages.files,chatId,chatId)) await this.sendMessage(chatId,signingNotice("Этот запрос уже недоступен. Новое решение по нему не принято."),"signing-unavailable:"+match[1]+":"+query.message.message_id,query.message.message_id,{retryRejected:true});
+          if (signingOwner(this.store,this.messages.files,chatId,chatId)) await this.sendMessage(chatId,attributedNotice("Этот запрос уже недоступен. Новое решение по нему не принято."),"signing-unavailable:"+match[1]+":"+query.message.message_id,query.message.message_id,{retryRejected:true});
         } else await this.call("editMessageReplyMarkup",{chat_id:chatId,message_id:query.message.message_id,reply_markup:{inline_keyboard:[]}}).catch(()=>undefined);
       }
       this.store.markTelegramUpdate(updateId); return;

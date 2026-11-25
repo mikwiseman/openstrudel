@@ -16,6 +16,7 @@ export interface TelegramToolContext {
   deviceId?: string;
   telegramSenderId?: string;
   telegramDirectText?: string;
+  telegramReplyMessageId?: number;
   /** False when the Telegram sender is not on this Home's access list. */
   access?: boolean;
   telegram?: TelegramAdapter;
