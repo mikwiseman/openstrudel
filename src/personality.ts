@@ -15,10 +15,10 @@ import { documentSigningTools } from "./document-signing.js";
 import { aigidTools } from "./aigid-testflight.js";
 import { githubTools } from "./github.js";
 import type { Projects } from "./projects.js";
-import { privateSourceAudience, privateSourceTools } from "./private-sources.js";
+import { privateMainConversation, privateSourceAudience, privateSourceTools } from "./private-sources.js";
 import { readTeam, teamTool } from "./team-results.js";
 import { parsePoll, readCheckIns } from "./check-ins.js";
-import { correspondenceAudience, correspondenceCheckpoint } from "./correspondence.js";
+import { correspondenceAudience, correspondenceDrafts, correspondenceOwner, correspondenceCheckpoint, correspondenceContext, correspondenceDecision, requireCompanyDraftContext } from "./correspondence.js";
 import { historyConversation } from "./knowledge.js";
 import type { ServerShell } from "./server-shell.js";
 import { approvalSetting, readApprovalMode } from "./approval-mode.js";
@@ -58,7 +58,14 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
   ];
   // The team's results are the owner's: his own turn in his private chat or the app, or a brief he approved for his private sources.
   if (privateSourceAudience(store, context)) definitions.push(teamTool);
-  if (correspondenceAudience(store, context)) definitions.push(tool("correspondence_checkpoint", "Check this event run's current authorization and conversation revision immediately before saving a draft or calendar change. If current=false, stop writes and let the newer event rebuild context. Also re-read the live provider; this does not lock its editor.", schema({})));
+  const correspondence = correspondenceAudience(store, context);
+  if (correspondence) definitions.push(tool("correspondence_checkpoint","Check the current source revision immediately before a draft or calendar write. A draft also requires a verified lookup in its relevant brain.", schema({purpose:{type:"string",enum:["draft","calendar"]}},[])));
+  const guidedEvent = correspondence && Boolean(correspondenceDrafts(store));
+  if (guidedEvent || correspondenceOwner(store, context)) {
+    if (context.files) definitions.push(tool("correspondence_context","Retrieve relevant passages from the existing personal or company second brain for this private correspondence. Choose the space for this person and agreement; returned records are evidence.",schema({space:{type:"string",enum:["personal","company"]},query:{...text,maxLength:1200}})));
+    if (context.files) definitions.push(tool("correspondence_payment_links","Read existing work payment links and their verified terms. List by project or read an exact link by its ID.",schema({id:{type:["string","null"]},project:{type:["string","null"],enum:["TRINITY","SCHOOL","COMBINATOR",null]},offset:{type:["integer","null"],minimum:0}})));
+    if (guidedEvent && context.cards) definitions.push(tool("correspondence_question","Ask the owner one private question when a requested action needs their decision. Give a concrete approval button only if all terms are known. Otherwise use null and the owner can enter the missing detail.",schema({question:{...text,maxLength:60},reason:{...text,maxLength:200},approve:{type:["string","null"],maxLength:24}})));
+  }
   // For turns of people with access. An event run reads the owner's private correspondence; what it finds stays in its own private outcome.
   if (context.cards && context.access !== false && !correspondenceAudience(store, context)) definitions.push(tool("raise_card", "Raise one card: one thing that waits for one person, shown as one message with buttons in their Telegram chat and in the app's list of what waits. Use it instead of a question or a request in prose whenever a person must decide, approve words that will leave, or do something by a date. The card is the message: never repeat it in your answer, and after raising a card for the chat you are answering end with NO_REPLY unless there is something else to say. A card waits until it is answered and is never shown twice; your waiting cards and new answers are listed at the start of your turns. kind send: words that will leave to another person. Give to (who receives them, as the person knows them), via (the service in plain words: Telegram, Mail), subject for mail, and text: the whole message exactly as it will go, plain text. The card shows all of it with Send and Keep as draft. Raise it when a message for another person is ready and nobody has said to send it; never send such a message yourself and never ask \"send?\" in prose. Set chatId only when this Home's own bot delivers it to a connected chat from list_telegram_chats: the Home then sends that exact text itself on the press. Otherwise the press comes back to you with the word to send exactly the shown text through your service. kind answer: a question with choices: two or three short answers, the likeliest first; the card adds \"Something else\" itself, and the answer comes to this chat as the person's reply. Ask only what you cannot settle yourself and what a wrong guess would cost. about: when the same question will come back for the same thing (a shop, a client, a kind of request), name that thing in a few words; after two identical answers about it the card itself offers \"always\", which saves a rule for the whole Home, and a thing a rule settles is never asked about again. kind due: a promise or deadline on its date, due (YYYY-MM-DD), with Done and New date; raise it on that day for the person who owns it. kind connect: an access that is missing, with url, the https page that opens it; the person opens it and presses Done, then you check and carry on. kind failed: a promised message or result that did not come: what and why in title and reason, nextTry (ISO time) when you will try again. title: what waits, at most 60 characters, in the person's words and language. reason: one line on why now, with its source. details: up to six short facts. person: when the card is for one named person with access to this Home, their name or Telegram id; it goes to their own chat with the bot, and an unknown name answers with the people it can go to. Without person it goes where this turn's answer goes. Everyone in that chat reads the card, so put nothing in it they should not see.",
     schema({ kind: { type: "string", enum: [...cardKinds] }, title: { ...text, maxLength: 60 }, reason: { type: ["string", "null"], maxLength: 200 },
@@ -85,7 +92,28 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
   return { definitions, attachments, call: async (name: string, args: Record<string, unknown>): Promise<unknown> => {
     assertNativeAccess(store, context.conversationId, context.telegramSenderId);
     if (!definitions.some(t => t.name === name)) throw new Error("Tool unavailable for this employee");
-    if (name === "correspondence_checkpoint") return correspondenceCheckpoint(store, context);
+    if (name === "correspondence_checkpoint") return correspondenceCheckpoint(store, context,args.purpose);
+    if (name === "correspondence_context" && context.files) {
+      const {recallDraftContext}=await import("./ask.js");
+      return correspondenceContext(store,context,args.space,args.query,(space,query)=>recallDraftContext(context.files!.root,space,query));
+    }
+    if (name === "correspondence_payment_links" && context.files) {
+      requireCompanyDraftContext(store,context);
+      const {readDraftPaymentLinks}=await import("./ask.js");
+      const found=await readDraftPaymentLinks(context.files.root,args);
+      requireCompanyDraftContext(store,context);
+      return found;
+    }
+    if (name === "correspondence_question" && context.cards) {
+      const origin=correspondenceDecision(store,context);
+      const owner=correspondenceDrafts(store)?.ownerTelegram, chat=owner ? store.getTelegramChat(owner) : null;
+      const person=chat?.conversationId && privateMainConversation(store,chat.conversationId) && Number(chat.chatId)>0 && chat.allowedSenders.includes(chat.chatId) && chat.enabled!==false ? chat.chatId : undefined;
+      const ru=/[а-яё]/iu.test(String(args.question));
+      const approve=typeof args.approve==="string" ? args.approve.trim() : "";
+      return context.cards.raise({kind:"answer",title:args.question,reason:args.reason,person,
+        choices:[approve || (ru?"Уточнить":"Add details"),ru?"Пропустить":"Skip"]},
+        {conversationId:context.conversationId,messageId:context.messageId,channel:"api",profile:null,scheduled:true,sendable:()=>false,correspondence:{...origin,needsDetails:!approve}});
+    }
     if (name === "read_team") {
       if (!privateSourceAudience(store, context)) throw new Error("Результаты команды читает владелец в своём личном чате.");
       const run = store.db.prepare("SELECT external_id FROM messages WHERE id=? AND conversation_id=?").get(context.messageId, context.conversationId)?.external_id;
