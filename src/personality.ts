@@ -33,8 +33,8 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
   const attachments:Attachment[]=[];
   const telegram = telegramTools(store, context);
   const signing = documentSigningTools(store, context);
-  const github = githubTools(store, context);
   const aigid = aigidTools(store, context);
+  const github = aigid.sharedGroup ? undefined : githubTools(store, context);
   const management = homeManagementTools(store, engine, context);
   const projects = context.projects?.tools(context);
   // Like a command of the agent's own, a server command asks first unless the owner chose to work without confirmations.
@@ -45,7 +45,7 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
   const definitions = [
     ...telegram.definitions,
     ...signing.definitions,
-    ...github.definitions,
+    ...(github?.definitions ?? []),
     ...aigid.definitions,
     ...(projects?.definitions ?? []),
     ...(server?.definitions ?? []),
@@ -99,7 +99,7 @@ export function employeeTools(store: Store, engine: CodexEngine, interactions: I
     if (telegram.definitions.some(t => t.name === name)) return telegram.call(name,args);
     if (signing.definitions.some(t => t.name === name)) return signing.call(args);
     if (aigid.definitions.some(t => t.name === name)) return aigid.call(name, args);
-    if (github.definitions.some(t => t.name === name)) return github.call(name,args);
+    if (github?.definitions.some(t => t.name === name)) return github.call(name,args);
     if (projects?.definitions.some(t => t.name === name)) return projects.call(name,args);
     if (server?.definitions.some(t => t.name === name)) return server.call(args);
     if (privateSources?.definitions.some(t => t.name === name)) return privateSources.call(name,args);

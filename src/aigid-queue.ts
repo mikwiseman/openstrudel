@@ -5,6 +5,7 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 export type PackageTarget = "android" | "web" | "macos";
+interface Proposal { id:string; goal:string; state:string; files:string; job_id:string|null }
 export function requestId(conversation: string, message: string, repository: string | null, operation: string) {
   const bytes = createHash("sha256").update(JSON.stringify([conversation, message, repository, operation])).digest();
   bytes[6] = (bytes[6]! & 15) | 128;
@@ -38,10 +39,65 @@ export class BuildQueue {
       (repository TEXT NOT NULL,source TEXT NOT NULL,identity TEXT NOT NULL,state TEXT NOT NULL,detail TEXT NOT NULL,at INTEGER NOT NULL,
        PRIMARY KEY(repository,source,identity))`);
     this.db.exec("CREATE INDEX IF NOT EXISTS jobs_source ON jobs(conversation,source_message,repository)");
+    this.db.exec(`CREATE TABLE IF NOT EXISTS aigid_proposals (
+      id TEXT PRIMARY KEY, conversation TEXT NOT NULL, goal TEXT NOT NULL, files TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'pending', job_id TEXT UNIQUE)`);
+  }
+  pending(conversation:string) {
+    return this.db.prepare("SELECT id,goal FROM aigid_proposals WHERE conversation=? AND state='pending' ORDER BY rowid")
+      .all(conversation) as unknown as Array<Pick<Proposal,"id"|"goal">>;
+  }
+  private proposal(id:string,conversation:string) {
+    return this.db.prepare("SELECT * FROM aigid_proposals WHERE id=? AND conversation=?").get(id,conversation) as unknown as Proposal|undefined;
+  }
+  cancel(id:string,conversation:string) {
+    const row=this.db.prepare("UPDATE aigid_proposals SET state='cancelled' WHERE id=? AND conversation=? AND state IN ('pending','cancelled') RETURNING id,state").get(id,conversation);
+    if(!row) throw new Error("Only a pending proposal in this chat can be cancelled.");
+    return row;
+  }
+  propose(id:string,conversation:string,goal:string,files:string[],replaces?:string) {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      let proposal=this.proposal(id,conversation);
+      if (!proposal) {
+        if (replaces) {
+          const prior=this.proposal(replaces,conversation);
+          if (prior?.state!=="pending") throw new Error("That proposal is no longer open in this chat.");
+          files=[...new Set([...JSON.parse(prior.files) as string[],...files])];
+          this.db.prepare("UPDATE aigid_proposals SET state='replaced' WHERE id=?").run(replaces);
+        }
+        if(files.length>24) throw new Error("Use up to 24 attachments for one change.");
+        this.db.prepare("INSERT INTO aigid_proposals (id,conversation,goal,files) VALUES(?,?,?,?)").run(id,conversation,goal,JSON.stringify(files));
+        proposal=this.proposal(id,conversation)!;
+      }
+      this.db.exec("COMMIT");return {id:proposal.id,goal:proposal.goal,state:proposal.state};
+    } catch(error) {this.db.exec("ROLLBACK");throw error;}
+  }
+  approve(id:string,message:string,conversation:string,channel:string,actor:string) {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const proposal=this.proposal(id,conversation);
+      if (!proposal || !["pending","approved"].includes(proposal.state)) throw new Error("That proposal is no longer open in this chat.");
+      if (id===message) throw new Error("Wait for a separate approval from a tester.");
+      let job=proposal.job_id;
+      if (!job) {
+        if(this.db.prepare("SELECT 1 FROM jobs WHERE conversation=? AND source_message=? AND repository IS NULL").get(conversation,message))
+          throw new Error("A different change is already being released for this approval.");
+        const receipt=this.add(message,conversation,channel,actor,proposal.goal,true);
+        job=String(receipt.id);
+        this.db.prepare("UPDATE aigid_proposals SET state='approved',job_id=? WHERE id=?").run(job,id);
+      }
+      const receipt=this.db.prepare("SELECT id,state,detail,pull FROM jobs WHERE id=?").get(job)!;
+      this.db.exec("COMMIT");return receipt;
+    } catch(error) {this.db.exec("ROLLBACK");throw error;}
+  }
+  feedbackFor(job:string):string[] {
+    const row=this.db.prepare("SELECT files FROM aigid_proposals WHERE job_id=?").get(job);
+    return row ? JSON.parse(String(row.files)) : [];
   }
   add(message: string, conversation: string, channel: string, actor: string, goal: string, changes: boolean,
       repository: string | null = null, releaseProject = false, targets: PackageTarget[] = []) {
-    this.db.exec("BEGIN IMMEDIATE");
+    this.db.exec("SAVEPOINT add_build");
     try {
       // Earlier Home versions used the message ID for project jobs. Keep their receipts valid on replay.
       const legacy = this.db.prepare("SELECT repository,actor,conversation FROM jobs WHERE id=?").get(message);
@@ -53,9 +109,9 @@ export class BuildQueue {
       if (repository) for (const target of targets) this.addPackage(message,conversation,channel,actor,repository,target,undefined,id);
       const receipt = this.db.prepare("SELECT id,state,detail,pull FROM jobs WHERE id=? AND conversation=? AND actor=?").get(id,conversation,actor);
       if (!receipt) throw new Error("Project request identity changed.");
-      this.db.exec("COMMIT");
+      this.db.exec("RELEASE add_build");
       return receipt;
-    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
+    } catch (error) { this.db.exec("ROLLBACK TO add_build; RELEASE add_build"); throw error; }
   }
   addPackage(message:string,conversation:string,channel:string,actor:string,repository:string,target:PackageTarget,revision?:string,parent?:string) {
     const id = requestId(conversation,message,repository,target);
