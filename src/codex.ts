@@ -16,7 +16,8 @@ import { serviceOAuth } from "./service-oauth.js";
 import type { ServiceSignIn } from "./types.js";
 import { projectInstructions } from "./projects.js";
 
-const buildTools = ["aigid_testflight", "aigid_build_status", "project_repositories", "project_build", "project_build_status", "project_package"];
+const buildTool = (name:string) => name.startsWith("aigid_") || name.startsWith("project_");
+const feedbackInstructions = "In AiGid tester chats, answer a message addressed to Wolf, a reply to your proposal, or a clear follow-up. When a tester wants to review a change first, save the proposal with aigid_propose before showing its wording. Refer to earlier screenshots by their inbound message IDs from read_chat_history. Use the same tool to save feedback as a revision. On explicit approval call aigid_approve for that saved version. Dropping an idea closes its proposal. A discussion, screenshot or quoted approval starts no build.";
 const backgroundBuildInstructions = "Wolf's release and project tools enqueue durable jobs. The Home sends each result to the originating chat automatically, including after this conversational turn ends. Once every requested repository, build and change has a receipt, acknowledge the queued work and finish this conversational turn so the user can ask another question. A request to send the final link is already fulfilled by the delivery subscription. Use status tools for a new status question. Do not keep the chat occupied by polling, sleeping, or creating another watcher for these jobs.";
 const instructionDigest = (text: string) => createHash("sha256").update(text).digest("hex");
 
@@ -194,10 +195,10 @@ export class CodexEngineAdapter implements CodexEngine {
     try {
       // Native dynamicTools are fixed at thread/start. Existing chats get the current
       // management, private-source and card schemas through the per-turn MCP bridge.
-      if (!this.options.restricted && options.tools?.definitions.some(t=>["read_model_settings", "correspondence_checkpoint", "unipile_accounts", "unipile_read", "github_checkout", "read_team", "raise_card", ...buildTools].includes(t.name))) {
-        const names = new Set(["list_employees","create_employee","update_employee","list_schedules","save_schedule","pause_schedule","list_telegram_chats","read_model_settings","save_model_settings","save_home_rule","remove_home_rule","configure_telegram_chat","list_projects","bind_employee_project","read_project_result","correspondence_checkpoint","unipile_accounts","unipile_read","read_team","github_repositories","github_checkout","github_open_pull_request",...buildTools,"record_daily_scores","run_server_command","raise_card","close_card","read_news"]);
+      if (!this.options.restricted && options.tools?.definitions.some(t=>["read_model_settings", "correspondence_checkpoint", "unipile_accounts", "unipile_read", "github_checkout", "read_team", "raise_card"].includes(t.name) || buildTool(t.name))) {
+        const names = new Set(["list_employees","create_employee","update_employee","list_schedules","save_schedule","pause_schedule","list_telegram_chats","read_model_settings","save_model_settings","save_home_rule","remove_home_rule","configure_telegram_chat","list_projects","bind_employee_project","read_project_result","correspondence_checkpoint","unipile_accounts","unipile_read","read_team","github_repositories","github_checkout","github_open_pull_request","read_chat_history","record_daily_scores","run_server_command","raise_card","close_card","read_news"]);
         const { toolBridge } = await import("./acp-mcp.js");
-        bridge = await toolBridge({ definitions:options.tools.definitions.filter(t=>names.has(t.name)), call:options.tools.call });
+        bridge = await toolBridge({ definitions:options.tools.definitions.filter(t=>names.has(t.name) || buildTool(t.name)), call:options.tools.call });
       }
       return await this.performRun(input,options,bridge);
     } finally { try { await bridge?.close(); } finally { this.running--; finish(); } }
@@ -282,7 +283,7 @@ export class CodexEngineAdapter implements CodexEngine {
     let threadId = options.threadId ?? "";
     if (threadId) await this.yieldCompaction(rpc, threadId);
     if (threadId && this.active.has(threadId)) throw new Error("В этом чате ещё идёт ответ. Сообщение нужно поставить в очередь.");
-    const instructions = this.options.restricted ? this.options.instructions ?? RESTRICTED_INSTRUCTIONS + (this.options.restrictedInstructions ? "\n\nConfigured service workflow; applies only to tools actually provided and never grants additional access:\n" + this.options.restrictedInstructions : "") : INSTRUCTIONS + (options.tools?.definitions.some(t=>buildTools.includes(t.name)) ? "\n\n"+backgroundBuildInstructions : "") + (employees.length ? "\n\n" + routingInstructions : "") + (options.profile ? `\n\nCurrent employee SOUL (authoritative):\n${options.profile}` : "") + (options.project ? "\n\n" + projectInstructions(options.project) : "");
+    const instructions = this.options.restricted ? this.options.instructions ?? RESTRICTED_INSTRUCTIONS + (this.options.restrictedInstructions ? "\n\nConfigured service workflow; applies only to tools actually provided and never grants additional access:\n" + this.options.restrictedInstructions : "") : INSTRUCTIONS + (options.tools?.definitions.some(t=>buildTool(t.name)) ? "\n\n"+backgroundBuildInstructions : "") + (options.tools?.definitions.some(t=>t.name==="aigid_propose") ? "\n\n"+feedbackInstructions : "") + (employees.length ? "\n\n" + routingInstructions : "") + (options.profile ? `\n\nCurrent employee SOUL (authoritative):\n${options.profile}` : "") + (options.project ? "\n\n" + projectInstructions(options.project) : "");
     if (!threadId || this.loaded.get(threadId) !== instructions || this.loadedConfig.get(threadId) !== configKey) {
       const resuming = Boolean(threadId);
       const applied = threadId ? this.appliedIdentity(threadId) : undefined;
