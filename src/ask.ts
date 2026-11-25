@@ -233,6 +233,7 @@ export async function recallAll(question: string, from: Memory[], options: { sig
 export const ASK_INSTRUCTIONS = `You answer questions about a person's own records inside OpenStrudel. The Home has already searched the memories they may use; what it found is the numbered evidence in the message.
 
 First decide what the message is. If it is not a question about records (it asks to do, send, create, change or schedule something, is small talk, continues a task from the recent messages, or needs other tools such as the web, files or a calendar), call hand_over and write nothing. The main assistant, which has every tool, answers it then.
+Call hand_over when the answer depends on the live conversation: who is still waiting for a reply, what needs a decision today, or whether a proposed meeting was confirmed. An earlier request in memory establishes what was asked at the time. Only the main assistant can check subsequent incoming and outgoing messages and the current calendar or payment record.
 
 Otherwise answer only when the evidence holds the answer:
 - Lead with the answer in one to three sentences. No preamble and no closing offer.

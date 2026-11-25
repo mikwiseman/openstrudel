@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { stringify } from "smol-toml";
-import { Ask, forgetMemories, looksLikeQuestion, memories, recallAll, type AskEngine } from "../src/ask.js";
+import { ASK_INSTRUCTIONS, Ask, forgetMemories, looksLikeQuestion, memories, recallAll, type AskEngine } from "../src/ask.js";
 import { MessageService } from "../src/messages.js";
 import { normalizeModels } from "../src/model-settings.js";
 import { runtimeIssues } from "../src/operations.js";
@@ -128,6 +128,11 @@ function picture({ store, thread, root }: ReturnType<typeof service>, conversati
 const sourced = "Lumen Studio paid 1,200 in October [1].\n\n- [1] [Payments, October](https://records.example/payments/october) · 2026-10-14";
 
 describe("the question check", () => {
+  it("hands current correspondence to the assistant that can read the live thread, even with a cited earlier request", () => {
+    expect(ASK_INSTRUCTIONS).toMatch(/hand_over[^\n]+live (conversation|thread)/i);
+    expect(ASK_INSTRUCTIONS).toMatch(/waiting.*confirmed/i);
+  });
+
   it.each([
     "Что мы решили с Lumen Studio по срокам?", "сколько они заплатили в октябре", "когда созвон с Анной", "а когда у нас созвон", "слушай, а сколько мы должны подрядчику",
     "напомни, что мы договорились с Lumen Studio", "скажи пожалуйста какой у них бюджет", "Договор подписан?", "Оплатили ли они счёт?", "почему перенесли запуск", "чей это был счёт",
