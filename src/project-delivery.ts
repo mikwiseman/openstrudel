@@ -10,9 +10,18 @@ const fromBot=(user:any,id:number,login:string)=>user?.id===id && user.login===l
 
 export function projectDeliveryEvent(repository:string,route:string,secret:string,event:string|undefined,body:Buffer,signature:string|undefined):ProjectDelivery|null {
   verifyGitHubSignature(secret,body,signature);
-  if (!["pull_request","issue_comment","deployment_status"].includes(event??"")) return null;
+  if (!["pull_request","issue_comment","deployment_status","workflow_run"].includes(event??"")) return null;
   const value=JSON.parse(body.toString("utf8"));
   if (value.repository?.full_name!==repository) return null;
+  if(route==="push" && event==="workflow_run"){
+    const run=value.workflow_run;
+    if(value.action!=="completed" || run?.status!=="completed" || run.event!=="push" ||
+       run.path!==".github/workflows/deploy.yml" || !value.repository.default_branch || run.head_branch!==value.repository.default_branch ||
+       run.head_repository?.full_name!==repository || !sha.test(run.head_sha) || !Number.isSafeInteger(run.id) || run.id<1 || !run.conclusion) return null;
+    const success=run.conclusion==="success";
+    return {kind:"result",source:"commit",key:run.head_sha,state:success?"completed":"failed",
+      detail:"GitHub completed the deployment workflow with result "+run.conclusion+".\nhttps://github.com/"+repository+"/actions/runs/"+run.id+"\nRevision "+run.head_sha};
+  }
   if (route==="branch" && event==="pull_request") {
     const pr=value.pull_request,job=request.exec(pr?.head?.ref??"")?.[1];
     if (!job || !sha.test(pr.head.sha) || pr.head.repo?.full_name!==repository || pr.base?.repo?.full_name!==repository ||

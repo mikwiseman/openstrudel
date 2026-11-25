@@ -251,7 +251,7 @@ export class AiGidBuilds {
   }
   async projectDelivery(repository:string,event:string|undefined,body:Buffer,signature:string|undefined) {
     const route=this.releaseRoute(repository);
-    if (route!=="branch" && route!=="vercel") throw new HomeError("Unknown project delivery.",404);
+    if (route!=="branch" && route!=="vercel" && route!=="push") throw new HomeError("Unknown project delivery.",404);
     const secret=join(this.files.root,".data/project-worker/webhooks",repository);
     if(!existsSync(secret)) throw new HomeError("Project webhook unavailable.",404);
     const result=projectDeliveryEvent(repository,route,readFileSync(secret,"utf8").trim(),event,body,signature);
@@ -324,7 +324,7 @@ export class AiGidBuilds {
       detail="Home updater started for "+revision+". Its verified outcome follows in this chat. "+JSON.stringify(receipt).slice(0,250);
     }else{
       if(!job.pull) throw new Error("This release runs on a push. The request did not create a new revision.");
-      detail="Merged "+revision+". The repository's push workflow owns deployment. Check the provider for the outcome.";
+      detail="Merged "+revision+". Wolf will post the deployment provider's result in this chat.";
     }
     this.queue.db.prepare("UPDATE jobs SET state='dispatched',commit_sha=?,detail=? WHERE id=? AND state='ready'").run(revision,detail,job.id);
     this.queue.finishDelivery(job.id);
