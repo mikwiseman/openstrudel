@@ -3,7 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { readPagesDelivery, projectDeliveryEvent } from "./project-delivery.js";
 import { buildReply, nativeBuildReply, telegramBuildReply } from "./project-build-reply.js";
 import { plainText } from "./telegram-format.js";
-import { cloudStatus } from "./aigid-cloud-status.js";
+import { appleBuildReceipt, cloudStatus } from "./aigid-cloud-status.js";
 import { HomeError } from "./home.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -22,7 +22,7 @@ import type { ConversationFiles } from "./files.js";
 import type { DynamicTool } from "./types.js";
 import type { Store } from "./store.js";
 
-interface Config { telegram:string[]; devices:string[]; groups?:string[]; accountEmail:string; repository:string; cloudEnabled?:boolean; workflow?:string; appleAppId?:string; testflightUrl?:string }
+interface Config { telegram:string[]; devices:string[]; groups?:string[]; accountEmail:string; repository:string; cloudEnabled?:boolean; workflow?:string; appleAppId?:string; appleWorkflowId?:string; testflightUrl?:string }
 function configuration(root:string):Config | null {
   const path=join(root,".data/aigid-testflight/config.json");
   if (!existsSync(path)) return null;
@@ -96,6 +96,11 @@ export async function receiveCloudStatus(store:Store,event:string|undefined,body
   const service=services.get(store);
   if(!service) throw new HomeError("Release service unavailable.",503);
   await service.cloudUpdate(event,body,signature);
+}
+export async function receiveAppleBuild(store:Store,token:string,body:Buffer) {
+  const service=services.get(store);
+  if(!service) throw new HomeError("Release service unavailable.",503);
+  await service.appleUpdate(token,body);
 }
 export async function receiveProjectDelivery(store:Store,repository:string,event:string|undefined,body:Buffer,signature:string|undefined) {
   const service=services.get(store);
@@ -213,6 +218,7 @@ export function aigidTools(store:Store,turn:TelegramToolContext) {
 export class AiGidBuilds {
   readonly queue:BuildQueue;
   private active?:Promise<void>;
+  private cloudReporting:Promise<void>=Promise.resolve();
   private readonly pageChecks = new Map<string, Promise<void>>();
   private readonly stopSignal=new AbortController();
   constructor(private store:Store,private files:ConversationFiles,private account:CodexAccountService,private shell?:ServerShell,private telegram?:TelegramAdapter) {this.queue=new BuildQueue(files.root);}
@@ -221,6 +227,7 @@ export class AiGidBuilds {
     const service=new AiGidBuilds(store,files,account,shell,telegram);services.set(store,service);
     const pending = service.queue.db.prepare("SELECT * FROM jobs WHERE state='dispatched' AND release_project=1 AND repository IS NOT NULL").all();
     for (const row of pending) service.watchPages(row as unknown as BuildRequest);
+    void service.reportCloudResults().catch(()=>undefined);
     service.kick();return service;
   }
   async reflectDecision(turn:TelegramToolContext, plan:NonNullable<ReturnType<BuildQueue["proposal"]>>,cancelled:boolean) {
@@ -361,13 +368,32 @@ export class AiGidBuilds {
     if(!config?.workflow || !config.appleAppId || !existsSync(key)) throw new HomeError("Webhook is not configured.",404);
     const status=cloudStatus({repository:config.repository,workflow:config.workflow,appleAppId:config.appleAppId},readFileSync(key,"utf8").trim(),event,body,signature);
     if(!status) return;
-    const job=this.queue.db.prepare("SELECT * FROM jobs WHERE release_commit=? AND repository IS NULL").get(status.sha) as unknown as BuildRequest|undefined;
-    if(!job || !["dispatched","completed","failed"].includes(job.state)) return;
     const state=status.success?"completed":"failed";
     const install=config.testflightUrl?.startsWith("https://testflight.apple.com/") ? "\n"+config.testflightUrl : "";
     const detail=(status.success?"Apple completed the AiGid TestFlight workflow."+install:"Apple reported a TestFlight workflow failure.")+"\n"+status.url;
-    this.queue.db.prepare("UPDATE jobs SET state=?,detail=? WHERE id=? AND state='dispatched'").run(state,detail,job.id);
-    await this.report(job);
+    this.queue.recordCloudReceipt({sha:status.sha,run:status.run,state,detail});
+    await this.reportCloudResults();
+  }
+  async appleUpdate(token:string,body:Buffer) {
+    const config=configuration(this.files.root),key=join(this.files.root,".data/aigid-testflight/apple-webhook-token");
+    if(!config?.appleAppId || !config.appleWorkflowId || !existsSync(key)) throw new HomeError("Unknown Xcode Cloud webhook.",404);
+    const receipt=appleBuildReceipt({appleAppId:config.appleAppId,appleWorkflowId:config.appleWorkflowId},readFileSync(key,"utf8").trim(),token,body);
+    if(!receipt) return;
+    this.queue.recordCloudReceipt(receipt);
+    await this.reportCloudResults();
+  }
+  private reportCloudResults() {
+    this.cloudReporting=this.cloudReporting.catch(()=>undefined).then(async()=>{
+      let failure:unknown;
+      for(const job of this.queue.cloudReports()) {
+        try {
+          await this.report(job);
+          this.queue.markCloudReported(job.id);
+        } catch (error) {failure=error;}
+      }
+      if(failure) throw failure;
+    });
+    return this.cloudReporting;
   }
   private watchPages(job: BuildRequest) {
     const repo = job.repository, revision = job.commit_sha;
@@ -392,6 +418,7 @@ export class AiGidBuilds {
   async close() {
     services.delete(this.store); this.stopSignal.abort();
     await Promise.all([this.active, ...this.pageChecks.values()]);
+    await this.cloudReporting.catch(()=>undefined);
     this.queue.db.close();
   }
   private turn(job: BuildRequest): TelegramToolContext {
@@ -461,8 +488,10 @@ export class AiGidBuilds {
     const { branch, revision, releaseCommit } = await dispatchAiGidCloud(this.files.root, config.repository, {
       id: job.id, pull: job.pull, commit: job.commit_sha,
     }, authorize);
-    this.queue.db.prepare("UPDATE jobs SET state='dispatched',release_commit=?,detail=? WHERE id=? AND state='ready'")
-      .run(releaseCommit,`Published ${branch} at ${releaseCommit.slice(0,12)} for Xcode Cloud, with the exact source of main at ${revision.slice(0,12)}. Apple build and TestFlight availability have yet to be confirmed.`, job.id);
+    const numberRequired=Boolean(config.appleWorkflowId && existsSync(join(this.files.root,".data/aigid-testflight/apple-webhook-token")));
+    this.queue.db.prepare("UPDATE jobs SET state='dispatched',apple_number_required=?,release_commit=?,detail=? WHERE id=? AND state='ready'")
+      .run(Number(numberRequired),releaseCommit,`Published ${branch} at ${releaseCommit.slice(0,12)} for Xcode Cloud, with the exact source of main at ${revision.slice(0,12)}. Apple build and TestFlight availability have yet to be confirmed.`, job.id);
+    await this.reportCloudResults();
   }
   private async prepare(job:BuildRequest) {
     const {files,store}=this, c=configuration(files.root);

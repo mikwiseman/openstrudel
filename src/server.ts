@@ -1,4 +1,4 @@
-import { receiveCloudStatus, receiveProjectDelivery } from "./aigid-testflight.js";
+import { receiveAppleBuild, receiveCloudStatus, receiveProjectDelivery } from "./aigid-testflight.js";
 import { automaticProvider, checkModelSelection, parseModelSelection, readModelSelection, readConversationModelSelection, recommendedModel, resolveModelSelection, saveModelSelection, saveConversationModelSelection, parseModelFallbacks, readModelFallbacks, directFast, fastChat, offersFast, turnSpeed, modelReasoning, parseRestrictedModel, readRestrictedModel, privateReplyModel } from "./model-settings.js";
 import { connectProvider, disconnectProvider, providerInfo, providerSummaries } from "./providers.js";
 import { deleteEmployee } from "./employee-delete.js";
@@ -67,6 +67,7 @@ export function appEffort(value: unknown): string | undefined {
 
 const DAILY_METRICS_PATHS = ["/check-in", "/check-in/", "/check-in/app.js", "/check-in/style.css", "/check-in/api"];
 
+const appleHook=new RegExp("^/hooks/wolf-testflight/apple/([a-f0-9]{64})$");
 const projectHook=/^\/hooks\/wolf-projects\/([A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9_][A-Za-z0-9_.-]{0,99})$/;
 
 /** Small HTTP transport shared by the native clients and Telegram setup. */
@@ -135,7 +136,7 @@ export class HttpApi {
     if (this.hooksServer || !Number.isInteger(port) || port < 0 || port > 65535) throw new Error("Invalid event ingress listener.");
     const server = createServer((request, response) => {
       const path = new URL(request.url ?? "/", "http://localhost").pathname;
-      if (path!=="/hooks/wolf-testflight" && !projectHook.test(path) && !/^\/hooks\/correspondence\/[a-z0-9-]{1,64}$/.test(path)) { response.writeHead(404).end(); return; }
+      if (path!=="/hooks/wolf-testflight" && !appleHook.test(path) && !projectHook.test(path) && !/^\/hooks\/correspondence\/[a-z0-9-]{1,64}$/.test(path)) { response.writeHead(404).end(); return; }
       void this.handle(request, response);
     });
     await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { server.off("error", reject); resolve(); }); });
@@ -324,15 +325,19 @@ export class HttpApi {
     let counted = false;
     try {
       const sourceHook = path.match(/^\/hooks\/correspondence\/([a-z0-9-]{1,64})$/);
-      const project=projectHook.exec(path);
-      if (sourceHook || project || path==="/hooks/wolf-testflight") {
+      const project=projectHook.exec(path),apple=appleHook.exec(path);
+      if (sourceHook || project || apple || path==="/hooks/wolf-testflight") {
         if (request.method !== "POST") throw new HomeError("method_not_allowed", 405);
         this.home.assertPrimary();
         if (this.store.getSetting("home.transfer")) throw new HomeError("Home is transferring; retry later.", 409);
         this.activeWrites++; counted = true;
-        const reading = readBody(request, 128 * 1024); reading.catch(() => undefined);
+        const reading = readBody(request, apple ? 2 * 1024 * 1024 : 128 * 1024); reading.catch(() => undefined);
         let timer: NodeJS.Timeout | undefined;
         const body = await Promise.race([reading, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new HomeError("Request timeout.", 408)), 5_000); })]).finally(() => clearTimeout(timer));
+        if(apple){
+          await receiveAppleBuild(this.store,apple[1]!,body);
+          this.send(response,200,{accepted:true});return;
+        }
         if(!sourceHook){
           const event=request.headers["x-github-event"],signature=request.headers["x-hub-signature-256"];
           if(project) await receiveProjectDelivery(this.store,project[1]!,typeof event==="string"?event:undefined,body,typeof signature==="string"?signature:undefined);
