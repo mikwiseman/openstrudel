@@ -103,6 +103,12 @@ async function resolveRepository(app: App, input: unknown): Promise<Repository> 
     defaultBranch: metadata.data.default_branch, installation: installation.data.id };
 }
 
+/** Verify an installation and canonical name without minting a source or publication token. */
+export async function installedWorkerRepository(root:string,fullName:string):Promise<string> {
+  const app=readApp(root);
+  if(!app)throw new Error("The GitHub App is unavailable.");
+  return (await resolveRepository(app,fullName)).fullName;
+}
 /** Fetch access is scoped to one installed repository and cannot publish a branch. */
 export async function workerReadAccess(root:string,fullName:string) {
   const app=readApp(root);
