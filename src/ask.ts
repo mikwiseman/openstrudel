@@ -202,9 +202,10 @@ export async function recallAll(question: string, from: Memory[], options: { sig
     try {
       // An input beyond the question goes only to a memory whose `recall` lists it.
       const extra = Object.fromEntries(Object.entries(options.extra ?? {}).filter(([field]) => memory.recallFields?.includes(field)));
-      const found = payload(await rpc(memory, "tools/call", { name: "recall", arguments: { ...extra, question } }, options.timeoutMs ?? CALL_MS, options.signal));
-      if (!record(found)) throw new Error("Unexpected recall.");
-      const evidence = (Array.isArray(found.evidence) ? found.evidence : []).filter(record).map((item): Omit<Evidence, "n"> => ({
+      const response = payload(await rpc(memory, "tools/call", { name: "recall", arguments: { ...extra, question } }, options.timeoutMs ?? CALL_MS, options.signal));
+      const found = record(response) && !Array.isArray(response.evidence) && record(response.result) ? response.result : response;
+      if (!record(found) || !Array.isArray(found.evidence)) throw new Error("Unexpected recall.");
+      const evidence = found.evidence.filter(record).map((item): Omit<Evidence, "n"> => ({
         memory: memory.name, kind: short(item.kind, 40), layer: short(item.layer, 40), title: short(item.title, 200), date: short(item.date, 40), text: short(item.text, ITEM_CHARS), id: short(item.id, 200),
         url: /^https?:\/\/\S+$/i.test(short(item.url, 1_000)) ? short(item.url, 1_000) : "",
         // A source is opened only through a read-only tool of its own memory.

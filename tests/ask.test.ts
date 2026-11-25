@@ -260,6 +260,16 @@ describe("a memory that cannot be reached", () => {
 });
 
 describe("recallAll", () => {
+  it("reads the personal brain's result envelope and distinguishes an invalid response from a successful empty lookup", async () => {
+    const personal = await memory({ recall: () => ({ result: { evidence: [call], searched: { notes: 1 } } }) });
+    const missing = await memory({ recall: () => ({ result: { detail: "temporarily unavailable" } }) });
+    const empty = await memory({ recall: () => ({ result: { evidence: [], searched: { notes: 0 } } }) });
+    const found = await recallAll("What did we agree?", await find(home({ personal, missing, empty })));
+    expect(found.evidence.map(item => [item.memory, item.id])).toEqual([["personal", call.id]]);
+    expect(found.searched.map(item => item.memory).sort()).toEqual(["empty", "personal"]);
+    expect(found.unreachable).toEqual(["missing"]);
+  });
+
   it("asks every memory at once, merges what they found and names the one that failed", async () => {
     // Each memory answers only after both have been asked: a fan-out one after another would never finish.
     let arrived = 0, release!: () => void;
