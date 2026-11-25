@@ -23,6 +23,12 @@ it.each(["read_model_settings", "correspondence_checkpoint", "unipile_accounts",
     if (method === "model/list") return { data: [] };
     if (method === "thread/resume") {
       if (["aigid_testflight","project_build","project_package"].includes(toolName)) expect(params.developerInstructions).toMatch(/finish this conversational turn/i);
+      // read_team is available only to the private owner and private-source-approved runs.
+      if (toolName === "read_team") {
+        expect(params.developerInstructions).toContain("mik-mcp");
+        expect(params.developerInstructions).toMatch(/company.*recall|recall.*company/i);
+        expect(params.developerInstructions).toMatch(/latest.*outgoing/i);
+      } else expect(params.developerInstructions).not.toContain("mik-mcp");
       endpoint = params.config["mcp_servers.openstrudel_runtime"]; return { thread: { id: "existing" } }; }
     if (["thread/unsubscribe","thread/inject_items"].includes(method)) return {};
     if (method === "turn/start") {
