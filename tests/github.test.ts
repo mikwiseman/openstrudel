@@ -74,6 +74,7 @@ function fixture(options: { configured?: boolean; project?: boolean } = {}) {
       cloud.merges++; return json(200, {merged:true,sha:merge});
     }
     if (url.pathname.includes("/compare/")) return json(200,{status:[main,merge].some(x=>url.pathname.endsWith(x+"...main"))?"ahead":"diverged"});
+    if (method==="GET" && url.pathname==="/repos/o/r/git/ref/heads/main") return json(200,{object:{type:"commit",sha:main}});
     if (url.pathname.includes("/git/ref/heads/wolf-testflight/")) {
       const ref = "refs/" + url.pathname.split("/git/ref/")[1];
       const sha = git(origin, "for-each-ref", "--format=%(objectname)", ref);
@@ -269,7 +270,7 @@ describe("AiGid cloud handoff", () => {
 
 it("issues a read-only worker token and merges only its authorized exact-head project PR", async () => {
   const {root,cloud,tokens}=fixture({project:true});
-  expect((await workerReadAccess(root,"o/r")).repository).toBe("o/r");
+  expect(await workerReadAccess(root,"o/r")).toMatchObject({repository:"o/r",base:cloud.main});
   expect(tokens.at(-1)).toMatchObject({permissions:{contents:"read"},repositories:["r"]});
   const request={id:cloud.id,pull:11,commit:cloud.head};
   await expect(mergeWorkerCandidate(root,"o/r",{...request,commit:cloud.main},()=>{})).rejects.toThrow();
