@@ -376,7 +376,7 @@ it("preserves voice and uncertain delivery incidents independently of ordinary t
  expect(reportIssue(store,conversation.id,"voice-update-again","voice")).toBeDefined();
 });
 
-it("closes the Telegram voice incident only after recognition succeeds, even if the following task fails",async()=>{
+it("retains an open voice incident through the audio fallback and closes it when speech is recognized",async()=>{
  const store=new Store(":memory:");stores.push(store);
  store.linkTelegramChat({chatId:"42",title:"Owner",allowedSenders:["42"]});
  store.linkTelegramChat({chatId:"-100",title:"Reflections",allowedSenders:["42"]});store.connectTelegramGroup("-100");
@@ -390,6 +390,7 @@ it("closes the Telegram voice incident only after recognition succeeds, even if 
  }));
  const send=(id:number,media:object)=>telegram.processUpdate({update_id:id,message:{message_id:id,from:{id:42},chat:{id:-100,type:"group"},...media}});
  try {
+  reportIssue(store,store.getTelegramChat("-100")!.conversationId!,"previous-recording","voice");
   await send(1,{voice:{file_id:"one",file_size:3}});
   expect(runtimeIssues(store).map(i=>i.code)).toEqual(["voice"]);
   await send(2,{text:"unrelated text"});

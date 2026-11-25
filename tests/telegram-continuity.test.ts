@@ -11,6 +11,7 @@ import { MockCodexEngine } from "../src/codex.js";
 import { AccountUnavailableError } from "../src/account-errors.js";
 import { ProviderKeyError, providerFailure, providerInfo, providerNotConnected } from "../src/providers.js";
 import { runtimeIssues } from "../src/operations.js";
+import { saveTelegramAuthorization } from "../src/authorization.js";
 const stores:Store[]=[];
 const deliveryCalls=()=>vi.mocked(fetch).mock.calls.filter(([url])=>!String(url).endsWith("/sendChatAction"));
 afterEach(()=>{vi.useRealTimers();vi.unstubAllGlobals();vi.unstubAllEnvs();for(const s of stores.splice(0))s.close();});
@@ -247,9 +248,13 @@ it("keeps a context-only recording quiet and never previews into a changed audie
  expect(sent).toEqual([]);expect(run).not.toHaveBeenCalled();await m.close();
 });
 
-it("tells the owner a group recording was not recognized without blaming a speech provider",async()=>{
+it("reports failed recognition in an addressed protected group, where the recording cannot be retained",async()=>{
  vi.stubEnv("OPENSTRUDEL_STT_URL","https://stt.example.test");vi.stubEnv("OPENSTRUDEL_STT_KEY","server-test-key");
  const {a,run,m,s}=setup();m.telegram=a;s.bindTelegramChat("-100",s.createProfile({name:"Voice"}).id);
+ s.setSetting("telegram.bot_username","wolf_test_bot");
+ saveTelegramAuthorization(s,{version:1,revision:0,connectors:{school:{url:"https://school.example/mcp",headers:{}}},
+   policies:{group:{connectorId:"school",tools:[{name:"schedule",capability:"schedule.read"}]}},subjects:{},
+   chats:{"-100":{enabled:true,policyId:"group",defaultCapabilities:["schedule.read"],members:{}}}});
  s.linkTelegramChat({chatId:"42",title:"Owner",allowedSenders:["42"]});const sent:Array<{chat:string;text:string}>=[];
  vi.stubGlobal("fetch",vi.fn(async(url:string,init:RequestInit)=>{
    // The Home's own speech server hears music, not words.
@@ -259,9 +264,9 @@ it("tells the owner a group recording was not recognized without blaming a speec
    if(url.endsWith("sendMessage")){const body=JSON.parse(String(init.body));sent.push({chat:String(body.chat_id),text:String(body.text)});}
    return Response.json({ok:true,result:{message_id:99}});
  }));
- await a.processUpdate({update_id:15,message:{message_id:15,from:{id:7},chat:{id:-100,type:"group"},voice:{file_id:"v",file_size:1}}});
+ await a.processUpdate({update_id:15,message:{message_id:15,from:{id:7},chat:{id:-100,type:"group"},reply_to_message:{message_id:10,from:{id:99,is_bot:true,username:"wolf_test_bot"}},voice:{file_id:"v",file_size:1}}});
  expect(run).not.toHaveBeenCalled();
- expect(s.listMessages(s.getTelegramChat("-100")!.conversationId!)).toMatchObject([{status:"failed",error:"Речь не распознана. Попробуйте записать сообщение ещё раз."}]);
+ expect(s.listMessages(s.getTelegramChat("-100")!.conversationId!)).toMatchObject([{status:"failed",error:"Речь не распознана. Попробуйте записать сообщение ещё раз.",attachments:[]}]);
  expect(sent).toEqual([{chat:"42",text:"Требует внимания · Group\nЗапись не распознана. Подробности сохранены в исходном чате."}]);await m.close();
 });
 
