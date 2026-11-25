@@ -1,3 +1,4 @@
+import type { CloudReceipt } from "./aigid-cloud-status.js";
 import type { ProjectDelivery } from "./project-delivery.js";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
@@ -20,6 +21,7 @@ export type BuildState = "queued" | "preparing" | "ready" | "tagged" | "dispatch
 export interface BuildRequest {
   id: string; created: string; conversation: string; channel: "api" | "telegram"; actor: string;
   goal: string; changes: number; state: BuildState; commit_sha: string | null;
+  apple_build_number?:number|null;
   package_dispatched:number; source_message:string|null; package_target:PackageTarget|null; parent_request:string|null; repository:string|null; release_project:number; pull: number | null; notes: string | null; detail: string | null;
 }
 
@@ -38,6 +40,12 @@ export class BuildQueue {
     if (!columns.includes("repository")) this.db.exec("ALTER TABLE jobs ADD COLUMN repository TEXT");
     if (!columns.includes("release_project")) this.db.exec("ALTER TABLE jobs ADD COLUMN release_project INTEGER NOT NULL DEFAULT 0");
     if (!columns.includes("parent_request")) this.db.exec("ALTER TABLE jobs ADD COLUMN parent_request TEXT");
+    if (!columns.includes("apple_build_number")) this.db.exec("ALTER TABLE jobs ADD COLUMN apple_build_number INTEGER");
+    if (!columns.includes("apple_number_required")) this.db.exec("ALTER TABLE jobs ADD COLUMN apple_number_required INTEGER NOT NULL DEFAULT 0");
+    if (!columns.includes("apple_run_id")) this.db.exec("ALTER TABLE jobs ADD COLUMN apple_run_id TEXT");
+    this.db.exec(`CREATE TABLE IF NOT EXISTS aigid_cloud_receipts (
+      sha TEXT NOT NULL, run TEXT NOT NULL, number INTEGER, state TEXT, detail TEXT, reported INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY(sha,run))`);
     this.db.exec(`CREATE TABLE IF NOT EXISTS project_deliveries
       (repository TEXT NOT NULL,source TEXT NOT NULL,identity TEXT NOT NULL,state TEXT NOT NULL,detail TEXT NOT NULL,at INTEGER NOT NULL,
        PRIMARY KEY(repository,source,identity))`);
@@ -184,6 +192,34 @@ export class BuildQueue {
     if (!provider) return undefined;
     return this.db.prepare("UPDATE jobs SET state=?,detail=? WHERE id=? AND state='dispatched' RETURNING *")
       .get(String(provider.state),String(provider.detail),id) as unknown as BuildRequest|undefined;
+  }
+  recordCloudReceipt(receipt:CloudReceipt) {
+    if ("number" in receipt) {
+      this.db.prepare(`INSERT INTO aigid_cloud_receipts(sha,run,number) VALUES(?,?,?)
+        ON CONFLICT(sha,run) DO UPDATE SET number=excluded.number WHERE number IS NULL`).run(receipt.sha,receipt.run,receipt.number);
+    } else {
+      this.db.prepare(`INSERT INTO aigid_cloud_receipts(sha,run,state,detail) VALUES(?,?,?,?)
+        ON CONFLICT(sha,run) DO UPDATE SET state=excluded.state,detail=excluded.detail WHERE state IS NULL`)
+        .run(receipt.sha,receipt.run,receipt.state,receipt.detail);
+    }
+  }
+  cloudReports():BuildRequest[] {
+    const receipts=this.db.prepare(`SELECT j.id,r.run,r.number,r.state,r.detail FROM aigid_cloud_receipts r
+      JOIN jobs j ON j.repository IS NULL AND j.release_commit=r.sha
+      WHERE r.reported=0 AND r.state IS NOT NULL AND (j.apple_number_required=0 OR r.number IS NOT NULL)
+        AND (j.state='dispatched' OR (j.apple_run_id=r.run AND j.state=r.state)) ORDER BY r.rowid`).all();
+    const jobs:BuildRequest[]=[];
+    for(const r of receipts) {
+      this.db.prepare("UPDATE jobs SET state=?,detail=?,apple_run_id=?,apple_build_number=? WHERE id=? AND state='dispatched'")
+        .run(r.state!,r.detail!,r.run!,r.number??null,r.id!);
+      const job=this.db.prepare("SELECT * FROM jobs WHERE id=? AND apple_run_id=?").get(r.id!,r.run!);
+      if(job) jobs.push(job as unknown as BuildRequest);
+    }
+    return jobs;
+  }
+  markCloudReported(id:string) {
+    this.db.prepare(`UPDATE aigid_cloud_receipts SET reported=1 WHERE (sha,run)=
+      (SELECT release_commit,apple_run_id FROM jobs WHERE id=?)`).run(id);
   }
   next(cloudEnabled: boolean) {
     return this.db.prepare(`SELECT job.* FROM jobs job LEFT JOIN jobs parent ON parent.id=job.parent_request
