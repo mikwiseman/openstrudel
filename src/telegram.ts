@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { telegramText, type TelegramText } from "./telegram-format.js";
+import { plainText, telegramText, type TelegramText } from "./telegram-format.js";
 import { isSpeechFile, transcribeRecording } from "./speech.js";
 import { errorProblem, quietReply, resolveVoiceIssue } from "./operations.js";
 import type { MessageService } from "./messages.js";
@@ -47,18 +47,6 @@ const REFUSED = "Telegram отклонил сообщение, оно не от�
 function captionFor(text: string): TelegramText | null {
   const chunks = telegramText(text);
   return chunks.length > 1 || (chunks[0]?.text.length ?? 0) > 1024 ? null : chunks[0] ?? { text: "", entities: [] };
-}
-
-/** Text as it was written, in parts Telegram accepts; a pair of surrogates is never split. */
-function plainText(text: string): TelegramText[] {
-  const chunks: TelegramText[] = [];
-  let part = "";
-  for (const character of text) {
-    if (part.length + character.length > 4096) { chunks.push({ text: part, entities: [] }); part = ""; }
-    part += character;
-  }
-  if (part) chunks.push({ text: part, entities: [] });
-  return chunks;
 }
 
 /** Pixel size from a JPEG, PNG or still WebP header; null for anything else. */

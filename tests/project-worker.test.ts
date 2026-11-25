@@ -43,15 +43,32 @@ it("publishes only the worker diff on the pinned revision, ignoring repository h
   } finally {rmSync(root,{recursive:true,force:true});}
 });
 
-it("deduplicates a project request and keeps its release separate from the Apple queue", () => {
+it("keeps two project requests from one message independent and deduplicates retries", () => {
   const root=mkdtempSync(join(tmpdir(),"wolf-queue-")),queue=new BuildQueue(root);
   try {
-    queue.add("request","one","telegram","owner","Web change",true,"owner/web",true);
-    queue.add("request","one","telegram","owner","other",false,"owner/other",false);
-    queue.db.prepare("UPDATE jobs SET state='ready' WHERE id='request'").run();
-    expect(queue.next(false)).toMatchObject({repository:"owner/web",release_project:1,goal:"Web change"});
-    queue.db.prepare("UPDATE jobs SET state='completed' WHERE id='request'").run();
-    expect(queue.next(true)).toBeUndefined();
+    const a=queue.add("request","one","telegram","owner","Web change",true,"owner/web",true)!;
+    const other=queue.add("request","one","telegram","owner","Question",false,"owner/other")!;
+    expect(a.id).not.toBe(other.id);
+    expect(queue.add("request","one","telegram","owner","Web change",true,"owner/web",true)?.id).toBe(a.id);
+    queue.db.prepare("UPDATE jobs SET state='ready' WHERE id=?").run(a.id);
+    expect(queue.next(false)).toMatchObject({id:a.id,source_message:"request",repository:"owner/web",release_project:1});
+    queue.db.prepare("UPDATE jobs SET state='completed' WHERE id=?").run(a.id);
+    expect(queue.next(true)).toMatchObject({id:other.id,changes:0,source_message:"request"});
+  }finally{queue.db.close();rmSync(root,{recursive:true,force:true});}
+});
+
+it("packages the changed revision and never substitutes main when a change fails", () => {
+  const root=mkdtempSync(join(tmpdir(),"wolf-linked-package-")),queue=new BuildQueue(root);
+  try {
+    const a=queue.add("msg","one","telegram","owner","Change the site",true,"owner/web",false,["web"])!;
+    expect(queue.next(false)?.id).toBe(a.id);
+    queue.db.prepare("UPDATE jobs SET state='completed',commit_sha=? WHERE id=?").run(sha,a.id);
+    const pkg=queue.next(true)!;
+    expect(pkg).toMatchObject({source_message:"msg",package_target:"web",parent_request:a.id});
+    expect(queue.packageRevision(pkg)).toBe(sha);
+    expect(queue.addPackage("msg","one","telegram","owner","owner/web","web").id).toBe(pkg.id);
+    queue.db.prepare("UPDATE jobs SET state='failed',commit_sha=NULL WHERE id=?").run(a.id);
+    expect(()=>queue.packageRevision(pkg)).toThrow(/source change/i);
   }finally{queue.db.close();rmSync(root,{recursive:true,force:true});}
 });
 
@@ -62,5 +79,15 @@ it("queues independent packages and preserves their original conversation messag
     expect(queue.addPackage("original","chat","telegram","owner","example/app","android").id).toBe(receipt.id);
     expect(queue.addPackage("original","chat","telegram","owner","example/app","web").id).not.toBe(receipt.id);
     expect(queue.next(false)).toMatchObject({source_message:"original",package_target:"android",repository:"example/app"});
+  } finally {queue.db.close();rmSync(root,{recursive:true,force:true});}
+});
+
+it("reuses historical project receipts while allowing a second repository from that message", () => {
+  const root=mkdtempSync(join(tmpdir(),"wolf-history-")),queue=new BuildQueue(root);
+  try {
+    queue.db.prepare("INSERT INTO jobs(id,created,conversation,channel,actor,goal,changes,repository,state) VALUES('old','then','chat','telegram','owner','Change',1,'owner/web','dispatched')").run();
+    expect(queue.add("old","chat","telegram","owner","Change",true,"owner/web").id).toBe("old");
+    expect(queue.add("old","chat","telegram","owner","Question",false,"owner/app").id).not.toBe("old");
+    expect(queue.next(true)?.repository).toBe("owner/app");
   } finally {queue.db.close();rmSync(root,{recursive:true,force:true});}
 });
