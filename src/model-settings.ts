@@ -89,10 +89,22 @@ export function saveConversationModelSelection(store: Store, conversationId: str
 export function automaticProvider(store: Store): string {
   return chatgptSignedIn(store) ? 'chatgpt' : providerInfos().filter(p => providerConnected(store,p.id)).sort((a,b) => providerConnectedAt(store,a.id) - providerConnectedAt(store,b.id))[0]?.id ?? 'chatgpt';
 }
+/** An optional owner choice shared by Wolf's private Telegram and native conversations. */
+export function privateReplyModel(store: Store, conversationId?: string): ModelSelection | null {
+  const value = store.getSetting('models.main.privateReplies');
+  if (!value) return null;
+  if (conversationId) {
+    const chat = store.getConversation(conversationId);
+    if (!chat || chat.profileId || (chat.channel === 'telegram' && !/^[1-9]\d*(?:::|$)/.test(chat.externalId ?? ''))
+      || store.db.prepare("SELECT 1 FROM telegram_chats WHERE conversation_id=? AND chat_id LIKE '-%'").get(conversationId)) return null;
+  }
+  return parseModelSelection(JSON.parse(value), false);
+}
 /** Conversation → employee → device default → automatic. A Codex catalog fills the model only when one is given. */
-export function resolveModelSelection(store: Store, agent?: string, models?: ModelChoice[], conversationId?: string): ModelSelection {
+export function resolveModelSelection(store: Store, agent?: string, models?: ModelChoice[], conversationId?: string, privateReply = true): ModelSelection {
   const conversation = conversationId ? readConversationModelSelection(store,conversationId) : undefined;
-  const selection = conversation?.model ? conversation : readModelSelection(store,agent);
+  const personal = !conversation?.model && privateReply && conversationId && agent === 'main' ? privateReplyModel(store,conversationId) : null;
+  const selection = conversation?.model ? conversation : personal ?? readModelSelection(store,agent);
   const resolved = selection.model ? selection : readModelSelection(store);
   if (resolved.model) return resolved;
   // A subscription's catalog is the one its agent last reported; without one, the agent runs its own default.
@@ -127,6 +139,8 @@ export function parseRestrictedModel(value: any): RestrictedModel | null {
 export function restrictedModelSelection(store: Store, conversationId: string): ModelSelection & { fast: boolean } {
   const chat = readConversationModelSelection(store, conversationId);
   if (chat.model) return { ...chat, fast: false };
+  const personal = privateReplyModel(store, conversationId);
+  if (personal) return { ...personal, fast: false };
   const device = resolveModelSelection(store, 'main'), restricted = readRestrictedModel(store);
   return { ...device, ...(restricted.reasoningEffort !== null ? { reasoningEffort: restricted.reasoningEffort } : {}), fast: restricted.fast };
 }

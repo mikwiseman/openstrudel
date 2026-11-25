@@ -269,7 +269,7 @@ export class MessageService {
         // The owner may give event runs their own model; its level is that model's own unless he chose one.
         const eventModel = correspondence ? correspondenceModel(this.store) : null;
         const selection = eventModel ? { ...eventModel, reasoningEffort: eventModel.reasoningEffort ?? null }
-          : { ...resolveModelSelection(this.store, currentProfile?.id ?? "main", undefined, current.id), ...appEffort };
+          : { ...resolveModelSelection(this.store, currentProfile?.id ?? "main", undefined, current.id, !scheduled), ...appEffort };
         route = selection;
         const nativeSources = selection.provider === "chatgpt" || providerInfo(selection.provider ?? "")?.engine === "codex";
         projectRun = await this.projects.begin(currentProfile?.id ?? "main", { conversationId:current.id,messageId:inbound.id,channel:input.channel,scope:context,scheduled,byOwner:input.byOwner,telegramSenderId:input.telegramSenderId,access }, nativeSources);

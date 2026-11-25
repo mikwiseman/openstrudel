@@ -1,5 +1,5 @@
 import { receiveCloudStatus, receiveProjectDelivery } from "./aigid-testflight.js";
-import { automaticProvider, checkModelSelection, parseModelSelection, readModelSelection, readConversationModelSelection, recommendedModel, resolveModelSelection, saveModelSelection, saveConversationModelSelection, parseModelFallbacks, readModelFallbacks, directFast, fastChat, offersFast, turnSpeed, modelReasoning, parseRestrictedModel, readRestrictedModel } from "./model-settings.js";
+import { automaticProvider, checkModelSelection, parseModelSelection, readModelSelection, readConversationModelSelection, recommendedModel, resolveModelSelection, saveModelSelection, saveConversationModelSelection, parseModelFallbacks, readModelFallbacks, directFast, fastChat, offersFast, turnSpeed, modelReasoning, parseRestrictedModel, readRestrictedModel, privateReplyModel } from "./model-settings.js";
 import { connectProvider, disconnectProvider, providerInfo, providerSummaries } from "./providers.js";
 import { deleteEmployee } from "./employee-delete.js";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -542,6 +542,9 @@ export class HttpApi {
           if (input.fallbacks !== undefined && agent) throw new HomeError('Порядок резервов задаётся в настройках устройства.');
           if (input.directFast !== undefined && (agent || typeof input.directFast !== 'boolean')) throw new HomeError('Скорость личных чатов задаётся в настройках устройства.');
           if (input.restricted !== undefined && agent) throw new HomeError('Модель чатов с ограниченным доступом задаётся в настройках устройства.');
+          if (input.privateReplies !== undefined && (agent !== 'main' || conversationId)) throw new HomeError('Choose private replies in the main assistant settings.');
+          const privateReplies = input.privateReplies == null ? input.privateReplies : parseModelSelection(input.privateReplies,false);
+          if (privateReplies) checkModelSelection(this.store,privateReplies,models);
           const restricted = input.restricted === undefined ? undefined : parseRestrictedModel(input.restricted);
           // The level must exist for the model these turns follow: the main assistant's own, else this device default.
           if (restricted?.reasoningEffort) {
@@ -558,6 +561,8 @@ export class HttpApi {
           else saveModelSelection(this.store,selection,agent);
           if (fallbacks) this.store.setSetting('models.fallbacks',JSON.stringify(fallbacks));
           if (input.directFast !== undefined) this.store.setSetting('models.directFast',String(input.directFast));
+          if (privateReplies === null) this.store.deleteSetting('models.main.privateReplies');
+          else if (privateReplies) this.store.setSetting('models.main.privateReplies',JSON.stringify(privateReplies));
           if (restricted === null) this.store.deleteSetting('models.restricted');
           else if (restricted) this.store.setSetting('models.restricted',JSON.stringify(restricted));
         }
@@ -565,7 +570,7 @@ export class HttpApi {
         const effective = resolveModelSelection(this.store,agent,models,conversationId);
         if (conversationId && fastChat(this.store,agent!,conversationId,context.startsWith("group-")))
           effective.serviceTier = turnSpeed(offersFast(models.find(m => m.id === effective.model && (m.provider ?? "chatgpt") === effective.provider)),effective.serviceTier);
-        this.send(response,200,{models,fallbacks:readModelFallbacks(this.store),directFast:directFast(this.store),restricted:readRestrictedModel(this.store),providers:providerSummaries(this.store).filter(p=>p.connected),recommended:{...recommendedModel(models.filter(m=>m.provider === automatic)),provider:automatic},
+        this.send(response,200,{models,...(agent === 'main' && !conversationId ? {privateReplies:privateReplyModel(this.store)} : {}),fallbacks:readModelFallbacks(this.store),directFast:directFast(this.store),restricted:readRestrictedModel(this.store),providers:providerSummaries(this.store).filter(p=>p.connected),recommended:{...recommendedModel(models.filter(m=>m.provider === automatic)),provider:automatic},
           selection:conversationId ? readConversationModelSelection(this.store,conversationId) : readModelSelection(this.store,agent),defaults:resolveModelSelection(this.store,conversationId ? agent : undefined,models),effective,canManage:canManageAccount}); return;
       }
       if (path === "/v1/settings/speech" && ["GET", "POST"].includes(request.method ?? "")) {
