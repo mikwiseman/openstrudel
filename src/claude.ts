@@ -219,8 +219,8 @@ export function contextServers(root: string, context: string, options: Pick<RunO
   const telegram = resolve(root, ".data/connections", context + ".telegram.json");
   const verified = existsSync(telegram) ? JSON.parse(readFileSync(telegram, "utf8")) : undefined;
   const servers: Record<string, Service> = options.access === false ? {} : extensionServers({ ...inherit ? inheritedIntegrations(root, context, { servers: own, telegram: verified }).servers : {}, ...own });
-  for (const [key, s] of Object.entries(telegramMcpConfig(verified, options.telegramActor, options.conversationId)) as Array<[string, any]>)
-    if (s.enabled) servers[key.slice("mcp_servers.".length)] = { type: "http", url: s.url, headers: s.http_headers };
+  for (const [key, s] of Object.entries(telegramMcpConfig(verified, options.telegramActor, options.conversationId, options.access)) as Array<[string, any]>)
+    if (s.enabled) servers[key.slice("mcp_servers.".length)] = { type: "http", url: s.url, headers: s.http_headers, ...(s.enabled_tools ? {toolLists:{enabled:s.enabled_tools}} : {}) };
   return servers;
 }
 

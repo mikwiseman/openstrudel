@@ -28,6 +28,7 @@ it.each(["read_model_settings", "correspondence_checkpoint", "unipile_accounts",
         expect(params.developerInstructions).toContain("mik-mcp");
         expect(params.developerInstructions).toMatch(/company.*recall|recall.*company/i);
         expect(params.developerInstructions).toMatch(/latest.*outgoing/i);
+        expect(params.developerInstructions).toMatch(/personal brief[^.]*personal life/i);
         expect(params.developerInstructions).toContain("if the sender can clarify");
         expect(params.developerInstructions).toContain("only the owner can supply");
       } else expect(params.developerInstructions).not.toContain("mik-mcp");

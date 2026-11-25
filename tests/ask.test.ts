@@ -200,6 +200,23 @@ describe("memories", () => {
     expect(await find(damaged, { access: true, owner: false })).toEqual([]);
     expect((await find(damaged)).map(m => m.name)).toEqual(["company", "diary"]);
   });
+
+  it("uses the member's explicit work connection when the owner's connection has the same name", async () => {
+    const owner = await memory(), member = await memory();
+    const root = home({ company: owner }, ["company"]);
+    const config = join(root, ".data/connections");
+    mkdirSync(config, { recursive: true });
+    writeFileSync(join(config, "work.toml"), stringify({
+      mcp_servers: { company: { url: member.url, http_headers: { Authorization: "Bearer synthetic-member" } } },
+    }));
+    const store = new Store(":memory:");
+    try {
+      const found = await memories(store, root, "work", { access: true, owner: false });
+      expect(found.map(m => m.url)).toEqual([member.url]);
+      expect(owner.calls).toHaveLength(0);
+      expect(member.calls[0]?.authorization).toBe("Bearer synthetic-member");
+    } finally { store.close(); }
+  });
 });
 
 describe("a memory that cannot be reached", () => {

@@ -43,17 +43,17 @@ export function extensionConfig(home: string): Record<string, any> { return read
 
 /** The owner's choice to use the main chat's services in every chat on this Home. */
 const allChatsPath = (root: string) => resolve(root, ".data/extensions/all-chats.json");
-const privateServerNames = (value: unknown): string[] => {
+const serviceNames = (value: unknown): string[] => {
   if (!Array.isArray(value) || value.length > 100) throw new HomeError("Проверьте список личных сервисов.");
   return [...new Set(value.map(slug))];
 };
-function sharingConfig(root: string): { enabled: boolean; ownerOnlyServers: string[]; [key: string]: unknown } {
+export function sharingConfig(root: string): { enabled: boolean; ownerOnlyServers: string[]; sharedServices: string[] } {
   const path = allChatsPath(root);
-  if (!existsSync(path)) return { enabled: false, ownerOnlyServers: [] };
+  if (!existsSync(path)) return { enabled: false, ownerOnlyServers: [], sharedServices: [] };
   try {
     const saved = JSON.parse(readFileSync(path, "utf8"));
     if (!saved || Array.isArray(saved) || typeof saved !== "object" || typeof saved.enabled !== "boolean") throw new Error();
-    return { ...saved, ownerOnlyServers: privateServerNames(saved.ownerOnlyServers ?? []) };
+    return { ...saved, ownerOnlyServers: serviceNames(saved.ownerOnlyServers ?? []), sharedServices: serviceNames(saved.sharedServices ?? []) };
   } catch { throw new HomeError("Настройки общего доступа к сервисам повреждены. Исправьте их перед изменением.", 409); }
 }
 export function sharedWithAllChats(root: string): boolean {
@@ -61,10 +61,13 @@ export function sharedWithAllChats(root: string): boolean {
 }
 /** These owner connectors never flow into another audience, including future groups. */
 export function ownerOnlyServers(root: string): string[] { return sharingConfig(root).ownerOnlyServers; }
-export function shareWithAllChats(root: string, enabled: boolean, ownerOnly?: string[]) {
+export function shareWithAllChats(root: string, enabled: boolean, ownerOnly?: string[], sharedServices?: string[]) {
   if (typeof enabled !== "boolean") throw new HomeError("Укажите, делиться ли сервисами.");
   const saved = sharingConfig(root);
-  atomicText(allChatsPath(root), JSON.stringify({ ...saved, enabled, ownerOnlyServers: ownerOnly === undefined ? saved.ownerOnlyServers : privateServerNames(ownerOnly) }) + "\n");
+  atomicText(allChatsPath(root), JSON.stringify({
+    ...saved, enabled, ownerOnlyServers: serviceNames(ownerOnly === undefined ? saved.ownerOnlyServers : ownerOnly),
+    sharedServices: serviceNames(sharedServices === undefined ? saved.sharedServices : sharedServices),
+  }) + "\n");
 }
 const endpoint = (url: unknown) => { try { const u = new URL(String(url)); return u.origin + u.pathname.replace(/\/+$/, ""); } catch { return undefined; } };
 /** What another chat receives from the owner's main chat. The chat's own services,
@@ -76,15 +79,16 @@ export function inheritedIntegrations(root: string, context: string, own: { serv
   // A corrupt policy must never turn a private connector into an inherited one.
   let sharing: ReturnType<typeof sharingConfig>;
   try { sharing = sharingConfig(root); } catch { return { servers: {}, apps: [] }; }
-  if (!sharing.enabled) return { servers: {}, apps: [] };
+  if (!sharing.enabled && !sharing.sharedServices.length) return { servers: {}, apps: [] };
+  const shared = (id: string) => sharing.enabled || sharing.sharedServices.includes(id);
   const privateServers = new Set(sharing.ownerOnlyServers);
   const owner = readToml(resolve(root, ".data/extensions/personal/config.toml"));
   // One service per address: the chat's own or verified-sender service replaces the owner's key.
   const taken = new Set([...Object.values(own.servers), ...Object.values(own.telegram ?? {})].map((s: any) => endpoint(s?.url)).filter(Boolean));
   const servers = Object.entries({ ...owner.mcp_servers, ...readToml(resolve(root, ".data/connections/personal.toml")).mcp_servers }).filter(([name, s]: [string, any]) =>
-    !privateServers.has(name) && !(name in own.servers) && !(name in (own.telegram ?? {})) && name !== "cua_repl" && s?.enabled !== false
+    shared(name) && !privateServers.has(name) && !(name in own.servers) && !(name in (own.telegram ?? {})) && name !== "cua_repl" && s?.enabled !== false
     && Boolean(s?.command || s?.http_headers || s?.env_http_headers || s?.bearer_token_env_var) && !(s?.url && taken.has(endpoint(s.url))));
-  const apps = Object.entries(owner.apps ?? {}).filter(([id, value]: [string, any]) => id !== "_default" && /^[a-zA-Z0-9_-]+$/.test(id) && value?.enabled === true && own.apps?.[id]?.enabled !== false).map(([id]) => id);
+  const apps = Object.entries(owner.apps ?? {}).filter(([id, value]: [string, any]) => shared(id) && !privateServers.has(id) && id !== "_default" && /^[a-zA-Z0-9_-]+$/.test(id) && value?.enabled === true && own.apps?.[id]?.enabled !== false).map(([id]) => id);
   return { servers: Object.fromEntries(servers), apps };
 }
 function safeFiles(input: unknown): Map<string, Buffer> {

@@ -29,7 +29,7 @@ import { authorizationSummary, onlyDisablesScopedAccess, preserveConnectorHeader
 import { ownerTimezone, saveOwnerTimezone } from "./timezone.js";
 import { notificationCaller, receiveKeyedNotification, receiveNotification } from "./notification-hook.js";
 import { SERVICE_SIGN_IN_SECONDS } from "./service-oauth.js";
-import { sharedWithAllChats, shareWithAllChats, ownerOnlyServers } from "./extensions.js";
+import { sharingConfig, shareWithAllChats } from "./extensions.js";
 import { privateSourceSchedule, unipileSettings } from "./private-sources.js";
 import { UnipileAdapter, unipileReadSchema } from "./unipile.js";
 import { readActivity } from "./activity.js";
@@ -954,9 +954,10 @@ export class HttpApi {
           if (!this.accounts) throw new HomeError("Обновите OpenStrudel на этом устройстве.",501);
           if (request.method === "POST") {
             if (typeof body.enabled !== "boolean") throw new HomeError("Укажите, делиться ли сервисами.");
-            shareWithAllChats(this.accounts.root, body.enabled, body.ownerOnlyServers as string[] | undefined);
+            shareWithAllChats(this.accounts.root, body.enabled, body.ownerOnlyServers as string[] | undefined, body.sharedServices as string[] | undefined);
           } else if (request.method !== "GET") throw new HomeError("Действие не найдено.",404);
-          this.send(response,200,{enabled:sharedWithAllChats(this.accounts.root),ownerOnlyServers:ownerOnlyServers(this.accounts.root)}); return;
+          const { enabled, ownerOnlyServers, sharedServices } = sharingConfig(this.accounts.root);
+          this.send(response,200,{ enabled, ownerOnlyServers, ...(sharedServices.length ? { sharedServices } : {}) }); return;
         }
         const conversationId = String(body.conversationId ?? url.searchParams.get("conversationId") ?? "");
         const conversation = this.store.getConversation(conversationId);
