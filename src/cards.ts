@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import type { Store } from "./store.js";
 import type { MessageService } from "./messages.js";
 import type { EmployeeProfile, Interaction, MessageInput, SendAction, TelegramButton } from "./types.js";
-import type { Entity, TelegramText } from "./telegram-format.js";
+import { telegramText as formatTelegramText, type Entity, type TelegramText } from "./telegram-format.js";
 import { DONT_SEND, SEND, approvedTool, safeURL } from "./interactions.js";
 import { accessOwners, hasAccess, managementPeople } from "./telegram-tools.js";
 import { saveHomeRule } from "./home-management.js";
@@ -19,6 +19,7 @@ import { quietReply } from "./operations.js";
  */
 export const cardKinds = ["send", "answer", "due", "connect", "failed"] as const;
 export type CardKind = typeof cardKinds[number];
+export const correspondenceActions = ["draft", "detail", "dismiss", "payment_link"] as const;
 export interface CardChoice { id: string; label: string; role: "primary" | "plain" | "link"; needsText?: true; url?: string;
   /** "Always": the choice the person gave the last `times` times about the same thing. */ repeats?: string; times?: number }
 export interface CardContent { to?: string; via?: string; subject?: string | null; text?: string; details?: Array<{ label: string; value: string }>; due?: string; url?: string; nextTry?: string;
@@ -39,7 +40,7 @@ type Row = { id: string; kind: CardKind; conversation_id: string; profile_id: st
   interaction_id: string | null; created_at: string; answered_at: string | null; told: number };
 export type CardPerson = { via: "telegram"; userId: string; name: string } | { via: "app" };
 export interface RaiseContext {
-  correspondence?: CorrespondenceOrigin & {needsDetails:boolean};
+  correspondence?: CorrespondenceOrigin;
   conversationId: string; messageId: string; channel: "api" | "telegram"; profile: EmployeeProfile | null;
   scheduled?: boolean; scheduleTelegramChatId?: string | null; access?: boolean;
   /** A chat this turn may itself send to through the Home's bot. */
@@ -118,6 +119,17 @@ export class Cards {
         content.chatId = chatId;
       }
       choices = [{ id: "send", label: word("send", ru), role: "primary" }, { id: "draft", label: word("draft", ru), role: "plain" }];
+    } else if (kind === "answer" && context.correspondence) {
+      if (!Array.isArray(args.actions) || !args.actions.length || args.actions.length > 3) throw new Error("Give one to three actions for this decision.");
+      choices = args.actions.map((action, index): CardChoice => {
+        if (!correspondenceActions.includes(action?.kind)) throw new Error("Choose a supported correspondence action.");
+        const label = action.kind === "payment_link" ? (ru ? "Создать платёжную ссылку" : "Create checkout link") : str(action.label, 24, "the specific action", true)!;
+        if (/^(add details|skip|уточнить|пропустить)$/iu.test(label)) throw new Error("Name the specific fact, draft or notice on the button.");
+        return { id: action.kind === "draft" ? "draft" + index : action.kind, label, role: index ? "plain" : "primary",
+          ...action.kind === "detail" ? { needsText: true } : {} };
+      });
+      if (choices.every(choice => choice.id === "dismiss") || new Set(choices.map(c => c.label)).size !== choices.length || new Set(choices.map(c => c.id)).size !== choices.length)
+        throw new Error("Give distinct actions for a decision only the owner can make.");
     } else if (kind === "answer") {
       const labels = (Array.isArray(args.choices) ? args.choices : []).map(label => str(label, 24, "each choice")).filter((label): label is string => Boolean(label));
       if (labels.length < 2 || labels.length > 3 || new Set(labels).size !== labels.length) throw new Error("Give two or three different short choices.");
@@ -145,10 +157,8 @@ export class Cards {
       choices = [{ id: "ok", label: word("ok", ru), role: "primary" }];
     }
     if (context.correspondence) {
-      const {needsDetails, ...origin}=context.correspondence;
-      const {source, thread, revision}=origin;
-      content.correspondence=origin;
-      if (needsDetails) choices=[{...choices[0]!,needsText:true},choices[1]!];
+      const {source, thread, revision} = context.correspondence;
+      content.correspondence = context.correspondence;
       const previous=this.rows("conversation_id=? AND kind='answer'",context.conversationId)
         .find(row=>row.content.correspondence?.source===source && row.content.correspondence.thread===thread && row.content.correspondence.revision===revision);
       if (previous) return {id:previous.id,state:previous.state,alreadyAsked:true};
@@ -278,7 +288,14 @@ export class Cards {
     const add = (value: string, type?: string) => { if (type && value) entities.push({ type, offset: text.length, length: value.length }); text += value; };
     const raiser = this.raiserName(row);
     add((raiser ? raiser + " · " : "") + row.title, "bold");
-    if (row.reason) add("\n" + row.reason);
+    if (row.reason) {
+      add("\n");
+      for (const part of formatTelegramText(row.reason)) {
+        const offset = text.length;
+        add(part.text);
+        entities.push(...part.entities.map(entity => ({ ...entity, offset: offset + entity.offset })));
+      }
+    }
     const body = () => {
       if (row.kind === "send") {
         add(`\n\n${word("to", ru)}: ${[content.to, content.via].filter(Boolean).join(" · ")}`);
@@ -296,7 +313,6 @@ export class Cards {
     const answer = row.answer;
     if (answer) add(`\n\n✓ ${answer.outcome ?? answer.label} · ${answer.by}, ${this.clock(answer.at)}`);
     else if (note) add("\n\n" + note);
-    if (row.content.correspondence) { add("\n\n"); add(ru ? "Отправлено AI-помощником." : "Sent by an AI assistant.", "italic"); }
     return { text, entities };
   }
   private fits(row: Row): boolean { return !this.telegramText({ ...row, answer: null }).text.endsWith(word("long", speaksRussian(row))); }
@@ -372,6 +388,13 @@ export class Cards {
     if (row.state !== "open") return { toast: word("decided", ru, row.answer?.outcome ?? row.answer?.label ?? ""), alert: false };
     const choice = row.choices.find(item => item.id === input.choice);
     if (!choice || choice.role === "link") return { toast: word("closed", ru), alert: true };
+    if (row.content.correspondence && choice.needsText && row.telegram_message_id != null) {
+      if (!this.currentDecision(row)) return { toast: ru ? "Переписка изменилась." : "The conversation has changed.", alert: true };
+      const prompt = { text: row.title, entities: [] };
+      return { toast: choice.label, alert: false, carry: async () => {
+        await this.messages.telegram?.sendMessage(input.chatId, prompt, "card-detail:" + row.id, row.telegram_message_id!, { forceReply: choice.label, silent: true, retryRejected: true });
+      }};
+    }
     if (choice.needsText) return { toast: word(choice.id === "date" ? "newDate" : "words", ru), alert: false };
     const by: CardPerson = { via: "telegram", userId: input.userId!, name: input.name };
     let rule: string | undefined;
@@ -384,18 +407,30 @@ export class Cards {
 
   /** An open card this person may answer in words by replying to its message. */
   waiting(chatId: string, messageId: number, userId?: number): { id: string; conversationId: string } | null {
-    const row = this.rows("chat_id=? AND telegram_message_id=? AND state='open'", chatId, messageId)[0];
+    const row = this.rows("chat_id=? AND telegram_message_id=? AND state='open'", chatId, messageId)[0]
+      ?? this.rows(`chat_id=? AND state='open' AND EXISTS (SELECT 1 FROM telegram_outbox o
+        WHERE o.key=cards.chat_id || ':card-detail:' || cards.id || ':0' AND o.status='delivered' AND o.message_id=?)`, chatId, String(messageId))[0];
     if (!row || !["answer", "due", "send"].includes(row.kind) || !this.mayAnswer(row, userId === undefined ? undefined : String(userId), chatId)) return null;
     return { id: row.id, conversationId: this.telegramReplyConversation(row) };
   }
 
   /** The person's words as the answer. The caller sends `text` on as that person's own message in the card's conversation. */
   words(id: string, text: string, by: CardPerson): { text: string; cardReply: boolean } | null {
-    const row = this.row(id), settled = row && this.settle(row, null, text.trim(), by);
+    const row = this.row(id);
+    if (!row) return null;
+    if (!this.currentDecision(row)) {
+      const why = speaksRussian(row) ? "Переписка изменилась." : "The conversation has changed.";
+      void this.close(id, why, { conversationId: row.conversation_id, profile: null }).catch(() => undefined);
+      return null;
+    }
+    const settled = this.settle(row, null, text.trim(), by);
     if (!settled) return null;
     void this.redraw(settled).catch(() => undefined);
     const live = settled.interaction_id ? this.messages.interactions.get(settled.interaction_id) : undefined;
-    if (!live) return { text: this.answerLine(settled), cardReply: true };
+    if (!live) {
+      if (row.content.correspondence) this.markTold([row.id]);
+      return { text: this.answerLine(settled), cardReply: true };
+    }
     // The service is still waiting: these words refuse that send, and reach the assistant as an ordinary message after it.
     this.markTold([settled.id]);
     void this.messages.interactions.answer(live.id, live.conversationId, { decision: DONT_SEND }).catch(() => undefined);
@@ -429,11 +464,13 @@ export class Cards {
     const origin=row.content.correspondence;
     if (!origin) return answer;
     if (!this.currentDecision(row)) return "This correspondence decision expired when the conversation changed. Take no action from the old answer.";
-    const approved = row.answer?.choice === "c0";
-    return [answer, "Private correspondence reference: " + JSON.stringify({ ...origin, terms: row.reason, decisionId: row.id }),
-      approved ? "Re-read the thread, current draft and service records. Only apply the displayed terms if they still match. Use the decision ID for idempotency. Verify the provider result, then save and verify the recipient's draft."
-        : "The owner supplied information. Re-read the source and look for an existing match. Show the exact terms for a separate approval before creating anything.",
-      "Sending requires a separate request."].join("\n");
+    const choice = row.answer?.choice;
+    let instruction = "The owner supplied information. Re-read the source and look for an existing match. Show the exact terms for a separate approval before creating anything.";
+    if (choice?.startsWith("draft")) instruction = "Prepare only a reply draft for the selected option in the original conversation. Read the latest exchange and existing draft, preserve human edits, and verify the saved draft. This choice authorizes no payment, renewal, invoice or new link.";
+    const legacyPaymentLink = choice === "c0" && /^(create (payment|checkout) link|создать плат[её]жную ссылку)$/iu.test(row.answer?.label ?? "");
+    if (choice === "c0" && !legacyPaymentLink) instruction = "This older choice records the owner's preference and authorizes no financial action. Re-read the original conversation before preparing a reply draft. Ask separately before any external action.";
+    if (choice === "payment_link" || legacyPaymentLink) instruction = "Re-read the thread, current draft and billing records. Create a checkout link only if that exact action and all terms were displayed and explicitly approved. Use the decision ID for idempotency. Verify the provider result, then save and verify the recipient's draft. Payments, invoices and renewals require separate authorization.";
+    return [answer, "Private correspondence reference: " + JSON.stringify({ ...origin, terms: row.reason, decisionId: row.id }), instruction, "Sending requires a separate request."].join("\n");
   }
   private currentDecision(row: Row): boolean {
     const origin = row.content.correspondence;
@@ -453,7 +490,7 @@ export class Cards {
   private ownSend(row: Row): boolean { return row.kind === "send" && row.answer?.choice === "send" && Boolean(row.content.chatId) && !row.content.action; }
   /** The raiser has to act on this answer now: a choice or words, a connection to check, a send through its own service. */
   private needsTurn(row: Row): boolean {
-    if (row.content.correspondence && row.answer?.choice==="c1") return false;
+    if (row.content.correspondence && (row.answer?.choice === "dismiss" || row.answer?.choice === "c1")) return false;
     return !this.ownSend(row) && (row.kind === "answer" || row.kind === "connect" || row.answer?.text != null || row.kind === "send" && row.answer?.choice === "send");
   }
 
@@ -491,6 +528,7 @@ export class Cards {
     const current = row.kind === "send" && choice === "send" ? this.keep(row, { ...row.content, grant: "ready" }) : row;
     await this.redraw(current);
     if (this.needsTurn(current)) await this.continue(current, by);
+    if (row.content.correspondence) this.markTold([row.id]);
   }
 
   /** The answer, as the person's own message in the conversation that raised the card; the reply comes back under the card. */

@@ -28,6 +28,8 @@ it.each(["read_model_settings", "correspondence_checkpoint", "unipile_accounts",
         expect(params.developerInstructions).toContain("mik-mcp");
         expect(params.developerInstructions).toMatch(/company.*recall|recall.*company/i);
         expect(params.developerInstructions).toMatch(/latest.*outgoing/i);
+        expect(params.developerInstructions).toContain("if the sender can clarify");
+        expect(params.developerInstructions).toContain("only the owner can supply");
       } else expect(params.developerInstructions).not.toContain("mik-mcp");
       if (toolName === "sign_document") expect(params.developerInstructions).toContain("openstrudel_runtime.sign_document");
       endpoint = params.config["mcp_servers.openstrudel_runtime"]; return { thread: { id: "existing" } }; }
@@ -48,7 +50,8 @@ it.each(["read_model_settings", "correspondence_checkpoint", "unipile_accounts",
   });
   const engine = new CodexEngineAdapter();
   try {
-    await engine.run("Use the current tool",{threadId:"existing",tools:{definitions:[{type:"function",name:toolName,description:"Read",inputSchema:{type:"object",properties:{}}}],call}});
+    const names = toolName === "read_team" ? [toolName, "correspondence_context"] : [toolName];
+    await engine.run("Use the current tool",{threadId:"existing",tools:{definitions:names.map(name => ({type:"function",name,description:"Read",inputSchema:{type:"object",properties:{}}})),call}});
     expect(call).toHaveBeenCalledWith(toolName,{scope:"home",id:null});
     expect(wire.request.mock.calls.some(([m])=>m === "thread/start")).toBe(false);
     await expect(fetch(endpoint!.url)).rejects.toThrow();

@@ -77,8 +77,7 @@ it("delivers exact unsigned bytes with owner-only action buttons and keeps group
   const forms=net.mock.calls.filter(([url])=>String(url).endsWith("/sendDocument")).map(([,req])=>req!.body as FormData);
   expect(forms).toHaveLength(1);expect(forms[0]!.get("chat_id")).toBe("42");expect(await (forms[0]!.get("document") as Blob).text()).toBe("unsigned contents");
   expect(forms[0]!.get("caption")).toContain("Гриша");expect(forms[0]!.get("reply_markup")).toContain("signreq:"+reqid+":approve");
-  const caption=String(forms[0]!.get("caption")), entity=JSON.parse(String(forms[0]!.get("caption_entities")))[0];
-  expect(caption.slice(entity.offset,entity.offset+entity.length)).toBe("Отправлено AI-помощником."); expect(entity.type).toBe("italic");
+  expect(forms[0]!.get("caption")).not.toMatch(/AI-помощником/);
   await tr.sendSigningStatus({id:reqid,chatId:"-100",replyToMessageId:7,messageThreadId:5,state:"declined"});
   expect(net.mock.calls.filter(([url])=>String(url).endsWith("/sendDocument"))).toHaveLength(1);
   const outgoing=net.mock.calls.find(([url])=>String(url).endsWith("/sendMessage"));

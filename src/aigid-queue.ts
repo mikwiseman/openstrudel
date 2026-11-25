@@ -7,7 +7,8 @@ import { resolve } from "node:path";
 export const packageTargets = ["android", "web", "macos", "desktop"] as const;
 export type PackageTarget = typeof packageTargets[number];
 export const isPackageTarget = (value: unknown): value is PackageTarget => packageTargets.some(target => target === value);
-interface Proposal { id:string; goal:string; state:string; files:string; job_id:string|null }
+export interface ProposedBuild { change:boolean; repository?:string; release?:boolean|"source"; packages?:PackageTarget[]; packageOnly?:PackageTarget; revision?:string; destination?:"website"; route?:string; githubOnly?:true }
+interface Proposal { id:string; goal:string; state:string; files:string; job_id:string|null; build:ProposedBuild; replaces:string|null }
 export function requestId(conversation: string, message: string, repository: string | null, operation: string) {
   const bytes = createHash("sha256").update(JSON.stringify([conversation, message, repository, operation])).digest();
   bytes[6] = (bytes[6]! & 15) | 128;
@@ -44,32 +45,48 @@ export class BuildQueue {
     this.db.exec(`CREATE TABLE IF NOT EXISTS aigid_proposals (
       id TEXT PRIMARY KEY, conversation TEXT NOT NULL, goal TEXT NOT NULL, files TEXT NOT NULL,
       state TEXT NOT NULL DEFAULT 'pending', job_id TEXT UNIQUE)`);
+    const proposalColumns=this.db.prepare("PRAGMA table_info(aigid_proposals)").all().map(row=>row.name);
+    if (!proposalColumns.includes("build_json")) this.db.exec("ALTER TABLE aigid_proposals ADD COLUMN build_json TEXT");
+    if (!proposalColumns.includes("replaces")) this.db.exec("ALTER TABLE aigid_proposals ADD COLUMN replaces TEXT");
   }
   pending(conversation:string) {
-    return this.db.prepare("SELECT id,goal FROM aigid_proposals WHERE conversation=? AND state='pending' ORDER BY rowid")
-      .all(conversation) as unknown as Array<Pick<Proposal,"id"|"goal">>;
+    return this.db.prepare("SELECT id,goal,build_json FROM aigid_proposals WHERE conversation=? AND state='pending' ORDER BY rowid")
+      .all(conversation).map(row=>({id:String(row.id),goal:String(row.goal),build:(row.build_json ? JSON.parse(String(row.build_json)) : {change:true}) as ProposedBuild}));
   }
-  private proposal(id:string,conversation:string) {
-    return this.db.prepare("SELECT * FROM aigid_proposals WHERE id=? AND conversation=?").get(id,conversation) as unknown as Proposal|undefined;
+  proposal(id:string,conversation:string):Proposal|undefined {
+    const row=this.db.prepare("SELECT * FROM aigid_proposals WHERE id=? AND conversation=?").get(id,conversation);
+    return row ? {id:String(row.id),goal:String(row.goal),state:String(row.state),files:String(row.files),
+      job_id:row.job_id == null ? null : String(row.job_id), replaces:row.replaces == null ? null : String(row.replaces),
+      build:row.build_json ? JSON.parse(String(row.build_json)) : {change:true}} : undefined;
   }
   cancel(id:string,conversation:string) {
     const row=this.db.prepare("UPDATE aigid_proposals SET state='cancelled' WHERE id=? AND conversation=? AND state IN ('pending','cancelled') RETURNING id,state").get(id,conversation);
     if(!row) throw new Error("Only a pending proposal in this chat can be cancelled.");
     return row;
   }
-  propose(id:string,conversation:string,goal:string,files:string[],replaces?:string) {
+  propose(id:string,conversation:string,goal:string,files:string[],replaces?:string,build?:ProposedBuild) {
+    if (!goal.trim() || goal.length>2400) throw new Error("Write a concise, complete plan (up to 2400 characters) for the tester to approve.");
     this.db.exec("BEGIN IMMEDIATE");
     try {
       let proposal=this.proposal(id,conversation);
       if (!proposal) {
+        if (!replaces) {
+          const normalized=goal.trim().replace(/\s+/g," "), action=JSON.stringify(build??{change:true});
+          replaces=this.pending(conversation).find(p=>p.goal.trim().replace(/\s+/g," ")===normalized && JSON.stringify(p.build)===action)?.id;
+        }
         if (replaces) {
           const prior=this.proposal(replaces,conversation);
           if (prior?.state!=="pending") throw new Error("That proposal is no longer open in this chat.");
+          build ??= prior.build;
+          if (prior.build.repository !== build.repository) throw new Error("Revise the plan for the same repository.");
           files=[...new Set([...JSON.parse(prior.files) as string[],...files])];
           this.db.prepare("UPDATE aigid_proposals SET state='replaced' WHERE id=?").run(replaces);
         }
         if(files.length>24) throw new Error("Use up to 24 attachments for one change.");
-        this.db.prepare("INSERT INTO aigid_proposals (id,conversation,goal,files) VALUES(?,?,?,?)").run(id,conversation,goal,JSON.stringify(files));
+        if (this.db.prepare("SELECT 1 FROM jobs WHERE conversation=? AND source_message=? AND repository IS ?").get(conversation,id,build?.repository??null))
+          throw new Error("This request is already queued. Do not open a second plan for it.");
+        this.db.prepare("INSERT INTO aigid_proposals (id,conversation,goal,files,build_json,replaces) VALUES(?,?,?,?,?,?)")
+          .run(id,conversation,goal,JSON.stringify(files),JSON.stringify(build ?? {change:true}),replaces ?? null);
         proposal=this.proposal(id,conversation)!;
       }
       this.db.exec("COMMIT");return {id:proposal.id,goal:proposal.goal,state:proposal.state};
@@ -83,9 +100,12 @@ export class BuildQueue {
       if (id===message) throw new Error("Wait for a separate approval from a tester.");
       let job=proposal.job_id;
       if (!job) {
-        if(this.db.prepare("SELECT 1 FROM jobs WHERE conversation=? AND source_message=? AND repository IS NULL").get(conversation,message))
+        if(this.db.prepare("SELECT 1 FROM jobs WHERE conversation=? AND source_message=? AND repository IS ?").get(conversation,message,proposal.build.repository??null))
           throw new Error("A different change is already being released for this approval.");
-        const receipt=this.add(message,conversation,channel,actor,proposal.goal,true);
+        const build=proposal.build;
+        const receipt=build.packageOnly && build.repository
+          ? this.addPackage(message,conversation,channel,actor,build.repository,build.packageOnly,build.revision)
+          : this.add(message,conversation,channel,actor,proposal.goal,build.change,build.repository,build.release,build.packages);
         job=String(receipt.id);
         this.db.prepare("UPDATE aigid_proposals SET state='approved',job_id=? WHERE id=?").run(job,id);
       }
@@ -96,6 +116,10 @@ export class BuildQueue {
   feedbackFor(job:string):string[] {
     const row=this.db.prepare("SELECT files FROM aigid_proposals WHERE job_id=?").get(job);
     return row ? JSON.parse(String(row.files)) : [];
+  }
+  approvedBuild(job:string):ProposedBuild|undefined {
+    const row=this.db.prepare("SELECT build_json FROM aigid_proposals WHERE job_id=? AND state='approved'").get(job);
+    return row?.build_json ? JSON.parse(String(row.build_json)) : undefined;
   }
   add(message: string, conversation: string, channel: string, actor: string, goal: string, changes: boolean,
       repository: string | null = null, releaseProject:boolean|"source" = false, targets: PackageTarget[] = []) {

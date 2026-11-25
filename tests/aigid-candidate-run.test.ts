@@ -37,3 +37,9 @@ it("recovers a malformed report once without reimplementing the request",async()
 it("preserves an actual failing check without asking the model to reinterpret it",async()=>{
  wire.outputs.push(JSON.stringify({ready:false,notes:"Check failed",checks:"Module missing"}));await expect(example()).rejects.toThrow("Module missing");expect(wire.turns).toBe(1);
 });
+it("asks for a complete short result when the worker report would end mid-sentence", async () => {
+  wire.outputs.push(JSON.stringify({ ready:true, notes:"Long diagnostics. ".repeat(130), checks:"Inspected" }),
+    JSON.stringify({ ready:true, notes:"The next question can be missed while the microphone reconnects.", checks:"Inspected" }));
+  expect((await example()).notes).toBe("The next question can be missed while the microphone reconnects.");
+  expect(wire.turns).toBe(2);
+});

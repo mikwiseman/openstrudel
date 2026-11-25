@@ -87,32 +87,95 @@ function telegramBeside() {
 }
 
 describe("a card in Telegram", () => {
-  it("returns typed details on a correspondence card to the owner's private chat with the source context", async () => {
+  async function correspondenceCard(actions: Array<{kind: string; label: string}>, space: "company" | "personal" = "company") {
     const tg = telegram(), h = home(), inbox = h.store.primaryConversation();
     const dm = h.store.getOrCreateConversation({ channel: "telegram", externalId: "42", title: "Den" });
     h.store.db.prepare("UPDATE telegram_chats SET conversation_id=? WHERE chat_id='42'").run(dm.id);
-    const { configureCorrespondence, correspondenceSource, Correspondence, decisionCurrent } = await import("../src/correspondence.js");
+    const { configureCorrespondence, correspondenceSource, Correspondence, correspondenceContext } = await import("../src/correspondence.js");
     const config = { enabled: true, conversationId: inbox.id, calendarId: "owner@example.com", defaultDurationMinutes: 30,
-      sources: [{ id: "mail", provider: "gmail", accountId: "owner@example.com", space: "company", token: "a-private-source-token-with-32-characters" }], drafts: { ownerTelegram: "42" } };
+      sources: [{ id: "mail", provider: "gmail", accountId: "owner@example.com", space, token: "a-private-source-token-with-32-characters" }], drafts: { ownerTelegram: "42" } };
     configureCorrespondence(h.store, true, config);
     const writer = new Correspondence(h.store, h.messages);
+    cleanups.push(() => writer.stop());
     const source = correspondenceSource(h.store, "mail", "Bearer " + config.sources[0]!.token);
     writer.receive(source, { id: "new", threadId: "incoming", type: "message.new", occurredAt: new Date().toISOString() });
-    const origin = { source: "mail", thread: "incoming", revision: 1, ownerTelegram: "42" };
-    expect(decisionCurrent(h.store, inbox.id, origin)).toBe(true);
-    const context = { conversationId: inbox.id, messageId: "owner-decision", channel: "api" as const, scheduled: true,
-      profile: null, sendable: () => false, correspondence: { ...origin, needsDetails: true } };
-    const question = { kind: "answer", title: "Which project is Andrew asking about?", person: "42", choices: ["Add details", "Skip"] };
-    await h.messages.cards.raise(question, context);
-    await h.messages.cards.raise(question, context);
+    h.store.db.prepare("UPDATE correspondence_events SET status='running',run_id='test' WHERE event_id='new'").run();
+    const msg = h.store.addMessage({ channel: "api", conversationId: inbox.id, direction: "inbound", externalId: "correspondence:test", text: "changed conversation" });
+    h.store.setMessageStatus(msg.id, "running");
+    const turn = { conversationId: inbox.id, messageId: msg.id, channel: "api" as const, scope: "personal", scheduled: true, profile: null, cards: h.messages.cards };
+    await correspondenceContext(h.store, turn, space, "Agreement", async () => ({evidence: [], searched: ["work"], unreachable: []}));
+    const { employeeTools } = await import("../src/personality.js");
+    const tools = employeeTools(h.store, {run: async () => ({threadId:"t",response:"",events:[]})}, h.messages.interactions, turn);
+    const question = { question: "Which proposal does Anton need?", reason: "Both proposals are current.", actions };
+    await tools.call("correspondence_question", question);
+    await tools.call("correspondence_question", question);
     expect(tg.of("sendMessage")).toHaveLength(1);
-    expect(tg.buttons(tg.of("sendMessage")[0]).map(button => button.text)).toEqual(["Add details", "Skip"]);
-    await h.adapter.processUpdate(text(42, 42, "The school course", 501));
+    expect(tg.of("sendMessage")[0].text).not.toMatch(/Sent by an AI assistant|Отправлено AI-помощником/);
+    return { tg, h, dm, buttons: tg.buttons(tg.of("sendMessage")[0]), revoke: () => configureCorrespondence(h.store, true, { ...config, drafts: { ownerTelegram: null } }) };
+  }
+
+  it("opens the reply composer for a specific missing fact and routes the reply back with its source", async () => {
+    const { tg, h, dm, buttons } = await correspondenceCard([{kind:"detail",label:"Name the proposal"}, {kind:"dismiss",label:"Leave unanswered"}]);
+    expect(buttons.map(button => button.text)).toEqual(["Name the proposal", "Leave unanswered"]);
+    await h.adapter.processUpdate(press(42, 42, 501, buttons[0]!.callback_data!));
+    const prompt = tg.of("sendMessage").at(-1);
+    expect(prompt.reply_markup).toMatchObject({ force_reply: true, input_field_placeholder: "Name the proposal" });
+    expect(prompt.reply_parameters.message_id).toBe(501);
+    expect(h.runs).toHaveLength(0);
+    await h.adapter.processUpdate(text(42, 42, "The school course", 502));
     expect(h.runs.at(-1)?.options.conversationId).toBe(dm.id);
+    expect(h.runs.at(-1)?.input).toContain("The school course");
     expect(h.runs.at(-1)?.input).toContain("separate approval");
-    configureCorrespondence(h.store, true, { ...config, drafts: { ownerTelegram: null } });
-    expect(decisionCurrent(h.store, inbox.id, origin)).toBe(false);
-    writer.stop();
+    expect(h.runs.at(-1)?.input).toContain('"thread":"incoming"');
+  });
+
+  it.each([0,1])("carries draft choice %i to the owner as a draft-only instruction", async index => {
+    const labels = ["Draft for the workshop", "Draft for the course"];
+    const { tg, h, buttons } = await correspondenceCard(labels.map(label => ({kind:"draft",label})));
+    expect(buttons.map(button => button.text)).toEqual(labels);
+    await h.adapter.processUpdate(press(42, 42, 501, buttons[index]!.callback_data!));
+    expect(h.runs).toHaveLength(1);
+    expect(h.runs[0]!.input).toContain(labels[index]);
+    expect(h.runs[0]!.input).toContain("only a reply draft");
+    expect(tg.of("sendMessage").every(message => String(message.chat_id) === "42")).toBe(true);
+  });
+
+  it("dismisses only that notice without running an agent, regardless of the button position", async () => {
+    const {h,buttons} = await correspondenceCard([{kind:"dismiss",label:"Leave unanswered"}, {kind:"draft",label:"Draft for the course"}]);
+    await h.adapter.processUpdate(press(42,42,501,buttons[0]!.callback_data!));
+    expect(h.runs).toHaveLength(0);
+    expect(h.messages.cards.list().recent[0]?.answer?.label).toBe("Leave unanswered");
+  });
+
+  it("reuses the pending detail prompt and respects revoked access on an earlier card", async () => {
+    const {tg,h,buttons,revoke} = await correspondenceCard([{kind:"detail",label:"Enter amount"}]);
+    await h.adapter.processUpdate(press(42,42,501,buttons[0]!.callback_data!));
+    await h.adapter.processUpdate(press(42,42,501,buttons[0]!.callback_data!));
+    expect(tg.of("sendMessage")).toHaveLength(2);
+    revoke();
+    await h.adapter.processUpdate(press(42,42,501,buttons[0]!.callback_data!));
+    expect(tg.of("answerCallbackQuery").at(-1)?.show_alert).toBe(true);
+    await h.adapter.processUpdate(text(42,42,"€20",502));
+    expect(h.runs).toHaveLength(0);
+    expect(h.messages.cards.list().recent[0]?.answer?.label).toBe("The conversation has changed.");
+  });
+
+  it("labels creation of a checkout explicitly and requires the company lookup before offering it", async () => {
+    const choice = [{kind:"payment_link",label:"Yes"}];
+    const {buttons} = await correspondenceCard(choice);
+    expect(buttons.map(button => button.text)).toEqual(["Create checkout link"]);
+    await expect(correspondenceCard(choice, "personal")).rejects.toThrow(/work context/);
+  });
+
+  it.each([["Prepare a proposal",false], ["Renew today",false], ["Create payment link",true]])("honors only an explicit checkout label on a legacy c0 (%s)", async (label, approved) => {
+    const { h } = await correspondenceCard([{kind:"draft",label:"Draft proposal"}]);
+    const card = h.messages.cards.list().open[0]!;
+    const legacyChoices = [{id:"c0",label,role:"primary"}, {id:"c1",label:"Skip",role:"plain"}];
+    h.store.db.prepare("UPDATE cards SET choices_json=? WHERE id=?").run(JSON.stringify(legacyChoices),card.id);
+    await h.adapter.processUpdate(press(42,42,501,"c:" + card.id + ":c0"));
+    expect(h.runs).toHaveLength(1);
+    expect(h.runs[0]!.input.includes("Create a checkout link only if")).toBe(approved);
+    if (!approved) expect(h.runs[0]!.input).toContain("no financial action");
   });
 
   it("is one message with a button per choice, and the quiet turn that raised it sends nothing else", async () => {
@@ -125,6 +188,16 @@ describe("a card in Telegram", () => {
     expect(sent[0].text).toContain("The same shop as last week.");
     expect(tg.buttons(sent[0]).map(b => b.text)).toEqual(["Salary", "Office", "Something else"]);
     expect(tg.buttons(sent[0]).every(b => Buffer.byteLength(b.callback_data!) <= 64)).toBe(true);
+  });
+
+  it("renders a source in the reason as a tappable label at its UTF-16 position", async () => {
+    const url = "https://mail.google.com/mail/u/?authuser=owner%40example.org#all/123";
+    const tg = telegram(), h = home({ run: raising({ ...question, reason: "🧾 Provider quote. [Renewal notice](" + url + ")" }) });
+    await h.adapter.processUpdate(text(42, 42, "What's the source?"));
+    const [message] = tg.of("sendMessage");
+    expect(message.text).toContain("🧾 Provider quote. Renewal notice");
+    expect(message.text).not.toContain(url);
+    expect(message.entities).toContainEqual({ type: "text_link", offset: message.text.indexOf("Renewal notice"), length: "Renewal notice".length, url });
   });
 
   it("carries the right person's press to the raiser's chat, and the message says what was decided", async () => {

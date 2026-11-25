@@ -66,3 +66,30 @@ it("returns a release reply to the bound group, scopes builds and status, and re
     store.setSetting("telegram.paused.-10","true");expect(service.allowed(base)).toBe(false);
   }finally{service.queue.db.close();}
 });
+
+it("keeps an approved build-only plan on current main through an edit and a replay",()=>{
+  const first=queue.propose("b1","dm","Build current main",[],undefined,{change:false});
+  const edited=queue.propose("b2","dm","Build current main for both testers",[],first.id);
+  queue.approve(edited.id,"agree","dm","telegram","20");queue.approve(edited.id,"again","dm","telegram","10");
+  expect(queue.next(true)).toMatchObject({id:"agree",changes:0});
+  expect(queue.proposal("b2","dm")?.build).toEqual({change:false});
+});
+
+it("refuses to turn an already queued build into a plan on the same feedback message",()=>{
+  queue.add("m","dm","telegram","10","A change",true);
+  expect(()=>queue.propose("m","dm","A second representation",[])).toThrow(/already/i);
+});
+
+it("keeps one open plan across repeated reports of the identical change while retaining new evidence",()=>{
+  queue.propose("first","dm","Restore the microphone.",["first-photo"],undefined,{change:true});
+  queue.propose("repeat","dm"," Restore   the microphone. ",["second-photo"],undefined,{change:true});
+  expect(queue.pending("dm").map(p=>p.id)).toEqual(["repeat"]);
+  queue.approve("repeat","approve","dm","telegram","42");
+  expect(queue.feedbackFor("approve")).toEqual(["first-photo","second-photo"]);
+});
+
+it("keeps natural-language edit requests and conditional or negated consent out of approval",async()=>{
+  const {approvesPlan}=await import("../src/project-plan-telegram.js");
+  for(const text of ["Да, поправь план","Yes, revise it", "Одобряю, если можно без оплаты","Не одобряю","Approved?"]) expect(approvesPlan(text)).toBe(false);
+  for(const text of ["Одобряю.","Go ahead!","Approved. Run this on main with no changes to the app.","Одобряю. Код не меняй.","Approved. Ship this version."]) expect(approvesPlan(text,{change:false})).toBe(true);
+});

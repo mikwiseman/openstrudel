@@ -276,6 +276,13 @@ it("does not mistake a successfully read diagnostic log for a new infrastructure
  expect(toolProblem({type:"item/completed",payload:{item:{type:"functionCallOutput",name:"exec",output:[{text:JSON.stringify({exit_code:0,output:"Yesterday: failed to fork"})}]}}})).toBeUndefined();
 });
 
+it("does not turn ordinary provider data returned by code mode into an infrastructure outage",()=>{
+ const receipt=(output:string)=>({type:"item/completed",payload:{item:{type:"functionCallOutput",name:"exec",output:[{text:output}]}}});
+ expect(toolProblem(receipt(JSON.stringify({message:"command not found in yesterday's conversation"})))).toBeUndefined();
+ expect(toolProblem(receipt("chat history: failed to fork"))).toBeUndefined();
+ expect(toolProblem(receipt(JSON.stringify({exit_code:127,output:"bash: rg: command not found"})))).toBe("tools");
+});
+
 it("tells the owner once for each affected chat and again for a different cause",async()=>{
  const store=new Store(":memory:");stores.push(store);
  store.linkTelegramChat({chatId:"42",title:"Owner",allowedSenders:["42"]});

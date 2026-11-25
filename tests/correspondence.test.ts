@@ -3,6 +3,9 @@ import { Store } from "../src/store.js";
 import { Correspondence, configureCorrespondence, correspondenceCheckpoint, correspondenceModel, correspondenceOff, correspondenceSource } from "../src/correspondence.js";
 import { disconnectProvider } from "../src/providers.js";
 import { privateSourceAudience } from "../src/private-sources.js";
+import { reportConnectorIssues, reportIssue, resolveIssue, runtimeIssues } from "../src/operations.js";
+import { MessageService } from "../src/messages.js";
+import { TelegramAdapter } from "../src/telegram.js";
 import type { MessageInput, MessageResult } from "../src/types.js";
 
 const stores: Store[] = [];
@@ -30,6 +33,86 @@ function fixture() {
   const finishRun = async () => { finish({ conversationId: conversation.id, messageId: "result", text: "NO_REPLY" }); await vi.advanceTimersByTimeAsync(0); };
   return { store, conversation, input, calls, submit, worker, source, event, finishRun };
 }
+
+it("names the affected inbox check and time, gives a next step and retains no private diagnostics in owner notices", async () => {
+  const f = fixture(), { store, conversation } = f;
+  store.setSetting("owner.timezone", "Asia/Nicosia");
+  f.worker.receive(f.source(), f.event("private-message-id", "private-peer"));
+  await vi.advanceTimersByTimeAsync(45_000);
+  const id = store.findMessageByExternal("api", f.calls[0]!.externalId!)!.id;
+  const notice = reportIssue(store, conversation.id, id, "tools", "PRIVATE_SECRET from private-peer");
+  expect(notice?.text).toMatch(/Telegram/);
+  expect(notice?.text).toContain("11:59");
+  expect(notice?.text).toMatch(/проверьте|откройте/i);
+  expect(notice?.text).not.toMatch(/Main Chat|инструмент или плагин|PRIVATE_SECRET|private-peer|private-message-id/);
+  expect(JSON.stringify(runtimeIssues(store))).not.toMatch(/PRIVATE_SECRET|private-peer|private-message-id/);
+  expect(reportIssue(store, conversation.id, id, "tools", "different PRIVATE_SECRET")).toBeUndefined();
+  resolveIssue(store, conversation.id);
+  expect(runtimeIssues(store)).toHaveLength(1);
+  await f.finishRun();
+  f.worker.receive(f.source(), f.event("other-event", "other-thread"));
+  await vi.advanceTimersByTimeAsync(45_000);
+  resolveIssue(store, conversation.id, store.findMessageByExternal("api", f.calls[1]!.externalId!)!.id);
+  expect(runtimeIssues(store)).toHaveLength(1);
+  resolveIssue(store, conversation.id, id);
+  expect(runtimeIssues(store)).toHaveLength(0);
+});
+
+it("sends inbox failures only to the chosen private owner, and rechecks that audience before outbox retries", async () => {
+  const f=fixture(), {store,conversation}=f;
+  for(const id of ["42","55"])store.linkTelegramChat({chatId:id,title:"Paired owner",allowedSenders:[id],
+    conversationId:store.getOrCreateConversation({channel:"telegram",externalId:id}).id});
+  configureCorrespondence(store,true,{...f.input,drafts:{ownerTelegram:"42"}});
+  f.worker.receive(f.source(),f.event()); await vi.advanceTimersByTimeAsync(45_000);
+  const id=store.findMessageByExternal("api",f.calls[0]!.externalId!)!.id;
+  const service=new MessageService(store,{run:async()=>{throw Error("unexpected model call");}});
+  const telegram=new TelegramAdapter("123:test",store,service);
+  const recipients:string[]=[];const delivered:any[]=[];let offline=false;
+  vi.stubGlobal("fetch",vi.fn(async(_url,init)=>{
+    const payload=JSON.parse(init.body);delivered.push(payload);recipients.push(String(payload.chat_id));
+    if(offline)throw Error("network timeout");
+    return Response.json({ok:true,result:{message_id:recipients.length}});
+  }));
+  try{
+    const notice=reportIssue(store,conversation.id,id,"tools")!;
+    await telegram.notifyOwner(notice);
+    expect(recipients).toEqual(["42"]);
+    expect(delivered[0].text).not.toContain("Отправлено AI-помощником.");
+    const connector=reportConnectorIssues(store,conversation.id,id,[{server:"wai-telegram",tool:"wai-telegram.get_message",failed:true}])!;
+    offline=true;await telegram.notifyOwner(connector);offline=false;
+    expect(recipients).toEqual(["42","42"]);
+    expect(runtimeIssues(store,"55")).toEqual([]);
+    expect(runtimeIssues(store,"42")).toHaveLength(2);
+    configureCorrespondence(store,true,{...f.input,drafts:{ownerTelegram:"55"}});
+    expect(runtimeIssues(store,"55")).toEqual([]);
+    await telegram.flushOwnerNotices();
+    expect(recipients).toEqual(["42","42"]);
+    configureCorrespondence(store,true,{...f.input,drafts:null});
+    await telegram.notifyOwner(reportIssue(store,conversation.id,id,"resources")!);
+    expect(recipients).toEqual(["42","42"]);
+  }finally{vi.unstubAllGlobals();telegram.stop();await service.close();}
+});
+
+it("rechecks a superseded inbox run while reporting an unresolved failure on the latest message",async()=>{
+  const f=fixture(), {store,conversation}=f;
+  let turns=0;
+  const service=new MessageService(store,{async run(_text,options){
+    if(++turns===1)f.worker.receive(f.source(),f.event("newer"));
+    options!.onEvent!({type:"item/completed",payload:{item:{type:"commandExecution",exitCode:127,aggregatedOutput:"rg: command not found"}}});
+    return {threadId:"ephemeral",response:"NO_REPLY",events:[]};
+  }});
+  f.submit.mockImplementation(input=>service.submit(input));
+  try{
+    f.worker.receive(f.source(),f.event("older"));await vi.advanceTimersByTimeAsync(45_000);
+    const notices=()=>store.listMessages(conversation.id).filter(m=>m.kind==="notice");
+    expect(notices()).toHaveLength(0);
+    expect(f.worker.status(true).counts.review).toBe(1);
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(turns).toBe(2); expect(notices()).toHaveLength(1);
+    expect(notices()[0]!.text).toContain("Telegram");
+    expect(f.worker.status(true).counts.review).toBe(2);
+  }finally{await service.close();}
+});
 
 it("acknowledges durable events immediately, combines a burst, and never polls an inbox", async () => {
   const f = fixture();
@@ -297,5 +380,17 @@ it("gives a Telegram or Gmail drafter concrete memory, billing and private decis
   const f=fixture(); configureCorrespondence(f.store,true,{...f.input,drafts:{ownerTelegram:null}});
   f.worker.receive(f.source(),f.event());await vi.advanceTimersByTimeAsync(45_000);
   for (const phrase of ["correspondence_context","company_payment_links_list","correspondence_question","human or unknown draft"]) expect(f.calls[0]!.text).toContain(phrase);
+  await f.finishRun();
+});
+
+it("keeps automated renewal offers quiet and drafts sender-owned clarifications before asking the owner", async () => {
+  const f=fixture(); configureCorrespondence(f.store,true,{...f.input,drafts:{ownerTelegram:null}});
+  f.worker.receive(f.source(),f.event()); await vi.advanceTimersByTimeAsync(45_000);
+  const instructions=f.calls[0]!.text;
+  expect(instructions).toContain("automated renewal offers");
+  expect(instructions).toContain("verified expiry, charge or loss of service");
+  expect(instructions).toContain("If the sender can supply the missing fact");
+  expect(instructions).toContain("only the owner can decide");
+  expect(instructions).toContain("original conversation");
   await f.finishRun();
 });

@@ -19,7 +19,7 @@ function link(value: string): URL | undefined {
 
 /** Job details keep the original provider receipt. Only named delivery fields become actions. */
 export function buildReply(job: BuildRequest, request: string): BuildReply | null {
-  if (job.state !== "completed" && job.state !== "failed") return null;
+  if (!["completed", "failed", "dispatched"].includes(job.state)) return null;
   const russian = /[а-яё]/iu.test(request.replace(/(?:__)?(?:Отправлено AI-помощником\.|Sent by an AI assistant\.)(?:__)?\s*$/u,""));
   const t = (en:string,ru:string)=>russian ? ru : en;
   const name = projectName(job.repository);
@@ -29,6 +29,11 @@ export function buildReply(job: BuildRequest, request: string): BuildReply | nul
   const apple = urls.find(url=>url.origin==="https://appstoreconnect.apple.com" && /^\/teams\/[a-f\d-]+\/apps\/\d+\/ci\/builds\/[a-f\d-]+$/i.test(url.pathname));
   const action = (text:string,url?:URL):TelegramLinkButton[]=>url ? [{text,url:url.href}] : [];
   const result = (title:string,actions:TelegramLinkButton[]=[],body?:string):BuildReply=>({title,actions,russian,...(body ? {body} : {})});
+  if (job.state === "dispatched") {
+    return job.repository
+      ? result(t(name+" was submitted for deployment.", name+" передан на развёртывание."))
+      : result(t("AiGid was submitted to Xcode Cloud.", "AiGid передан на сборку в Xcode Cloud."));
+  }
   if (job.state === "failed") {
     const buildLog = apple ?? urls.find(github) ?? lines[0]?.split(/\s+/u).map(link).find(url=>url && github(url));
     return result(job.repository ? t(name+" couldn’t finish this request.",name+" — не удалось выполнить запрос.")
@@ -82,9 +87,5 @@ export function nativeBuildReply(reply: BuildReply) {
   return [markdown(reply),links].filter(Boolean).join("\n\n");
 }
 export function telegramBuildReply(reply: BuildReply) {
-  const footer=reply.russian ? "Отправлено AI-помощником." : "Sent by an AI assistant.";
-  return telegramText(markdown(reply),4096-footer.length-2).map(part=>({
-    text:part.text+"\n\n"+footer,
-    entities:[...part.entities,{type:"italic",offset:part.text.length+2,length:footer.length}],
-  }));
+  return telegramText(markdown(reply));
 }
