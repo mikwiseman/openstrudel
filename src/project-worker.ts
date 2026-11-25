@@ -9,7 +9,7 @@ const config = z.object({
   host:z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9.-]{0,252}$/), user:z.string().regex(/^[a-z_][a-z0-9_-]{0,30}$/),
   telegram:z.array(z.string()), devices:z.array(z.string()),
   // A default-branch push starts the repository's own delivery. Self-updates use the Home's existing updater.
-  releases:z.record(z.string(),z.enum(["push","home"])).default({}),
+  releases:z.record(z.string(),z.enum(["push","home","vercel"])).default({}),
   packages:z.record(z.string(),z.array(z.enum(["android","web","macos"]))).default({}),
   portfolio:z.record(z.string(),z.object({ branch:z.string(), delivery:z.literal("branch").optional() })).default({}),
 });

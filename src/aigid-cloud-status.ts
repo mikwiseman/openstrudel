@@ -1,11 +1,15 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { HomeError } from "./home.js";
 
-export interface CloudStatusConfig { repository:string; workflow:string; appleAppId:string }
-export function cloudStatus(config:CloudStatusConfig, secret:string, event:string|undefined, body:Buffer, signature:string|undefined) {
+export function verifyGitHubSignature(secret:string,body:Buffer,signature:string|undefined) {
   const digest=createHmac("sha256",secret).update(body).digest();
   if(!signature || !/^sha256=[0-9a-f]{64}$/.test(signature) || !timingSafeEqual(digest,Buffer.from(signature.slice(7),"hex")))
     throw new HomeError("Invalid GitHub webhook signature.",401);
+}
+
+export interface CloudStatusConfig { repository:string; workflow:string; appleAppId:string }
+export function cloudStatus(config:CloudStatusConfig, secret:string, event:string|undefined, body:Buffer, signature:string|undefined) {
+  verifyGitHubSignature(secret,body,signature);
   if(event!=="status") return null;
   const value=JSON.parse(body.toString("utf8"));
   if(value.repository?.full_name!==config.repository || value.sender?.id!==84813463 || value.sender?.login!=="xcode-cloud[bot]" ||

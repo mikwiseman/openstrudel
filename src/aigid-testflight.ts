@@ -1,3 +1,4 @@
+import { projectDeliveryEvent } from "./project-delivery.js";
 import { plainText } from "./telegram-format.js";
 import { cloudStatus } from "./aigid-cloud-status.js";
 import { HomeError } from "./home.js";
@@ -57,6 +58,11 @@ export async function receiveCloudStatus(store:Store,event:string|undefined,body
   if(!service) throw new HomeError("Release service unavailable.",503);
   await service.cloudUpdate(event,body,signature);
 }
+export async function receiveProjectDelivery(store:Store,repository:string,event:string|undefined,body:Buffer,signature:string|undefined) {
+  const service=services.get(store);
+  if(!service) throw new HomeError("Release service unavailable.",503);
+  await service.projectDelivery(repository,event,body,signature);
+}
 export function aigidTools(store:Store,turn:TelegramToolContext) {
   const service=services.get(store);
   const allowed=()=>service?.allowed(turn)===true;
@@ -91,7 +97,7 @@ export function aigidTools(store:Store,turn:TelegramToolContext) {
       if(typeof args.repository!=="string" || !/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}\/[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$/.test(args.repository) ||
          typeof args.change!=="boolean" || typeof args.release!=="boolean" || typeof args.goal!=="string" || !args.goal.trim() || args.goal.length>12000)
         throw new Error("Give the canonical repository and the requested project work.");
-      if(args.release && !args.change && ["push","branch"].includes(service.releaseRoute(args.repository)??"")) throw new Error("This project's delivery starts on a source push. Request a change, or run a build of the existing revision without deploying.");
+      if(args.release && !args.change && ["push","branch","vercel"].includes(service.releaseRoute(args.repository)??"")) throw new Error("This project's delivery starts on a source push. Request a change, or run a build of the existing revision without deploying.");
       if(args.release && !service.releaseRoute(args.repository)) throw new Error("This repository has no registered automatic release destination. Request a build or a source change to prepare a candidate on the server.");
       const targets = args.packages ?? [];
       if (!Array.isArray(targets) || targets.length > 3 || !targets.every(t => ["android","web","macos"].includes(t) && service.canPackage(turn,args.repository as string,t)))
@@ -174,6 +180,16 @@ export class AiGidBuilds {
         await this.telegram?.sendMessage(job.actor,part,index ? key+":"+index : key);
     }
   }
+  async projectDelivery(repository:string,event:string|undefined,body:Buffer,signature:string|undefined) {
+    const route=this.releaseRoute(repository);
+    if (route!=="branch" && route!=="vercel") throw new HomeError("Unknown project delivery.",404);
+    const secret=join(this.files.root,".data/project-worker/webhooks",repository);
+    if(!existsSync(secret)) throw new HomeError("Project webhook unavailable.",404);
+    const result=projectDeliveryEvent(repository,route,readFileSync(secret,"utf8").trim(),event,body,signature);
+    if(!result) return;
+    const job=this.queue.recordDelivery(repository,result);
+    if(job) await this.report(job);
+  }
   async cloudUpdate(event:string|undefined,body:Buffer,signature:string|undefined) {
     const config=configuration(this.files.root),key=join(this.files.root,".data/aigid-testflight/github-webhook-secret");
     if(!config?.workflow || !config.appleAppId || !existsSync(key)) throw new HomeError("Webhook is not configured.",404);
@@ -208,6 +224,7 @@ export class AiGidBuilds {
       const sent=await publishPortfolio(worker,repository,job.id,job.commit_sha,this.stopSignal.signal);
       const detail="Pushed "+sent.revision+" to https://github.com/"+repository+"/tree/"+sent.branch+". The repository's workflow builds the candidate and merges it after its checks.";
       this.queue.db.prepare("UPDATE jobs SET state='dispatched',detail=? WHERE id=? AND state='ready'").run(detail,job.id);
+      this.queue.finishDelivery(job.id);
       return;
     }
     const revision=job.pull ? await mergeWorkerCandidate(this.files.root,repository,{id:job.id,pull:job.pull,commit:job.commit_sha},authorize) : job.commit_sha;
@@ -223,6 +240,7 @@ export class AiGidBuilds {
       detail="Merged "+revision+". The repository's push workflow owns deployment. Check the provider for the outcome.";
     }
     this.queue.db.prepare("UPDATE jobs SET state='dispatched',commit_sha=?,detail=? WHERE id=? AND state='ready'").run(revision,detail,job.id);
+    this.queue.finishDelivery(job.id);
   }
   private async dispatch(job: BuildRequest) {
     const config = configuration(this.files.root);
