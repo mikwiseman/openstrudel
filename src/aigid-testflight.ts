@@ -1,4 +1,5 @@
-import { projectDeliveryEvent } from "./project-delivery.js";
+import { setTimeout as delay } from "node:timers/promises";
+import { readPagesDelivery, projectDeliveryEvent } from "./project-delivery.js";
 import { plainText } from "./telegram-format.js";
 import { cloudStatus } from "./aigid-cloud-status.js";
 import { HomeError } from "./home.js";
@@ -172,11 +173,15 @@ export function aigidTools(store:Store,turn:TelegramToolContext) {
 export class AiGidBuilds {
   readonly queue:BuildQueue;
   private active?:Promise<void>;
+  private readonly pageChecks = new Map<string, Promise<void>>();
   private readonly stopSignal=new AbortController();
   constructor(private store:Store,private files:ConversationFiles,private account:CodexAccountService,private shell?:ServerShell,private telegram?:TelegramAdapter) {this.queue=new BuildQueue(files.root);}
   static start(store:Store,files:ConversationFiles,account:CodexAccountService,shell?:ServerShell,telegram?:TelegramAdapter) {
     if (!configuration(files.root) && !projectWorker(files.root)) return;
-    const service=new AiGidBuilds(store,files,account,shell,telegram);services.set(store,service);service.kick();return service;
+    const service=new AiGidBuilds(store,files,account,shell,telegram);services.set(store,service);
+    const pending = service.queue.db.prepare("SELECT * FROM jobs WHERE state='dispatched' AND release_project=1 AND repository IS NOT NULL").all();
+    for (const row of pending) service.watchPages(row as unknown as BuildRequest);
+    service.kick();return service;
   }
   allowed(turn:TelegramToolContext) { const c=configuration(this.files.root);return !!c && permitted(this.store,c,turn); }
   sharedGroup(turn:TelegramToolContext) {
@@ -274,7 +279,31 @@ export class AiGidBuilds {
     this.queue.db.prepare("UPDATE jobs SET state=?,detail=? WHERE id=? AND state='dispatched'").run(state,detail,job.id);
     await this.report(job);
   }
-  async close() {services.delete(this.store);this.stopSignal.abort();await this.active;this.queue.db.close();}
+  private watchPages(job: BuildRequest) {
+    const repo = job.repository, revision = job.commit_sha;
+    if (!repo || !revision || this.releaseRoute(repo) !== "pages" || this.pageChecks.has(job.id)) return;
+    const signal = this.stopSignal.signal;
+    const watch = async () => {
+      while (!signal.aborted && this.queue.db.prepare("SELECT state FROM jobs WHERE id=?").get(job.id)?.state === "dispatched") {
+        try {
+          const result = await readPagesDelivery(repo, revision);
+          if (signal.aborted) return;
+          if (result) {
+            const done = this.queue.recordDelivery(repo, result);
+            if (done) await this.report(done);
+            return;
+          }
+        } catch { /* A temporary GitHub outage leaves the request pending. */ }
+        await delay(90_000, undefined, {signal}).catch(() => undefined);
+      }
+    };
+    this.pageChecks.set(job.id, watch().finally(() => this.pageChecks.delete(job.id)));
+  }
+  async close() {
+    services.delete(this.store); this.stopSignal.abort();
+    await Promise.all([this.active, ...this.pageChecks.values()]);
+    this.queue.db.close();
+  }
   private turn(job: BuildRequest): TelegramToolContext {
     const scope="agent-"+job.id.replaceAll("-","");
     return {channel:job.channel,conversationId:job.conversation,messageId:job.source_message??job.id,files:this.files,scope,
@@ -330,6 +359,7 @@ export class AiGidBuilds {
     }
     this.queue.db.prepare("UPDATE jobs SET state='dispatched',commit_sha=?,detail=? WHERE id=? AND state='ready'").run(revision,detail,job.id);
     this.queue.finishDelivery(job.id);
+    this.watchPages({...job, commit_sha: revision});
   }
   private async dispatch(job: BuildRequest) {
     const config = configuration(this.files.root);
