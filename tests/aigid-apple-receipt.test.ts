@@ -13,7 +13,7 @@ it("reads Apple's number only from the configured product hook and workflow",()=
   const read=(event:unknown, supplied=token)=>appleBuildReceipt(config,token,supplied,Buffer.from(JSON.stringify(event)));
   expect(read(apple)).toEqual({sha,run,number:185});
   expect(()=>read(apple,"d".repeat(64))).toThrow();
-  for(const altered of [{app:{id:"4321",type:"apps"}},{ciWorkflow:{type:"ciWorkflows",id:run}},{ciBuildRun:{...apple.ciBuildRun,attributes:{...apple.ciBuildRun.attributes,number:0}}},{ciBuildRun:{...apple.ciBuildRun,attributes:{...apple.ciBuildRun.attributes,isPullRequestBuild:true}}}])
+  for(const altered of [{app:{id:"4321",type:"apps"}},{ciWorkflow:{type:"ciWorkflows",id:run}},{ciBuildRun:{...apple.ciBuildRun,attributes:{...apple.ciBuildRun.attributes,number:0}}},{ciBuildRun:{...apple.ciBuildRun,attributes:{...apple.ciBuildRun.attributes,isPullRequestBuild:null}}},{ciBuildRun:{...apple.ciBuildRun,attributes:{...apple.ciBuildRun.attributes,isPullRequestBuild:true}}}])
     expect(read({...apple,...altered})).toBeNull();
 });
 it.each(["apple","github"])("binds the exact run in either order, survives restart, delivers once (%s first)", first=>{
@@ -24,7 +24,10 @@ it.each(["apple","github"])("binds the exact run in either order, survives resta
     q.db.prepare("UPDATE jobs SET state='dispatched',release_commit=?,apple_number_required=1 WHERE id='one'").run(sha);
     q.recordCloudReceipt({...number,run:workflow,number:19});q.recordCloudReceipt({...number,sha:"c".repeat(40),number:99});
     q.recordCloudReceipt(first==="apple"?number:github);
-    expect(q.cloudReports()).toHaveLength(0);
+    if(first==="github"){
+      expect(q.cloudReports()).toMatchObject([{id:"one",state:"completed",apple_build_number:null}]);
+      q.markCloudReported("one");
+    } else expect(q.cloudReports()).toHaveLength(0);
     q.db.close();q=new BuildQueue(root);
     q.recordCloudReceipt(first==="apple"?github:number);
     expect(q.cloudReports()).toMatchObject([{id:"one",state:"completed",apple_build_number:185}]);
