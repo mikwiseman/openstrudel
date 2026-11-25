@@ -81,3 +81,18 @@ it("shows a revoked bot key without exposing Telegram internals or secrets", asy
   expect(result.lastError).toContain("Ключ бота больше не действует");
   expect(JSON.stringify(result)).not.toContain("test-secret");
 });
+
+it("adds a late Apple build number by editing the original verified reply, including after retry",async()=>{
+  const {adapter}=setup(),calls:{method:string,body:Record<string,any>}[]=[];
+  vi.stubGlobal("fetch",vi.fn(async(url:string,init:RequestInit)=>{
+    calls.push({method:String(url).split("/").at(-1)!,body:JSON.parse(String(init.body))});
+    return Response.json({ok:true,result:{message_id:12}});
+  }));
+  const buttons=[[{text:"Open TestFlight",url:"https://testflight.apple.com/v1/app/123"}]];
+  await adapter.sendMessage(42,"Build complete.","project-run:one:completed",7,{buttons});
+  await expect(adapter.sendMessage(42,"Ordinary changed text.","project-run:one:completed",7,{buttons})).rejects.toThrow();
+  await expect(adapter.sendMessage(42,"Build 185 complete.","project-run:one:completed",9,{buttons,updateDeliveredText:true})).rejects.toThrow();
+  for(let i=0;i<2;i++)expect(await adapter.sendMessage(42,"Build 185 complete.","project-run:one:completed",7,{buttons,updateDeliveredText:true})).toBe(12);
+  expect(calls.map(r=>r.method)).toEqual(["sendMessage","editMessageText"]);
+  expect(calls[1]?.body).toMatchObject({chat_id:"42",message_id:12,text:"Build 185 complete.",reply_markup:{inline_keyboard:buttons}});
+});

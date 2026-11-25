@@ -206,20 +206,25 @@ export class BuildQueue {
   cloudReports():BuildRequest[] {
     const receipts=this.db.prepare(`SELECT j.id,r.run,r.number,r.state,r.detail FROM aigid_cloud_receipts r
       JOIN jobs j ON j.repository IS NULL AND j.release_commit=r.sha
-      WHERE r.reported=0 AND r.state IS NOT NULL AND (j.apple_number_required=0 OR r.number IS NOT NULL)
+      WHERE r.state IS NOT NULL AND
+        (r.reported=0 OR (r.reported=1 AND j.apple_number_required=1 AND r.number IS NOT NULL))
         AND (j.state='dispatched' OR (j.apple_run_id=r.run AND j.state=r.state)) ORDER BY r.rowid`).all();
     const jobs:BuildRequest[]=[];
     for(const r of receipts) {
       this.db.prepare("UPDATE jobs SET state=?,detail=?,apple_run_id=?,apple_build_number=? WHERE id=? AND state='dispatched'")
         .run(r.state!,r.detail!,r.run!,r.number??null,r.id!);
+      if(r.number!=null)
+        this.db.prepare("UPDATE jobs SET apple_build_number=? WHERE id=? AND apple_run_id=? AND apple_build_number IS NULL")
+          .run(r.number,r.id!,r.run!);
       const job=this.db.prepare("SELECT * FROM jobs WHERE id=? AND apple_run_id=?").get(r.id!,r.run!);
       if(job) jobs.push(job as unknown as BuildRequest);
     }
     return jobs;
   }
   markCloudReported(id:string) {
-    this.db.prepare(`UPDATE aigid_cloud_receipts SET reported=1 WHERE (sha,run)=
-      (SELECT release_commit,apple_run_id FROM jobs WHERE id=?)`).run(id);
+    this.db.prepare(`UPDATE aigid_cloud_receipts SET reported=(
+      SELECT CASE WHEN apple_number_required=1 AND apple_build_number IS NULL THEN 1 ELSE 2 END FROM jobs WHERE id=?
+    ) WHERE (sha,run)=(SELECT release_commit,apple_run_id FROM jobs WHERE id=?)`).run(id,id);
   }
   next(cloudEnabled: boolean) {
     return this.db.prepare(`SELECT job.* FROM jobs job LEFT JOIN jobs parent ON parent.id=job.parent_request

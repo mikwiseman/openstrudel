@@ -448,7 +448,7 @@ export class TelegramAdapter {
   /** Every text message goes out here, through the durable outbox: an answer, a News post, a card, an approval. `text` is Markdown,
    * or a text already laid out with its entities. `buttons` are rows under the first part: links, and presses that come back to
    * `pressed`. Returns Telegram's id of the first part. */
-  async sendMessage(chatId: string | number, text: string | TelegramText, deliveryKey: string = randomUUID(), replyToMessageId?: number, options: { silent?: boolean; linkPreview?: boolean; preview?: string; rich?: string; assertCurrent?: () => void; buttons?: TelegramButton[][]; forceReply?:string; threadId?:number; retryRejected?:boolean;
+  async sendMessage(chatId: string | number, text: string | TelegramText, deliveryKey: string = randomUUID(), replyToMessageId?: number, options: { silent?: boolean; linkPreview?: boolean; preview?: string; rich?: string; assertCurrent?: () => void; buttons?: TelegramButton[][]; forceReply?:string; threadId?:number; retryRejected?:boolean; updateDeliveredText?:boolean;
     /** The text exactly as written: nothing in it is read as formatting. */ plain?: boolean } = {}): Promise<number | undefined> {
     if (!this.token) throw new Error("Telegram не подключён");
     if (typeof text === "string" && options.rich && await this.sendRich(chatId, options.rich, deliveryKey, replyToMessageId, options)) return;
@@ -466,7 +466,15 @@ export class TelegramAdapter {
         ...(index === 0 && replyToMessageId ? { reply_parameters: { message_id: replyToMessageId, allow_sending_without_reply: true } } : {})});
       this.store.db.prepare("INSERT OR IGNORE INTO telegram_outbox(key,chat_id,payload,status) VALUES(?,?,?,'pending')").run(key,String(chatId),payload);
       const row=this.store.db.prepare("SELECT * FROM telegram_outbox WHERE key=?").get(key)!;
-      if(row.payload!==payload) throw new Error("Содержимое доставки изменилось");
+      if(row.payload!==payload) {
+        const previous=JSON.parse(String(row.payload));
+        // A signed build result can receive Apple's number later. Address, reply and all buttons must still match.
+        if(!options.updateDeliveredText || (row.status!=="delivered" && row.status!=="pending") ||
+           JSON.stringify({...previous,...chunk})!==payload) throw new Error("Содержимое доставки изменилось");
+        if(row.status==="delivered")
+          await this.editCard(String(chatId),Number(row.message_id),chunk,previous.reply_markup?.inline_keyboard??[]);
+        this.store.db.prepare("UPDATE telegram_outbox SET payload=? WHERE key=? AND payload=?").run(payload,key,String(row.payload));
+      }
       if(row.status==="delivered") { if (index === 0) first = Number(row.message_id); continue; }
       if(row.status!=="pending" && !(options.retryRejected && row.status==="not_sent")) throw new Error("Доставка требует проверки в Telegram перед повтором");
       this.store.db.prepare("UPDATE telegram_outbox SET status='sending' WHERE key=?").run(key);

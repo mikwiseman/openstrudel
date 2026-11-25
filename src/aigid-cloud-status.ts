@@ -35,7 +35,7 @@ export function appleBuildReceipt(config:AppleReceiptConfig,secret:string,provid
   const run=value?.ciBuildRun, attrs=run?.attributes, sha=attrs?.sourceCommit?.commitSha;
   if(value?.app?.type!=="apps" || value.app.id!==config.appleAppId || value.ciWorkflow?.type!=="ciWorkflows" ||
      typeof value.ciWorkflow.id!=="string" || value.ciWorkflow.id.toLowerCase()!==config.appleWorkflowId.toLowerCase() ||
-     run?.type!=="ciBuildRuns" || typeof run.id!=="string" || !uuid.test(run.id) || attrs?.isPullRequestBuild===true ||
+     run?.type!=="ciBuildRuns" || typeof run.id!=="string" || !uuid.test(run.id) || attrs?.isPullRequestBuild!==false ||
      typeof sha!=="string" || !/^[0-9a-f]{40}$/i.test(sha) || !Number.isSafeInteger(attrs.number) || attrs.number<1) return null;
   return {sha:sha.toLowerCase(),run:run.id.toLowerCase() as string,number:attrs.number as number};
 }

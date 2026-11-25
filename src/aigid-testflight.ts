@@ -342,7 +342,10 @@ export class AiGidBuilds {
     const reply=buildReply(current,request);
     if (!reply) return;
     const key="project-run:"+current.id+":"+current.state;
-    const saved=this.store.addMessage({conversationId:current.conversation,replyToId:source,channel:current.channel,direction:"outbound",kind:"text",externalId:key,text:nativeBuildReply(reply)});
+    const text=nativeBuildReply(reply),numbered=Boolean(current.apple_build_number && !current.repository);
+    const saved=this.store.addMessage({conversationId:current.conversation,replyToId:source,channel:current.channel,direction:"outbound",kind:"text",externalId:key,text});
+    if(numbered && saved.kind==="text" && saved.text!==text)
+      this.store.db.prepare("UPDATE messages SET text=? WHERE id=?").run(text,saved.id);
     if (current.channel!=="telegram") return;
     const target=releaseChat(this.store,turn);
     if (!target) return;
@@ -351,7 +354,7 @@ export class AiGidBuilds {
     const parts=legacy ? reportParts(saved.text) : telegramBuildReply(reply);
     for (const [index,part] of parts.entries())
       await this.telegram?.sendMessage(target.chatId,part,index ? key+":"+index : key,target.replyTo,
-        {silent: current.state === "dispatched", ...(!legacy && index===0 && reply.actions.length ? {buttons:[reply.actions]} : {})});
+        {silent: current.state === "dispatched", updateDeliveredText:numbered && !legacy, ...(!legacy && index===0 && reply.actions.length ? {buttons:[reply.actions]} : {})});
   }
   async projectDelivery(repository:string,event:string|undefined,body:Buffer,signature:string|undefined) {
     const route=this.releaseRoute(repository);
