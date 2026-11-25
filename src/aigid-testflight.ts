@@ -4,7 +4,7 @@ import { cloudStatus } from "./aigid-cloud-status.js";
 import { HomeError } from "./home.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { BuildQueue, type BuildRequest, type PackageTarget } from "./aigid-queue.js";
+import { BuildQueue, requestId, type BuildRequest, type PackageTarget } from "./aigid-queue.js";
 import { prepareCandidate, projectModel } from "./aigid-candidate.js";
 import { dispatchAiGidCloud, githubTools, workerReadAccess, mergeWorkerCandidate, macPackage } from "./github.js";
 import { hasAccess, type TelegramToolContext } from "./telegram-tools.js";
@@ -228,6 +228,13 @@ export class AiGidBuilds {
       this.queue.db.prepare("UPDATE jobs SET state='dispatched',detail=? WHERE id=? AND state='ready'").run(detail,job.id);
       this.queue.finishDelivery(job.id);
       return;
+    }
+    if (route==="vercel" && job.pull) {
+      const worker=projectWorker(this.files.root);
+      if (!worker?.packages[repository]?.includes("web")) throw new Error("This site needs its registered web build before a production merge.");
+      const validation=requestId(job.conversation,job.id,repository,"verify:web");
+      await packageProject(worker,repository,validation,"web",job.commit_sha,this.stopSignal.signal);
+      authorize();
     }
     const revision=job.pull ? await mergeWorkerCandidate(this.files.root,repository,{id:job.id,pull:job.pull,commit:job.commit_sha},authorize) : job.commit_sha;
     authorize();
