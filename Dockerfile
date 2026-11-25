@@ -36,7 +36,7 @@ RUN curl -fL --retry 3 --connect-timeout 30 --max-time 60 \
     && echo 'b5d65a59060e68c4ff940e1eddfa6f94b2d68fdf58ed7f4dd57721c997e35e9d  /build/models/LICENSE' | sha256sum -c -
 
 FROM node:24.22.1-bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl git curl ripgrep python3 poppler-utils bubblewrap socat ffmpeg libopenblas0-pthread \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl openssh-client git curl ripgrep python3 poppler-utils bubblewrap socat ffmpeg libopenblas0-pthread \
     python3-fitz python3-numpy python3-pil libreoffice-writer fonts-liberation2 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /opt/openstrudel /opt/openstrudel
