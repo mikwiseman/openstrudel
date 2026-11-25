@@ -1,9 +1,10 @@
+import { plainText } from "./telegram-format.js";
 import { cloudStatus } from "./aigid-cloud-status.js";
 import { HomeError } from "./home.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { BuildQueue, type BuildRequest } from "./aigid-queue.js";
-import { prepareCandidate } from "./aigid-candidate.js";
+import { BuildQueue, type BuildRequest, type PackageTarget } from "./aigid-queue.js";
+import { prepareCandidate, projectModel } from "./aigid-candidate.js";
 import { dispatchAiGidCloud, githubTools, workerReadAccess, mergeWorkerCandidate, macPackage } from "./github.js";
 import { hasAccess, type TelegramToolContext } from "./telegram-tools.js";
 import { assertNativeAccess } from "./authorization.js";
@@ -42,6 +43,14 @@ function permitted(store:Store,c:Pick<Config,"telegram"|"devices">,turn:Telegram
   return owners.some(hash=>hash.slice(0,20)===turn.deviceId);
 }
 
+export function reportParts(text: string) {
+  const footer="Sent by an AI assistant.";
+  return plainText(text,4096-footer.length-2).map(part=>({
+    text:part.text+"\n\n"+footer,
+    entities:[{type:"italic",offset:part.text.length+2,length:footer.length}],
+  }));
+}
+
 const services=new WeakMap<Store,AiGidBuilds>();
 export async function receiveCloudStatus(store:Store,event:string|undefined,body:Buffer,signature:string|undefined) {
   const service=services.get(store);
@@ -58,11 +67,11 @@ export function aigidTools(store:Store,turn:TelegramToolContext) {
   ]:[];
   if(service?.projectAllowed(turn)) definitions.push(
     {type:"function",name:"project_repositories",description:"Find named projects registered in the owner's additional server checkouts. Use github_repositories for GitHub App installations. Only this owner can see the additional projects.",inputSchema:{type:"object",properties:{query:{type:"string"}},required:["query"],additionalProperties:false}},
-    {type:"function",name:"project_build",description:"Use for the owner's request to inspect, change, build or deploy a named GitHub project on the remote engineering server. Codex is the default. Use project_repositories and github_repositories to resolve the canonical owner/name. For projects with automatic deployment on a branch, a change without release stays on the personal project server. For AiGid iPhone use aigid_testflight. change=true implements and opens a pull request. release=true only when the requester expressly asks to ship or deploy. Builds use the project's own tooling and delivery route. Include relevant text or voice transcription. Check the receipt before reporting a result.",inputSchema:{type:"object",properties:{repository:{type:"string"},goal:{type:"string",minLength:1,maxLength:12000},change:{type:"boolean"},release:{type:"boolean"}},required:["repository","goal","change","release"],additionalProperties:false}},
+    {type:"function",name:"project_build",description:"Use for the owner's request to inspect, change, build or deploy a named GitHub project on the remote engineering server. Codex is the default. Use project_repositories and github_repositories to resolve the canonical owner/name. For projects with automatic deployment on a branch, a change without release stays on the personal project server. For AiGid iPhone use aigid_testflight. Use one call per repository. For a change and a download, include the requested targets in packages in this call so they build the exact changed revision. change=true prepares a checked candidate. release=true only when the requester expressly asks to ship or deploy. Builds use the project's own tooling and delivery route. Include relevant text or voice transcription. Check the receipt before reporting a result.",inputSchema:{type:"object",properties:{repository:{type:"string"},goal:{type:"string",minLength:1,maxLength:12000},change:{type:"boolean"},release:{type:"boolean"},packages:{type:["array","null"],items:{type:"string",enum:["android","web","macos"]}}},required:["repository","goal","change","release","packages"],additionalProperties:false}},
     {type:"function",name:"project_build_status",description:"Read this owner's recent remote project runs with their revision, checks, pull request, or release handoff.",inputSchema:{type:"object",properties:{},additionalProperties:false}}
   );
   if(service && (service.projectAllowed(turn) || allowed())) definitions.push(
-    {type:"function",name:"project_package",description:"Build a downloadable Android QA APK, static web ZIP, or cloud macOS QA client for a registered project. Call it when the requester wants a package for a registered target. For AiGid iPhone use aigid_testflight. revision is a full GitHub commit when packaging a specific change, otherwise null builds the current default branch. The finished package link arrives in this conversation.",
+    {type:"function",name:"project_package",description:"Build a downloadable Android QA APK, static web ZIP, or cloud macOS QA client for a registered project. Call for standalone packages. For a code change together with a package use project_build with packages. For AiGid iPhone use aigid_testflight. revision is a full GitHub commit when packaging a specific change, otherwise null builds the current default branch. The finished package link arrives in this conversation.",
       inputSchema:{type:"object",properties:{repository:{type:"string"},target:{type:"string",enum:["android","web","macos"]},revision:{type:["string","null"]}},required:["repository","target","revision"],additionalProperties:false}}
   );
   return {definitions,async call(name:string,args:Record<string,unknown>){
@@ -84,7 +93,10 @@ export function aigidTools(store:Store,turn:TelegramToolContext) {
         throw new Error("Give the canonical repository and the requested project work.");
       if(args.release && !args.change && ["push","branch"].includes(service.releaseRoute(args.repository)??"")) throw new Error("This project's delivery starts on a source push. Request a change, or run a build of the existing revision without deploying.");
       if(args.release && !service.releaseRoute(args.repository)) throw new Error("This repository has no registered automatic release destination. Request a build or a source change to prepare a candidate on the server.");
-      const receipt=service.queue.add(turn.messageId,turn.conversationId,turn.channel,actor,args.goal.trim(),args.change,args.repository,args.release);
+      const targets = args.packages ?? [];
+      if (!Array.isArray(targets) || targets.length > 3 || !targets.every(t => ["android","web","macos"].includes(t) && service.canPackage(turn,args.repository as string,t)))
+        throw new Error("This project has no authorized package recipe for one or more requested platforms.");
+      const receipt=service.queue.add(turn.messageId,turn.conversationId,turn.channel,actor,args.goal.trim(),args.change,args.repository,args.release,[...new Set<PackageTarget>(targets)]);
       service.kick();return receipt;
     }
     if (!service||!allowed()) throw new Error("This device or Telegram sender cannot request an AiGid release.");
@@ -158,8 +170,8 @@ export class AiGidBuilds {
     const text=(job.repository??"AiGid TestFlight")+" · "+row.state+"\n"+String(row.detail??"");
     this.store.addMessage({conversationId:job.conversation,replyToId:job.source_message??job.id,channel:job.channel,direction:"outbound",kind:"notice",externalId:key,text});
     if(job.channel==="telegram") {
-      const footer="Sent by an AI assistant.";
-      await this.telegram?.sendMessage(job.actor,{text:text+"\n\n"+footer,entities:[{type:"italic",offset:text.length+2,length:footer.length}]},key);
+      for (const [index,part] of reportParts(text).entries())
+        await this.telegram?.sendMessage(job.actor,part,index ? key+":"+index : key);
     }
   }
   async cloudUpdate(event:string|undefined,body:Buffer,signature:string|undefined) {
@@ -235,9 +247,10 @@ export class AiGidBuilds {
     const message=store.getMessage(job.conversation,job.source_message??job.id);
     if (!message || message.direction!=="inbound") throw new Error("The original request is unavailable.");
     if(job.package_target && worker){
+      const source=this.queue.packageRevision(job);
       const r=job.package_target==="macos"
-        ? await macPackage(files.root,repository,job.id,job.commit_sha,!!job.package_dispatched,revision=>this.queue.db.prepare("UPDATE jobs SET package_dispatched=1,commit_sha=? WHERE id=?").run(revision,job.id),this.stopSignal.signal)
-        : await packageProject(worker,repository,job.id,job.package_target,job.commit_sha,this.stopSignal.signal);
+        ? await macPackage(files.root,repository,job.id,source,!!job.package_dispatched,revision=>this.queue.db.prepare("UPDATE jobs SET package_dispatched=1,commit_sha=? WHERE id=?").run(revision,job.id),this.stopSignal.signal)
+        : await packageProject(worker,repository,job.id,job.package_target,source,this.stopSignal.signal);
       if(!this.activeRequest(job,"preparing")) throw new Error("Package access was revoked.");
       const detail=r.name+" · "+(r.size/1024/1024).toFixed(1)+" MiB\n"+r.url+"\nRevision "+r.revision+"\nSHA-256 "+r.sha256;
       this.queue.db.prepare("UPDATE jobs SET state='completed',commit_sha=?,detail=? WHERE id=? AND state='preparing'").run(r.revision,detail,job.id);
@@ -260,7 +273,7 @@ export class AiGidBuilds {
     const branch=(job.repository?"wolf/project-":"wolf/aigid-")+job.id;
     const signal=AbortSignal.any([this.stopSignal.signal,AbortSignal.timeout(60*60*1000)]);
     const selection=resolveModelSelection(store,"main");
-    const model={model:selection.provider && selection.provider!=="openai" ? null : selection.model,reasoningEffort:selection.reasoningEffort};
+    const model=projectModel(selection);
     if(job.repository && worker?.portfolio[job.repository]){
       const r=await preparePortfolio(worker,{id:job.id,repository,goal:job.goal,change:!!job.changes,files:remoteFiles,selection:model},signal);
       if(!this.activeRequest(job,"preparing")) throw new Error("Project access was revoked.");

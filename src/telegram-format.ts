@@ -81,3 +81,15 @@ export function telegramText(markdown: string): TelegramText[] {
   }
   return chunks;
 }
+
+/** Text as it was written, in parts Telegram accepts; a pair of surrogates is never split. */
+export function plainText(text: string, limit = 4096): TelegramText[] {
+  const chunks: TelegramText[] = [];
+  let part = "";
+  for (const character of text) {
+    if (part.length + character.length > limit) { chunks.push({ text: part, entities: [] }); part = ""; }
+    part += character;
+  }
+  if (part) chunks.push({ text: part, entities: [] });
+  return chunks;
+}

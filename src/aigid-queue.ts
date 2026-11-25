@@ -3,11 +3,19 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
+export type PackageTarget = "android" | "web" | "macos";
+function requestId(conversation: string, message: string, repository: string | null, operation: string) {
+  const bytes = createHash("sha256").update(JSON.stringify([conversation, message, repository, operation])).digest();
+  bytes[6] = (bytes[6]! & 15) | 128;
+  bytes[8] = (bytes[8]! & 63) | 128;
+  const hex = bytes.toString("hex");
+  return [hex.slice(0,8), hex.slice(8,12), hex.slice(12,16), hex.slice(16,20), hex.slice(20,32)].join("-");
+}
 export type BuildState = "queued" | "preparing" | "ready" | "tagged" | "dispatched" | "completed" | "failed";
 export interface BuildRequest {
   id: string; created: string; conversation: string; channel: "api" | "telegram"; actor: string;
   goal: string; changes: number; state: BuildState; commit_sha: string | null;
-  package_dispatched:number; source_message:string|null; package_target:"android"|"web"|"macos"|null; repository:string|null; release_project:number; pull: number | null; notes: string | null; detail: string | null;
+  package_dispatched:number; source_message:string|null; package_target:PackageTarget|null; parent_request:string|null; repository:string|null; release_project:number; pull: number | null; notes: string | null; detail: string | null;
 }
 
 export class BuildQueue {
@@ -24,23 +32,52 @@ export class BuildQueue {
     if (!columns.includes("package_target")) this.db.exec("ALTER TABLE jobs ADD COLUMN package_target TEXT");
     if (!columns.includes("repository")) this.db.exec("ALTER TABLE jobs ADD COLUMN repository TEXT");
     if (!columns.includes("release_project")) this.db.exec("ALTER TABLE jobs ADD COLUMN release_project INTEGER NOT NULL DEFAULT 0");
+    if (!columns.includes("parent_request")) this.db.exec("ALTER TABLE jobs ADD COLUMN parent_request TEXT");
+    this.db.exec("CREATE INDEX IF NOT EXISTS jobs_source ON jobs(conversation,source_message,repository)");
   }
-  add(id: string, conversation: string, channel: string, actor: string, goal: string, changes: boolean, repository:string|null=null, releaseProject=false) {
-    this.db.prepare("INSERT OR IGNORE INTO jobs (id,created,conversation,channel,actor,goal,changes,repository,release_project) VALUES(?,?,?,?,?,?,?,?,?)")
-      .run(id,new Date().toISOString(),conversation,channel,actor,goal,Number(changes),repository,Number(releaseProject));
-    return this.db.prepare("SELECT id,state,detail,pull FROM jobs WHERE id=?").get(id);
+  add(message: string, conversation: string, channel: string, actor: string, goal: string, changes: boolean,
+      repository: string | null = null, releaseProject = false, targets: PackageTarget[] = []) {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      // Earlier Home versions used the message ID for project jobs. Keep their receipts valid on replay.
+      const legacy = this.db.prepare("SELECT repository,actor,conversation FROM jobs WHERE id=?").get(message);
+      const reuse = legacy && legacy.repository === repository && legacy.actor === actor && legacy.conversation === conversation;
+      const id = reuse || (!legacy && !repository) ? message : requestId(conversation,message,repository,"project");
+      this.db.prepare(`INSERT OR IGNORE INTO jobs
+        (id,created,conversation,channel,actor,goal,changes,repository,release_project,source_message) VALUES(?,?,?,?,?,?,?,?,?,?)`)
+        .run(id,new Date().toISOString(),conversation,channel,actor,goal,Number(changes),repository,Number(releaseProject),message);
+      if (repository) for (const target of targets) this.addPackage(message,conversation,channel,actor,repository,target,undefined,id);
+      const receipt = this.db.prepare("SELECT id,state,detail,pull FROM jobs WHERE id=? AND conversation=? AND actor=?").get(id,conversation,actor);
+      if (!receipt) throw new Error("Project request identity changed.");
+      this.db.exec("COMMIT");
+      return receipt;
+    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
   }
-  addPackage(message:string,conversation:string,channel:string,actor:string,repository:string,target:"android"|"web"|"macos",revision?:string) {
-    const bytes=createHash("sha256").update(JSON.stringify([conversation,message,repository,target])).digest();
-    bytes[6]=(bytes[6]!&15)|128;bytes[8]=(bytes[8]!&63)|128;
-    const hex=bytes.toString("hex");
-    const id=[hex.slice(0,8),hex.slice(8,12),hex.slice(12,16),hex.slice(16,20),hex.slice(20,32)].join("-");
-    this.db.prepare("INSERT OR IGNORE INTO jobs (id,created,conversation,channel,actor,goal,changes,repository,source_message,package_target,commit_sha) VALUES(?,?,?,?,?,?,0,?,?,?,?)")
-      .run(id,new Date().toISOString(),conversation,channel,actor,"Build the "+target+" package",repository,message,target,revision??null);
-    return this.db.prepare("SELECT id,state,detail FROM jobs WHERE id=?").get(id)!;
+  addPackage(message:string,conversation:string,channel:string,actor:string,repository:string,target:PackageTarget,revision?:string,parent?:string) {
+    const id = requestId(conversation,message,repository,target);
+    const source = parent ?? (!revision ? this.db.prepare(`SELECT id FROM jobs
+      WHERE conversation=? AND actor=? AND repository=? AND (source_message=? OR id=?) AND changes=1 AND package_target IS NULL`)
+      .get(conversation,actor,repository,message,message)?.id : null) ?? null;
+    this.db.prepare(`INSERT OR IGNORE INTO jobs
+      (id,created,conversation,channel,actor,goal,changes,repository,source_message,package_target,commit_sha,parent_request)
+      VALUES(?,?,?,?,?,?,0,?,?,?,?,?)`).run(id,new Date().toISOString(),conversation,channel,actor,"Build the "+target+" package",repository,message,target,revision??null,source);
+    const result = this.db.prepare("SELECT id,state,detail,parent_request,commit_sha FROM jobs WHERE id=? AND actor=? AND conversation=?").get(id,actor,conversation);
+    if (!result || (source && result.parent_request !== source) || (revision && result.commit_sha !== revision))
+      throw new Error("An existing package request has a different source. Send a new request for this revision.");
+    return {id:result.id,state:result.state,detail:result.detail};
+  }
+  packageRevision(job: BuildRequest): string | null {
+    if (!job.parent_request) return job.commit_sha;
+    const parent = this.db.prepare("SELECT state,commit_sha FROM jobs WHERE id=? AND repository=? AND conversation=? AND actor=?")
+      .get(job.parent_request,job.repository,job.conversation,job.actor);
+    if (!parent || !["completed","dispatched"].includes(String(parent.state)) || typeof parent.commit_sha !== "string" || !/^[a-f0-9]{40}$/.test(parent.commit_sha))
+      throw new Error("The source change did not complete. There is no changed revision to package.");
+    return parent.commit_sha;
   }
   next(cloudEnabled: boolean) {
-    return this.db.prepare("SELECT * FROM jobs WHERE state IN ('queued','preparing') OR (state='ready' AND (repository IS NOT NULL OR ?)) ORDER BY created LIMIT 1")
-      .get(Number(cloudEnabled)) as unknown as BuildRequest | undefined;
+    return this.db.prepare(`SELECT job.* FROM jobs job LEFT JOIN jobs parent ON parent.id=job.parent_request
+      WHERE (job.state IN ('queued','preparing') OR (job.state='ready' AND (job.repository IS NOT NULL OR ?)))
+        AND (parent.id IS NULL OR parent.state IN ('completed','dispatched','failed'))
+      ORDER BY job.created,job.rowid LIMIT 1`).get(Number(cloudEnabled)) as unknown as BuildRequest | undefined;
   }
 }
