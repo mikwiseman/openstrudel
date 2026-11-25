@@ -43,3 +43,12 @@ it("credits only the Vercel production deploy of the merged source for this rele
   expect(()=>projectDeliveryEvent(repo,"vercel",secret,"deployment_status",Buffer.from("{}"),"bad")).toThrow(/signature/);
  }finally{q.db.close();rmSync(root,{recursive:true,force:true});}
 });
+
+it("reports only a completed default-branch push of the registered deployment workflow",()=>{
+ const repo="owner/service",repository={full_name:repo,default_branch:"main"};
+ const run={id:42,event:"push",status:"completed",conclusion:"success",head_branch:"main",head_sha:merged,head_repository:repository,path:".github/workflows/deploy.yml"};
+ const send=(overrides:Record<string,unknown>={})=>event(repo,"push","workflow_run",{action:"completed",repository,workflow_run:{...run,...overrides}});
+ expect(send()).toMatchObject({source:"commit",key:merged,state:"completed",detail:expect.stringContaining("https://github.com/owner/service/actions/runs/42")});
+ expect(send({conclusion:"failure"})).toMatchObject({state:"failed"});
+ for(const other of [{event:"pull_request"},{head_branch:"preview"},{path:".github/workflows/test.yml"},{head_repository:{full_name:"someone/fork"}},{status:"in_progress"},{head_sha:"bad"}])expect(send(other)).toBeNull();
+});
