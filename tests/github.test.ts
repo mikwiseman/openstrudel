@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { githubTools, dispatchAiGidCloud, type GitHubOptions } from "../src/github.js";
+import { githubTools, dispatchAiGidCloud, mergeWorkerCandidate, workerReadAccess, type GitHubOptions } from "../src/github.js";
 import { ConversationFiles } from "../src/files.js";
 import { Store } from "../src/store.js";
 import type { TelegramToolContext } from "../src/telegram-tools.js";
@@ -15,7 +15,7 @@ const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, 
   { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" } }).trim();
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs1", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
 
-function fixture(options: { configured?: boolean } = {}) {
+function fixture(options: { configured?: boolean; project?: boolean } = {}) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "strudel-github-"))), root = join(dir, "home");
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
   const store = new Store(":memory:"); cleanups.push(() => store.close());
@@ -67,7 +67,7 @@ function fixture(options: { configured?: boolean } = {}) {
     if (method === "GET" && repository && url.pathname.endsWith("/installation")) return json(200, { id: 7 });
     if (method === "GET" && repository && url.pathname === repository[0]) return json(200, { full_name: `o/${repository[2]!.toLowerCase()}`, default_branch: "main" });
     if (url.pathname.endsWith("/pulls/11")) return json(200, {user:{login:"wai-wolf[bot]"},draft:false,state:cloud.merges?"closed":"open",merged:!!cloud.merges,
-      merge_commit_sha:cloud.merges?merge:null,head:{sha:head,ref:"wolf/aigid-"+cloud.id,repo:{full_name:"o/r"}},base:{ref:"main",repo:{full_name:"o/r"}}});
+      merge_commit_sha:cloud.merges?merge:null,head:{sha:head,ref:(options.project?"wolf/project-":"wolf/aigid-")+cloud.id,repo:{full_name:"o/r"}},base:{ref:"main",repo:{full_name:"o/r"}}});
     if (method === "PUT" && url.pathname.endsWith("/pulls/11/merge")) {
       if (JSON.parse(String(init.body)).sha !== head) return json(409, {});
       git(origin, "update-ref", "refs/heads/main", merge, main);
@@ -265,4 +265,17 @@ describe("AiGid cloud handoff", () => {
     expect(git(origin, "rev-parse", ref)).toBe(cloud.head);
     expect(cloud.merges).toBe(0);
   });
+});
+
+it("issues a read-only worker token and merges only its authorized exact-head project PR", async () => {
+  const {root,cloud,tokens}=fixture({project:true});
+  expect((await workerReadAccess(root,"o/r")).repository).toBe("o/r");
+  expect(tokens.at(-1)).toMatchObject({permissions:{contents:"read"},repositories:["r"]});
+  const request={id:cloud.id,pull:11,commit:cloud.head};
+  await expect(mergeWorkerCandidate(root,"o/r",{...request,commit:cloud.main},()=>{})).rejects.toThrow();
+  await expect(mergeWorkerCandidate(root,"o/r",request,()=>{throw Error("revoked");})).rejects.toThrow("revoked");
+  expect(cloud.merges).toBe(0);
+  expect(await mergeWorkerCandidate(root,"o/r",request,()=>{})).toBe(cloud.merge);
+  expect(await mergeWorkerCandidate(root,"o/r",request,()=>{})).toBe(cloud.merge);
+  expect(cloud.merges).toBe(1);
 });

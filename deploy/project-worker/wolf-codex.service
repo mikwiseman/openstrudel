@@ -1,0 +1,28 @@
+[Unit]
+Description=Wolf personal Codex app-server
+After=network-online.target
+
+[Service]
+User=wolf-dev
+Group=wolf-dev
+WorkingDirectory=/var/lib/wolf-dev/projects
+Environment=HOME=/var/lib/wolf-dev
+Environment=PATH=/var/lib/wolf-dev/.local/bin:/usr/local/bin:/usr/bin:/bin
+RuntimeDirectory=wolf-codex
+RuntimeDirectoryMode=0700
+UMask=0077
+ExecStart=/opt/wolf-tools/codex app-server --listen unix:///run/wolf-codex/app.sock
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+# Codex uses a private per-UID directory in /tmp for its Unix socket target.
+ReadWritePaths=/tmp
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/wolf-dev
+MemoryHigh=5G
+MemoryMax=7G
+TasksMax=768
+
+[Install]
+WantedBy=multi-user.target

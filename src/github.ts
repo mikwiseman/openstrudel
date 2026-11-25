@@ -102,6 +102,35 @@ async function resolveRepository(app: App, input: unknown): Promise<Repository> 
     defaultBranch: metadata.data.default_branch, installation: installation.data.id };
 }
 
+/** Fetch access is scoped to one installed repository and cannot publish a branch. */
+export async function workerReadAccess(root:string,fullName:string) {
+  const app=readApp(root);
+  if (!app) throw new Error("The GitHub App is unavailable.");
+  const repo=await resolveRepository(app,fullName);
+  return {repository:repo.fullName,gitToken:await token(app,repo.installation,{contents:"read"},repo.name)};
+}
+
+/** Merge only the checked bot PR for this specific release request, honoring GitHub branch protection. */
+export async function mergeWorkerCandidate(root:string,fullName:string,job:{id:string;commit:string;pull:number},authorize:()=>void) {
+  authorize();
+  const app=readApp(root);
+  if(!app || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(job.id) ||
+     !/^[a-f0-9]{40}$/.test(job.commit) || !Number.isSafeInteger(job.pull) || job.pull<1) throw new Error("Invalid project release request.");
+  const repo=await resolveRepository(app,fullName), access=await token(app,repo.installation,{contents:"write",pull_requests:"write"},repo.name);
+  const path="/repos/"+repo.fullName+"/pulls/"+job.pull, read=await api(path,access);
+  if(read.status!==200) throw failure("reading the project pull request",read);
+  const pr=read.data,bot=await botIdentity(app,access);
+  if(pr.draft!==false || pr.user?.login!==bot.name || pr.head?.ref!=="wolf/project-"+job.id || pr.head?.sha!==job.commit ||
+    pr.head?.repo?.full_name!==repo.fullName || pr.base?.repo?.full_name!==repo.fullName || pr.base?.ref!==repo.defaultBranch)
+    throw new Error("The project pull request no longer matches this request.");
+  if(pr.merged===true && /^[a-f0-9]{40}$/.test(pr.merge_commit_sha)) return String(pr.merge_commit_sha);
+  if(pr.state!=="open") throw new Error("The project pull request has been closed.");
+  authorize();
+  const merged=await api(path+"/merge",access,{method:"PUT",body:{sha:job.commit,merge_method:"merge"}});
+  if(merged.status!==200 || merged.data?.merged!==true || !/^[a-f0-9]{40}$/.test(merged.data.sha)) throw failure("merging the project pull request",merged);
+  return String(merged.data.sha);
+}
+
 /** Commits made in a copy are attributed to the App's own bot account, never to a person. */
 function botIdentity(app: App, access: string) {
   let identity = identities.get(app.clientId);

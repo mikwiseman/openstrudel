@@ -6,7 +6,7 @@ People with access to a Home can ask its assistant about the team's GitHub repos
 - `github_checkout` clones a repository into the current chat's workspace, at `github/<owner>/<repo>`, so the model can read the code, edit it, and run the tests and the build in its sandbox.
 - `github_open_pull_request` publishes one branch from that copy and opens a pull request into the default branch. If a pull request for the branch is already open, the tool pushes the new commits and returns that pull request.
 
-A person reviews and merges every pull request on GitHub. The Home never merges.
+The standard pull request tool leaves the merge to a person. The optional [project build worker](../deploy/project-worker/README.md) can merge its own exact candidate when an authorized requester asks for delivery through a configured release route. AiGid has a separate TestFlight requester list.
 
 ## Setup
 

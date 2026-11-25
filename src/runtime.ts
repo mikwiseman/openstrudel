@@ -123,7 +123,7 @@ export class OpenStrudelRuntime {
         this.store.db.exec("COMMIT");
       } catch(error) { this.store.db.exec("ROLLBACK"); throw error; }
     }
-    this.aigid=AiGidBuilds.start(this.store,this.messages.files,this.account);
+    this.aigid=AiGidBuilds.start(this.store,this.messages.files,this.account,this.messages.serverShell,this.telegram);
     if (this.startTelegram) await this.telegram.start();
     if (this.engine instanceof AccountEngines) this.accounts.startQuotaChecks();
     this.scheduler.start();
