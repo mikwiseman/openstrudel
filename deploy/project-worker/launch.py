@@ -49,7 +49,10 @@ def run_worker(job, config, source=None):
     for signum in (signal.SIGHUP,signal.SIGTERM):
         signal.signal(signum,stop)
     try:
-        result=subprocess.run(argv,input=json.dumps({"job":job,"account":account}).encode(),stdout=subprocess.PIPE,timeout=3600,check=True)
+        result=subprocess.run(argv,input=json.dumps({"job":job,"account":account}).encode(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=3600)
+        if result.returncode:
+            detail = result.stderr.decode(errors="replace").strip()[-1600:]
+            raise ValueError(detail or "The project process exited with code " + str(result.returncode))
         if len(result.stdout) > 40 * 1024 * 1024:
             raise ValueError("Project result is too large.")
         return json.loads(result.stdout)

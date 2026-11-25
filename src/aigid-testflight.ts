@@ -303,20 +303,20 @@ export class AiGidBuilds {
       return;
     }
     const gh=githubTools(store,turn);
-    const checkout=await gh.call("github_checkout",{repository,fresh:!!worker || !job.commit_sha}) as {path:string;commit?:string};
-    const base=job.commit_sha??checkout.commit;
+    const access=worker ? await workerReadAccess(files.root,repository) : undefined;
+    const checkout=!worker || job.changes ? await gh.call("github_checkout",{repository,fresh:!!worker || !job.commit_sha}) as {path:string;commit?:string} : undefined;
+    const base=job.commit_sha??checkout?.commit??access?.base;
     if (!base || !/^[a-f0-9]{40}$/.test(base)) throw new Error("Missing canonical checkout revision.");
     this.queue.db.prepare("UPDATE jobs SET commit_sha=? WHERE id=?").run(base,job.id);
     let candidate:{notes:string;checks:string};
-    if(worker){
-      const access=await workerReadAccess(files.root,repository);
+    if(worker && access){
       const result=await runProjectWorker(worker,{...access,base,branch,goal:job.goal,release:job.repository?"project":"aigid",
         change:!!job.changes,files:remoteFiles,selection:model},signal);
       if(!this.activeRequest(job,"preparing")) throw new Error("Project access was revoked.");
-      if(job.changes) await commitWorkerPatch(checkout.path,base,branch,result.patch,result.notes.split("\n")[0]!.slice(0,150));
+      if(job.changes && checkout) await commitWorkerPatch(checkout.path,base,branch,result.patch,result.notes.split("\n")[0]!.slice(0,150));
       candidate=result;
     }else{
-      if(job.repository || !c) throw new Error("The project worker is unavailable.");
+      if(job.repository || !c || !checkout) throw new Error("The project worker is unavailable.");
       candidate=await prepareCandidate({home:join(dir,"codex"),cwd:checkout.path,inputs,images,goal:job.goal,branch,changes:!!job.changes,
         account:this.account,email:c.accountEmail,selection,signal});
     }

@@ -108,7 +108,11 @@ export async function workerReadAccess(root:string,fullName:string) {
   const app=readApp(root);
   if (!app) throw new Error("The GitHub App is unavailable.");
   const repo=await resolveRepository(app,fullName);
-  return {repository:repo.fullName,gitToken:await token(app,repo.installation,{contents:"read"},repo.name)};
+  const gitToken=await token(app,repo.installation,{contents:"read"},repo.name);
+  const head=await api("/repos/"+repo.fullName+"/git/ref/heads/"+repo.defaultBranch.split("/").map(encodeURIComponent).join("/"),gitToken);
+  if(head.status!==200 || head.data?.object?.type!=="commit" || !/^[a-f0-9]{40}$/.test(head.data.object.sha))
+    throw new Error("GitHub did not confirm the project's default-branch revision.");
+  return {repository:repo.fullName,gitToken,base:head.data.object.sha as string};
 }
 
 /** Merge only the checked bot PR for this specific release request, honoring GitHub branch protection. */
