@@ -87,6 +87,34 @@ function telegramBeside() {
 }
 
 describe("a card in Telegram", () => {
+  it("returns typed details on a correspondence card to the owner's private chat with the source context", async () => {
+    const tg = telegram(), h = home(), inbox = h.store.primaryConversation();
+    const dm = h.store.getOrCreateConversation({ channel: "telegram", externalId: "42", title: "Den" });
+    h.store.db.prepare("UPDATE telegram_chats SET conversation_id=? WHERE chat_id='42'").run(dm.id);
+    const { configureCorrespondence, correspondenceSource, Correspondence, decisionCurrent } = await import("../src/correspondence.js");
+    const config = { enabled: true, conversationId: inbox.id, calendarId: "owner@example.com", defaultDurationMinutes: 30,
+      sources: [{ id: "mail", provider: "gmail", accountId: "owner@example.com", space: "company", token: "a-private-source-token-with-32-characters" }], drafts: { ownerTelegram: "42" } };
+    configureCorrespondence(h.store, true, config);
+    const writer = new Correspondence(h.store, h.messages);
+    const source = correspondenceSource(h.store, "mail", "Bearer " + config.sources[0]!.token);
+    writer.receive(source, { id: "new", threadId: "incoming", type: "message.new", occurredAt: new Date().toISOString() });
+    const origin = { source: "mail", thread: "incoming", revision: 1, ownerTelegram: "42" };
+    expect(decisionCurrent(h.store, inbox.id, origin)).toBe(true);
+    const context = { conversationId: inbox.id, messageId: "owner-decision", channel: "api" as const, scheduled: true,
+      profile: null, sendable: () => false, correspondence: { ...origin, needsDetails: true } };
+    const question = { kind: "answer", title: "Which project is Andrew asking about?", person: "42", choices: ["Add details", "Skip"] };
+    await h.messages.cards.raise(question, context);
+    await h.messages.cards.raise(question, context);
+    expect(tg.of("sendMessage")).toHaveLength(1);
+    expect(tg.buttons(tg.of("sendMessage")[0]).map(button => button.text)).toEqual(["Add details", "Skip"]);
+    await h.adapter.processUpdate(text(42, 42, "The school course", 501));
+    expect(h.runs.at(-1)?.options.conversationId).toBe(dm.id);
+    expect(h.runs.at(-1)?.input).toContain("separate approval");
+    configureCorrespondence(h.store, true, { ...config, drafts: { ownerTelegram: null } });
+    expect(decisionCurrent(h.store, inbox.id, origin)).toBe(false);
+    writer.stop();
+  });
+
   it("is one message with a button per choice, and the quiet turn that raised it sends nothing else", async () => {
     const tg = telegram(), h = home({ run: raising(question) });
     await h.adapter.processUpdate(text(42, 42, "what is new?"));

@@ -275,21 +275,23 @@ export function requireCompanyDraftContext(store: Store, context: TelegramToolCo
     throw new HomeError("Read this conversation's work context before looking up a payment.", 403);
 }
 
-export interface CorrespondenceOrigin { source: string; thread: string; revision: number }
+export interface CorrespondenceOrigin { source: string; thread: string; revision: number; ownerTelegram?: string | null }
 
 export function correspondenceDecision(store: Store, context: TelegramToolContext): CorrespondenceOrigin {
   const { rows } = run(store, context);
   draftScope(store, context);
   const check = correspondenceCheckpoint(store, context, "draft");
   if (!check.current) throw new HomeError("A newer message arrived in the conversation.", 409);
-  return { source: rows[0]!.source_id, thread: rows[0]!.thread_id, revision: check.revision };
+  return { source: rows[0]!.source_id, thread: rows[0]!.thread_id, revision: check.revision, ownerTelegram: correspondenceDrafts(store)!.ownerTelegram };
 }
 
 export function decisionCurrent(store: Store, conversation: string, origin: CorrespondenceOrigin) {
   let value: Config;
   try { value = permitted(store); } catch { return false; }
   const source = value.sources.find(item => item.id === origin.source), off = correspondenceOff(store);
-  if (!correspondenceDrafts(store) || value.conversationId !== conversation || !source || off.sources.includes(source.id)
+  const drafts = correspondenceDrafts(store);
+  if (!drafts || (origin.ownerTelegram ?? null) !== drafts.ownerTelegram || drafts.ownerTelegram && !pairedDraftOwner(store, drafts.ownerTelegram)
+    || value.conversationId !== conversation || !source || off.sources.includes(source.id)
     || off.telegramGroups && telegramGroup(source, origin.thread)) return false;
   const latest = store.db.prepare("SELECT seq,fingerprint FROM correspondence_events WHERE source_id=? AND thread_id=? ORDER BY seq DESC LIMIT 1").get(source.id, origin.thread);
   return latest?.seq === origin.revision && latest.fingerprint === fingerprint(store, value, source);
