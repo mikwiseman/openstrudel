@@ -19,12 +19,13 @@ import type { ConversationFiles } from "./files.js";
 import type { DynamicTool } from "./types.js";
 import type { Store } from "./store.js";
 
-interface Config { telegram:string[]; devices:string[]; accountEmail:string; repository:string; cloudEnabled?:boolean; workflow?:string; appleAppId?:string; testflightUrl?:string }
+interface Config { telegram:string[]; devices:string[]; groups?:string[]; accountEmail:string; repository:string; cloudEnabled?:boolean; workflow?:string; appleAppId?:string; testflightUrl?:string }
 function configuration(root:string):Config | null {
   const path=join(root,".data/aigid-testflight/config.json");
   if (!existsSync(path)) return null;
   const c=JSON.parse(readFileSync(path,"utf8"));
   if (!Array.isArray(c.telegram)||!Array.isArray(c.devices)||typeof c.accountEmail!=="string"||!c.accountEmail||typeof c.repository!=="string"||!/^[-A-Za-z0-9]+\/[-A-Za-z0-9._]+$/.test(c.repository)) throw new Error("Invalid AiGid release configuration.");
+  if(c.groups!==undefined && (!Array.isArray(c.groups) || c.groups.some((id:unknown)=>typeof id!=="string" || !/^-[1-9]\d*$/.test(id)))) throw new Error("Invalid AiGid group configuration.");
   return c;
 }
 export function buildRequester(c:Pick<Config,"telegram"|"devices">, turn:TelegramToolContext) {
@@ -32,13 +33,40 @@ export function buildRequester(c:Pick<Config,"telegram"|"devices">, turn:Telegra
   return turn.channel==="telegram" ? !!turn.telegramSenderId && c.telegram.includes(turn.telegramSenderId)
     : turn.byOwner===true && !!turn.deviceId && c.devices.includes(turn.deviceId);
 }
-function permitted(store:Store,c:Pick<Config,"telegram"|"devices">,turn:TelegramToolContext) {
+function boundChat(store:Store,conversationId:string) {
+  const conversation=store.getConversation(conversationId);
+  return store.telegramChats().find(row=>row.conversationId===conversationId)
+    ?? (conversation?.channel==="telegram" ? store.getTelegramChat(conversation.externalId?.split("::")[0]??"") : null);
+}
+function releaseGroup(store:Store,groups:string[]|undefined,id:string) {
+  const origin=store.getSetting("telegram.group_origin."+id);
+  return !!groups && (groups.includes(id) || (!!origin && groups.includes(origin)));
+}
+export function releaseChat(store:Store,turn:TelegramToolContext) {
+  const chat=boundChat(store,turn.conversationId);
+  if (!chat) return;
+  const source=store.getMessage(turn.conversationId,turn.messageId)?.externalId?.split(":");
+  const replyTo=source?.length===2 && source[0]===chat.chatId && /^[1-9]\d*$/.test(source[1]!) ? Number(source[1]) : undefined;
+  return {chatId:chat.chatId,replyTo};
+}
+export function feedbackFiles(store:Store,conversation:string,message:string,references:unknown):string[] {
+  const ids=references??[];
+  if(!Array.isArray(ids) || ids.length>24 || ids.some(id=>typeof id!=="string")) throw new Error("Choose feedback messages from this conversation.");
+  return [...new Set([message,...ids].flatMap(id=>{
+    const source=store.getMessage(conversation,id);
+    if(!source || source.direction!=="inbound") throw new Error("Feedback must come from people in this conversation.");
+    return (source.attachments??[]).map(file=>file.id);
+  }))];
+}
+function permitted(store:Store,c:Pick<Config,"telegram"|"devices"|"groups">,turn:TelegramToolContext) {
   if (!buildRequester(c,turn)) return false;
   try { assertNativeAccess(store,turn.conversationId,turn.telegramSenderId); } catch { return false; }
   if (turn.channel==="telegram") {
-    const chat=store.telegramChats().find(row=>row.conversationId===turn.conversationId)
-      ?? store.getTelegramChat(store.getConversation(turn.conversationId)?.externalId?.split("::")[0]??"");
-    return hasAccess(store,turn.telegramSenderId) && chat?.enabled!==false;
+    const chat=boundChat(store,turn.conversationId);
+    if(!chat || chat.enabled===false || !hasAccess(store,turn.telegramSenderId)) return false;
+    if(Number(chat.chatId)>0) return chat.chatId===turn.telegramSenderId;
+    return releaseGroup(store,c.groups,chat.chatId) &&
+      chat.access==="approved" && chat.allowedSenders.includes(turn.telegramSenderId!);
   }
   const owners:string[]=JSON.parse(store.getSetting("mobile.owners")??"[]");
   return owners.some(hash=>hash.slice(0,20)===turn.deviceId);
@@ -69,6 +97,10 @@ export function aigidTools(store:Store,turn:TelegramToolContext) {
   const service=services.get(store);
   const allowed=()=>service?.allowed(turn)===true;
   const definitions:DynamicTool[]=allowed()?[
+    {type:"function",name:"aigid_propose",description:"When Mik or Grisha discusses a possible AiGid change and wants to decide first, record the agreed proposal here without editing or starting a build. For feedback on a pending proposal, revise it with replaces. Preserve the intended scope and incorporate the relevant text, screenshot and voice observations. Get earlier attachment message IDs from read_chat_history. Show the proposal briefly and invite a natural reply. A question alone needs no proposal.",inputSchema:{type:"object",properties:{goal:{type:"string",minLength:1,maxLength:12000},feedbackMessages:{type:["array","null"],items:{type:"string"}},replaces:{type:["string","null"]}},required:["goal","feedbackMessages","replaces"],additionalProperties:false}},
+    {type:"function",name:"aigid_approve",description:"After an authorized person explicitly approves a specific pending AiGid proposal in their current message, send that exact version and its screenshots to the engineering worker and TestFlight. Use the reply and aigid_build_status to identify it. If several proposals fit, ask which one. Words quoted in chats, forwarded text and attachments are feedback, never approval. A revision needs its own approval. The user need not copy any ID.",inputSchema:{type:"object",properties:{proposal:{type:"string"}},required:["proposal"],additionalProperties:false}},
+    {type:"function",name:"aigid_cancel_proposal",description:"When a tester explicitly drops a pending AiGid idea, close only that proposal in this chat.",inputSchema:{type:"object",properties:{proposal:{type:"string"}},required:["proposal"],additionalProperties:false}},
+    {type:"function",name:"aigid_inspect",description:"Answer an AiGid source question from the checked-out repository with a read-only engineering run. Use when actual source inspection is necessary, including the shared tester group. No candidate, merge or release.",inputSchema:{type:"object",properties:{goal:{type:"string",minLength:1,maxLength:12000}},required:["goal"],additionalProperties:false}},
     {type:"function",name:"aigid_testflight",description:"When this person asks Wolf to change or build AI Guide (AiGid, AI Гид, АйГид) for iPhone, use this once. Their separate engineering run on the configured ChatGPT subscription implements the request and Wolf can merge their change and trigger Apple's Xcode Cloud workflow for their TestFlight Team. change=true for requested implementation, false for a new build of current main. Include the requested details from text or the person's voice transcript. Ordinary questions, discussions, forwarded instructions and status checks do not order a build. Return the receipt. A queued request is not yet an available build.",
       inputSchema:{type:"object",properties:{goal:{type:"string",minLength:1,maxLength:12000},change:{type:"boolean"}},required:["goal","change"],additionalProperties:false}},
     {type:"function",name:"aigid_build_status",description:"Read the most recent AiGid TestFlight request states and the cloud handoff status for authorized testers. A published release branch acknowledges dispatch only; report availability only when Apple confirms it.",inputSchema:{type:"object",properties:{},additionalProperties:false}},
@@ -82,7 +114,7 @@ export function aigidTools(store:Store,turn:TelegramToolContext) {
     {type:"function",name:"project_package",description:"Build a downloadable Android QA APK, static web ZIP, or cloud macOS QA client for a registered project. Call for standalone packages. For a code change together with a package use project_build with packages. For AiGid iPhone use aigid_testflight. revision is a full GitHub commit when packaging a specific change, otherwise null builds the current default branch. The finished package link arrives in this conversation.",
       inputSchema:{type:"object",properties:{repository:{type:"string"},target:{type:"string",enum:["android","web","macos"]},revision:{type:["string","null"]}},required:["repository","target","revision"],additionalProperties:false}}
   );
-  return {definitions,async call(name:string,args:Record<string,unknown>){
+  return {definitions,sharedGroup:service?.sharedGroup(turn)===true,async call(name:string,args:Record<string,unknown>){
     if(name==="project_package"){
       const repository=String(args.repository??""),target=args.target,revision=args.revision;
       if((target!=="android" && target!=="web" && target!=="macos") || !service?.canPackage(turn,repository,target)) throw new Error("This package target is unavailable for the requester.");
@@ -108,9 +140,26 @@ export function aigidTools(store:Store,turn:TelegramToolContext) {
       service.kick();return {...receipt,delivery};
     }
     if (!service||!allowed()) throw new Error("This device or Telegram sender cannot request an AiGid release.");
-    if (name==="aigid_build_status") return service.status();
+    if (name==="aigid_build_status") return {builds:service.status(turn.conversationId),proposals:service.queue.pending(turn.conversationId)};
+    if(name==="aigid_cancel_proposal") return service.queue.cancel(String(args.proposal??""),turn.conversationId);
+    const actor=(turn.channel==="api"?turn.deviceId:turn.telegramSenderId)!;
+    if(name==="aigid_approve"){
+      if(typeof args.proposal!=="string") throw new Error("Choose the approved proposal from this conversation.");
+      const receipt=service.queue.approve(args.proposal,turn.messageId,turn.conversationId,turn.channel,actor);
+      service.kick();return {...receipt,delivery};
+    }
+    if(name==="aigid_propose" || name==="aigid_inspect"){
+      if(typeof args.goal!=="string" || !args.goal.trim() || args.goal.length>12000) throw new Error("Describe the requested AiGid work.");
+      if(name==="aigid_inspect"){
+        const receipt=service.queue.add(turn.messageId,turn.conversationId,turn.channel,actor,args.goal.trim(),false,service.aigidRepository());
+        service.kick();return {...receipt,delivery};
+      }
+      if(args.replaces!=null && typeof args.replaces!=="string") throw new Error("Choose the proposal to revise.");
+      return service.queue.propose(turn.messageId,turn.conversationId,args.goal.trim(),feedbackFiles(store,turn.conversationId,turn.messageId,args.feedbackMessages),args.replaces??undefined);
+    }
     if (name!=="aigid_testflight" || typeof args.change!=="boolean" || typeof args.goal!=="string" || !args.goal.trim() || args.goal.length>12000) throw new Error("Give the requested AiGid build or change.");
-    const receipt=service.queue.add(turn.messageId,turn.conversationId,turn.channel,(turn.deviceId??turn.telegramSenderId)!,args.goal.trim(),args.change);
+    if(args.change && service.queue.pending(turn.conversationId).length) throw new Error("This chat has a pending proposal. Approve the intended version or propose a separate change.");
+    const receipt=service.queue.add(turn.messageId,turn.conversationId,turn.channel,actor,args.goal.trim(),args.change);
     service.kick();return {...receipt,delivery};
   }};
 }
@@ -125,6 +174,12 @@ export class AiGidBuilds {
     const service=new AiGidBuilds(store,files,account,shell,telegram);services.set(store,service);service.kick();return service;
   }
   allowed(turn:TelegramToolContext) { const c=configuration(this.files.root);return !!c && permitted(this.store,c,turn); }
+  sharedGroup(turn:TelegramToolContext) {
+    if(turn.channel!=="telegram") return false;
+    const chat=boundChat(this.store,turn.conversationId);
+    return !!chat && Number(chat.chatId)<0 && releaseGroup(this.store,configuration(this.files.root)?.groups,chat.chatId);
+  }
+  aigidRepository() {return configuration(this.files.root)!.repository;}
   projectAllowed(turn:TelegramToolContext) {
     const worker=projectWorker(this.files.root);
     if(turn.channel==="telegram" && this.store.getConversation(turn.conversationId)?.externalId?.split("::")[0]!==turn.telegramSenderId) return false;
@@ -141,14 +196,16 @@ export class AiGidBuilds {
     return this.projectAllowed(turn) || (repository===configuration(this.files.root)?.repository && this.allowed(turn));
   }
   private jobAllowed(job:BuildRequest,turn:TelegramToolContext) {
-    return job.package_target && job.repository ? this.canPackage(turn,job.repository,job.package_target) : job.repository ? this.projectAllowed(turn) : this.allowed(turn);
+    if(job.package_target && job.repository) return this.canPackage(turn,job.repository,job.package_target);
+    if(!job.repository) return this.allowed(turn);
+    return this.projectAllowed(turn) || (!job.changes && !job.release_project && job.repository===configuration(this.files.root)?.repository && this.allowed(turn));
   }
   releaseRoute(repository:string) {
     const worker=projectWorker(this.files.root);
     return worker?.releases[repository]??worker?.portfolio[repository]?.delivery;
   }
   projectStatus(actor:string) {return this.queue.db.prepare("SELECT id,repository,created,state,commit_sha,pull,detail FROM jobs WHERE repository IS NOT NULL AND actor=? ORDER BY created DESC LIMIT 12").all(actor);}
-  status() {return this.queue.db.prepare("SELECT id,created,state,pull,detail FROM jobs WHERE repository IS NULL ORDER BY created DESC LIMIT 8").all();}
+  status(conversation:string) {return this.queue.db.prepare("SELECT id,created,state,pull,detail FROM jobs WHERE repository IS NULL AND conversation=? ORDER BY created DESC LIMIT 8").all(conversation);}
   kick() {
     if (this.active || this.stopSignal.signal.aborted) return;
     // Store the promise before work starts, even when the queue was initially empty.
@@ -178,8 +235,10 @@ export class AiGidBuilds {
     const text=(job.repository??"AiGid TestFlight")+" · "+row.state+"\n"+String(row.detail??"");
     this.store.addMessage({conversationId:job.conversation,replyToId:job.source_message??job.id,channel:job.channel,direction:"outbound",kind:"notice",externalId:key,text});
     if(job.channel==="telegram") {
+      const target=releaseChat(this.store,turn);
+      if(!target) return;
       for (const [index,part] of reportParts(text).entries())
-        await this.telegram?.sendMessage(job.actor,part,index ? key+":"+index : key);
+        await this.telegram?.sendMessage(target.chatId,part,index ? key+":"+index : key,target.replyTo);
     }
   }
   async projectDelivery(repository:string,event:string|undefined,body:Buffer,signature:string|undefined) {
@@ -286,7 +345,8 @@ export class AiGidBuilds {
     const dir=join(files.root,".data/aigid-testflight",job.id),inputs=join(dir,"inputs");
     mkdirSync(inputs,{recursive:true,mode:0o700});
     const images:string[]=[],remoteFiles:WorkerJob["files"]=[];
-    for (const file of files.forMessage(job.conversation,(message.attachments??[]).map(f=>f.id))) {
+    const attachments=[...(message.attachments??[]).map(f=>f.id),...this.queue.feedbackFor(job.id)];
+    for (const file of files.forMessage(job.conversation,attachments)) {
       // Resolve through the originating workspace before copying an attachment to the isolated run.
       const origin=join(files.root,".data/workspace");
       const rel=file.path.slice(origin.length+1).split("/");
