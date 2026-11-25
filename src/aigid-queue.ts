@@ -1,3 +1,4 @@
+import type { ProjectDelivery } from "./project-delivery.js";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
@@ -33,6 +34,9 @@ export class BuildQueue {
     if (!columns.includes("repository")) this.db.exec("ALTER TABLE jobs ADD COLUMN repository TEXT");
     if (!columns.includes("release_project")) this.db.exec("ALTER TABLE jobs ADD COLUMN release_project INTEGER NOT NULL DEFAULT 0");
     if (!columns.includes("parent_request")) this.db.exec("ALTER TABLE jobs ADD COLUMN parent_request TEXT");
+    this.db.exec(`CREATE TABLE IF NOT EXISTS project_deliveries
+      (repository TEXT NOT NULL,source TEXT NOT NULL,identity TEXT NOT NULL,state TEXT NOT NULL,detail TEXT NOT NULL,at INTEGER NOT NULL,
+       PRIMARY KEY(repository,source,identity))`);
     this.db.exec("CREATE INDEX IF NOT EXISTS jobs_source ON jobs(conversation,source_message,repository)");
   }
   add(message: string, conversation: string, channel: string, actor: string, goal: string, changes: boolean,
@@ -73,6 +77,30 @@ export class BuildQueue {
     if (!parent || !["completed","dispatched"].includes(String(parent.state)) || typeof parent.commit_sha !== "string" || !/^[a-f0-9]{40}$/.test(parent.commit_sha))
       throw new Error("The source change did not complete. There is no changed revision to package.");
     return parent.commit_sha;
+  }
+  recordDelivery(repository:string,event:ProjectDelivery):BuildRequest|undefined {
+    if (event.kind==="pull") {
+      const row=this.db.prepare(`UPDATE jobs SET pull=? WHERE id=? AND repository=? AND commit_sha=? AND release_project=1
+        AND package_target IS NULL AND (pull IS NULL OR pull=?) RETURNING id`).get(event.pull,event.job,repository,event.sha,event.pull);
+      return row ? this.finishDelivery(String(row.id)) : undefined;
+    }
+    // GitHub may send the deployment comment before its pull-request event or before the dispatch transaction finishes.
+    this.db.prepare("DELETE FROM project_deliveries WHERE at < unixepoch()-604800").run();
+    this.db.prepare(`INSERT INTO project_deliveries(repository,source,identity,state,detail,at) VALUES(?,?,?,?,?,unixepoch())
+      ON CONFLICT(repository,source,identity) DO UPDATE SET state=excluded.state,detail=excluded.detail,at=excluded.at`)
+      .run(repository,event.source,event.key,event.state,event.detail);
+    const column=event.source==="pull"?"pull":"commit_sha";
+    const job=this.db.prepare("SELECT id FROM jobs WHERE repository=? AND release_project=1 AND package_target IS NULL AND state='dispatched' AND "+column+"=?")
+      .get(repository,event.key);
+    return job ? this.finishDelivery(String(job.id)) : undefined;
+  }
+  finishDelivery(id:string):BuildRequest|undefined {
+    const provider=this.db.prepare(`SELECT d.state,d.detail FROM jobs j JOIN project_deliveries d ON d.repository=j.repository
+      AND ((d.source='pull' AND d.identity=CAST(j.pull AS TEXT)) OR (d.source='commit' AND d.identity=j.commit_sha))
+      WHERE j.id=? AND j.release_project=1 AND j.package_target IS NULL AND j.state='dispatched' ORDER BY d.at DESC LIMIT 1`).get(id);
+    if (!provider) return undefined;
+    return this.db.prepare("UPDATE jobs SET state=?,detail=? WHERE id=? AND state='dispatched' RETURNING *")
+      .get(String(provider.state),String(provider.detail),id) as unknown as BuildRequest|undefined;
   }
   next(cloudEnabled: boolean) {
     return this.db.prepare(`SELECT job.* FROM jobs job LEFT JOIN jobs parent ON parent.id=job.parent_request
