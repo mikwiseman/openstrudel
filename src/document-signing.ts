@@ -9,6 +9,10 @@ import type { Store } from "./store.js";
 import type { DynamicTool } from "./types.js";
 import type { TelegramToolContext } from "./telegram-tools.js";
 const execute = promisify(execFile);
+/** Only the native signer and its document-bound Telegram approvals call this installed renderer. */
+export function runDocumentSigning(directory: string, argv: string[]) {
+    return execute("python3", ["-I", resolve(import.meta.dirname, "../scripts/document-signing.py"), directory, ...argv], { timeout: 180_000, maxBuffer: 2 * 1024 * 1024 });
+}
 const placement = z.strictObject({
     page: z.number().int().positive(), asset: z.enum(["signature", "signature_full", "stamp"]).optional(),
     type: z.enum(["text", "replace", "drop_annot"]).optional(),
@@ -24,12 +28,38 @@ const request = z.strictObject({
     action: z.enum(["inspect", "plan", "apply", "preview"]), path: z.string().min(1).max(4096),
     placements: z.array(placement).min(1).max(500).optional(), noStamp: z.boolean().optional(),
 });
+
+/** An explicit order in the sender's own words. Quoted examples and questions about signing stay conversations. */
+export function requestsDocumentSigning(words?: string): boolean {
+    if (!words) return false;
+    const text = words.toLowerCase().replace(/^[ \t]*>.*$/gm, "").replace(/"[^"]*"|«[^»]*»|“[^”]*”|„[^“]*“|`[^`]*`/gu, " ").trim();
+    const conditional = /(?:^|\s)(?:if|unless|если|когда)(?:\s|$)/u;
+    const negation = /\b(?:don't|don’t|do not|never|shouldn't|shouldn’t)\s+(?:sign|stamp)|(?:^|\s)не\s+(?:(?:надо|нужно|стоит|следует)\s+)?(?:подпис|подпиш|став|постав|простав)/u;
+    if (conditional.test(text) || negation.test(text)) return false;
+
+    const action = (command: string) =>
+        /^подпиши(?:те)?(?:\s|[,!.?]|$)/u.test(command)
+        || /^(?:поставь(?:те)?|проставь(?:те)?|добавь(?:те)?|наложи(?:те)?)\s+(?:(?:мою|нашу|свою)\s+)?(?:подпись|печать)(?!\p{L})/u.test(command)
+        || /^(?:sign|stamp)\s+(?:this|that|it|both|these|the|my|our|attached|here|and\s+(?:sign|stamp))\b/u.test(command)
+        || /^(?:add|apply|affix|put)\s+(?:(?:my|our|the|a|company)\s+)+(?:signature|stamp|seal)\b/u.test(command);
+    return text.split(/(?<=[.!?;])\s+|\n+/u).some(sentence => {
+        const opening = sentence.trim().replace(/^(?:(?:wolf|волк|хорошо|окей|пожалуйста|okay|ok|please|now|теперь|а теперь)[,\s]+)+/u, "");
+        const asking = /^(?:(?:can|could|would) you\s+(?:please\s+)?|(?:можешь|можете)[,\s]+(?:пожалуйста[,\s]+)?)/u;
+        if (opening.includes("?") && !asking.test(opening)) return false;
+        const command = opening.replace(asking, "");
+        if (asking.test(opening) && /^(?:подписать(?:\s|[?.!]|$)|(?:поставить|добавить|наложить)\s+(?:подпись|печать)(?!\p{L}))/u.test(command)) return true;
+        if (action(command)) return true;
+        // “Fill in today's date and sign it” is one instruction, including when dictated.
+        return /^(?:заполни|поставь|проставь|укажи|подготовь|датируй|fill|date|prepare|update|add)(?:\s|,)/u.test(command)
+            && command.split(/[,;]\s*|\s+(?:и|затем|потом|and|then)\s+/u).slice(1).some(part => action(part.trim()));
+    });
+}
 /** Assets and executable stay outside every agent workspace. Only this trusted
  * tool receives the adapter's sender; neither a skill nor a model supplies it. */
 export function documentSigningTools(store: Store, context: TelegramToolContext) {
     const directory = context.files && resolve(context.files.root, ".data/sign-document");
     const allowed = () => {
-        if (!directory || !context.scope || context.channel !== "telegram" || !ownerSender(store, context))
+        if (!directory || !context.scope || context.channel !== "telegram" || !ownerSender(store, context) || !requestsDocumentSigning(context.telegramDirectText))
             return false;
         try {
             assertNativeAccess(store, context.conversationId, context.telegramSenderId);
@@ -68,7 +98,7 @@ export function documentSigningTools(store: Store, context: TelegramToolContext)
             const run = async (argv: string[]) => {
                 assertAllowed();
                 try {
-                    return await execute("python3", ["-I", resolve(import.meta.dirname, "../scripts/document-signing.py"), directory!, ...argv], { timeout: 180_000, maxBuffer: 2 * 1024 * 1024 });
+                    return await runDocumentSigning(directory!, argv);
                 }
                 catch (error) {
                     throw new Error(String((error as { stderr?: unknown }).stderr || (error as { message?: unknown }).message).slice(0, 4000).replaceAll(job, "[document]"));

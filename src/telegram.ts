@@ -18,20 +18,51 @@ import { managementPeople } from "./telegram-tools.js";
 import { recordAnswer, type SchedulePoll } from "./check-ins.js";
 import { recordReaction } from "./news.js";
 import { buttonStory, draftFromCard } from "./news-telegram.js";
+import { decideSigningRequest, requestOwnerSigning, requestSigningApproval, requestedSigningMarks, signingOwner, signingRequester, type SigningTransport } from "./document-signing-approvals.js";
 
 export interface TelegramUpdate {
   update_id: number;
   my_chat_member?: { chat: { id: number | string; title?: string; type?: string }; from: { id: number }; date: number; old_chat_member: { status: string }; new_chat_member: { status: string; is_member?: boolean } };
-  callback_query?: { id: string; from?: { id:number; first_name?:string; last_name?:string }; data?: string; message?: { message_id: number; chat: { id: number | string } } };
+  callback_query?: { id: string; from?: { id:number; first_name?:string; last_name?:string; is_bot?:boolean }; data?: string; message?: { message_id: number; chat: { id: number | string; type?:string } } };
   poll_answer?: { poll_id: string; user?: { id: number; first_name?: string; last_name?: string; is_bot?: boolean }; voter_chat?: { id: number }; option_ids: number[] };
   message_reaction?: { chat: { id: number | string }; message_id: number; user?: { id: number; first_name?: string; is_bot?: boolean }; new_reaction: Array<{ type: string; emoji?: string }> };
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
 }
 type TelegramMessage = { from?: { id:number; first_name?:string; last_name?:string; is_bot?:boolean }; sender_chat?: { id:number }; is_topic_message?:boolean; message_thread_id?:number; date?:number; migrate_to_chat_id?:number|string; migrate_from_chat_id?:number|string; voice?:TelegramFile; audio?:TelegramFile; video_note?:TelegramFile; video?:TelegramFile & {file_name?:string;mime_type?:string}; document?:TelegramFile & {file_name?:string;mime_type?:string}; photo?:TelegramFile[]; caption?:string;
-  reply_to_message?: { message_id: number; from?: { id: number; is_bot?: boolean; username?: string; first_name?: string; last_name?: string }; text?: string; caption?: string; photo?: TelegramFile[]; document?: { file_name?: string } };
-  quote?: { text?: string }; message_id: number; text?: string; chat: { id: number | string; title?: string; type?: string } };
+  media_group_id?:string;
+  reply_to_message?: { message_id: number; media_group_id?:string; from?: { id: number; is_bot?: boolean; username?: string; first_name?: string; last_name?: string }; text?: string; caption?: string; photo?: TelegramFile[]; document?: { file_id?: string; file_name?: string; file_size?:number; mime_type?:string } };
+  quote?: { text?: string }; entities?: TelegramEntity[]; caption_entities?: TelegramEntity[];
+  forward_origin?: unknown; forward_date?: number; forward_from?: unknown; forward_from_chat?: unknown; forward_sender_name?: string; via_bot?: unknown; is_automatic_forward?: boolean;
+  message_id: number; text?: string; chat: { id: number | string; title?: string; type?: string } };
+type TelegramEntity = { type: string; offset: number; length: number };
 type TelegramFile = {file_id:string;file_size?:number;file_name?:string;mime_type?:string};
+
+function telegramUploadId(chatId: string, messageId: number, fileId: string): string {
+  const hex = sha256(`${chatId}:${messageId}:${fileId}`).slice(0,32);
+  return [hex.slice(0,8),hex.slice(8,12),hex.slice(12,16),hex.slice(16,20),hex.slice(20)].join("-");
+}
+
+function originalTelegramMessage(message: TelegramMessage): boolean {
+  return !!message.from && !message.from.is_bot && !message.sender_chat && !message.via_bot && !message.forward_origin
+    && !message.is_automatic_forward && !message.forward_date && !message.forward_from && !message.forward_from_chat && !message.forward_sender_name;
+}
+/** Reply targets, quotes, forwarded media and uploaded recordings describe the work; only the original sender can request it. */
+function directTelegramWords(message: TelegramMessage, transcript?: string, username?: string | null): string | undefined {
+  if (!originalTelegramMessage(message)) return;
+  let words = message.text ?? message.caption ?? "";
+  const entities = message.text !== undefined ? message.entities : message.caption_entities;
+  for (const e of (entities ?? []).filter(e => ["blockquote", "expandable_blockquote", "code", "pre"].includes(e.type)).sort((a,b) => b.offset-a.offset))
+    words = words.slice(0,e.offset) + " " + words.slice(e.offset+e.length);
+  const mention = words.match(/^\s*@(\w+)\s*[:,]?\s*/);
+  if (mention && username && mention[1]!.toLowerCase() === username.toLowerCase()) words = words.slice(mention[0].length);
+  return [words, (message.voice || message.video_note) && transcript].filter(Boolean).join("\n").trim() || undefined;
+}
+
+function signingNotice(body: string): TelegramText {
+  const attribution = "Отправлено AI-помощником.";
+  return { text: body + "\n\n" + attribution, entities:[{ type:"italic", offset:body.length+2, length:attribution.length }] };
+}
 
 interface TelegramResponse<T> { ok: boolean; result: T; description?: string; error_code?: number; parameters?: { retry_after?: number } }
 interface TelegramBot { id: number; is_bot: boolean; first_name: string; username?: string }
@@ -414,7 +445,7 @@ export class TelegramAdapter {
   /** Every text message goes out here, through the durable outbox: an answer, a News post, a card, an approval. `text` is Markdown,
    * or a text already laid out with its entities. `buttons` are rows under the first part: links, and presses that come back to
    * `pressed`. Returns Telegram's id of the first part. */
-  async sendMessage(chatId: string | number, text: string | TelegramText, deliveryKey: string = randomUUID(), replyToMessageId?: number, options: { silent?: boolean; linkPreview?: boolean; preview?: string; rich?: string; assertCurrent?: () => void; buttons?: TelegramButton[][];
+  async sendMessage(chatId: string | number, text: string | TelegramText, deliveryKey: string = randomUUID(), replyToMessageId?: number, options: { silent?: boolean; linkPreview?: boolean; preview?: string; rich?: string; assertCurrent?: () => void; buttons?: TelegramButton[][]; threadId?:number; retryRejected?:boolean;
     /** The text exactly as written: nothing in it is read as formatting. */ plain?: boolean } = {}): Promise<number | undefined> {
     if (!this.token) throw new Error("Telegram не подключён");
     if (typeof text === "string" && options.rich && await this.sendRich(chatId, options.rich, deliveryKey, replyToMessageId, options)) return;
@@ -425,6 +456,7 @@ export class TelegramAdapter {
       const key=`${chatId}:${deliveryKey}:${index}`;
       // A named page shows as a large preview under the first part; otherwise a preview is the sender's choice.
       const payload=JSON.stringify({chat_id:chatId,...chunk,link_preview_options:options.preview && index === 0 ? {url:options.preview,prefer_large_media:true} : {is_disabled:options.linkPreview !== true || Boolean(options.preview)},
+        ...(options.threadId ? {message_thread_id:options.threadId} : {}),
         ...(index === 0 && options.buttons ? {reply_markup:{inline_keyboard:options.buttons}} : {}),
         ...(options.silent ? { disable_notification:true } : {}),
         // The owner's words still reach the group if the original was deleted.
@@ -433,7 +465,7 @@ export class TelegramAdapter {
       const row=this.store.db.prepare("SELECT * FROM telegram_outbox WHERE key=?").get(key)!;
       if(row.payload!==payload) throw new Error("Содержимое доставки изменилось");
       if(row.status==="delivered") { if (index === 0) first = Number(row.message_id); continue; }
-      if(row.status!=="pending") throw new Error("Доставка требует проверки в Telegram перед повтором");
+      if(row.status!=="pending" && !(options.retryRejected && row.status==="not_sent")) throw new Error("Доставка требует проверки в Telegram перед повтором");
       this.store.db.prepare("UPDATE telegram_outbox SET status='sending' WHERE key=?").run(key);
       try {
         const sent=await this.call<{message_id:number}>("sendMessage",JSON.parse(payload),undefined,undefined,options.assertCurrent);
@@ -693,6 +725,111 @@ export class TelegramAdapter {
     }
   }
 
+  /** Keep the approval buttons on the exact unsigned file. Private signing artifacts never enter a group workspace. */
+  private async sendSigningDocument(id: string, ownerId: string, document: Parameters<SigningTransport["sendSigningResult"]>[0]["document"], stage: "review"|"result"|"needs-review", text: string, buttons?: TelegramButton[][]): Promise<number> {
+    const assertOwner = () => { if (!signingOwner(this.store,this.messages.files,ownerId,ownerId)) throw new Error("Личный чат владельца недоступен."); };
+    assertOwner();
+    const caption = signingNotice(text), key = ownerId + ":signing:" + id + ":" + stage;
+    const payload = JSON.stringify({ name:document.name, digest:sha256(document.contentBase64), caption, buttons });
+    this.store.db.prepare("INSERT OR IGNORE INTO telegram_outbox(key,chat_id,payload,status) VALUES(?,?,?,'pending')").run(key,ownerId,payload);
+    const row = this.store.db.prepare("SELECT payload,status,message_id FROM telegram_outbox WHERE key=?").get(key)!;
+    if (row.payload !== payload) throw new Error("Файл или условия подписи изменились.");
+    if (row.status === "delivered") return Number(row.message_id);
+    if (row.status !== "pending" && row.status !== "not_sent") throw new Error("Доставку документа нужно проверить в личном чате владельца.");
+    const form = new FormData();
+    form.set("chat_id",ownerId);
+    form.set("document",new Blob([Buffer.from(document.contentBase64,"base64")],{type:document.mimeType}),document.name);
+    form.set("caption",caption.text); form.set("caption_entities",JSON.stringify(caption.entities));
+    if (buttons) form.set("reply_markup",JSON.stringify({inline_keyboard:buttons}));
+    this.store.db.prepare("UPDATE telegram_outbox SET status='sending' WHERE key=?").run(key);
+    try {
+      const sent = await this.call<{message_id:number}>("sendDocument",form,undefined,undefined,assertOwner);
+      if (!Number.isSafeInteger(sent.message_id) || sent.message_id <= 0) throw new Error("Telegram не подтвердил доставку документа.");
+      this.store.db.prepare("UPDATE telegram_outbox SET status='delivered',message_id=?,kind='document' WHERE key=?").run(String(sent.message_id),key);
+      return sent.message_id;
+    } catch (error) {
+      this.store.db.prepare("UPDATE telegram_outbox SET status=?,error=? WHERE key=?").run(refused(error)?"not_sent":"unknown","Доставка документа не подтверждена.",key);
+      throw error;
+    }
+  }
+
+  sendSigningReview(input: Parameters<SigningTransport["sendSigningReview"]>[0]): Promise<number> {
+    const label = (value:string) => value.replace(/[\p{C}\s]+/gu," ").trim().slice(0,80);
+    const action = input.signature && input.stamp ? "Подписать с печатью" : input.signature ? "Подписать" : "Поставить печать";
+    const work = input.signature ? "подписать документ" + (input.stamp ? " и поставить печать" : "") : "поставить печать на документ";
+    const origin = input.originTitle === "Личное сообщение" ? "Из личной переписки." : "Из группы «" + label(input.originTitle) + "».";
+    const text = label(input.requesterName) + " просит " + work + ".\n" + origin + " Готовый PDF придёт сюда.";
+    return this.sendSigningDocument(input.id,input.ownerId,input.document,"review",text,[[
+      {text:action,callback_data:"signreq:"+input.id+":approve"}, {text:"Отклонить",callback_data:"signreq:"+input.id+":decline"},
+    ]]);
+  }
+
+  sendSigningResult(input: Parameters<SigningTransport["sendSigningResult"]>[0]): Promise<number> {
+    return this.sendSigningDocument(input.id,input.ownerId,input.document,"result","Документ готов. Проверьте приложенный PDF.");
+  }
+
+  sendSigningNeedsReview(input: Parameters<SigningTransport["sendSigningResult"]>[0]): Promise<number> {
+    return this.sendSigningDocument(input.id,input.ownerId,input.document,"needs-review","Не удалось определить место для подписи или печати. Приложен оригинал. В ответе на файл укажите, что поставить, на какой странице и где.");
+  }
+  async sendSigningStatus(input: Parameters<SigningTransport["sendSigningStatus"]>[0]) {
+    const text = input.state === "signed" ? "Документ готов. PDF у Мика." : input.state === "declined" ? "Мик отклонил запрос." : "Документ требует проверки Миком.";
+    return this.sendMessage(input.chatId,signingNotice(text),"signing-status:"+input.id+":"+input.state,input.replyToMessageId,{threadId:input.messageThreadId,retryRejected:true});
+  }
+
+  private async downloadTelegramFile(media: TelegramFile): Promise<{ bytes:Uint8Array; path:string }> {
+    if ((media.file_size ?? 0)>20_000_000) throw new Error("Отправьте файл до 20 МБ.");
+    const file=await this.call<{file_path:string;file_size?:number}>("getFile",{file_id:media.file_id});
+    if (!file.file_path || (file.file_size ?? 0)>20_000_000) throw new Error("Не удалось получить файл до 20 МБ");
+    const response=await fetch(`https://api.telegram.org/file/bot${this.token}/${file.file_path}`,{signal:AbortSignal.timeout(30_000)});
+    if (!response.ok) throw new Error("Не удалось скачать вложение");
+    const bytes=new Uint8Array(await response.arrayBuffer());
+    if (bytes.length>20_000_000) throw new Error("Отправьте файл до 20 МБ.");
+    return {bytes,path:file.file_path};
+  }
+
+  private async telegramSigningRequest(message: TelegramMessage, updateId: number, username?: string | null): Promise<boolean> {
+    if (!originalTelegramMessage(message) || !message.from || message.chat.type==="channel") return false;
+    const sender=String(message.from.id), chat=String(message.chat.id), privateChat=chat===sender;
+    const ownerGroup=!privateChat && Number(chat)<0 && (message.is_topic_message || isProtectedTelegramAudience(this.store,chat)) && signingOwner(this.store,this.messages.files,sender,chat);
+    if (!ownerGroup && !signingRequester(this.store,this.messages.files,sender,chat)) return false;
+    const target=message.reply_to_message;
+    if (target && (this.questionMessages.has(chat+":"+target.message_id) || this.messages.cards.waiting(chat,target.message_id,message.from.id))) return false;
+    const doc=message.document ?? target?.document;
+    const mentioned=!!username && new RegExp(`@${username}(?![\\w])`,"i").test(message.text ?? message.caption ?? "");
+    const toBot=target?.from?.is_bot && (target.from.id===this.bot?.id || !!username && target.from.username?.toLowerCase()===username.toLowerCase());
+    if (!privateChat && !doc && !mentioned && !toBot) return false;
+    let words=directTelegramWords(message,undefined,username);
+    const voice=message.voice ?? message.video_note;
+    if (voice && !requestedSigningMarks(words,!ownerGroup)) {
+      const cache="telegram.transcript."+updateId;
+      let transcript=this.store.getSetting(cache);
+      if (!transcript) {
+        const file=await this.downloadTelegramFile(voice);
+        try { transcript=await this.transcribe(file.bytes,file.path.split(".").at(-1)); }
+        catch { return false; }
+        this.store.setSetting(cache,transcript);
+      }
+      words=directTelegramWords(message,transcript,username);
+    }
+    const marks=requestedSigningMarks(words,!ownerGroup);
+    if (!marks || !words) return false;
+    const threadId=message.is_topic_message ? message.message_thread_id : undefined;
+    const reply=(body:string)=>this.sendMessage(chat,signingNotice(body),"signing-request:"+message.message_id,message.message_id,{threadId,retryRejected:true});
+    if (!doc?.file_id || !doc.file_name || message.media_group_id || target?.media_group_id || (message.document && target?.document)) {
+      await reply("Приложите один документ с поручением или ответьте на сообщение с нужным файлом."); return true;
+    }
+    if (!/\.(?:pdf|docx?|odt|rtf)$/i.test(doc.file_name) || (doc.file_size ?? 0)>20_000_000) {
+      await reply("Нужен документ PDF, DOCX, DOC, ODT или RTF до 20 МБ."); return true;
+    }
+    const {bytes}=await this.downloadTelegramFile({...doc,file_id:doc.file_id});
+    const request={requesterTelegramId:sender,chatId:chat,requestMessageId:message.message_id,documentMessageId:message.document ? message.message_id : target!.message_id,messageThreadId:threadId,
+      telegramDirectText:words,...marks,document:{name:doc.file_name,mimeType:doc.mime_type,contentBase64:Buffer.from(bytes).toString("base64")},
+      requesterName:[message.from.first_name,message.from.last_name].filter(Boolean).join(" ")||"Участник",originTitle:privateChat?"Личное сообщение":message.chat.title||"Группа"};
+    const result=await (ownerGroup ? requestOwnerSigning : requestSigningApproval)(this.store,this.messages.files,request,this);
+    if (result.state==="pending") await reply("Отправил документ Мику на согласование.");
+    return true;
+  }
+
   async processUpdate(update: TelegramUpdate): Promise<void> {
     const existing = this.pendingUpdates.get(update.update_id);
     if (existing) return existing;
@@ -804,6 +941,9 @@ export class TelegramAdapter {
       }
       this.store.markTelegramUpdate(update.update_id); return;
     }
+    if (await this.telegramSigningRequest(message,update.update_id,username)) {
+      this.store.markTelegramUpdate(update.update_id); return;
+    }
     // Forum topics have separate audiences. They are not routed through a
     // group's binding until topic support can carry the address end to end.
     if (message.is_topic_message || message.sender_chat || message.from?.is_bot) { this.store.markTelegramUpdate(update.update_id); return; }
@@ -859,20 +999,13 @@ export class TelegramAdapter {
       if (protectedAudience && (contextOnly || !speech)) return {text};
       const cached = speech ? this.store.getSetting("telegram.transcript." + update.update_id) : null;
       if (cached && protectedAudience) return { text: [text, cached].filter(Boolean).join("\n"), transcript: cached };
-      if((media.file_size ?? 0)>20_000_000) throw new Error("Отправьте файл до 20 МБ.");
-      const file=await this.call<{file_path:string;file_size?:number}>("getFile",{file_id:media.file_id});
-      if(!file.file_path || (file.file_size ?? 0)>20_000_000) throw new Error("Не удалось получить файл до 20 МБ");
-      const response=await fetch(`https://api.telegram.org/file/bot${this.token}/${file.file_path}`,{signal:AbortSignal.timeout(30_000)});
-      if(!response.ok) throw new Error("Не удалось скачать вложение");
-      const bytes=new Uint8Array(await response.arrayBuffer());
-      if(bytes.length>20_000_000) throw new Error("Отправьте файл до 20 МБ.");
-      const hex=sha256(`${chatId}:${message.message_id}:${media.file_id}`).slice(0,32);
-      const id=`${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
-      const name=message.video_note ? "video-note.mp4" : message.voice ? "voice.ogg" : message.audio ? message.audio.file_name ?? "audio."+(file.file_path.split(".").at(-1) ?? "mp3") : message.video ? message.video.file_name ?? "video.mp4" : message.document?.file_name ?? "photo.jpg";
+      const {bytes,path}=await this.downloadTelegramFile(media);
+      const id=telegramUploadId(chatId,message.message_id,media.file_id);
+      const name=message.video_note ? "video-note.mp4" : message.voice ? "voice.ogg" : message.audio ? message.audio.file_name ?? "audio."+(path.split(".").at(-1) ?? "mp3") : message.video ? message.video.file_name ?? "video.mp4" : message.document?.file_name ?? "photo.jpg";
       const mimeType=message.video_note ? "video/mp4" : message.voice ? message.voice.mime_type ?? "audio/ogg" : message.audio ? message.audio.mime_type ?? "application/octet-stream" : message.video ? message.video.mime_type ?? "video/mp4" : message.document ? message.document.mime_type ?? "application/octet-stream" : "image/jpeg";
       const uploads=protectedAudience ? undefined : [{id,name,mimeType,contentBase64:Buffer.from(bytes).toString("base64")}];
       if (speech) try {
-        const transcript = cached ?? await this.transcribe(bytes, (message.document?.file_name ?? file.file_path).split(".").at(-1));
+        const transcript = cached ?? await this.transcribe(bytes, (message.document?.file_name ?? path).split(".").at(-1));
         resolveVoiceIssue(this.store,conversation.id);
         this.store.setSetting("telegram.transcript." + update.update_id, transcript);
         return { text: [text, transcript].filter(Boolean).join("\n"), transcript, uploads };
@@ -906,7 +1039,26 @@ export class TelegramAdapter {
     // Only the paired owner in a private chat; a group's audience is never just the owner.
     const byOwner = Number(chatId) > 0 && this.isOwner(message.from?.id);
     const cardAnswer = waitingCard && text.trim() ? this.messages.cards.words(waitingCard.id, text, { via: "telegram", userId: String(message.from!.id), name: author ?? String(message.from!.id) }) : null;
-    const submission = { channel: "telegram" as const, conversationId: conversation.id, text: cardAnswer?.text ?? text, uploads:input.uploads, replyToAssistant, replyTo, telegramSenderId:message.from ? String(message.from.id) : undefined, author, externalId, externalChatId: chatId, title: message.chat.title ?? "Telegram " + chatId, byOwner,
+    const telegramDirectText = !waitingCard && !contextOnly ? directTelegramWords(message,input.transcript,username) : undefined;
+    let uploads: MessageInput["uploads"] = input.uploads;
+    const document = target?.document;
+    // The bot can receive a reply to a document it never saw, including its own earlier outgoing file.
+    if (!protectedAudience && !message.document && document?.file_id && document.file_name && message.from
+      && requestedSigningMarks(telegramDirectText) && signingOwner(this.store,this.messages.files,String(message.from.id),chatId)) {
+      try {
+        const { bytes } = await this.downloadTelegramFile({ ...document,file_id:document.file_id });
+        const current = this.store.getTelegramChat(chatId);
+        if (!current || current.enabled === false || current.conversationId !== binding?.conversationId
+          || !signingOwner(this.store,this.messages.files,String(message.from.id),chatId)) { this.store.markTelegramUpdate(update.update_id); return; }
+        uploads = [...(uploads ?? []), { id:telegramUploadId(chatId,message.message_id,document.file_id), name:document.file_name,
+          mimeType:document.mime_type, contentBase64:Buffer.from(bytes).toString("base64") }];
+      } catch {
+        await this.sendMessage(chatId,signingNotice("Не удалось открыть документ из сообщения. Приложите его к запросу на подпись."),"signing-file:"+message.message_id,message.message_id);
+        this.store.markTelegramUpdate(update.update_id); return;
+      }
+    }
+    const submission = { channel: "telegram" as const, conversationId: conversation.id, text: cardAnswer?.text ?? text, uploads, replyToAssistant, replyTo, telegramSenderId:message.from ? String(message.from.id) : undefined, author, externalId, externalChatId: chatId, title: message.chat.title ?? "Telegram " + chatId, byOwner,
+      telegramDirectText,
       ...cardAnswer || waitingCard ? { cardReply: true } : {},
       // A person who dictates sends words, not a file: the recording that was heard is the message's only upload. A video is a file first.
       ...input.transcript && (message.voice || message.audio || message.video_note) ? { dictated: true } : {} };
@@ -987,6 +1139,18 @@ export class TelegramAdapter {
    * press already taken; what the press started (a send, a draft, the raiser's turn) follows. */
   private async pressed(updateId: number, query: NonNullable<TelegramUpdate["callback_query"]>): Promise<void> {
     const data = query.data ?? "", chatId = String(query.message?.chat.id ?? ""), sender = query.from?.id;
+    if (data.startsWith("signreq:")) {
+      const match=/^signreq:([a-f0-9]{32}):(approve|decline)$/.exec(data);
+      const owner=!!sender && !query.from?.is_bot && Number.isSafeInteger(sender) && String(sender)===chatId && query.message?.chat.type==="private" && this.isOwner(sender);
+      await this.call("answerCallbackQuery",{callback_query_id:query.id,text:owner && match ? "Проверяю запрос…" : "Решение доступно только владельцу.",show_alert:!owner}).catch(()=>undefined);
+      if (owner && match && query.message?.message_id) {
+        const result=await decideSigningRequest(this.store,this.messages.files,{id:match[1]!,approve:match[2]==="approve",ownerTelegramId:String(sender),ownerChatId:chatId,approvalMessageId:query.message.message_id},this);
+        if (result.state==="unavailable") {
+          if (signingOwner(this.store,this.messages.files,chatId,chatId)) await this.sendMessage(chatId,signingNotice("Этот запрос уже недоступен. Новое решение по нему не принято."),"signing-unavailable:"+match[1]+":"+query.message.message_id,query.message.message_id,{retryRejected:true});
+        } else await this.call("editMessageReplyMarkup",{chat_id:chatId,message_id:query.message.message_id,reply_markup:{inline_keyboard:[]}}).catch(()=>undefined);
+      }
+      this.store.markTelegramUpdate(updateId); return;
+    }
     let outcome: { toast: string; alert: boolean; carry?: () => Promise<unknown> };
     const story = buttonStory(this.store, data, chatId);
     if (data.startsWith("c:")) {

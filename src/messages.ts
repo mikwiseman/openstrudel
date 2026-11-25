@@ -34,6 +34,7 @@ import { homeRulesPrompt } from "./home-management.js";
 import { ensureUsageTable, recordTurnUsage, type TurnRoute, type UsageReport } from "./usage.js";
 import { Cards } from "./cards.js";
 import { looksLikeQuestion, type Ask } from "./ask.js";
+import { requestsDocumentSigning } from "./document-signing.js";
 
 type QueuedMessage = { id: string; channel: string; run: () => Promise<MessageResult>; resolve: (result: MessageResult) => void; reject: (error: unknown) => void };
 
@@ -181,7 +182,7 @@ export class MessageService {
     // A dictated Telegram message is its transcript: its own recording is its only file and stays on the message either way.
     const dictated = input.dictated === true && input.channel === "telegram" && !input.attachments?.length && files.length === 1 && isSpeechFile(files[0]!.name, files[0]!.mimeType);
     const ask = this.ask && !this.drains.has(conversation.id) && !profile && (!files.length || dictated) && !question && !input.scheduled && !input.cardReply && !input.context && !input.outputSchema && !input.brief
-      && !/^(?:schedule|correspondence|operations):/.test(input.externalId ?? "") && looksLikeQuestion(text) && this.ask.enabled() && !this.isGroupChat(conversation.id)
+      && !/^(?:schedule|correspondence|operations):/.test(input.externalId ?? "") && !requestsDocumentSigning(input.telegramDirectText) && looksLikeQuestion(text) && this.ask.enabled() && !this.isGroupChat(conversation.id)
       && (input.channel === "telegram" ? Number(input.externalChatId) > 0 && hasAccess(this.store, input.telegramSenderId) : input.byOwner === true && conversation.externalId === "home")
       ? this.ask : undefined;
     let start!: () => void;
@@ -274,6 +275,7 @@ export class MessageService {
         const nativeSources = selection.provider === "chatgpt" || providerInfo(selection.provider ?? "")?.engine === "codex";
         projectRun = await this.projects.begin(currentProfile?.id ?? "main", { conversationId:current.id,messageId:inbound.id,channel:input.channel,scope:context,scheduled,byOwner:input.byOwner,telegramSenderId:input.telegramSenderId,access }, nativeSources);
         const tools = employeeTools(this.store, engine, this.interactions, { deviceId: input.deviceId, profile: currentProfile, conversationId: current.id, messageId: inbound.id, channel: input.channel, scheduler: this.scheduler, projects:this.projects, serverShell:this.serverShell, scheduled,scheduleTelegramChatId:input.scheduleTelegramChatId,files:this.files,scope:context,telegram:this.telegram,byOwner:input.byOwner,telegramSenderId:input.telegramSenderId,access,cards:this.cards,
+          telegramDirectText: !input.cardReply && text === input.text.trim() ? input.telegramDirectText : undefined,
           modelEngine: (agent, conversationId) => { const scope = conversationId ? this.contextFor(conversationId) : this.store.getSetting("employee.context." + agent) ?? this.store.getProfile(agent)?.domain ?? "personal"; return this.engine.forAgent?.(agent,scope,conversationId) ?? this.engine.forContext?.(scope) ?? this.engine; } });
         const fast = !scheduled && fastChat(this.store, currentProfile?.id ?? "main", current.id, groupContext);
         const issues = !currentProfile && input.byOwner && !groupContext ? runtimeIssues(this.store) : [];
