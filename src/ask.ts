@@ -3,7 +3,7 @@ import { rmSync } from "node:fs";
 import type { Accounts } from "./accounts.js";
 import { contextServers } from "./claude.js";
 import { CodexEngineAdapter } from "./codex.js";
-import { ownerOnlyServers } from "./extensions.js";
+import { sharingConfig } from "./extensions.js";
 import { HomeError } from "./home.js";
 import { askModelSelection, lowestReasoning, validateModelSelection, type ModelChoice } from "./model-settings.js";
 import { boundedResponse, restrictedRunFolder, supportedCodex } from "./restricted-executor.js";
@@ -136,13 +136,21 @@ function remembered(store: Store): Record<string, string[]> {
  * `recall`. A sender without access gets none, and nobody but the owner gets a service the owner kept to himself. */
 export async function memories(store: Store, root: string, context: string, asker: { access: boolean; owner: boolean }, signal?: AbortSignal): Promise<Memory[]> {
   if (!asker.access) return [];
-  let services: Array<[string, any]>, kept: string[];
+  let services: Array<[string, any]>;
   // A damaged configuration or sharing policy gives nobody a service they should not have.
-  try { services = Object.entries(contextServers(root, context, { access: true })); kept = asker.owner ? [] : ownerOnlyServers(root); } catch { return []; }
+  try {
+    services = Object.entries(contextServers(root, context, { access: true }));
+    if (!asker.owner) {
+      const policy = sharingConfig(root);
+      if (context === "personal") services = services.filter(([name]) =>
+        !policy.ownerOnlyServers.includes(name) && (policy.enabled || policy.sharedServices.includes(name)));
+      // In another scope contextServers already applies inheritance. An explicit member grant may use the same service name.
+    }
+  } catch { return []; }
   const saved = remembered(store);
   let changed = false;
   const found = await Promise.all(services.map(async ([name, service]): Promise<Memory[]> => {
-    if (service?.type !== "http" || typeof service.url !== "string" || kept.includes(name)) return [];
+    if (service?.type !== "http" || typeof service.url !== "string") return [];
     const server = { name, url: service.url, headers: { ...service.headers } as Record<string, string> };
     const key = digest([server.url, Object.entries(server.headers).sort()]), id = digest([name, server.url]);
     let known = listed.get(key);

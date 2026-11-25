@@ -12,7 +12,7 @@ import type { DynamicTool } from "./types.js";
 import { ownerTimezone } from "./timezone.js";
 import type { UsageReport } from "./usage.js";
 
-const supportedCodexVersion = "0.156.1";
+const supportedCodexVersion = "0.170.0";
 /** The reason and status are diagnostics for the owner's journal, never shown to participants. */
 const unavailable = (reason: DiagnosticReason = "service_protocol", status?: number) => Object.assign(new Error("Ограниченный доступ сейчас недоступен. Повторите запрос позже."), { reason, status });
 const accessChanged = () => new Error("Права доступа изменились. Отправьте запрос заново.");

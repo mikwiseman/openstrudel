@@ -120,6 +120,31 @@ it("never inherits owner-only connectors into employees or future groups and pre
   expect(statSync(join(root,".data/extensions/all-chats.json")).mode & 0o777).toBe(0o600);
 });
 
+it("shares selected services while private accounts and newly installed apps stay in the owner's chat", () => {
+  const { root } = fixture();
+  const directory = join(root, ".data/extensions/personal");
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, "config.toml"), [
+    '[mcp_servers.travel]', 'command = "travel"',
+    '[mcp_servers.company]', 'command = "owner-company"',
+    '[apps.calendar]', 'enabled = true',
+    '[apps.future_private_app]', 'enabled = true',
+  ].join("\n"));
+  shareWithAllChats(root, false, ["company"], ["travel", "calendar", "company"]);
+  const other = { servers: {} };
+  for (const scope of ["work", "group-" + "b".repeat(64)]) {
+    expect(inheritedIntegrations(root, scope, other)).toEqual({
+      servers: { travel: { command: "travel" } }, apps: ["calendar"],
+    });
+  }
+  expect(inheritedIntegrations(root, "work", { servers: { travel: {} }, apps: { calendar: { enabled: false } } }))
+    .toEqual({ servers: {}, apps: [] });
+  shareWithAllChats(root, false);
+  expect(inheritedIntegrations(root, "work", other).apps).toEqual(["calendar"]);
+  shareWithAllChats(root, false, undefined, []);
+  expect(inheritedIntegrations(root, "work", other)).toEqual({ servers: {}, apps: [] });
+});
+
 it("fails closed for corrupt owner-only sharing policy without replacing it during an ordinary toggle",()=>{
   const {root}=fixture(),path=join(root,".data/extensions/all-chats.json");
   shareWithAllChats(root,true,["private"]);

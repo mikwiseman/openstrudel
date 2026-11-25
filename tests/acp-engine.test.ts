@@ -80,6 +80,15 @@ it("runs the pinned agent in the workspace with a private home, the employee too
   } finally { delete process.env.XAI_API_KEY; delete process.env.OPENSTRUDEL_SECRET_FIXTURE; }
 });
 
+it("withholds a service whose tool filter the ACP transport cannot express", async () => {
+  const dir = join(root, ".data/extensions/personal");
+  mkdirSync(dir, {recursive:true});
+  writeFileSync(join(dir, "config.toml"), '[mcp_servers.filtered]\nurl = "https://ledger.invalid/mcp"\nenabled_tools = ["ledger_lookup"]\n');
+  const g = mock({ turn: [{text:"Ready"}] });
+  await g.engine.forContext("personal").run("Hello", {});
+  expect(g.calls("session/new")[0].mcpServers.map((s: {name:string}) => s.name)).not.toContain("filtered");
+});
+
 it("resumes the saved session while the employee's rules are unchanged, keeps only the new reply, and reports a session the agent lost", async () => {
   const g = mock({ turn: [{ text: "Продолжаем" }] });
   const { threadId } = await g.engine.run("Привет", { profile: "Имя: Ада" });

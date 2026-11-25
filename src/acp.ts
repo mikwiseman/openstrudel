@@ -298,7 +298,8 @@ async function open(ctx: acp.ClientContext): Promise<acp.InitializeResponse> {
  * behind a loopback endpoint of this turn (stdioBridge), kept in `bridges` to stop with the turn. A schedule starts only its
  * workspace's own services: the owner's, shared with every chat, start in his own turns. */
 async function services(root: string, context: string, options: RunOptions, cwd: string, bridges: Array<Awaited<ReturnType<typeof stdioBridge>>>): Promise<acp.McpServer[]> {
-  return Promise.all(Object.entries(contextServers(root, context, options, !options.scheduled)).filter(([name]) => name !== "openstrudel").map(async ([name, s]: [string, any]) => {
+  // ACP passes a full server to its agent and cannot enforce per-tool grants.
+  return Promise.all(Object.entries(contextServers(root, context, options, !options.scheduled)).filter(([name, service]) => name !== "openstrudel" && !service.toolLists).map(async ([name, s]: [string, any]) => {
     if (s.type === "http") return http(name, s.url, s.headers);
     const bridge = await stdioBridge({ command: s.command, args: s.args, env: Object.fromEntries(Object.entries(s.env ?? {}).map(([k, v]) => [k, String(v)])) }, cwd);
     bridges.push(bridge);

@@ -161,6 +161,10 @@ it("lets the owner turn sharing on and off through the Home API", async () => {
     expect((await call("POST", { enabled: true, ownerOnlyServers: "unipile" })).status).toBe(400);
     expect(await call("POST", { enabled: false })).toEqual({ status: 200, value: { enabled: false, ownerOnlyServers: ["unipile"] } });
     expect(await call("POST", { enabled: true })).toEqual({ status: 200, value: { enabled: true, ownerOnlyServers: ["unipile"] } });
+    const selected = { enabled: false, ownerOnlyServers: ["unipile"], sharedServices: ["travel"] };
+    expect(await call("POST", { enabled: false, sharedServices: ["travel"] })).toEqual({ status: 200, value: selected });
+    expect((await call("POST", { enabled: true, sharedServices: "travel" })).status).toBe(400);
+    expect((await call("GET")).value).toEqual(selected);
   } finally { await runtime.stop(); }
 });
 
