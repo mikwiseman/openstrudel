@@ -280,3 +280,34 @@ it("issues a read-only worker token and merges only its authorized exact-head pr
   expect(await mergeWorkerCandidate(root,"o/r",request,()=>{})).toBe(cloud.merge);
   expect(cloud.merges).toBe(1);
 });
+
+describe("cloud QA packages", () => {
+  it("returns both desktop installers from the matching run and rejects an incomplete pair", async () => {
+    const { root, cloud } = fixture();
+    const github = await import("../src/github.js");
+    const original = globalThis.fetch;
+    const title = "Wolf desktop package " + cloud.id;
+    let platforms = ["windows", "linux"];
+    vi.stubGlobal("fetch", async (input: string, init: RequestInit = {}) => {
+      const path = new URL(input).pathname;
+      const json = (value: unknown) => Response.json(value);
+      if (path.endsWith("/git/ref/heads/main")) return json({object: {sha: cloud.main}});
+      if (path.endsWith("/desktop-release.yml/runs")) return json({workflow_runs: [
+        {id: 8, display_title: title + "x", status: "completed", conclusion: "success"},
+        {id: 9, display_title: title, status: "completed", conclusion: "success", html_url: "https://github.com/o/r/actions/runs/9"},
+      ]});
+      if (path.endsWith("/runs/9/artifacts")) return json({artifacts: platforms.map((os, i) => ({
+        name: "openramble-" + os + "-" + cloud.main, id: i + 11, expired: false, size_in_bytes: 35, digest: "sha256:" + "f".repeat(64),
+      }))});
+      return original(input, init);
+    });
+    const resume = () => github.cloudPackages(root, "o/r", "desktop", cloud.id, cloud.main, true, vi.fn(), new AbortController().signal);
+    const packages = await resume();
+    expect(packages.map(pkg => [pkg.revision, pkg.url])).toEqual([
+      [cloud.main, "https://github.com/o/r/actions/runs/9/artifacts/11"],
+      [cloud.main, "https://github.com/o/r/actions/runs/9/artifacts/12"],
+    ]);
+    platforms = ["windows"];
+    await expect(resume()).rejects.toThrow(/linux/i);
+  });
+});

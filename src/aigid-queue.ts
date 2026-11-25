@@ -4,7 +4,9 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
-export type PackageTarget = "android" | "web" | "macos";
+export const packageTargets = ["android", "web", "macos", "desktop"] as const;
+export type PackageTarget = typeof packageTargets[number];
+export const isPackageTarget = (value: unknown): value is PackageTarget => packageTargets.some(target => target === value);
 interface Proposal { id:string; goal:string; state:string; files:string; job_id:string|null }
 export function requestId(conversation: string, message: string, repository: string | null, operation: string) {
   const bytes = createHash("sha256").update(JSON.stringify([conversation, message, repository, operation])).digest();

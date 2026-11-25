@@ -4,9 +4,9 @@ import { cloudStatus } from "./aigid-cloud-status.js";
 import { HomeError } from "./home.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { BuildQueue, requestId, type BuildRequest, type PackageTarget } from "./aigid-queue.js";
+import { BuildQueue, requestId, packageTargets, isPackageTarget, type BuildRequest, type PackageTarget } from "./aigid-queue.js";
 import { prepareCandidate, projectModel } from "./aigid-candidate.js";
-import { dispatchAiGidCloud, githubTools, workerReadAccess, mergeWorkerCandidate, macPackage } from "./github.js";
+import { dispatchAiGidCloud, githubTools, workerReadAccess, mergeWorkerCandidate, cloudPackages } from "./github.js";
 import { hasAccess, type TelegramToolContext } from "./telegram-tools.js";
 import { assertNativeAccess } from "./authorization.js";
 import { resolveModelSelection } from "./model-settings.js";
@@ -108,17 +108,17 @@ export function aigidTools(store:Store,turn:TelegramToolContext) {
   if(service?.projectAllowed(turn)) definitions.push(
     {type:"function",name:"project_publish_source",description:"For an explicitly requested change and merge to the default branch of a project without a registered deployment, prepare and verify its source, publish the exact revision to GitHub and send the commit link. Existing repository workflows may run. Store, site or binary delivery requires the corresponding registered destination. Use project_build for projects with a configured deployment and for inspection or preparation alone.",inputSchema:{type:"object",properties:{repository:{type:"string"},goal:{type:"string",minLength:1,maxLength:12000}},required:["repository","goal"],additionalProperties:false}},
     {type:"function",name:"project_repositories",description:"Find named projects registered in the owner's additional server checkouts. Use github_repositories for GitHub App installations. Only this owner can see the additional projects.",inputSchema:{type:"object",properties:{query:{type:"string"}},required:["query"],additionalProperties:false}},
-    {type:"function",name:"project_build",description:"Use for the owner's request to inspect, change, build or deploy a named GitHub project on the remote engineering server. Codex is the default. Use project_repositories and github_repositories to resolve the canonical owner/name. For projects with automatic deployment on a branch, a change without release stays on the personal project server. For AiGid iPhone use aigid_testflight. Use one call per repository. For a change and a download, include the requested targets in packages in this call so they build the exact changed revision. change=true prepares a checked candidate. release=true only when the requester expressly asks to ship or deploy. Set destination=website when this request explicitly asks to deploy a website. A GitHub Pages route publishes only its website. Builds use the project's own tooling and delivery route. Include relevant text or voice transcription. Check the receipt before reporting a result.",inputSchema:{type:"object",properties:{repository:{type:"string"},goal:{type:"string",minLength:1,maxLength:12000},change:{type:"boolean"},release:{type:"boolean"},destination:{type:["string","null"],enum:["website",null]},packages:{type:["array","null"],items:{type:"string",enum:["android","web","macos"]}}},required:["repository","goal","change","release","destination","packages"],additionalProperties:false}},
+    {type:"function",name:"project_build",description:"Use for the owner's request to inspect, change, build or deploy a named GitHub project on the remote engineering server. Codex is the default. Use project_repositories and github_repositories to resolve the canonical owner/name. For projects with automatic deployment on a branch, a change without release stays on the personal project server. For AiGid iPhone use aigid_testflight. Use one call per repository. For a change and a download, include the requested targets in packages in this call (desktop builds Windows and Linux together) so they build the exact changed revision. change=true prepares a checked candidate. release=true only when the requester expressly asks to ship or deploy. Set destination=website when this request explicitly asks to deploy a website. A GitHub Pages route publishes only its website. Builds use the project's own tooling and delivery route. Include relevant text or voice transcription. Check the receipt before reporting a result.",inputSchema:{type:"object",properties:{repository:{type:"string"},goal:{type:"string",minLength:1,maxLength:12000},change:{type:"boolean"},release:{type:"boolean"},destination:{type:["string","null"],enum:["website",null]},packages:{type:["array","null"],items:{type:"string",enum:[...packageTargets]}}},required:["repository","goal","change","release","destination","packages"],additionalProperties:false}},
     {type:"function",name:"project_build_status",description:"Read this owner's recent remote project runs with their revision, checks, pull request, or release handoff.",inputSchema:{type:"object",properties:{},additionalProperties:false}}
   );
   if(service && (service.projectAllowed(turn) || allowed())) definitions.push(
-    {type:"function",name:"project_package",description:"Build a downloadable Android QA APK, static web ZIP, or cloud macOS QA client for a registered project. Call for standalone packages. For a code change together with a package use project_build with packages. For AiGid iPhone use aigid_testflight. revision is a full GitHub commit when packaging a specific change, otherwise null builds the current default branch. The finished package link arrives in this conversation.",
-      inputSchema:{type:"object",properties:{repository:{type:"string"},target:{type:"string",enum:["android","web","macos"]},revision:{type:["string","null"]}},required:["repository","target","revision"],additionalProperties:false}}
+    {type:"function",name:"project_package",description:"Build a downloadable Android QA APK, static web ZIP, macOS QA client, or Windows and Linux installers (desktop target) for a registered project. Call for standalone packages. For a code change together with a package use project_build with packages. For AiGid iPhone use aigid_testflight. revision is a full GitHub commit when packaging a specific change, otherwise null builds the current default branch. The finished package link arrives in this conversation.",
+      inputSchema:{type:"object",properties:{repository:{type:"string"},target:{type:"string",enum:[...packageTargets]},revision:{type:["string","null"]}},required:["repository","target","revision"],additionalProperties:false}}
   );
   return {definitions,sharedGroup:service?.sharedGroup(turn)===true,async call(name:string,args:Record<string,unknown>){
     if(name==="project_package"){
       const repository=String(args.repository??""),target=args.target,revision=args.revision;
-      if((target!=="android" && target!=="web" && target!=="macos") || !service?.canPackage(turn,repository,target)) throw new Error("This package target is unavailable for the requester.");
+      if(!isPackageTarget(target) || !service?.canPackage(turn,repository,target)) throw new Error("This package target is unavailable for the requester.");
       if(revision!=null && (typeof revision!=="string" || !/^[a-f0-9]{40}$/.test(revision))) throw new Error("Specify an exact commit, or null for the current default branch.");
       const actor=(turn.channel==="api"?turn.deviceId:turn.telegramSenderId)!;
       const receipt=service.queue.addPackage(turn.messageId,turn.conversationId,turn.channel,actor,repository,target,typeof revision==="string"?revision:undefined);
@@ -139,7 +139,7 @@ export function aigidTools(store:Store,turn:TelegramToolContext) {
       if(args.release && !service.releaseRoute(args.repository)) throw new Error("This repository has no registered automatic release destination. Request a build or a source change to prepare a candidate on the server.");
       if(sourceOnly && !service.canPublishSource(args.repository)) throw new Error("This repository uses a different release route or has no registered source publication rights.");
       const targets = args.packages ?? [];
-      if (!Array.isArray(targets) || targets.length > 3 || !targets.every(t => ["android","web","macos"].includes(t) && service.canPackage(turn,args.repository as string,t)))
+      if (!Array.isArray(targets) || targets.length > packageTargets.length || !targets.every(t => isPackageTarget(t) && service.canPackage(turn,args.repository as string,t)))
         throw new Error("This project has no authorized package recipe for one or more requested platforms.");
       const receipt=service.queue.add(turn.messageId,turn.conversationId,turn.channel,actor,args.goal.trim(),args.change,args.repository,sourceOnly?"source":args.release,[...new Set<PackageTarget>(targets)]);
       service.kick();return {...receipt,delivery};
@@ -195,7 +195,7 @@ export class AiGidBuilds {
     const names=new Set([...Object.keys(worker?.portfolio??{}),...Object.keys(worker?.packages??{}),...Object.keys(worker?.releases??{}),...worker?.sourceRepositories??[]]);
     return [...names].filter(name=>name.toLowerCase().includes(query.trim().toLowerCase())).map(repository=>({repository,...worker?.portfolio[repository],targets:worker?.packages[repository]??[],delivery:this.releaseRoute(repository),sourceMerge:worker?.sourceRepositories.includes(repository)??false}));
   }
-  canPackage(turn:TelegramToolContext,repository:string,target:"android"|"web"|"macos") {
+  canPackage(turn:TelegramToolContext,repository:string,target:PackageTarget) {
     const worker=projectWorker(this.files.root);
     if(!worker?.packages[repository]?.includes(target)) return false;
     return this.projectAllowed(turn) || (repository===configuration(this.files.root)?.repository && this.allowed(turn));
@@ -355,12 +355,15 @@ export class AiGidBuilds {
     if (!message || message.direction!=="inbound") throw new Error("The original request is unavailable.");
     if(job.package_target && worker){
       const source=this.queue.packageRevision(job);
-      const r=job.package_target==="macos"
-        ? await macPackage(files.root,repository,job.id,source,!!job.package_dispatched,revision=>this.queue.db.prepare("UPDATE jobs SET package_dispatched=1,commit_sha=? WHERE id=?").run(revision,job.id),this.stopSignal.signal)
-        : await packageProject(worker,repository,job.id,job.package_target,source,this.stopSignal.signal);
-      if(!this.activeRequest(job,"preparing")) throw new Error("Package access was revoked.");
-      const detail=r.name+" · "+(r.size/1024/1024).toFixed(1)+" MiB\n"+r.url+"\nRevision "+r.revision+"\nSHA-256 "+r.sha256;
-      this.queue.db.prepare("UPDATE jobs SET state='completed',commit_sha=?,detail=? WHERE id=? AND state='preparing'").run(r.revision,detail,job.id);
+      const packages = job.package_target === "macos" || job.package_target === "desktop"
+        ? await cloudPackages(files.root, repository, job.package_target, job.id, source, !!job.package_dispatched,
+          revision => this.queue.db.prepare("UPDATE jobs SET package_dispatched=1,commit_sha=? WHERE id=?").run(revision, job.id), this.stopSignal.signal)
+        : [await packageProject(worker, repository, job.id, job.package_target, source, this.stopSignal.signal)];
+      if (!this.activeRequest(job, "preparing")) throw new Error("Package access was revoked.");
+      const revision = packages[0]!.revision;
+      const detail = packages.map(pkg => [pkg.name + " · " + (pkg.size/1024/1024).toFixed(1) + " MiB", pkg.url,
+        "SHA-256 " + pkg.sha256].join("\n")).join("\n\n") + "\nRevision " + revision;
+      this.queue.db.prepare("UPDATE jobs SET state='completed',commit_sha=?,detail=? WHERE id=? AND state='preparing'").run(revision, detail, job.id);
       return;
     }
     const dir=join(files.root,".data/aigid-testflight",job.id),inputs=join(dir,"inputs");
