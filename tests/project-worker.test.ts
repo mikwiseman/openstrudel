@@ -91,3 +91,13 @@ it("reuses historical project receipts while allowing a second repository from t
     expect(queue.next(true)?.repository).toBe("owner/app");
   } finally {queue.db.close();rmSync(root,{recursive:true,force:true});}
 });
+
+it("records a named branch only when the upstream HEAD matches the exact fetched commit",async()=>{
+  const {snapshotBranch}=await import("../src/project-worker-protocol.js");
+  const head="ref: refs/heads/release/trunk\tHEAD\n"+sha+"\tHEAD";
+  expect(snapshotBranch(head,sha)).toBe("release/trunk");
+  expect(snapshotBranch(head,"b".repeat(40))).toBeUndefined();
+  expect(snapshotBranch(sha+"\tHEAD",sha)).toBeUndefined();
+  expect(validateWorkerJob({...job,defaultBranch:"release/trunk"}).defaultBranch).toBe("release/trunk");
+  expect(()=>validateWorkerJob({...job,defaultBranch:"../main"})).toThrow();
+});

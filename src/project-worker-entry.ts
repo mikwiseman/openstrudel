@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { prepareCandidate } from "./aigid-candidate.js";
-import { validateWorkerJob } from "./project-worker-protocol.js";
+import { validateWorkerJob, snapshotBranch } from "./project-worker-protocol.js";
 import type { CodexAuthTokens } from "./account.js";
 
 async function run() {
@@ -27,13 +27,21 @@ async function run() {
   git(["init","--quiet","--template="]);
   const local = process.argv[2] === "--mounted-source";
   const url = local ? "/wolf-source" : "https://github.com/"+job.repository+".git";
+  const auth:NodeJS.ProcessEnv=local ? {} : {
+    GIT_CONFIG_COUNT:"1",GIT_CONFIG_KEY_0:"http.https://github.com/.extraheader",
+    GIT_CONFIG_VALUE_0:"AUTHORIZATION: basic "+Buffer.from("x-access-token:"+job.gitToken).toString("base64"),
+  };
+  let defaultBranch:string|undefined;
   try {
-    git(["fetch",...(local ? ["--upload-pack=git -c safe.directory=/wolf-source upload-pack"] : []),"--quiet","--depth=1","--update-shallow","--no-tags","--no-recurse-submodules",url,job.base],local ? {} : {
-      GIT_CONFIG_COUNT:"1",GIT_CONFIG_KEY_0:"http.https://github.com/.extraheader",
-      GIT_CONFIG_VALUE_0:"AUTHORIZATION: basic "+Buffer.from("x-access-token:"+job.gitToken).toString("base64"),
-    });
+    defaultBranch=local ? job.defaultBranch : snapshotBranch(git(["ls-remote","--symref",url,"HEAD"],auth),job.base);
+    git(["fetch",...(local ? ["--upload-pack=git -c safe.directory=/wolf-source upload-pack"] : []),"--quiet","--depth=1","--update-shallow","--no-tags","--no-recurse-submodules",url,job.base],auth);
   } catch { throw new Error("The worker could not fetch the requested Git revision."); }
   if(git(["rev-parse","FETCH_HEAD"]).trim()!==job.base) throw new Error("The fetched revision has changed.");
+  if(defaultBranch){
+    git(["check-ref-format","refs/heads/"+defaultBranch]);
+    git(["update-ref","refs/heads/"+defaultBranch,job.base]);
+    git(["update-ref","refs/remotes/origin/"+defaultBranch,job.base]);
+  }
   git(["checkout","--quiet","-b",job.branch,job.base]);
   git(["config","user.name","Wolf"]);git(["config","user.email","wolf@localhost"]);
   const images:string[]=[];
@@ -45,7 +53,7 @@ async function run() {
   const outcome=await prepareCandidate({home:join(work,"codex"),cwd,inputs,images,goal:job.goal,branch:job.branch,
     changes:job.change,email,account:{read:async()=>({connected:true,email}),authTokens:async()=>tokens},
     selection:{model:job.selection.model??null,reasoningEffort:job.selection.reasoningEffort},
-    buildWorkspace:true,project:job.release==="project"?job.repository:undefined,signal:AbortSignal.timeout(55*60_000)});
+    source:{revision:job.base,defaultBranch},buildWorkspace:true,project:job.release==="project"?job.repository:undefined,signal:AbortSignal.timeout(55*60_000)});
   if(git(["status","--porcelain"]).trim()) throw new Error("Uncommitted edits remain in the worker checkout.");
   const patch=job.change?git(["diff","--no-ext-diff","--no-textconv","--binary","--full-index",job.base,"HEAD","--"]):"";
   process.stdout.write(JSON.stringify({base:job.base,...outcome,patch}));

@@ -118,7 +118,7 @@ def handle(payload, run_worker):
             base = owner_git(source, "rev-parse", "refs/heads/source")
             if not SHA.fullmatch(base):
                 raise ValueError("Invalid canonical revision.")
-            job = dict(repository=repository, base=base, branch=ref.removeprefix("refs/heads/"),
+            job = dict(repository=repository, base=base, defaultBranch=branch, branch=ref.removeprefix("refs/heads/"),
                        goal=payload["goal"], change=payload["change"], release="project",
                        files=payload["files"], selection=payload["selection"], gitToken="mounted-source")
             result = run_worker(job, source)
