@@ -15,7 +15,7 @@ test "$(git rev-parse HEAD)" = "$revision"
 cd "/work/src/$root"
 case "$target" in
   android)
-    ./gradlew --no-daemon --max-workers=2 :app:assembleDebug
+    ./gradlew --no-daemon --max-workers=1 -Pkotlin.compiler.execution.strategy=in-process :app:assembleDebug
     set -- app/build/outputs/apk/debug/*.apk
     test "$#" -eq 1 && test -s "$1"
     /opt/android/build-tools/36.0.0/apksigner verify "$1"
