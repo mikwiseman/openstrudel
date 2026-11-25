@@ -1,3 +1,4 @@
+import { projectUsesRussian } from "./project-language.js";
 import type { AiGidBuilds } from "./aigid-testflight.js";
 import type { BuildQueue, ProposedBuild } from "./aigid-queue.js";
 import type { Store } from "./store.js";
@@ -5,10 +6,8 @@ import type { TelegramAdapter } from "./telegram.js";
 import type { TelegramToolContext } from "./telegram-tools.js";
 
 type Plan = NonNullable<ReturnType<BuildQueue["proposal"]>>;
-const russian = (goal:string) => /[а-яё]/iu.test(goal);
-
 export function planPresentation(plan:Plan) {
-  const ru=russian(plan.goal), project=plan.build.repository?.split("/").at(-1) ?? "AiGid";
+  const ru=projectUsesRussian(plan.goal), project=plan.build.repository?.split("/").at(-1) ?? "AiGid";
   const headline = (ru ? "План · " : "Plan · ") + project;
   const build=plan.build;
   const delivery=build.repository ? [build.release==="source" ? (ru?"Публикация исходников":"Publish source") : build.release ? (ru?"Публикация":"Deploy") : "",
@@ -35,14 +34,14 @@ export async function sendPlanVersion(store:Store,service:AiGidBuilds,telegram:T
   const old=store.db.prepare("SELECT message_id FROM telegram_outbox WHERE key=? AND status='delivered'").get(chatId+":build-plan:"+plan.replaces+":0");
   if (old?.message_id && previous) {
     const {text,entities}=planPresentation(previous);
-    await telegram.editCard(chatId,Number(old.message_id),{text:text+(russian(plan.goal)?"\n\nЕсть обновлённый план.":"\n\nA revised plan follows."),entities},[]);
+    await telegram.editCard(chatId,Number(old.message_id),{text:text+(projectUsesRussian(previous.goal)?"\n\nЕсть обновлённый план.":"\n\nA revised plan follows."),entities},[]);
   }
 }
 
 export async function reflectPlanDecision(store:Store,telegram:TelegramAdapter,chatId:string,plan:Plan,cancelled=false) {
   const shown=store.db.prepare("SELECT message_id FROM telegram_outbox WHERE key=? AND status='delivered'").get(chatId+":build-plan:"+plan.id+":0");
   if (!shown?.message_id) return;
-  const {text,entities}=planPresentation(plan),ru=russian(plan.goal);
+  const {text,entities}=planPresentation(plan),ru=projectUsesRussian(plan.goal);
   const status=cancelled ? (ru?"План закрыт":"Plan closed") : (ru?"В очереди":"Queued");
   await telegram.editCard(chatId,Number(shown.message_id),{text:text+"\n\n"+status,entities},[]);
 }
@@ -65,7 +64,7 @@ export function pressPlan(store:Store,service:AiGidBuilds|undefined,telegram:Tel
   const conversation=source ? String(source.conversation_id) : "";
   const plan=service && id ? service.queue.proposal(id,conversation) : undefined;
   const turn:TelegramToolContext={channel:"telegram",conversationId:conversation,messageId:id??"",telegramSenderId:sender};
-  const ru=russian(plan?.goal??"План");
+  const ru=projectUsesRussian(plan?.goal??"План");
   const unavailable={toast:ru?"Этот план уже недоступен.":"This plan is no longer available.",alert:true};
   if (!service || !plan || data!=="plan:"+action+":"+id || !address || address.id!==id || address.edit || !["edit","approve"].includes(action??"") || !service.canRunPlan(turn,plan.build)) return unavailable;
   if (plan.state!=="pending") return plan.state==="approved" && action==="approve" ? {toast:ru?"План уже одобрен.":"Already approved.",alert:false} : unavailable;

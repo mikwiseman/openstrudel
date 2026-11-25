@@ -1,5 +1,6 @@
 import { buildsFor } from "./aigid-testflight.js";
 import { planAddress, planPresentation } from "./project-plan-telegram.js";
+import { projectUsesRussian } from "./project-language.js";
 import { ownerTimezone } from "./timezone.js";
 import { fastChat, readConversationModelSelection, resolveModelSelection } from "./model-settings.js";
 import type { CodexEngine, Message, MessageInput, MessageResult } from "./types.js";
@@ -389,7 +390,7 @@ export class MessageService {
         const plan=buildsFor(this.store)?.queue.proposal(inbound.id,current.id);
         if (plan?.state==="pending") {
           const shown=planPresentation(plan);
-          answer.text=shown.text+(input.channel==="api" ? (/[а-яё]/iu.test(plan.goal) ? "\n\nНапишите правку или ответьте «Одобряю»." : "\n\nReply with edits or say “Approve”.") : "");
+          answer.text=shown.text+(input.channel==="api" ? (projectUsesRussian(plan.goal) ? "\n\nНапишите правку или ответьте «Одобряю»." : "\n\nReply with edits or say “Approve”.") : "");
         }
         const outbound = this.store.addMessage({ conversationId: current.id, channel: input.channel, direction: "outbound", replyToId: inbound.id, text: answer.text, outcome: answer.outcome, attachments:tools.attachments, ...question ? { storyId: question.story.id } : {} });
         const hidden = (input.scheduled || groupContext && input.channel === "telegram") && quietReply(answer.text) || input.scheduled && failedRun(answer.text);

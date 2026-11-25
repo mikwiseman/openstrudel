@@ -23,7 +23,7 @@ describe("the result people receive in the project chat", () => {
     expect(buildReply(job({state:"preparing"}),"Ship it")).toBeNull();
   });
   it("opens TestFlight in one tap, with a labeled native link", () => {
-    const reply=buildReply(job({detail:"Apple completed the AiGid TestFlight workflow.\n"+testflight+"\n"+log}),"Ship it")!;
+    const reply=buildReply(job({detail:"Apple completed the AiGid TestFlight workflow.\n"+testflight+"\n"+log}),"Keep the «Слушать» label and build the current branch.\n\n__Отправлено AI-помощником.__")!;
     const [part]=telegramBuildReply(reply);
     expect(part!.text).toBe("AiGid build complete.");
     expect(part!.entities.map(e=>[e.type,part!.text.slice(e.offset,e.offset+e.length)])).toEqual([["bold","AiGid build complete."]]);
@@ -36,6 +36,16 @@ describe("the result people receive in the project chat", () => {
     const reply=buildReply(job({repository,package_target:"desktop",detail:block("linux",2)+"\n\n"+block("windows",1)+"\nRevision "+revision}),"Build both")!;
     expect(reply.actions).toEqual([{text:"Windows",url:run+"/artifacts/1"},{text:"Linux",url:run+"/artifacts/2"}]);
     expect(telegramBuildReply(reply)[0]!.text).toBe("OpenRamble installers are ready.");
+  });
+  it.each([
+    ["Build the website ZIP.", "Mikwiseman web is ready to download.", "Download ZIP"],
+    ["Собери сайт через GitHub Pages.", "Сайт Mikwiseman web готов к скачиванию.", "Скачать ZIP"],
+  ])("names the downloadable website once for %s", (request, title, button) => {
+    const url="https://example.org/artifacts/site.zip";
+    const detail="site.zip · 1 MiB\n"+url+"\nSHA-256 "+"5".repeat(64);
+    const reply=buildReply(job({repository:"mikwiseman/mikwiseman-web",package_target:"web",detail}),request)!;
+    expect(reply.title).toBe(title);
+    expect(reply.actions).toEqual([{text:button,url}]);
   });
   it("keeps an actual project answer and preserves its substantive Markdown", () => {
     const notes="Use **Export** in Settings.\n\nChoose a folder and save.";
