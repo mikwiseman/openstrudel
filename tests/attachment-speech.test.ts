@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/store.js";
@@ -114,18 +114,22 @@ it("keeps a captionless group video without speech as shared context and tells t
 });
 
 it.each([
-  ["voice note", { voice: { file_id: "voice", file_size: 3 } }],
-  ["audio", { audio: { file_id: "audio", file_size: 3 } }],
-  ["round video note", { video_note: { file_id: "note", file_size: 3 } }],
-  ["audio file", { document: { file_id: "file", file_size: 3, file_name: "meeting.m4a", mime_type: "audio/mp4" } }],
-])("still fails a lone Telegram %s without speech and says why in the owner's chat", async (_, media) => {
+  ["voice.ogg", { voice: { file_id: "voice", file_size: 3 } }],
+  ["audio.mp4", { audio: { file_id: "audio", file_size: 3 } }],
+  ["video-note.mp4", { video_note: { file_id: "note", file_size: 3 } }],
+  ["meeting.m4a", { document: { file_id: "file", file_size: 3, file_name: "meeting.m4a", mime_type: "audio/mp4" } }],
+] as const)("preserves the original %s for the employee when transcription returns no words", async (filename, media) => {
   const prompts: string[] = [];
-  const { store, messages, sent, send, request } = telegram(prompts, () => Response.json({ text: "" }));
+  const { store, messages, sent, send, request } = telegram(prompts, () => Response.json({ text: "" }), "Запись получена.");
   try {
     await send(42, media);
-    expect(prompts).toEqual([]);
-    expect(request(42)).toMatchObject({ status: "failed", error: "Речь не распознана. Попробуйте записать сообщение ещё раз.", attachments: [] });
-    expect(sent).toEqual([{ chat: "42", text: "Речь не распознана. Попробуйте записать сообщение ещё раз." }]);
+    const inbound = request(42);
+    expect(inbound).toMatchObject({status:"completed",text:"",attachments:[{name:filename,size:3}]});
+    const original = messages.files.get(inbound!.attachments![0]!.id)!;
+    expect(readFileSync(original.path)).toEqual(Buffer.from([1, 2, 3]));
+    expect(prompts).toEqual([expect.stringContaining(filename)]);
+    expect(sent).toEqual([{chat:"42",text:"Запись получена."}]);
+    expect(runtimeIssues(store)).toEqual([]);
   } finally { await messages.close(); store.close(); }
 });
 
@@ -136,6 +140,6 @@ it("still makes the speech in a Telegram video its request", async () => {
     await send(42, { video: { file_id: "video", file_size: 3 } });
     expect(sent).toEqual([{ chat: "42", text: "📝 Что не так на этом экране?" }, { chat: "42", text: "Видно экран настроек." }]);
     expect(prompts).toEqual([expect.stringContaining("Что не так на этом экране?")]);
-    expect(request(42)).toMatchObject({ status: "completed", text: "Что не так на этом экране?", attachments: [] });
+    expect(request(42)).toMatchObject({ status: "completed", text: "Что не так на этом экране?", attachments: [{ name:"video.mp4",mimeType:"video/mp4",size:3 }] });
   } finally { await messages.close(); store.close(); }
 });
