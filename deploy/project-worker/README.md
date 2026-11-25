@@ -45,3 +45,5 @@ To use a shared AiGid tester group, add its verified Telegram chat ID to `groups
 
 
 For repositories with no registered deployment, list the verified GitHub repositories in `sourceRepositories` to let the owner explicitly publish a checked source change. App installations use a pinned pull request and GitHub's merge API. For a personal SSH checkout also set `sourceMerge: true` on the matching server registry entry. The broker accepts the exact candidate over its unchanged parent on the registered default branch. Wolf returns the GitHub commit link.
+
+For an existing GitHub Pages site published from the default branch, use the `pages` route and subscribe its project webhook to `deployment_status`. Verify the Pages publishing source and canonical URL in GitHub before registering it. A website release is an explicit destination. The callback includes the published site and revision. Push deployments using `.github/workflows/deploy.yml` subscribe to `workflow_run` for the final run link.

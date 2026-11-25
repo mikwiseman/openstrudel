@@ -108,7 +108,7 @@ export function aigidTools(store:Store,turn:TelegramToolContext) {
   if(service?.projectAllowed(turn)) definitions.push(
     {type:"function",name:"project_publish_source",description:"For an explicitly requested change and merge to the default branch of a project without a registered deployment, prepare and verify its source, publish the exact revision to GitHub and send the commit link. Existing repository workflows may run. Store, site or binary delivery requires the corresponding registered destination. Use project_build for projects with a configured deployment and for inspection or preparation alone.",inputSchema:{type:"object",properties:{repository:{type:"string"},goal:{type:"string",minLength:1,maxLength:12000}},required:["repository","goal"],additionalProperties:false}},
     {type:"function",name:"project_repositories",description:"Find named projects registered in the owner's additional server checkouts. Use github_repositories for GitHub App installations. Only this owner can see the additional projects.",inputSchema:{type:"object",properties:{query:{type:"string"}},required:["query"],additionalProperties:false}},
-    {type:"function",name:"project_build",description:"Use for the owner's request to inspect, change, build or deploy a named GitHub project on the remote engineering server. Codex is the default. Use project_repositories and github_repositories to resolve the canonical owner/name. For projects with automatic deployment on a branch, a change without release stays on the personal project server. For AiGid iPhone use aigid_testflight. Use one call per repository. For a change and a download, include the requested targets in packages in this call so they build the exact changed revision. change=true prepares a checked candidate. release=true only when the requester expressly asks to ship or deploy. Builds use the project's own tooling and delivery route. Include relevant text or voice transcription. Check the receipt before reporting a result.",inputSchema:{type:"object",properties:{repository:{type:"string"},goal:{type:"string",minLength:1,maxLength:12000},change:{type:"boolean"},release:{type:"boolean"},packages:{type:["array","null"],items:{type:"string",enum:["android","web","macos"]}}},required:["repository","goal","change","release","packages"],additionalProperties:false}},
+    {type:"function",name:"project_build",description:"Use for the owner's request to inspect, change, build or deploy a named GitHub project on the remote engineering server. Codex is the default. Use project_repositories and github_repositories to resolve the canonical owner/name. For projects with automatic deployment on a branch, a change without release stays on the personal project server. For AiGid iPhone use aigid_testflight. Use one call per repository. For a change and a download, include the requested targets in packages in this call so they build the exact changed revision. change=true prepares a checked candidate. release=true only when the requester expressly asks to ship or deploy. Set destination=website when this request explicitly asks to deploy a website. A GitHub Pages route publishes only its website. Builds use the project's own tooling and delivery route. Include relevant text or voice transcription. Check the receipt before reporting a result.",inputSchema:{type:"object",properties:{repository:{type:"string"},goal:{type:"string",minLength:1,maxLength:12000},change:{type:"boolean"},release:{type:"boolean"},destination:{type:["string","null"],enum:["website",null]},packages:{type:["array","null"],items:{type:"string",enum:["android","web","macos"]}}},required:["repository","goal","change","release","destination","packages"],additionalProperties:false}},
     {type:"function",name:"project_build_status",description:"Read this owner's recent remote project runs with their revision, checks, pull request, or release handoff.",inputSchema:{type:"object",properties:{},additionalProperties:false}}
   );
   if(service && (service.projectAllowed(turn) || allowed())) definitions.push(
@@ -134,7 +134,8 @@ export function aigidTools(store:Store,turn:TelegramToolContext) {
       if(typeof args.repository!=="string" || !/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}\/[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$/.test(args.repository) ||
          typeof args.change!=="boolean" || typeof args.release!=="boolean" || typeof args.goal!=="string" || !args.goal.trim() || args.goal.length>12000)
         throw new Error("Give the canonical repository and the requested project work.");
-      if(args.release && !args.change && ["push","branch","vercel"].includes(service.releaseRoute(args.repository)??"")) throw new Error("This project's delivery starts on a source push. Request a change, or run a build of the existing revision without deploying.");
+      if(args.release && service.releaseRoute(args.repository)==="pages" && args.destination!=="website") throw new Error("This route publishes the GitHub Pages website. Select the website destination only for an explicit website release request.");
+      if(args.release && !args.change && ["push","branch","vercel","pages"].includes(service.releaseRoute(args.repository)??"")) throw new Error("This project's delivery starts on a source push. Request a change, or run a build of the existing revision without deploying.");
       if(args.release && !service.releaseRoute(args.repository)) throw new Error("This repository has no registered automatic release destination. Request a build or a source change to prepare a candidate on the server.");
       if(sourceOnly && !service.canPublishSource(args.repository)) throw new Error("This repository uses a different release route or has no registered source publication rights.");
       const targets = args.packages ?? [];
@@ -210,7 +211,8 @@ export class AiGidBuilds {
   }
   canPublishSource(repository:string) {
     const worker=projectWorker(this.files.root);
-    return worker?.sourceRepositories.includes(repository)===true && !this.releaseRoute(repository) && repository!==configuration(this.files.root)?.repository;
+    const route=this.releaseRoute(repository);
+    return worker?.sourceRepositories.includes(repository)===true && (!route || route==="pages") && repository!==configuration(this.files.root)?.repository;
   }
   projectStatus(actor:string) {return this.queue.db.prepare("SELECT id,repository,created,state,commit_sha,pull,detail FROM jobs WHERE repository IS NOT NULL AND actor=? ORDER BY created DESC LIMIT 12").all(actor);}
   status(conversation:string) {return this.queue.db.prepare("SELECT id,created,state,pull,detail FROM jobs WHERE repository IS NULL AND conversation=? ORDER BY created DESC LIMIT 8").all(conversation);}
@@ -251,7 +253,7 @@ export class AiGidBuilds {
   }
   async projectDelivery(repository:string,event:string|undefined,body:Buffer,signature:string|undefined) {
     const route=this.releaseRoute(repository);
-    if (route!=="branch" && route!=="vercel" && route!=="push") throw new HomeError("Unknown project delivery.",404);
+    if (route!=="branch" && route!=="vercel" && route!=="push" && route!=="pages") throw new HomeError("Unknown project delivery.",404);
     const secret=join(this.files.root,".data/project-worker/webhooks",repository);
     if(!existsSync(secret)) throw new HomeError("Project webhook unavailable.",404);
     const result=projectDeliveryEvent(repository,route,readFileSync(secret,"utf8").trim(),event,body,signature);
