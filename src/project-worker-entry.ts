@@ -25,13 +25,14 @@ async function run() {
     {env:{PATH:process.env.PATH,HOME:work,GIT_CONFIG_NOSYSTEM:"1",GIT_CONFIG_GLOBAL:"/dev/null",GIT_TERMINAL_PROMPT:"0",...extra},
      maxBuffer:32*1024*1024,timeout:600_000,stdio:["ignore","pipe","pipe"]}).toString("utf8");
   git(["init","--quiet","--template="]);
-  const url="https://github.com/"+job.repository+".git";
+  const local = process.argv[2] === "--mounted-source";
+  const url = local ? "/wolf-source" : "https://github.com/"+job.repository+".git";
   try {
-    git(["fetch","--quiet","--depth=1","--no-tags","--no-recurse-submodules",url,job.base],{
+    git(["fetch",...(local ? ["--upload-pack=git -c safe.directory=/wolf-source upload-pack"] : []),"--quiet","--depth=1","--update-shallow","--no-tags","--no-recurse-submodules",url,job.base],local ? {} : {
       GIT_CONFIG_COUNT:"1",GIT_CONFIG_KEY_0:"http.https://github.com/.extraheader",
       GIT_CONFIG_VALUE_0:"AUTHORIZATION: basic "+Buffer.from("x-access-token:"+job.gitToken).toString("base64"),
     });
-  } catch { throw new Error("The worker could not fetch the requested GitHub revision."); }
+  } catch { throw new Error("The worker could not fetch the requested Git revision."); }
   if(git(["rev-parse","FETCH_HEAD"]).trim()!==job.base) throw new Error("The fetched revision has changed.");
   git(["checkout","--quiet","-b",job.branch,job.base]);
   git(["config","user.name","Wolf"]);git(["config","user.email","wolf@localhost"]);

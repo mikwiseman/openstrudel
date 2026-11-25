@@ -10,6 +10,8 @@ const config = z.object({
   telegram:z.array(z.string()), devices:z.array(z.string()),
   // A default-branch push starts the repository's own delivery. Self-updates use the Home's existing updater.
   releases:z.record(z.string(),z.enum(["push","home"])).default({}),
+  packages:z.record(z.string(),z.array(z.enum(["android","web","macos"]))).default({}),
+  portfolio:z.record(z.string(),z.object({ branch:z.string(), delivery:z.literal("branch").optional() })).default({}),
 });
 export function projectWorker(root:string) {
   const dir=join(root,".data/project-worker"), path=join(dir,"config.json");
@@ -19,17 +21,42 @@ export function projectWorker(root:string) {
 type Worker=NonNullable<ReturnType<typeof projectWorker>>;
 const execute=promisify(execFile);
 export async function runProjectWorker(worker:Worker,job:WorkerJob,signal:AbortSignal) {
-  const data=JSON.stringify(job);
+  const raw=await requestWorker(worker,job,signal,job.gitToken);
+  return validateWorkerResult(raw,job.base,job.change);
+}
+
+const hash=z.string().regex(/^[a-f0-9]{40}$/);
+const portfolioResult=z.object({base:hash,revision:hash,branch:z.string(),notes:z.string().min(1),checks:z.string(),changed:z.boolean()});
+type Preparation=Pick<WorkerJob,"repository"|"goal"|"change"|"selection"|"files">&{id:string};
+export async function preparePortfolio(worker:Worker,job:Preparation,signal:AbortSignal) {
+  const r=portfolioResult.parse(await requestWorker(worker,{portfolio:"prepare",...job},signal));
+  if(r.branch!=="wolf/project-"+job.id || r.changed!==job.change || !r.changed && r.base!==r.revision)
+    throw new Error("Invalid project candidate receipt.");
+  return r;
+}
+export async function publishPortfolio(worker:Worker,repository:string,id:string,revision:string,signal:AbortSignal) {
+  const r=z.object({revision:hash,branch:z.string()}).parse(await requestWorker(worker,{portfolio:"publish",repository,id,revision},signal));
+  if(r.revision!==revision || r.branch!=="wolf/project-"+id) throw new Error("Invalid project delivery receipt.");
+  return r;
+}
+export async function packageProject(worker:Worker,repository:string,id:string,target:"android"|"web",revision:string|null,signal:AbortSignal) {
+  const output=z.object({repository:z.string(),target:z.enum(["android","web"]),revision:hash,name:z.string(),size:z.number().int().positive(),sha256:z.string().regex(/^[a-f0-9]{64}$/),url:z.url({protocol:/^https$/})});
+  const result=output.parse(await requestWorker(worker,{portfolio:"package",repository,id,target,revision},signal));
+  if(result.repository!==repository || result.target!==target || revision && result.revision!==revision) throw new Error("Invalid package receipt.");
+  return result;
+}
+async function requestWorker(worker:Worker,request:unknown,signal:AbortSignal,secret?:string) {
+  const data=JSON.stringify(request);
   if(Buffer.byteLength(data)>40*1024*1024) throw new Error("The request attachments exceed the worker limit.");
   const task=execute("ssh",["-T","-F","/dev/null","-o","BatchMode=yes","-o","IdentitiesOnly=yes","-o","StrictHostKeyChecking=yes",
     "-o","GlobalKnownHostsFile=/dev/null","-o","UserKnownHostsFile="+join(worker.dir,"known_hosts"),"-o","ClearAllForwardings=yes",
     "-o","ForwardAgent=no","-o","ConnectTimeout=15","-o","ServerAliveInterval=20","-o","ServerAliveCountMax=3",
     "-i",join(worker.dir,"identity"),worker.user+"@"+worker.host],{timeout:60*60_000,maxBuffer:40*1024*1024,signal});
   task.child.stdin?.on("error",()=>{}).end(data);
-  try { return validateWorkerResult(JSON.parse((await task).stdout),job.base,job.change); }
+  try { return JSON.parse((await task).stdout) as unknown; }
   catch(error) {
     const message=(error as {stderr?:string}).stderr?.trim() || (error as Error).message;
-    throw new Error("Project worker: "+message.replaceAll(job.gitToken,"[credential]").slice(-750));
+    throw new Error("Project worker: "+(secret ? message.replaceAll(secret,"[credential]") : message).slice(-750));
   }
 }
 /** Used only on a fresh job-owned checkout, before any local model can modify it. No repository scripts or hooks run on Home. */
