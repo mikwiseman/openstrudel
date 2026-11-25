@@ -1,3 +1,4 @@
+import { projectUsesRussian } from "./project-language.js";
 import type { BuildRequest } from "./aigid-queue.js";
 import { telegramText } from "./telegram-format.js";
 import type { TelegramLinkButton } from "./types.js";
@@ -20,7 +21,7 @@ function link(value: string): URL | undefined {
 /** Job details keep the original provider receipt. Only named delivery fields become actions. */
 export function buildReply(job: BuildRequest, request: string): BuildReply | null {
   if (!["completed", "failed", "dispatched"].includes(job.state)) return null;
-  const russian = /[а-яё]/iu.test(request.replace(/(?:__)?(?:Отправлено AI-помощником\.|Sent by an AI assistant\.)(?:__)?\s*$/u,""));
+  const russian = projectUsesRussian(request);
   const t = (en:string,ru:string)=>russian ? ru : en;
   const name = projectName(job.repository);
   const lines = (job.detail ?? "").split("\n");
@@ -63,8 +64,9 @@ export function buildReply(job: BuildRequest, request: string): BuildReply | nul
     }
     if (actions.length!==platforms.length) return result(t("The "+name+" build finished.", "Сборка "+name+" завершена."),actions,
       t("I couldn’t verify every download link.","Не удалось подтвердить все ссылки для скачивания."));
+    if (target==="web") return result(t(name+" is ready to download.", "Сайт "+name+" готов к скачиванию."),actions);
     return result(target==="desktop" ? t(name+" installers are ready.","Установщики "+name+" готовы.") :
-      t(name+" "+(target==="web" ? "web package" : platforms[0]+" build")+" is ready.","Сборка "+name+" для "+(target==="web" ? "веба" : platforms[0])+" готова."),actions);
+      t(name+" "+platforms[0]+" build is ready.","Сборка "+name+" для "+platforms[0]+" готова."),actions);
   }
   if (job.release_project===2)
     return result(t(name+" changes are merged.","Изменения в "+name+" объединены."),action(t("View change","Открыть изменение"),urls.find(github)));

@@ -9,11 +9,13 @@ import { AiGidBuilds } from "../src/aigid-testflight.js";
 
 afterEach(()=>vi.unstubAllGlobals());
 
-it.each([[42,"tap"],[-10042,"tap"],[42,"words"],[-10042,"words"]] as const)("shows, revises and approves precisely one build-only plan in Telegram chat %i via %s", async (chat,mode) => {
+it.each([[42,"tap","ru"],[-10042,"tap","en"],[42,"tap","switch"],[42,"words","ru"],[-10042,"words","ru"]] as const)("shows, revises and approves precisely one build-only plan in Telegram chat %i via %s in %s", async (chat,mode,language) => {
   const root=mkdtempSync(join(tmpdir(),"wolf-plan-")), store=new Store(":memory:");
   mkdirSync(join(root,".data/aigid-testflight"),{recursive:true});
   writeFileSync(join(root,".data/aigid-testflight/config.json"),JSON.stringify({telegram:["42","43"],devices:[],groups:["-10042"],accountEmail:"qa@example.org",repository:"example/qa"}));
-  const first="Собрать текущую основную ветку для TestFlight.", revised="Собрать текущую основную ветку для обоих тестировщиков.";
+  const english=language==="en", revisedEnglish=language!=="ru";
+  const first=english ? "Keep the «Слушать» button and build the current main branch for TestFlight." : "Собрать AiGid для iOS через Xcode Cloud и TestFlight.";
+  const revised=revisedEnglish ? "Build the current branch for both testers. Keep the «Слушать» label." : "Собрать текущую основную ветку для обоих тестировщиков.";
   const messages=new MessageService(store,{run:async(input,options)=>{
     const current=input.split("Current user message:").at(-1)!.trim();
     if(current.endsWith("Одобряю") || current.endsWith("Не одобряю")){
@@ -49,17 +51,22 @@ it.each([[42,"tap"],[-10042,"tap"],[42,"words"],[-10042,"words"]] as const)("sho
     await words("Предложи план сборки AiGid");
     const plan=sent[0];expect(plan.text).toContain(first);expect(plan.text).not.toContain("report here");
     const buttons=plan.reply_markup.inline_keyboard.flat();
-    expect(buttons.map((b:any)=>b.text)).toEqual(["Править план","Одобрить и собрать"]);
+    expect(plan.text.split("\n")[0]).toBe(english?"Plan · AiGid":"План · AiGid");
+    expect(buttons.map((b:any)=>b.text)).toEqual(english?["Edit plan","Approve & build"]:["Править план","Одобрить и собрать"]);
     await tap(plan.message_id,buttons[1].callback_data,99);
     expect(toasts.at(-1).show_alert).toBe(true);
     await tap(plan.message_id,buttons[1].callback_data,42,chat===42?-10042:42);
     expect(toasts.at(-1).show_alert).toBe(true);
     await tap(plan.message_id,buttons[0].callback_data);
     const prompt=sent.at(-1);expect(prompt.reply_markup.force_reply).toBe(true);
+    expect(toasts.at(-1).text).toBe(english?"Reply with your edit.":"Напишите правку.");
+    expect(prompt.text).toBe(english?"What should change in the plan?":"Что изменить в плане?");
     await words("Поправь: для обоих", prompt.message_id);
     const version=sent.at(-1);expect(version.text).toContain(revised);
     expect(worker.queue.db.prepare("SELECT count(*) AS n FROM jobs").get()?.n).toBe(0);
-    expect(edited.some(x=>x.message_id===plan.message_id && !x.reply_markup.inline_keyboard.length)).toBe(true);
+    const superseded=edited.find(x=>x.message_id===plan.message_id);
+    expect(superseded.reply_markup.inline_keyboard).toEqual([]);
+    expect(superseded.text).toContain(english?"A revised plan follows.":"Есть обновлённый план.");
     await tap(plan.message_id,buttons[1].callback_data);
     expect(toasts.at(-1).show_alert).toBe(true);
     const approve=version.reply_markup.inline_keyboard.flat()[1].callback_data;
@@ -69,7 +76,8 @@ it.each([[42,"tap"],[-10042,"tap"],[42,"words"],[-10042,"words"]] as const)("sho
       await words("Одобряю",version.message_id);
     } else {
       await tap(version.message_id,approve,chat>0?42:43);
-      expect(edited.at(-1).text).toContain("В очереди");
+      expect(toasts.at(-1).text).toBe(revisedEnglish?"Plan approved.":"План одобрен.");
+      expect(edited.at(-1).text).toContain(revisedEnglish?"Queued":"В очереди");
       expect(edited.at(-1).reply_markup.inline_keyboard).toEqual([]);
     }
     await tap(version.message_id,approve,42);
