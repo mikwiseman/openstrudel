@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
+import { packageTargets } from "./aigid-queue.js";
 import { validateWorkerResult, type WorkerJob } from "./project-worker-protocol.js";
 
 const config = z.object({
@@ -11,7 +12,7 @@ const config = z.object({
   // A default-branch push starts the repository's own delivery. Self-updates use the Home's existing updater.
   releases:z.record(z.string(),z.enum(["push","home","vercel","pages"])).default({}),
   sourceRepositories:z.array(z.string()).default([]),
-  packages:z.record(z.string(),z.array(z.enum(["android","web","macos"]))).default({}),
+  packages:z.record(z.string(),z.array(z.enum(packageTargets))).default({}),
   portfolio:z.record(z.string(),z.object({ branch:z.string(), delivery:z.literal("branch").optional() })).default({}),
 });
 export function projectWorker(root:string) {

@@ -387,47 +387,58 @@ export function githubTools(store: Store, context: TelegramToolContext, options:
   } };
 }
 
-/** A repository dispatch uses Contents permission. The registered public workflow exposes its own run and artifact. */
-export async function macPackage(root:string,fullName:string,id:string,requested:string|null,alreadySent:boolean,markSent:(revision:string)=>void,signal:AbortSignal) {
-  const app=readApp(root);
-  if(!app) throw new Error("The GitHub App is unavailable.");
-  const repo=await resolveRepository(app,fullName);
-  const prefix="/repos/"+repo.fullName,access=await token(app,repo.installation,{contents:"write"},repo.name);
-  const head=await api(prefix+"/git/ref/heads/"+encodeURIComponent(repo.defaultBranch),access);
-  const revision=requested??head.data?.object?.sha;
-  if(head.status!==200 || !/^[a-f0-9]{40}$/.test(revision)) throw new Error("Cannot determine the cloud Mac build revision.");
-  const title="Wolf macOS package "+id;
-  const list=async()=>{
-    const r=await api(prefix+"/actions/workflows/wolf-macos.yml/runs?event=repository_dispatch&per_page=100","");
-    if(r.status!==200) throw failure("reading public Mac builds",r);
-    return r.data.workflow_runs.find((run:any)=>run.display_title===title);
+/** These public workflows accept repository dispatch with repository-scoped Contents access. */
+export async function cloudPackages(root: string, fullName: string, target: "macos" | "desktop", id: string, requested: string | null,
+  alreadySent: boolean, markSent: (revision: string) => void, signal: AbortSignal) {
+  const app = readApp(root);
+  if (!app) throw new Error("The GitHub App is unavailable.");
+  const repo = await resolveRepository(app, fullName);
+  const prefix = "/repos/" + repo.fullName;
+  const access = await token(app, repo.installation, {contents: "write"}, repo.name);
+  const head = await api(prefix + "/git/ref/heads/" + encodeURIComponent(repo.defaultBranch), access);
+  const revision: string = requested ?? head.data?.object?.sha;
+  if (head.status !== 200 || !/^[a-f0-9]{40}$/.test(revision)) throw new Error("Cannot determine the cloud build revision.");
+
+  const mac = target === "macos";
+  const workflow = mac ? "wolf-macos.yml" : "desktop-release.yml";
+  const title = (mac ? "Wolf macOS package " : "Wolf desktop package ") + id;
+  const expected = mac ? ["OpenStrudel-macOS-QA-" + revision] : ["openramble-windows-" + revision, "openramble-linux-" + revision];
+  const findRun = async () => {
+    const result = await api(prefix + "/actions/workflows/" + workflow + "/runs?event=repository_dispatch&per_page=100", "");
+    if (result.status !== 200) throw failure("reading public cloud builds", result);
+    return result.data.workflow_runs.find((run: any) => run.display_title === title);
   };
-  let run=await list();
-  if(!run && !alreadySent){
+  let run = await findRun();
+  if (!run && !alreadySent) {
     signal.throwIfAborted();
-    const dispatch=await api(prefix+"/dispatches",access,{method:"POST",body:{event_type:"wolf-macos-package",client_payload:{request:id,sha:revision}}});
-    if(dispatch.status!==204) throw failure("starting the cloud Mac build",dispatch);
+    const dispatch = await api(prefix + "/dispatches", access, {method: "POST", body: {
+      event_type: "wolf-" + target + "-package", client_payload: {request: id, sha: revision},
+    }});
+    if (dispatch.status !== 204) throw failure("starting the cloud build", dispatch);
     markSent(revision);
   }
-  const start=Date.now();
-  while(Date.now()-start<50*60_000){
+  const start = Date.now();
+  while (Date.now() - start < (mac ? 50 : 75) * 60_000) {
     signal.throwIfAborted();
-    if(run?.status==="completed"){
-      if(run.conclusion!=="success") throw new Error("Cloud Mac package "+run.conclusion+". "+run.html_url);
-      const r=await api(prefix+"/actions/runs/"+run.id+"/artifacts","");
-      const artifact=r.data?.artifacts?.find((item:any)=>!item.expired && item.name==="OpenStrudel-macOS-QA-"+revision);
-      if(r.status!==200 || !artifact || !/^sha256:[a-f0-9]{64}$/.test(artifact.digest)) throw new Error("GitHub did not confirm the expected Mac artifact. "+run.html_url);
-      return {revision,name:artifact.name,size:Number(artifact.size_in_bytes),sha256:artifact.digest.slice(7),
-        url:"https://github.com/"+repo.fullName+"/actions/runs/"+run.id+"/artifacts/"+artifact.id};
+    if (run?.status === "completed") {
+      if (run.conclusion !== "success") throw new Error("Cloud package " + run.conclusion + ". " + run.html_url);
+      const result = await api(prefix + "/actions/runs/" + run.id + "/artifacts", "");
+      if (result.status !== 200) throw failure("reading the finished packages", result);
+      return expected.map(name => {
+        const artifact = result.data?.artifacts?.find((item: any) => item.name === name && !item.expired);
+        if (!artifact || !/^sha256:[a-f0-9]{64}$/.test(artifact.digest) || !(artifact.size_in_bytes > 0)
+          || !Number.isSafeInteger(artifact.id) || artifact.id < 1) throw new Error("GitHub did not confirm " + name + ". " + run.html_url);
+        return {revision, name, size: Number(artifact.size_in_bytes), sha256: artifact.digest.slice(7) as string,
+          url: "https://github.com/" + repo.fullName + "/actions/runs/" + run.id + "/artifacts/" + artifact.id};
+      });
     }
-    if(!run && Date.now()-start>5*60_000) throw new Error("GitHub did not list the requested Mac run.");
-    await delay(run ? 60_000 : 10_000,undefined,{signal});
-    if(!run) run=await list();
-    else {
-      const response=await api(prefix+"/actions/runs/"+run.id,"");
-      if(response.status!==200) throw failure("checking the cloud Mac build",response);
-      run=response.data;
-    }
+    if (!run && Date.now() - start > 5 * 60_000) throw new Error("GitHub did not list the requested cloud build.");
+    await delay(run ? 60_000 : 10_000, undefined, {signal});
+    if (run) {
+      const result = await api(prefix + "/actions/runs/" + run.id, "");
+      if (result.status !== 200) throw failure("checking the cloud build", result);
+      run = result.data;
+    } else run = await findRun();
   }
-  throw new Error("The Mac package is still pending at "+(run?.html_url??repo.url+"/actions"));
+  throw new Error("The cloud package is still pending at " + (run?.html_url ?? repo.url + "/actions"));
 }
