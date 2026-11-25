@@ -91,7 +91,7 @@ struct OpenStrudelRootView: View {
         #endif
     }
 
-    var body: some View {
+    private var conversationScreens: some View {
         screens
         .onChange(of: client.id) { _, _ in path.removeAll(); detailPath.removeAll(); place = .chat }
         .onChange(of: activityScope) { _, _ in activity.clear(); limits.clear() }
@@ -133,6 +133,10 @@ struct OpenStrudelRootView: View {
                 }
             }
         }
+    }
+
+    private var refreshedScreens: some View {
+        conversationScreens
         // The shelf reads the Home's activity and limits when the home comes into sight and every few minutes after:
         // they change with a run, not with a keystroke.
         .task(id: "\(pollingPhase)-" + activityScope) {
@@ -167,6 +171,10 @@ struct OpenStrudelRootView: View {
                 do { try await Task.sleep(for: .seconds(10)) } catch { break }
             }
         }
+    }
+
+    var body: some View {
+        refreshedScreens
         // Coming back to the home, or opening one of the pages behind its tiles, reads them again at once.
         .onChange(of: path) { _, pages in
             guard pages.isEmpty || pages.last == .insights || pages.last == .progress || pages.last == .checkIns else { return }

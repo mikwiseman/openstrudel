@@ -6,8 +6,11 @@ root=$2
 revision=$3
 git init -q /work/src
 cd /work/src
-git -c protocol.file.allow=always fetch --upload-pack='git -c safe.directory=/wolf-source upload-pack' -q --no-tags --depth=1 --update-shallow /wolf-source "$revision"
-git -c core.hooksPath=/dev/null checkout -q --detach FETCH_HEAD
+# Read the mounted snapshot's objects in place. Repacking a media-heavy repository
+# would consume the same space twice before Gradle even starts.
+printf '%s\n' /wolf-source/objects > .git/objects/info/alternates
+if [ -f /wolf-source/shallow ]; then cp /wolf-source/shallow .git/shallow; fi
+git -c core.hooksPath=/dev/null checkout -q --detach "$revision"
 test "$(git rev-parse HEAD)" = "$revision"
 cd "/work/src/$root"
 case "$target" in
