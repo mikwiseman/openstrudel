@@ -13,17 +13,8 @@ export function projectDeliveryEvent(repository:string,route:string,secret:strin
   if (!["pull_request","issue_comment","deployment_status","workflow_run"].includes(event??"")) return null;
   const value=JSON.parse(body.toString("utf8"));
   if (value.repository?.full_name!==repository) return null;
-  if(route==="pages" && event==="deployment_status"){
-    const d=value.deployment,s=value.deployment_status;
-    if(d?.performed_via_github_app?.id!==34598 || d.performed_via_github_app.slug!=="github-pages" ||
-      d.environment!=="github-pages" || s?.environment!=="github-pages" || d.ref!==value.repository.default_branch ||
-      !sha.test(d.sha) || !["success","failure","error"].includes(s.state)) return null;
-    const [owner,project]=repository.toLowerCase().split("/");
-    const site="https://"+owner+".github.io/"+(project===owner+".github.io"?"":project+"/");
-    if(s.state==="success" && s.environment_url?.toLowerCase()!==site) return null;
-    return {kind:"result",source:"commit",key:d.sha,state:s.state==="success"?"completed":"failed",
-      detail:(s.state==="success" ? "GitHub Pages published the website.\n"+site : "GitHub Pages reported a deployment failure.")+"\nRevision "+d.sha};
-  }
+  if (route === "pages" && event === "deployment_status")
+    return pagesResult(repository, value.repository.default_branch, value.deployment, value.deployment_status);
   if(route==="push" && event==="workflow_run"){
     const run=value.workflow_run;
     if(value.action!=="completed" || run?.status!=="completed" || run.event!=="push" ||
@@ -68,4 +59,35 @@ export function projectDeliveryEvent(repository:string,route:string,secret:strin
     return {kind:"result",source:"commit",key:d.sha,state:s.state==="success"?"completed":"failed",detail};
   }
   return null;
+}
+
+
+function pagesResult(repository: string, branch: string, deployment: any, status: any): ProjectDelivery | null {
+  const app = deployment?.performed_via_github_app;
+  const fromPages = (user: any) => fromBot(user, 52472962, "github-pages[bot]");
+  if (!(app?.id === 34598 && app.slug === "github-pages") && !(fromPages(deployment?.creator) && fromPages(status?.creator))) return null;
+  if (!branch || deployment?.ref !== branch || deployment.environment !== "github-pages" || status?.environment !== "github-pages"
+    || !sha.test(deployment.sha) || !["success", "failure", "error"].includes(status.state)) return null;
+  const [owner, project] = repository.toLowerCase().split("/");
+  const site = "https://" + owner + ".github.io/" + (project === owner + ".github.io" ? "" : project + "/");
+  const success = status.state === "success";
+  if (success && status.environment_url?.toLowerCase() !== site) return null;
+  return {kind: "result", source: "commit", key: deployment.sha, state: success ? "completed" : "failed",
+    detail: (success ? "GitHub Pages published the website.\n" + site : "GitHub Pages reported a deployment failure.") + "\nRevision " + deployment.sha};
+}
+
+/** Public Pages deployments can finish before a newly installed webhook starts receiving events. */
+export async function readPagesDelivery(repository: string, revision: string, request = fetch): Promise<ProjectDelivery | null> {
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repository) || !sha.test(revision)) return null;
+  const root = "https://api.github.com/repos/" + repository;
+  const read = async (url: string) => {
+    const response = await request(url, {headers: {accept: "application/vnd.github+json"}, signal: AbortSignal.timeout(12_000)});
+    if (!response.ok) throw new Error("GitHub Pages returned HTTP " + response.status);
+    return response.json();
+  };
+  const [repo, deployments] = await Promise.all([read(root), read(root + "/deployments?environment=github-pages&per_page=5&sha=" + revision)]);
+  const deployment = deployments.find((d: any) => d.sha === revision && d.ref === repo.default_branch && d.environment === "github-pages");
+  if (repo.full_name !== repository || !Number.isSafeInteger(deployment?.id) || deployment.id < 1) return null;
+  const [status] = await read(root + "/deployments/" + deployment.id + "/statuses?per_page=1");
+  return pagesResult(repository, repo.default_branch, deployment, status);
 }

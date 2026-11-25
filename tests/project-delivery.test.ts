@@ -63,3 +63,21 @@ it("confirms the actual GitHub Pages release of the checked default-branch commi
  for(const d of [{...deployment,ref:"other"},{...deployment,performed_via_github_app:{id:2}},{...deployment,environment:"Preview"}])expect(send(d,status)).toBeNull();
  expect(send(deployment,{...status,environment_url:"https://owner.github.io/another/"})).toBeNull();
 });
+
+it("recovers a public Pages receipt at the merged revision from GitHub's deployment API", async () => {
+  const { readPagesDelivery } = await import("../src/project-delivery.js");
+  const repo = "owner/site", pages = {login: "github-pages[bot]", id: 52472962};
+  const origin = "https://api.github.com/repos/" + repo;
+  const deployment = {id: 31, ref: "main", sha: merged, environment: "github-pages", creator: pages};
+  const status = {state: "success", environment: "github-pages", environment_url: "https://owner.github.io/site/", creator: pages};
+  const fake: typeof fetch = async input => {
+    const absolute = new URL(input instanceof Request ? input.url : input.toString());
+    if (absolute.href === origin) return Response.json({full_name: repo, default_branch: "main"});
+    if (absolute.pathname.endsWith("/deployments") && absolute.searchParams.get("sha") === merged) return Response.json([deployment]);
+    if (absolute.href === origin + "/deployments/31/statuses?per_page=1") return Response.json([status]);
+    return new Response(null, {status: 404});
+  };
+  expect(await readPagesDelivery(repo, merged, fake)).toMatchObject({state: "completed", key: merged});
+  deployment.creator = {login: "some-user", id: 10};
+  expect(await readPagesDelivery(repo, merged, fake)).toBeNull();
+});
