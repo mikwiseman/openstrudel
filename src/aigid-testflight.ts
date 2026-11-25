@@ -44,6 +44,8 @@ function permitted(store:Store,c:Pick<Config,"telegram"|"devices">,turn:Telegram
   return owners.some(hash=>hash.slice(0,20)===turn.deviceId);
 }
 
+const delivery = "Wolf automatically posts the outcome in this conversation. Acknowledge the receipt and release the chat.";
+
 export function reportParts(text: string) {
   const footer="Sent by an AI assistant.";
   return plainText(text,4096-footer.length-2).map(part=>({
@@ -87,7 +89,7 @@ export function aigidTools(store:Store,turn:TelegramToolContext) {
       if(revision!=null && (typeof revision!=="string" || !/^[a-f0-9]{40}$/.test(revision))) throw new Error("Specify an exact commit, or null for the current default branch.");
       const actor=(turn.channel==="api"?turn.deviceId:turn.telegramSenderId)!;
       const receipt=service.queue.addPackage(turn.messageId,turn.conversationId,turn.channel,actor,repository,target,typeof revision==="string"?revision:undefined);
-      service.kick();return receipt;
+      service.kick();return {...receipt,delivery};
     }
     if(name==="project_build" || name==="project_build_status" || name==="project_repositories"){
       if(!service?.projectAllowed(turn)) throw new Error("This requester cannot use the project worker.");
@@ -103,13 +105,13 @@ export function aigidTools(store:Store,turn:TelegramToolContext) {
       if (!Array.isArray(targets) || targets.length > 3 || !targets.every(t => ["android","web","macos"].includes(t) && service.canPackage(turn,args.repository as string,t)))
         throw new Error("This project has no authorized package recipe for one or more requested platforms.");
       const receipt=service.queue.add(turn.messageId,turn.conversationId,turn.channel,actor,args.goal.trim(),args.change,args.repository,args.release,[...new Set<PackageTarget>(targets)]);
-      service.kick();return receipt;
+      service.kick();return {...receipt,delivery};
     }
     if (!service||!allowed()) throw new Error("This device or Telegram sender cannot request an AiGid release.");
     if (name==="aigid_build_status") return service.status();
     if (name!=="aigid_testflight" || typeof args.change!=="boolean" || typeof args.goal!=="string" || !args.goal.trim() || args.goal.length>12000) throw new Error("Give the requested AiGid build or change.");
     const receipt=service.queue.add(turn.messageId,turn.conversationId,turn.channel,(turn.deviceId??turn.telegramSenderId)!,args.goal.trim(),args.change);
-    service.kick();return receipt;
+    service.kick();return {...receipt,delivery};
   }};
 }
 
