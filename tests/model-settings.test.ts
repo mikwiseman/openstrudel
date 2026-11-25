@@ -334,3 +334,24 @@ it('runs restricted chats at the device level and Fast by default; the device ow
   expect(runtime.store.getSetting('models.restricted')).toBeNull();
  }finally{await runtime.stop();}
 });
+
+it('uses the private Wolf default for direct replies and the project default for shared chats and the worker',()=>{
+ const store=new Store(':memory:');
+ try {
+  const standard={provider:'chatgpt',model:'gpt-6.2-astra',reasoningEffort:'max',serviceTier:'default'};
+  const direct={...standard,serviceTier:'ultrafast'};
+  saveModelSelection(store,standard,'main');
+  const dm=store.getOrCreateConversation({channel:'telegram',externalId:'42'}).id;
+  const group=store.getOrCreateConversation({channel:'telegram',externalId:'-1001'}).id;
+  const app=store.getOrCreateConversation({channel:'api',externalId:'home'}).id;
+  expect(resolveModelSelection(store,'main',undefined,dm)).toEqual(standard);
+  store.setSetting('models.main.privateReplies',JSON.stringify(direct));
+  expect(resolveModelSelection(store,'main',undefined,dm)).toEqual(direct);
+  expect(resolveModelSelection(store,'main',undefined,app)).toEqual(direct);
+  expect(restrictedModelSelection(store,dm)).toEqual({...direct,fast:false});
+  expect(resolveModelSelection(store,'main',undefined,group)).toEqual(standard);
+  expect(resolveModelSelection(store,'main')).toEqual(standard);
+  saveConversationModelSelection(store,dm,standard);
+  expect(resolveModelSelection(store,'main',undefined,dm)).toEqual(standard);
+ } finally {store.close();}
+});

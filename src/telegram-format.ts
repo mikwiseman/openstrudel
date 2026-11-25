@@ -4,7 +4,7 @@ export interface Entity { type:string; offset:number; length:number; url?:string
 export interface TelegramText { text:string; entities:Entity[] }
 
 /** Telegram entities use UTF-16 offsets, just like JavaScript strings. No HTML passthrough. */
-export function telegramText(markdown: string): TelegramText[] {
+export function telegramText(markdown: string, limit = 4096): TelegramText[] {
   let text = ""; const entities: Entity[] = []; let quoteDepth = 0;
   const decode = (s:string) => s.replace(/&(?:amp|lt|gt|quot|#39);/g, v => ({ "&amp;":"&", "&lt;":"<", "&gt;":">", "&quot;":'"', "&#39;":"'" })[v]!);
   const span = (type:string, render:() => void, extra:Partial<Entity> = {}) => { const offset=text.length; render(); if(text.length>offset) entities.push({type,offset,length:text.length-offset,...extra}); };
@@ -66,12 +66,12 @@ export function telegramText(markdown: string): TelegramText[] {
   const compatibleEntities=entities.filter(e=>code.includes(e) || !code.some(c=>c.offset<e.offset+e.length && c.offset+c.length>e.offset));
   const chunks:TelegramText[]=[];
   for(let start=0;start<text.length;) {
-    let end=Math.min(start+4096,text.length), next=end;
+    let end=Math.min(start+limit,text.length), next=end;
     if(end<text.length) {
       // A long text parts between paragraphs when one ends in the last third of the part, never inside a word it could avoid.
       // The blank line between the two parts belongs to neither.
       const paragraph=text.lastIndexOf("\n\n",end-2);
-      if(paragraph>start+2730) { end=paragraph; next=paragraph+2; }
+      if(paragraph>start+limit*2/3) { end=paragraph; next=paragraph+2; }
       else if(/[\uD800-\uDBFF]/.test(text[end-1]!)) next=--end;
     }
     chunks.push({text:text.slice(start,end),entities:compatibleEntities.flatMap(e => {

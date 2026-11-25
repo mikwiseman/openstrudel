@@ -1,5 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { readPagesDelivery, projectDeliveryEvent } from "./project-delivery.js";
+import { buildReply, nativeBuildReply, telegramBuildReply } from "./project-build-reply.js";
 import { plainText } from "./telegram-format.js";
 import { cloudStatus } from "./aigid-cloud-status.js";
 import { HomeError } from "./home.js";
@@ -73,7 +74,7 @@ function permitted(store:Store,c:Pick<Config,"telegram"|"devices"|"groups">,turn
   return owners.some(hash=>hash.slice(0,20)===turn.deviceId);
 }
 
-const delivery = "Wolf automatically posts the outcome in this conversation. Acknowledge the receipt and release the chat.";
+const delivery = "Wolf automatically posts the outcome in this conversation. Acknowledge the requested outcome in one short sentence in the user’s language, then release the chat.";
 
 export function reportParts(text: string) {
   const footer="Sent by an AI assistant.";
@@ -242,19 +243,25 @@ export class AiGidBuilds {
     }).finally(()=>{this.active=undefined;});
   }
   private async report(job:BuildRequest) {
-    const row=this.queue.db.prepare("SELECT state,detail FROM jobs WHERE id=?").get(job.id);
-    if(!row || !["completed","failed","dispatched"].includes(String(row.state))) return;
-    const turn=this.turn(job);
-    if(!this.jobAllowed(job,turn)) return;
-    const key="project-run:"+job.id+":"+row.state;
-    const text=(job.repository??"AiGid TestFlight")+" · "+row.state+"\n"+String(row.detail??"");
-    this.store.addMessage({conversationId:job.conversation,replyToId:job.source_message??job.id,channel:job.channel,direction:"outbound",kind:"notice",externalId:key,text});
-    if(job.channel==="telegram") {
-      const target=releaseChat(this.store,turn);
-      if(!target) return;
-      for (const [index,part] of reportParts(text).entries())
-        await this.telegram?.sendMessage(target.chatId,part,index ? key+":"+index : key,target.replyTo);
-    }
+    const current=this.queue.db.prepare("SELECT * FROM jobs WHERE id=?").get(job.id) as unknown as BuildRequest | undefined;
+    if (!current || !["completed","failed"].includes(current.state)) return;
+    const turn=this.turn(current);
+    if (!this.jobAllowed(current,turn)) return;
+    const source=current.source_message ?? current.id;
+    const request=this.store.getMessage(current.conversation,source)?.text || current.goal;
+    const reply=buildReply(current,request);
+    if (!reply) return;
+    const key="project-run:"+current.id+":"+current.state;
+    const saved=this.store.addMessage({conversationId:current.conversation,replyToId:source,channel:current.channel,direction:"outbound",kind:"text",externalId:key,text:nativeBuildReply(reply)});
+    if (current.channel!=="telegram") return;
+    const target=releaseChat(this.store,turn);
+    if (!target) return;
+    // A retry after an upgrade must match the payload already in the durable Telegram outbox.
+    const legacy=saved.kind==="notice";
+    const parts=legacy ? reportParts(saved.text) : telegramBuildReply(reply);
+    for (const [index,part] of parts.entries())
+      await this.telegram?.sendMessage(target.chatId,part,index ? key+":"+index : key,target.replyTo,
+        !legacy && index===0 && reply.actions.length ? {buttons:[reply.actions]} : undefined);
   }
   async projectDelivery(repository:string,event:string|undefined,body:Buffer,signature:string|undefined) {
     const route=this.releaseRoute(repository);
