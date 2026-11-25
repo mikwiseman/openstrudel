@@ -9,7 +9,7 @@ import { readToml, inheritedIntegrations } from "./extensions.js";
 import { ProviderIncident, ProviderKeyError, exhaustedPlan, providerFailure, providerNotConnected, providerModels, type ProviderInfo } from "./providers.js";
 import { modelReasoning, reasoningChoices, type ModelChoice } from "./model-settings.js";
 import { contextPattern } from "./scopes.js";
-import { telegramMcpConfig } from "./telegram-mcp.js";
+import { readTelegramMcpServers, telegramMcpConfig } from "./telegram-mcp.js";
 import type { CodexEngine, CodexRunResult } from "./types.js";
 import { claudeUsage, type UsageReport } from "./usage.js";
 
@@ -216,8 +216,7 @@ type Service = McpServerConfig & { toolLists?: { enabled?: string[]; disabled?: 
  * A sender without access gets only the services that check the sender themselves. Without `inherit`, the owner's are left out. */
 export function contextServers(root: string, context: string, options: Pick<RunOptions, "telegramActor" | "conversationId" | "access">, inherit = true): Record<string, Service> {
   const own = { ...readToml(resolve(root, ".data/extensions", context, "config.toml")).mcp_servers, ...readToml(resolve(root, ".data/connections", context + ".toml")).mcp_servers };
-  const telegram = resolve(root, ".data/connections", context + ".telegram.json");
-  const verified = existsSync(telegram) ? JSON.parse(readFileSync(telegram, "utf8")) : undefined;
+  const verified = readTelegramMcpServers(root, context);
   const servers: Record<string, Service> = options.access === false ? {} : extensionServers({ ...inherit ? inheritedIntegrations(root, context, { servers: own, telegram: verified }).servers : {}, ...own });
   for (const [key, s] of Object.entries(telegramMcpConfig(verified, options.telegramActor, options.conversationId, options.access)) as Array<[string, any]>)
     if (s.enabled) servers[key.slice("mcp_servers.".length)] = { type: "http", url: s.url, headers: s.http_headers, ...(s.enabled_tools ? {toolLists:{enabled:s.enabled_tools}} : {}) };

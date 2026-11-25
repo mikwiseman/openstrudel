@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { CodexEngineAdapter, type CodexEngineOptions } from "./codex.js";
 import type { CodexEngine } from "./types.js";
 import type { CodexAuthTokens } from "./account.js";
-import type { TelegramMcpServers } from "./telegram-mcp.js";
+import { readTelegramMcpServers } from "./telegram-mcp.js";
 import { extensionConfig, readToml, atomicText, inheritedIntegrations } from "./extensions.js";
 import { parse, stringify } from "smol-toml";
 import { HomeError } from "./home.js";
@@ -43,11 +43,10 @@ export class ScopedCodexEngine implements CodexEngine {
     const home = resolve(this.contextsRoot ?? resolve(this.root, ".data/contexts"), context);
     const sharedExtensionsPath=resolve(this.root,".data/extensions",context,"config.toml");
     const connections = resolve(this.root,".data/connections",context + ".toml");
-    const telegramPath = resolve(this.root,".data/connections",context + ".telegram.json");
     migrateAppGrants(home, sharedExtensionsPath);
     const extensions = existsSync(sharedExtensionsPath) ? readToml(sharedExtensionsPath) : extensionConfig(home);
     const legacy = readToml(connections);
-    const telegramServers:TelegramMcpServers | undefined = existsSync(telegramPath) ? JSON.parse(readFileSync(telegramPath,"utf8")) : undefined;
+    const telegramServers = readTelegramMcpServers(this.root, context);
     const inherited = inheritedIntegrations(this.root, context, { servers:{...extensions.mcp_servers,...legacy.mcp_servers}, apps:extensions.apps, telegram:telegramServers });
     // A runtime keeps its configuration while it works. Once idle, any change
     // to this chat's, the owner's or the installer's files starts a fresh one.
