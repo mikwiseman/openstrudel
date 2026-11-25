@@ -21,7 +21,9 @@ it.each(["read_model_settings", "correspondence_checkpoint", "unipile_accounts",
   wire.request.mockImplementation(async (method: string, params: any) => {
     if (method === "configRequirements/read") return { requirements: null };
     if (method === "model/list") return { data: [] };
-    if (method === "thread/resume") { endpoint = params.config["mcp_servers.openstrudel_runtime"]; return { thread: { id: "existing" } }; }
+    if (method === "thread/resume") {
+      if (["aigid_testflight","project_build","project_package"].includes(toolName)) expect(params.developerInstructions).toMatch(/finish this conversational turn/i);
+      endpoint = params.config["mcp_servers.openstrudel_runtime"]; return { thread: { id: "existing" } }; }
     if (["thread/unsubscribe","thread/inject_items"].includes(method)) return {};
     if (method === "turn/start") {
       expect(endpoint?.url).toMatch(/^http:\/\/127\.0\.0\.1:/);
