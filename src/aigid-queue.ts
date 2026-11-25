@@ -5,7 +5,7 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 export type PackageTarget = "android" | "web" | "macos";
-function requestId(conversation: string, message: string, repository: string | null, operation: string) {
+export function requestId(conversation: string, message: string, repository: string | null, operation: string) {
   const bytes = createHash("sha256").update(JSON.stringify([conversation, message, repository, operation])).digest();
   bytes[6] = (bytes[6]! & 15) | 128;
   bytes[8] = (bytes[8]! & 63) | 128;
