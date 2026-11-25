@@ -55,6 +55,16 @@ def authorize_publication(policy, receipt, repository, revision):
             or not receipt.get("changed") or receipt["revision"] != revision):
         raise ValueError("There is no matching candidate authorized for this repository's branch delivery.")
 
+def source_update_needed(policy, receipt, repository, revision, head):
+    if (policy.get("sourceMerge") is not True or policy.get("delivery")
+            or receipt["repository"] != repository or not receipt.get("changed") or receipt["revision"] != revision):
+        raise ValueError("This repository or revision is not registered for source publication.")
+    if head == revision:
+        return False
+    if head != receipt["base"]:
+        raise ValueError("The default branch changed after the checks. Request a fresh candidate.")
+    return True
+
 
 def atomic_json(path, value):
     with tempfile.NamedTemporaryFile(dir=path.parent, mode="w", delete=False) as f:
@@ -84,6 +94,23 @@ def handle(payload, run_worker):
         receipt = json.loads(receipt_path.read_text()) if receipt_path.is_file() else None
         if receipt and receipt["repository"] != repository:
             raise ValueError("Mismatched project request.")
+        if payload["portfolio"] == "merge-source":
+            if not receipt:
+                raise ValueError("The checked candidate is unavailable.")
+            target = payload.get("revision")
+            dest = "refs/heads/" + branch
+            def remote_head():
+                line = owner_git(personal, "ls-remote", "--refs", remote, dest).split()
+                if len(line) != 2 or line[1] != dest or not SHA.fullmatch(line[0]):
+                    raise ValueError("Could not verify the registered default branch.")
+                return line[0]
+            if source_update_needed(policy, receipt, repository, target, remote_head()):
+                if owner_git(personal, "rev-parse", ref) != target or owner_git(personal, "rev-parse", target + "^") != receipt["base"]:
+                    raise ValueError("The saved candidate no longer matches the checked parent.")
+                owner_git(personal, "push", "--porcelain", remote, target + ":" + dest)
+                if remote_head() != target:
+                    raise ValueError("GitHub has not confirmed this revision on the default branch.")
+            return {"revision": target, "branch": branch}
         if payload["portfolio"] == "publish":
             if not receipt:
                 raise ValueError("The candidate is unavailable.")
