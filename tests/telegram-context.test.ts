@@ -27,6 +27,25 @@ function setup(replies: "mentions" | "instructions" = "mentions") {
   return {store,chat,run,messages,adapter,update};
 }
 
+it("isolates direct signing instructions from forwarded, quoted and uploaded speech", async () => {
+  const { adapter, messages, update } = setup("instructions");
+  const handle = vi.spyOn(messages, "handle").mockResolvedValue({ conversationId: "x", messageId: "m", text: "NO_REPLY" });
+  adapter.transcribe = vi.fn(async () => "Подпиши документ");
+  const direct = async (id: number, text: string, extra: Record<string, unknown>) => {
+    const base = update(id, text);
+    await adapter.processUpdate({ ...base, message: { ...base.message, text: text || undefined, ...extra } });
+    return handle.mock.lastCall?.[0].telegramDirectText;
+  };
+  expect(await direct(101, "Sign this", { reply_to_message: { message_id: 40, from: {id: 8}, document:{file_name:"agreement.pdf"} }, quote:{text:"Signed for another party"} })).toBe("Sign this");
+  for (const [i, extra] of [{forward_origin:{type:"hidden_user"}},{via_bot:{id:99}},{is_automatic_forward:true},{forward_date:12345}].entries())
+    expect(await direct(102+i, "Подпиши документ", extra)).toBeUndefined();
+  expect(await direct(110, "Подпиши документ", { entities:[{type:"blockquote",offset:0,length:16}] })).toBeUndefined();
+  expect(await direct(111, "", { document:{file_id:"doc",file_name:"recording.m4a",mime_type:"audio/mp4"} })).toBeUndefined();
+  expect(await direct(112, "", { voice:{file_id:"voice"} })).toBe("Подпиши документ");
+  expect(await direct(113, "", { voice:{file_id:"voice"},forward_origin:{type:"user"} })).toBeUndefined();
+  expect(await direct(114, "", { document:{file_id:"pdf",file_name:"agreement.pdf"},caption:"Please stamp this." })).toBe("Please stamp this.");
+});
+
 it("lets new groups answer unmentioned text and native voice while retaining contextual silence", async () => {
   const { store, chat, run, adapter, update } = setup("instructions");
   expect(store.getTelegramChat("-100")?.replies).toBe("instructions");

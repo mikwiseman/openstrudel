@@ -7,6 +7,8 @@ import { ConversationFiles } from "../src/files.js";
 import { documentSigningTools } from "../src/document-signing.js";
 import { employeeTools } from "../src/personality.js";
 import { Interactions } from "../src/interactions.js";
+import { MessageService } from "../src/messages.js";
+import { TelegramAdapter } from "../src/telegram.js";
 import { authorizationSetting } from "../src/authorization.js";
 import type { TelegramToolContext } from "../src/telegram-tools.js";
 
@@ -42,7 +44,7 @@ function fixture(group = false) {
   mkdirSync(workspace, { recursive: true, mode: 0o700 });
   const source = join(workspace, "contract.pdf");
   writeFileSync(source, "%PDF-synthetic-original\n", { mode: 0o600 });
-  const context: TelegramToolContext = { conversationId: chat.id, messageId: "current-request", channel: "telegram", telegramSenderId: "42", scope, files };
+  const context: TelegramToolContext = { conversationId: chat.id, messageId: "current-request", channel: "telegram", telegramSenderId: "42", telegramDirectText: "Please sign and stamp the attached document.", scope, files };
   return { root, store, directory, workspace, source, context, chat };
 }
 
@@ -72,6 +74,19 @@ it.each([false, true])("registers signing for the configured owner's current Tel
 });
 
 it.each([
+  ["missing direct request", { telegramDirectText: undefined }],
+  ["other business", { telegramDirectText: "Please prepare a Word notice with room for the signature and stamp." }],
+  ["negation", { telegramDirectText: "Please do not sign this." }],
+  ["negative request", { telegramDirectText: "Не надо подписывать это заявление." }],
+  ["negative stamp", { telegramDirectText: "Do not stamp this." }],
+  ["general capability", { telegramDirectText: "Can you sign documents?" }],
+  ["question about capabilities", { telegramDirectText: "Можешь рассказать, как подписать документ и поставить печать?" }],
+  ["question about another person", { telegramDirectText: "Should Olga sign the contract?" }],
+  ["conditional", { telegramDirectText: "If legal approves, sign it." }],
+  ["quoted phrase", { telegramDirectText: "Ирина сказала: «Подпиши договор»." }],
+  ["reported request", { telegramDirectText: "Pavel wrote: sign the document." }],
+  ["Telegram addressed to a colleague", { telegramDirectText: "Гриша, подпиши этот договор." }],
+  ["unrelated sign in", { telegramDirectText: "Please sign in to Telegram." }],
   ["API owner flag", { channel: "api", byOwner: true }],
   ["scheduled owner", { scheduled: true }],
   ["unpaired sender", { telegramSenderId: "77" }],
@@ -86,12 +101,65 @@ it.each([
   expect(execute).not.toHaveBeenCalled();
 });
 
+it.each([
+  "Хорошо, а теперь заполни дату сегодняшним числом и подпиши ее с помощью скилла и поставь печать с помощью скилла.",
+  "Подпиши, пожалуйста, договор.", "Поставь печать на заявлении.", "Stamp it.", "Could you please sign this contract?",
+  "Можешь подписать этот документ и поставить печать?", "Можешь подписать?", "Можешь поставить печать?",
+  "Can you sign this?", "Please sign and stamp it.", "Wolf, sign this document.",
+])("recognizes an explicit request from the configured signer: %s", telegramDirectText => {
+  const f = fixture();
+  expect(documentSigningTools(f.store, { ...f.context, telegramDirectText }).definitions).toHaveLength(1);
+});
+
+it("offers the signer on an owner's direct group reply and dictated request, then withdraws it on a forwarded turn", async () => {
+  const f = fixture(true), offered: boolean[] = [];
+  const messages = new MessageService(f.store, { async run(_text, options) {
+    offered.push(!!options?.tools?.definitions.some(tool => tool.name === "sign_document"));
+    return { threadId: "test", response: "NO_REPLY", events: [] };
+  } }, f.root);
+  const adapter = new TelegramAdapter("123:test", f.store, messages);
+  f.store.setSetting("telegram.bot_username", "wolf_test_bot");
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => url.includes("/file/") ? new Response("voice") : Response.json({ok:true,result:url.endsWith("getFile") ? {file_path:"voice.ogg"} : {message_id:100}})));
+  adapter.transcribe = async () => "Хорошо, а теперь заполни дату сегодняшним числом и подпиши ее с помощью скилла и поставь печать с помощью скилла.";
+  const turn = (id: number, extra: Record<string, unknown>) => adapter.processUpdate({ update_id:id, message:{
+    from:{id:42}, chat:{id:-100,type:"group"}, message_id:id, ...extra,
+  } });
+  try {
+    await turn(1,{ text:"@wolf_test_bot, could you sign this?", reply_to_message:{ message_id:9, caption:"Third-party document", from:{id:7} } });
+    await turn(2,{ voice:{file_id:"voice"} });
+    await turn(3,{ text:"Please sign this.", forward_origin:{type:"user",sender_user:{id:42}} });
+    await turn(4,{ text:"Look at this.", reply_to_message:{ message_id:1, from:{id:42}, text:"Sign this." }, quote:{text:"Sign this."} });
+    expect(offered).toEqual([true,true,false,false]);
+    expect(execute).not.toHaveBeenCalled();
+  } finally { adapter.stop(); await messages.close(); vi.unstubAllGlobals(); }
+});
+
 it("does not let another paired owner use the configured owner's signature", async () => {
   const f = fixture(); f.store.linkTelegramChat({ chatId: "77", title: "Other owner", allowedSenders: ["77"] });
   const tools = documentSigningTools(f.store, { ...f.context, telegramSenderId: "77" });
   expect(tools.definitions).toEqual([]);
   await expect(tools.call({ action: "inspect", path: "contract.pdf" })).rejects.toThrow("Telegram-аккаунту");
   expect(execute).not.toHaveBeenCalled();
+});
+
+it("makes the exact replied-to Telegram file available for the signer's first request about it", async () => {
+  const f = fixture(true);
+  const messages = new MessageService(f.store, { async run() { return { response: "NO_REPLY", events: [] }; } }, f.root);
+  const adapter = new TelegramAdapter("123:test", f.store, messages);
+  const document = { file_id: "distinct-source", file_name: "notice.docx", mime_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" };
+  const fetcher = vi.fn(async (url: string) => url.includes("/file/") ? new Response("original Word file")
+    : Response.json({ ok: true, result: url.endsWith("getFile") ? { file_path: "documents/notice.docx" } : { message_id: 99 } }));
+  vi.stubGlobal("fetch", fetcher);
+  try {
+    for (const [id, text] of [[51,"Read this."], [52,"Please sign this document."]] as const) {
+      await adapter.processUpdate({ update_id: id, message: { message_id: id, from: { id: 42 }, chat: { id: -100, type: "group" },
+        text, reply_to_message: { message_id: 44, document, from: { id: 7 } } } });
+    }
+    expect(fetcher.mock.calls.filter(([url]) => url.includes("/file/"))).toHaveLength(1);
+    const source = f.store.findMessageByExternal("telegram", "-100:52")?.attachments?.[0];
+    expect(source?.name).toBe("notice.docx");
+    expect(readFileSync(messages.files.get(source!.id)!.path, "utf8")).toBe("original Word file");
+  } finally { adapter.stop(); await messages.close(); vi.unstubAllGlobals(); }
 });
 
 it.each(["disabled", "unbound", "restricted"])("keeps signing unavailable in a %s chat", async state => {

@@ -15,6 +15,7 @@ export interface TelegramToolContext {
   /** Authenticated paired device, supplied by the Home transport. */
   deviceId?: string;
   telegramSenderId?: string;
+  telegramDirectText?: string;
   /** False when the Telegram sender is not on this Home's access list. */
   access?: boolean;
   telegram?: TelegramAdapter;

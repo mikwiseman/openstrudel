@@ -1,4 +1,24 @@
-# Document signing source restoration
+# Document signing in Telegram
+
+The private signing installation names one Telegram signer in `telegramUserId`.
+The signer's own explicit text, document caption or original voice message can
+authorize signing in a DM or a connected group. Reply to a document or attach it
+with the request. Groups that require mentions can address the bot by @username.
+In forum topics and groups with restricted tools, signed copies go privately
+to the signer.
+
+`requesterTelegramUserIds` optionally lists people who may ask the signer to
+approve a document. The bot sends the exact unsigned file, requested marks,
+requester's name and originating chat to the signer's DM. Only the signer can
+use the buttons on that message. Approval applies once to the reviewed copy.
+The signed PDF goes to the signer, and the requester receives the decision in
+the original chat. Declining closes the request.
+
+Forwarded instructions, quoted text, anonymous messages, scheduled jobs and app
+requests cannot authorize a signature. A direct reply to someone else's document
+can. The per-turn tool checks the actual sender in both new and resumed chats.
+
+## Source restoration
 
 On 2 November 2026 the typed source was reconstructed from the running Wolf image
 `openstrudel:signing-025d56d`, image ID
@@ -11,12 +31,13 @@ Compiling the restored source reproduces the running `document-signing.js`,
 The image's shipped TypeScript did not include signing; rebuilding from it would
 have removed the production feature.
 
-The native `sign_document` tool retains the existing authorization checks: a
+The native `sign_document` tool requires a
 current Telegram request from the configured paired owner, an enabled chat,
 native access and a permitted workspace. API owner flags, schedules, other
 senders and restricted chats do not grant signing. Authorization is rechecked
-before work and before publishing rendered output. Explicit intent to sign and
-inspection of the returned previews remain requirements of the tool instructions.
+before work and before publishing rendered output. The Telegram adapter provides
+the sender's original words for the current request. The signing tool returns
+page previews for inspection before the finished PDF is attached.
 
 The existing private installation at `.data/sign-document` contains its
 `config.json` with `telegramUserId`, `SKILL.md`, executable and assets. These are
@@ -26,6 +47,6 @@ verified in the running signing layer: `python3-fitz`, `python3-numpy`, `python3
 `libreoffice-writer` and `fonts-liberation2`. Mac bundles include the wrapper;
 this change does not install or verify Mac document-processing dependencies.
 
-`tests/document-signing.test.ts` uses synthetic documents and a mocked subprocess
-to verify owner and audience boundaries, revocation, workspace path checks and
-cleanup. It neither uses real signatures nor establishes end-to-end signing QA.
+`tests/document-signing.test.ts` covers direct signing. The approval and Telegram
+transport tests cover document binding, sender identity, callback replay,
+declines and private delivery. They use synthetic documents and marks.

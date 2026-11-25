@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { CodexEngineAdapter } from "../src/codex.js";
 afterEach(() => {wire.request.mockReset();vi.useRealTimers();});
 
-it.each(["read_model_settings", "correspondence_checkpoint", "unipile_accounts", "unipile_read", "github_checkout", "read_team",
+it.each(["read_model_settings", "correspondence_checkpoint", "unipile_accounts", "unipile_read", "github_checkout", "read_team", "sign_document",
   "aigid_testflight", "aigid_build_status", "aigid_propose", "aigid_approve", "aigid_cancel_proposal", "aigid_inspect", "project_repositories", "project_build", "project_build_status", "project_package"])("offers current %s to an existing native thread and closes it after the turn", async (toolName) => {
   let endpoint: { url: string; http_headers: Record<string,string>; default_tools_approval_mode?: string; tool_timeout_sec?: number } | undefined;
   const call = vi.fn(async () => ({ saved: true }));
@@ -29,6 +29,7 @@ it.each(["read_model_settings", "correspondence_checkpoint", "unipile_accounts",
         expect(params.developerInstructions).toMatch(/company.*recall|recall.*company/i);
         expect(params.developerInstructions).toMatch(/latest.*outgoing/i);
       } else expect(params.developerInstructions).not.toContain("mik-mcp");
+      if (toolName === "sign_document") expect(params.developerInstructions).toContain("openstrudel_runtime.sign_document");
       endpoint = params.config["mcp_servers.openstrudel_runtime"]; return { thread: { id: "existing" } }; }
     if (["thread/unsubscribe","thread/inject_items"].includes(method)) return {};
     if (method === "turn/start") {
@@ -52,6 +53,27 @@ it.each(["read_model_settings", "correspondence_checkpoint", "unipile_accounts",
     expect(wire.request.mock.calls.some(([m])=>m === "thread/start")).toBe(false);
     await expect(fetch(endpoint!.url)).rejects.toThrow();
   } finally {engine.close();}
+});
+
+it("keeps the signing tool off the permanent tool list of a new chat", async () => {
+  wire.request.mockImplementation(async (method: string, params: any) => {
+    if (method === "configRequirements/read") return { requirements: null };
+    if (method === "model/list") return { data: [] };
+    if (method === "thread/start") {
+      expect(params.dynamicTools.map((tool: { name: string }) => tool.name)).toEqual(["attach_file"]);
+      expect(params.config["mcp_servers.openstrudel_runtime"]?.url).toBeTruthy();
+      return { thread: { id: "signing" } };
+    }
+    if (method === "turn/start") {
+      queueMicrotask(() => wire.notify?.({method:"turn/completed",params:{threadId:params.threadId,turn:{status:"completed"}}}));
+      return { turn: { id: "turn" } };
+    }
+    throw new Error(method);
+  });
+  const engine = new CodexEngineAdapter();
+  const definitions = ["sign_document","attach_file"].map(name => ({ type: "function" as const, name, description: name, inputSchema: {type:"object",properties:{}} }));
+  try { await engine.run("Sign this sample", { tools: { definitions, call: vi.fn() } }); }
+  finally { engine.close(); }
 });
 
 it("offers the Home's standing-rule tools to an existing native thread, beside the settings an administrator's turn has", async () => {

@@ -211,6 +211,8 @@ export interface MessageInput {
    * body. It takes the place of the story question's context, and the turn starts a session of its own. */
   brief?: string;
   telegramSenderId?: string;
+  /** The sender's own current Telegram words, excluding forwarded and quoted material. Adapter only. */
+  telegramDirectText?: string;
   /** Trusted adapter input: preserve group context without invoking the model. */
   contextOnly?: boolean;
   /** Trusted adapter input: the text is the transcript of this message's own voice, audio or round video recording, and that
