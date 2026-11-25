@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sign a packaged app inside out using an already unlocked release keychain."""
+"""Sign a packaged app inside out with a release identity or an ad hoc QA signature."""
 import argparse
 import pathlib
 import plistlib
@@ -9,8 +9,14 @@ import tempfile
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("app", type=pathlib.Path)
 parser.add_argument("--identity", required=True)
-parser.add_argument("--keychain", type=pathlib.Path, required=True)
+parser.add_argument("--keychain", type=pathlib.Path)
 args = parser.parse_args()
+if args.identity == "-":
+    signing_options = ["--timestamp=none"]
+elif args.keychain is not None:
+    signing_options = ["--timestamp", "--options", "runtime", "--keychain", str(args.keychain)]
+else:
+    parser.error("A release identity requires --keychain")
 app = args.app.resolve()
 info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
 if not info["CFBundleIdentifier"].startswith("is.openstrudel.mac"):
@@ -21,8 +27,7 @@ if not framework.is_dir():
 
 
 def sign(path, *extra):
-    subprocess.run(["codesign", "--force", "--timestamp", "--options", "runtime",
-                    "--sign", args.identity, "--keychain", str(args.keychain),
+    subprocess.run(["codesign", "--force", *signing_options, "--sign", args.identity,
                     *extra, str(path)], check=True)
 
 

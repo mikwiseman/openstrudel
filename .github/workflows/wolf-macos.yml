@@ -44,10 +44,15 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName OpenStrudel QA' "$plist"
           /usr/libexec/PlistBuddy -c 'Delete :SUFeedURL' "$plist"
           /usr/libexec/PlistBuddy -c 'Delete :CFBundleURLTypes' "$plist"
-          codesign --force --sign - "$app"
-          codesign --verify --strict --deep "$app"
+          python3 scripts/sign-mac-app.py "$app" --identity=-
           test "$(lipo -archs "$app/Contents/MacOS/OpenStrudel")" = arm64
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = is.openstrudel.mac.qa
+          "$app/Contents/MacOS/OpenStrudel" &
+          client_pid=$!
+          sleep 4
+          kill -0 "$client_pid"
+          kill "$client_pid"
+          wait "$client_pid" || true
           ditto -c -k --keepParent "$app" "$RUNNER_TEMP/OpenStrudel-macOS-QA.zip"
           shasum -a 256 "$RUNNER_TEMP/OpenStrudel-macOS-QA.zip" | tee "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
