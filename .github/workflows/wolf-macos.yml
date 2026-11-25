@@ -1,0 +1,59 @@
+name: Wolf macOS client
+run-name: Wolf macOS package ${{ github.event.client_payload.request || inputs.request }}
+on:
+  repository_dispatch:
+    types: [wolf-macos-package]
+  workflow_dispatch:
+    inputs:
+      request:
+        description: Build request ID
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: wolf-macos-${{ github.event.client_payload.request || inputs.request }}
+  cancel-in-progress: false
+jobs:
+  package:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select the requested merged revision
+        env:
+          SOURCE: ${{ github.event.client_payload.sha || github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          [[ "$SOURCE" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$SOURCE" "origin/$DEFAULT_BRANCH"
+          git checkout --detach "$SOURCE"
+          echo "SOURCE=$SOURCE" >> "$GITHUB_ENV"
+      - name: Build the Apple silicon QA client
+        run: |
+          command -v xcodegen >/dev/null || brew install xcodegen
+          (cd native/OpenStrudel && xcodegen generate)
+          app="$RUNNER_TEMP/OpenStrudel QA.app"
+          python3 scripts/native-build.py --copy-product Build/Products/Release/OpenStrudel.app "$app" -- \
+            -scheme 'OpenStrudel macOS' -configuration Release -destination 'platform=macOS,arch=arm64' \
+            PRODUCT_BUNDLE_IDENTIFIER=is.openstrudel.mac.qa ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build
+          plist="$app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName OpenStrudel QA' "$plist"
+          /usr/libexec/PlistBuddy -c 'Delete :SUFeedURL' "$plist"
+          /usr/libexec/PlistBuddy -c 'Delete :CFBundleURLTypes' "$plist"
+          codesign --force --sign - "$app"
+          codesign --verify --strict --deep "$app"
+          test "$(lipo -archs "$app/Contents/MacOS/OpenStrudel")" = arm64
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = is.openstrudel.mac.qa
+          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/OpenStrudel-macOS-QA.zip"
+          shasum -a 256 "$RUNNER_TEMP/OpenStrudel-macOS-QA.zip" | tee "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: OpenStrudel-macOS-QA-${{ env.SOURCE }}
+          path: ${{ runner.temp }}/OpenStrudel-macOS-QA.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7

@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { createSign } from "node:crypto";
 import { execFile } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statfsSync, type Stats } from "node:fs";
@@ -46,7 +47,7 @@ function jwt(app: App): string {
 async function api(path: string, auth: string, init: { method?: string; body?: unknown } = {}): Promise<{ status: number; data: any }> {
   const response = await fetch(`https://api.github.com${path}`, {
     method: init.method ?? "GET", signal: AbortSignal.timeout(30_000),
-    headers: { accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28", "user-agent": "OpenStrudel", authorization: `Bearer ${auth}`,
+    headers: { accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28", "user-agent": "OpenStrudel", ...(auth ? {authorization:`Bearer ${auth}`} : {}),
       ...init.body === undefined ? {} : { "content-type": "application/json" } },
     ...init.body === undefined ? {} : { body: JSON.stringify(init.body) },
   });
@@ -380,4 +381,49 @@ export function githubTools(store: Store, context: TelegramToolContext, options:
     }
     throw new Error("Unknown GitHub tool");
   } };
+}
+
+/** A repository dispatch uses Contents permission. The registered public workflow exposes its own run and artifact. */
+export async function macPackage(root:string,fullName:string,id:string,requested:string|null,alreadySent:boolean,markSent:(revision:string)=>void,signal:AbortSignal) {
+  const app=readApp(root);
+  if(!app) throw new Error("The GitHub App is unavailable.");
+  const repo=await resolveRepository(app,fullName);
+  const prefix="/repos/"+repo.fullName,access=await token(app,repo.installation,{contents:"write"},repo.name);
+  const head=await api(prefix+"/git/ref/heads/"+encodeURIComponent(repo.defaultBranch),access);
+  const revision=requested??head.data?.object?.sha;
+  if(head.status!==200 || !/^[a-f0-9]{40}$/.test(revision)) throw new Error("Cannot determine the cloud Mac build revision.");
+  const title="Wolf macOS package "+id;
+  const list=async()=>{
+    const r=await api(prefix+"/actions/workflows/wolf-macos.yml/runs?event=repository_dispatch&per_page=100","");
+    if(r.status!==200) throw failure("reading public Mac builds",r);
+    return r.data.workflow_runs.find((run:any)=>run.display_title===title);
+  };
+  let run=await list();
+  if(!run && !alreadySent){
+    signal.throwIfAborted();
+    const dispatch=await api(prefix+"/dispatches",access,{method:"POST",body:{event_type:"wolf-macos-package",client_payload:{request:id,sha:revision}}});
+    if(dispatch.status!==204) throw failure("starting the cloud Mac build",dispatch);
+    markSent(revision);
+  }
+  const start=Date.now();
+  while(Date.now()-start<50*60_000){
+    signal.throwIfAborted();
+    if(run?.status==="completed"){
+      if(run.conclusion!=="success") throw new Error("Cloud Mac package "+run.conclusion+". "+run.html_url);
+      const r=await api(prefix+"/actions/runs/"+run.id+"/artifacts","");
+      const artifact=r.data?.artifacts?.find((item:any)=>!item.expired && item.name==="OpenStrudel-macOS-QA-"+revision);
+      if(r.status!==200 || !artifact || !/^sha256:[a-f0-9]{64}$/.test(artifact.digest)) throw new Error("GitHub did not confirm the expected Mac artifact. "+run.html_url);
+      return {revision,name:artifact.name,size:Number(artifact.size_in_bytes),sha256:artifact.digest.slice(7),
+        url:"https://github.com/"+repo.fullName+"/actions/runs/"+run.id+"/artifacts/"+artifact.id};
+    }
+    if(!run && Date.now()-start>5*60_000) throw new Error("GitHub did not list the requested Mac run.");
+    await delay(run ? 60_000 : 10_000,undefined,{signal});
+    if(!run) run=await list();
+    else {
+      const response=await api(prefix+"/actions/runs/"+run.id,"");
+      if(response.status!==200) throw failure("checking the cloud Mac build",response);
+      run=response.data;
+    }
+  }
+  throw new Error("The Mac package is still pending at "+(run?.html_url??repo.url+"/actions"));
 }

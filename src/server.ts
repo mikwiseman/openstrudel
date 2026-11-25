@@ -1,3 +1,4 @@
+import { receiveCloudStatus } from "./aigid-testflight.js";
 import { automaticProvider, checkModelSelection, parseModelSelection, readModelSelection, readConversationModelSelection, recommendedModel, resolveModelSelection, saveModelSelection, saveConversationModelSelection, parseModelFallbacks, readModelFallbacks, directFast, fastChat, offersFast, turnSpeed, modelReasoning, parseRestrictedModel, readRestrictedModel } from "./model-settings.js";
 import { connectProvider, disconnectProvider, providerInfo, providerSummaries } from "./providers.js";
 import { deleteEmployee } from "./employee-delete.js";
@@ -132,7 +133,7 @@ export class HttpApi {
     if (this.hooksServer || !Number.isInteger(port) || port < 0 || port > 65535) throw new Error("Invalid event ingress listener.");
     const server = createServer((request, response) => {
       const path = new URL(request.url ?? "/", "http://localhost").pathname;
-      if (!/^\/hooks\/correspondence\/[a-z0-9-]{1,64}$/.test(path)) { response.writeHead(404).end(); return; }
+      if (path!=="/hooks/wolf-testflight" && !/^\/hooks\/correspondence\/[a-z0-9-]{1,64}$/.test(path)) { response.writeHead(404).end(); return; }
       void this.handle(request, response);
     });
     await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { server.off("error", reject); resolve(); }); });
@@ -321,7 +322,7 @@ export class HttpApi {
     let counted = false;
     try {
       const sourceHook = path.match(/^\/hooks\/correspondence\/([a-z0-9-]{1,64})$/);
-      if (sourceHook) {
+      if (sourceHook || path==="/hooks/wolf-testflight") {
         if (request.method !== "POST") throw new HomeError("method_not_allowed", 405);
         this.home.assertPrimary();
         if (this.store.getSetting("home.transfer")) throw new HomeError("Home is transferring; retry later.", 409);
@@ -329,6 +330,11 @@ export class HttpApi {
         const reading = readBody(request, 128 * 1024); reading.catch(() => undefined);
         let timer: NodeJS.Timeout | undefined;
         const body = await Promise.race([reading, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new HomeError("Request timeout.", 408)), 5_000); })]).finally(() => clearTimeout(timer));
+        if(!sourceHook){
+          const event=request.headers["x-github-event"],signature=request.headers["x-hub-signature-256"];
+          await receiveCloudStatus(this.store,typeof event==="string"?event:undefined,body,typeof signature==="string"?signature:undefined);
+          this.send(response,200,{accepted:true});return;
+        }
         if (this.gmailPush && this.gmailPush.config.sourceId === sourceHook[1]) {
           this.send(response, 202, await this.gmailPush.receive(request.headers.authorization, body)); return;
         }

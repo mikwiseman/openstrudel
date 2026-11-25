@@ -54,3 +54,13 @@ it("deduplicates a project request and keeps its release separate from the Apple
     expect(queue.next(true)).toBeUndefined();
   }finally{queue.db.close();rmSync(root,{recursive:true,force:true});}
 });
+
+it("queues independent packages and preserves their original conversation message on retry", () => {
+  const root=mkdtempSync(join(tmpdir(),"wolf-package-")),queue=new BuildQueue(root);
+  try {
+    const receipt=queue.addPackage("original","chat","telegram","owner","example/app","android");
+    expect(queue.addPackage("original","chat","telegram","owner","example/app","android").id).toBe(receipt.id);
+    expect(queue.addPackage("original","chat","telegram","owner","example/app","web").id).not.toBe(receipt.id);
+    expect(queue.next(false)).toMatchObject({source_message:"original",package_target:"android",repository:"example/app"});
+  } finally {queue.db.close();rmSync(root,{recursive:true,force:true});}
+});
