@@ -106,6 +106,7 @@ export function aigidTools(store:Store,turn:TelegramToolContext) {
     {type:"function",name:"aigid_build_status",description:"Read the most recent AiGid TestFlight request states and the cloud handoff status for authorized testers. A published release branch acknowledges dispatch only; report availability only when Apple confirms it.",inputSchema:{type:"object",properties:{},additionalProperties:false}},
   ]:[];
   if(service?.projectAllowed(turn)) definitions.push(
+    {type:"function",name:"project_publish_source",description:"For an explicitly requested change and merge to the default branch of a project without a registered deployment, prepare and verify its source, publish the exact revision to GitHub and send the commit link. Existing repository workflows may run. Store, site or binary delivery requires the corresponding registered destination. Use project_build for projects with a configured deployment and for inspection or preparation alone.",inputSchema:{type:"object",properties:{repository:{type:"string"},goal:{type:"string",minLength:1,maxLength:12000}},required:["repository","goal"],additionalProperties:false}},
     {type:"function",name:"project_repositories",description:"Find named projects registered in the owner's additional server checkouts. Use github_repositories for GitHub App installations. Only this owner can see the additional projects.",inputSchema:{type:"object",properties:{query:{type:"string"}},required:["query"],additionalProperties:false}},
     {type:"function",name:"project_build",description:"Use for the owner's request to inspect, change, build or deploy a named GitHub project on the remote engineering server. Codex is the default. Use project_repositories and github_repositories to resolve the canonical owner/name. For projects with automatic deployment on a branch, a change without release stays on the personal project server. For AiGid iPhone use aigid_testflight. Use one call per repository. For a change and a download, include the requested targets in packages in this call so they build the exact changed revision. change=true prepares a checked candidate. release=true only when the requester expressly asks to ship or deploy. Builds use the project's own tooling and delivery route. Include relevant text or voice transcription. Check the receipt before reporting a result.",inputSchema:{type:"object",properties:{repository:{type:"string"},goal:{type:"string",minLength:1,maxLength:12000},change:{type:"boolean"},release:{type:"boolean"},packages:{type:["array","null"],items:{type:"string",enum:["android","web","macos"]}}},required:["repository","goal","change","release","packages"],additionalProperties:false}},
     {type:"function",name:"project_build_status",description:"Read this owner's recent remote project runs with their revision, checks, pull request, or release handoff.",inputSchema:{type:"object",properties:{},additionalProperties:false}}
@@ -123,20 +124,23 @@ export function aigidTools(store:Store,turn:TelegramToolContext) {
       const receipt=service.queue.addPackage(turn.messageId,turn.conversationId,turn.channel,actor,repository,target,typeof revision==="string"?revision:undefined);
       service.kick();return {...receipt,delivery};
     }
-    if(name==="project_build" || name==="project_build_status" || name==="project_repositories"){
+    if(name==="project_build" || name==="project_build_status" || name==="project_repositories" || name==="project_publish_source"){
       if(!service?.projectAllowed(turn)) throw new Error("This requester cannot use the project worker.");
       const actor=(turn.channel==="api"?turn.deviceId:turn.telegramSenderId)!;
       if(name==="project_build_status") return service.projectStatus(actor);
       if(name==="project_repositories") return service.portfolio(String(args.query??""));
+      const sourceOnly=name==="project_publish_source";
+      if(sourceOnly) args={...args,change:true,release:false,packages:[]};
       if(typeof args.repository!=="string" || !/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}\/[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$/.test(args.repository) ||
          typeof args.change!=="boolean" || typeof args.release!=="boolean" || typeof args.goal!=="string" || !args.goal.trim() || args.goal.length>12000)
         throw new Error("Give the canonical repository and the requested project work.");
       if(args.release && !args.change && ["push","branch","vercel"].includes(service.releaseRoute(args.repository)??"")) throw new Error("This project's delivery starts on a source push. Request a change, or run a build of the existing revision without deploying.");
       if(args.release && !service.releaseRoute(args.repository)) throw new Error("This repository has no registered automatic release destination. Request a build or a source change to prepare a candidate on the server.");
+      if(sourceOnly && !service.canPublishSource(args.repository)) throw new Error("This repository uses a different release route or has no registered source publication rights.");
       const targets = args.packages ?? [];
       if (!Array.isArray(targets) || targets.length > 3 || !targets.every(t => ["android","web","macos"].includes(t) && service.canPackage(turn,args.repository as string,t)))
         throw new Error("This project has no authorized package recipe for one or more requested platforms.");
-      const receipt=service.queue.add(turn.messageId,turn.conversationId,turn.channel,actor,args.goal.trim(),args.change,args.repository,args.release,[...new Set<PackageTarget>(targets)]);
+      const receipt=service.queue.add(turn.messageId,turn.conversationId,turn.channel,actor,args.goal.trim(),args.change,args.repository,sourceOnly?"source":args.release,[...new Set<PackageTarget>(targets)]);
       service.kick();return {...receipt,delivery};
     }
     if (!service||!allowed()) throw new Error("This device or Telegram sender cannot request an AiGid release.");
@@ -187,8 +191,8 @@ export class AiGidBuilds {
   }
   portfolio(query:string) {
     const worker=projectWorker(this.files.root);
-    const names=new Set([...Object.keys(worker?.portfolio??{}),...Object.keys(worker?.packages??{}),...Object.keys(worker?.releases??{})]);
-    return [...names].filter(name=>name.toLowerCase().includes(query.trim().toLowerCase())).map(repository=>({repository,...worker?.portfolio[repository],targets:worker?.packages[repository]??[],delivery:this.releaseRoute(repository)}));
+    const names=new Set([...Object.keys(worker?.portfolio??{}),...Object.keys(worker?.packages??{}),...Object.keys(worker?.releases??{}),...worker?.sourceRepositories??[]]);
+    return [...names].filter(name=>name.toLowerCase().includes(query.trim().toLowerCase())).map(repository=>({repository,...worker?.portfolio[repository],targets:worker?.packages[repository]??[],delivery:this.releaseRoute(repository),sourceMerge:worker?.sourceRepositories.includes(repository)??false}));
   }
   canPackage(turn:TelegramToolContext,repository:string,target:"android"|"web"|"macos") {
     const worker=projectWorker(this.files.root);
@@ -203,6 +207,10 @@ export class AiGidBuilds {
   releaseRoute(repository:string) {
     const worker=projectWorker(this.files.root);
     return worker?.releases[repository]??worker?.portfolio[repository]?.delivery;
+  }
+  canPublishSource(repository:string) {
+    const worker=projectWorker(this.files.root);
+    return worker?.sourceRepositories.includes(repository)===true && !this.releaseRoute(repository) && repository!==configuration(this.files.root)?.repository;
   }
   projectStatus(actor:string) {return this.queue.db.prepare("SELECT id,repository,created,state,commit_sha,pull,detail FROM jobs WHERE repository IS NOT NULL AND actor=? ORDER BY created DESC LIMIT 12").all(actor);}
   status(conversation:string) {return this.queue.db.prepare("SELECT id,created,state,pull,detail FROM jobs WHERE repository IS NULL AND conversation=? ORDER BY created DESC LIMIT 8").all(conversation);}
@@ -276,6 +284,17 @@ export class AiGidBuilds {
   }
   private async dispatchProject(job:BuildRequest) {
     const repository=job.repository!;
+    if(job.release_project===2) {
+      const authorize=()=>{if(!this.canPublishSource(repository) || !this.activeRequest(job,"ready")) throw new Error("Source publication is no longer authorized.");};
+      authorize();
+      if(!job.changes || !job.commit_sha) throw new Error("Missing checked source change.");
+      const worker=projectWorker(this.files.root)!;
+      const revision=job.pull ? await mergeWorkerCandidate(this.files.root,repository,{id:job.id,pull:job.pull,commit:job.commit_sha},authorize)
+        : (await publishPortfolio(worker,repository,job.id,job.commit_sha,this.stopSignal.signal,true)).revision;
+      this.queue.db.prepare("UPDATE jobs SET state='completed',commit_sha=?,detail=? WHERE id=? AND state='ready'")
+        .run(revision,"Published the checked change to the default branch.\nhttps://github.com/"+repository+"/commit/"+revision,job.id);
+      return;
+    }
     const route=this.releaseRoute(repository);
     const authorize=()=>{if(!route || this.releaseRoute(repository)!==route || !this.activeRequest(job,"ready")) throw new Error("Project delivery is no longer authorized.");};
     authorize();

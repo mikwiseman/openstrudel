@@ -96,18 +96,19 @@ export class BuildQueue {
     return row ? JSON.parse(String(row.files)) : [];
   }
   add(message: string, conversation: string, channel: string, actor: string, goal: string, changes: boolean,
-      repository: string | null = null, releaseProject = false, targets: PackageTarget[] = []) {
+      repository: string | null = null, releaseProject:boolean|"source" = false, targets: PackageTarget[] = []) {
     this.db.exec("SAVEPOINT add_build");
     try {
       // Earlier Home versions used the message ID for project jobs. Keep their receipts valid on replay.
       const legacy = this.db.prepare("SELECT repository,actor,conversation FROM jobs WHERE id=?").get(message);
       const reuse = legacy && legacy.repository === repository && legacy.actor === actor && legacy.conversation === conversation;
       const id = reuse || (!legacy && !repository) ? message : requestId(conversation,message,repository,"project");
+      const releaseMode=releaseProject==="source" ? 2 : Number(releaseProject);
       this.db.prepare(`INSERT OR IGNORE INTO jobs
         (id,created,conversation,channel,actor,goal,changes,repository,release_project,source_message) VALUES(?,?,?,?,?,?,?,?,?,?)`)
-        .run(id,new Date().toISOString(),conversation,channel,actor,goal,Number(changes),repository,Number(releaseProject),message);
+        .run(id,new Date().toISOString(),conversation,channel,actor,goal,Number(changes),repository,releaseMode,message);
       if (repository) for (const target of targets) this.addPackage(message,conversation,channel,actor,repository,target,undefined,id);
-      const receipt = this.db.prepare("SELECT id,state,detail,pull FROM jobs WHERE id=? AND conversation=? AND actor=?").get(id,conversation,actor);
+      const receipt = this.db.prepare("SELECT id,state,detail,pull FROM jobs WHERE id=? AND conversation=? AND actor=? AND release_project=?").get(id,conversation,actor,releaseMode);
       if (!receipt) throw new Error("Project request identity changed.");
       this.db.exec("RELEASE add_build");
       return receipt;

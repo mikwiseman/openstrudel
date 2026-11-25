@@ -23,6 +23,21 @@ class PortfolioTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             portfolio.authorize_publication({"delivery": "branch"}, dict(receipt, changed=False), "example/team", "a" * 40)
 
+    def test_source_publication_requires_an_explicit_registry_entry_and_the_exact_parent(self):
+        policy = {"branch": "main", "sourceMerge": True}
+        receipt = {"repository": "example/app", "base": "1" * 40, "revision": "a" * 40, "changed": True}
+        self.assertTrue(portfolio.source_update_needed(policy, receipt, "example/app", "a"*40, "1"*40))
+        self.assertFalse(portfolio.source_update_needed(policy, receipt, "example/app", "a"*40, "a"*40))
+        for config, repo, candidate, head in [
+            ({}, "example/app", "a"*40, "1"*40),
+            (dict(policy, delivery="branch"), "example/app", "a"*40, "1"*40),
+            (policy, "another/app", "a"*40, "1"*40),
+            (policy, "example/app", "b"*40, "1"*40),
+            (policy, "example/app", "a"*40, "2"*40),
+        ]:
+            with self.assertRaises(ValueError):
+                portfolio.source_update_needed(config, receipt, repo, candidate, head)
+
     def test_candidate_is_saved_without_touching_a_personal_worktree(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

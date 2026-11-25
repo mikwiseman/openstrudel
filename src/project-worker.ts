@@ -10,6 +10,7 @@ const config = z.object({
   telegram:z.array(z.string()), devices:z.array(z.string()),
   // A default-branch push starts the repository's own delivery. Self-updates use the Home's existing updater.
   releases:z.record(z.string(),z.enum(["push","home","vercel"])).default({}),
+  sourceRepositories:z.array(z.string()).default([]),
   packages:z.record(z.string(),z.array(z.enum(["android","web","macos"]))).default({}),
   portfolio:z.record(z.string(),z.object({ branch:z.string(), delivery:z.literal("branch").optional() })).default({}),
 });
@@ -34,9 +35,11 @@ export async function preparePortfolio(worker:Worker,job:Preparation,signal:Abor
     throw new Error("Invalid project candidate receipt.");
   return r;
 }
-export async function publishPortfolio(worker:Worker,repository:string,id:string,revision:string,signal:AbortSignal) {
-  const r=z.object({revision:hash,branch:z.string()}).parse(await requestWorker(worker,{portfolio:"publish",repository,id,revision},signal));
-  if(r.revision!==revision || r.branch!=="wolf/project-"+id) throw new Error("Invalid project delivery receipt.");
+export async function publishPortfolio(worker:Worker,repository:string,id:string,revision:string,signal:AbortSignal,sourceOnly=false) {
+  const operation=sourceOnly?"merge-source":"publish";
+  const r=z.object({revision:hash,branch:z.string()}).parse(await requestWorker(worker,{portfolio:operation,repository,id,revision},signal));
+  const expected=sourceOnly?worker.portfolio[repository]?.branch:"wolf/project-"+id;
+  if(r.revision!==revision || r.branch!==expected) throw new Error("Invalid project delivery receipt.");
   return r;
 }
 export async function packageProject(worker:Worker,repository:string,id:string,target:"android"|"web",revision:string|null,signal:AbortSignal) {

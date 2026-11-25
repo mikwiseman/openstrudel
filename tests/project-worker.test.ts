@@ -101,3 +101,13 @@ it("records a named branch only when the upstream HEAD matches the exact fetched
   expect(validateWorkerJob({...job,defaultBranch:"release/trunk"}).defaultBranch).toBe("release/trunk");
   expect(()=>validateWorkerJob({...job,defaultBranch:"../main"})).toThrow();
 });
+
+
+it("persists explicit source publication separately from a build or a provider deployment", () => {
+  const root=mkdtempSync(join(tmpdir(),"wolf-source-")),queue=new BuildQueue(root);
+  try {
+    const receipt=queue.add("msg","chat","telegram","owner","Publish source",true,"owner/app","source");
+    expect(queue.next(true)).toMatchObject({id:receipt.id,release_project:2,changes:1});
+    expect(()=>queue.add("msg","chat","telegram","owner","Ordinary deployment",true,"owner/app",true)).toThrow();
+  } finally {queue.db.close();rmSync(root,{recursive:true,force:true});}
+});
