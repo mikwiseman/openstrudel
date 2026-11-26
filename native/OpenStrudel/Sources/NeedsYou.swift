@@ -71,6 +71,8 @@ struct NeedCard: Identifiable, Equatable {
     var at: Date?
     /// When a failed run is tried again, when its Home knows.
     var nextTry: Date?
+    /// The cause the Home names for a failure, such as a model sign-in that stops several employees at once.
+    var cause: String?
     /// The first is the step the card proposes.
     var actions: [Action] = []
     /// The people it waits for, when this device cannot answer for them.
@@ -98,7 +100,7 @@ enum NeedsYou {
         let since = words.failure(since: failure?.since, reason: nil, now: now).trimmingCharacters(in: CharacterSet(charactersIn: "."))
         return NeedCard(id: "failing:" + member.route.id, home: member.route.connectionID, kind: .failed, origin: .failing(member.route),
                         profileID: member.profile.id, employee: member.profile.name,
-                        title: reason ?? since, text: reason == nil ? nil : since + ".", at: failure?.since,
+                        title: reason ?? since, text: reason == nil ? nil : since + ".", at: failure?.since, cause: failure?.code,
                         actions: [.init(id: open, label: L("Открыть"), role: .primary), .init(id: later, label: L("Завтра"))])
     }
 
@@ -119,19 +121,30 @@ enum NeedsYou {
                         title: L10n.text(interaction.title), text: [detail, L10n.text(asked)].first { !$0.isEmpty }, actions: actions)
     }
 
-    /// A decision comes before a notice that something failed; within each, what has waited longest leads. A question
-    /// in a chat holds up a turn that is running, so it stands first of all.
+    /// A question in a chat holds up a turn that is running, so it stands first of all; then a model sign-in that stops
+    /// several employees; then the decisions, the newest first, while what they are about is still fresh; a notice that
+    /// something failed comes last.
     static func ordered(_ cards: [NeedCard]) -> [NeedCard] {
         func rank(_ card: NeedCard) -> Int {
             if case .question = card.origin { return 0 }
-            return card.kind == .failed ? 2 : 1
+            if card.kind == .failed {
+                // The Home's own sign-in card names everyone it stops; an employee's failure read from its row does not.
+                if case .card = card.origin, card.cause == "sign_in" { return 1 }
+                return 3
+            }
+            return 2
         }
         return cards.enumerated().sorted { first, second in
             let a = first.element, b = second.element
             if rank(a) != rank(b) { return rank(a) < rank(b) }
-            if a.at != b.at { return (a.at ?? .distantPast) < (b.at ?? .distantPast) }
+            if a.at != b.at { return (a.at ?? .distantPast) > (b.at ?? .distantPast) }
             return first.offset < second.offset
         }.map(\.element)
+    }
+
+    /// A card's words with the Home's Markdown links read as their labels and kept tappable, and nothing else of Markdown.
+    static func linked(_ text: String) -> AttributedString {
+        (try? AttributedString(markdown: text, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
     }
 
     /// «через 3 дня», «завтра», «сегодня», «вчера»: how far a card's day is, as a person would say it.
@@ -187,7 +200,12 @@ final class NeedsYouModel: ObservableObject {
             let own = listed[source.id]
             all += own ?? source.interactions.map { NeedsYou.question($0, home: source.id, assistant: source.activeAgentName) }
             let told = Set((own ?? []).filter { $0.kind == .failed }.compactMap(\.profileID))
-            all += library.team(on: source).filter { $0.profile.failing == true && !source.isOffline($0.profile) && !told.contains($0.profile.id) }
+            // A Home whose sign-in card is open has said who stopped for it, in one card.
+            let signIn = (own ?? []).contains { $0.kind == .failed && $0.cause == "sign_in" }
+            all += library.team(on: source).filter { member in
+                member.profile.failing == true && !source.isOffline(member.profile) && !told.contains(member.profile.id)
+                    && !(signIn && failures.failure(member.profile.id, on: source)?.code == "sign_in")
+            }
                 .map { NeedsYou.failing($0, failure: failures.failure($0.profile.id, on: source), now: now) }
         }
         return NeedsYou.ordered(all.filter { (aside[$0.id] ?? .distantPast) <= now })
@@ -262,7 +280,7 @@ final class NeedsYouModel: ObservableObject {
     }
 }
 
-/// A Home's cards as it sends them: what is open, the oldest first, and what was decided in the last day.
+/// A Home's cards as it sends them: what is open, and what was decided in the last day. The app sets their order.
 /// Fields this version does not know are ignored, and so is a card of a kind it does not know.
 struct HomeCards: Decodable {
     static let path = "/v1/cards"
@@ -272,7 +290,7 @@ struct HomeCards: Decodable {
         struct Detail: Decodable { let label: String; let value: String }
         struct Content: Decodable {
             let to: String?; let via: String?; let subject: String?; let text: String?
-            let details: [Detail]?; let due: String?; let url: String?; let nextTry: String?
+            let details: [Detail]?; let due: String?; let url: String?; let nextTry: String?; let code: String?
         }
         struct Choice: Decodable { let id: String; let label: String; let role: String?; let needsText: Bool?; let url: String? }
         struct Person: Decodable { let name: String }
@@ -309,7 +327,7 @@ struct HomeCards: Decodable {
             return NeedCard(id: home + ":" + id, home: home, kind: kind, origin: .card(id), profileID: raiser?.profileId, employee: filled(raiser?.name) ?? "OpenStrudel",
                             title: title, text: filled(reason), draft: draft,
                             details: (content?.details ?? []).map { NeedCard.Detail(label: $0.label, value: $0.value) },
-                            due: NeedsYou.day(content?.due), at: Team.date(createdAt), nextTry: Team.date(content?.nextTry), actions: actions,
+                            due: NeedsYou.day(content?.due), at: Team.date(createdAt), nextTry: Team.date(content?.nextTry), cause: filled(content?.code), actions: actions,
                             waitsFor: canAnswer == false ? (`for` ?? []).map(\.name) : nil, decision: decision)
         }
     }

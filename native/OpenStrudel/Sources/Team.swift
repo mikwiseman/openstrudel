@@ -222,9 +222,9 @@ extension DeviceLibrary {
 
     /// The team as one list across the Homes in sight: the pinned employees in their own steady order, then everyone
     /// with something waiting, at work or with an answer to show, then whoever has said nothing for two weeks. With
-    /// one Home chosen only its employees are listed.
-    func teamList(_ arrangement: TeamArrangement, waiting: Set<String> = [], quiet: (TeamMember, HomeClient) -> Bool) -> TeamList {
-        let chosen = shownHome(arrangement)
+    /// one Home chosen only its employees are listed, unless the list is every Home's whatever was chosen.
+    func teamList(_ arrangement: TeamArrangement, waiting: Set<String> = [], everyHome: Bool = false, quiet: (TeamMember, HomeClient) -> Bool) -> TeamList {
+        let chosen = everyHome ? nil : shownHome(arrangement)
         let rows = team.filter { chosen == nil || $0.source === chosen }
         let pinned = rows.filter { arrangement.isPinned($0.member.profile, on: $0.source) }
         let rest = rows.filter { !arrangement.isPinned($0.member.profile, on: $0.source) }
@@ -440,9 +440,11 @@ final class TeamReadMarks: ObservableObject {
         return latest > mark
     }
 
-    /// The employee's page is on screen with its latest answer.
-    func see(_ profile: EmployeeProfile, on client: HomeClient) {
-        guard let latest = profile.previewAt, latest > seen[key(profile, on: client)] ?? "" else { return }
+    /// The employee's page is on screen with its latest answer. Its chat also names the newest answer it shows, which
+    /// can arrive before the team list has heard of it.
+    func see(_ profile: EmployeeProfile, on client: HomeClient, through shown: String? = nil) {
+        let latest = max(profile.previewAt ?? "", shown ?? "")
+        guard !latest.isEmpty, latest > seen[key(profile, on: client)] ?? "" else { return }
         var next = seen
         next[key(profile, on: client)] = latest
         save(next)

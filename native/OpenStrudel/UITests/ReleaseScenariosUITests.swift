@@ -227,7 +227,9 @@ final class ReleaseScenariosUITests: XCTestCase {
         // The private chat and the imported archive live in the main feed, captioned and without a reply action. The
         // feed is the home's lead, behind the chats.
         app.navigationBars["Переписки"].buttons["Готово"].tap()
-        let lead = app.buttons["teamLead"]
+        let lead = app.buttons["teamLead"], team = app.buttons["homePage-team"]
+        // The chat's row is the first of the team, the phone's second page.
+        if team.waitForExistence(timeout: 5), !team.isSelected { team.tap() }
         XCTAssertTrue(lead.waitForExistence(timeout: 10), app.debugDescription); lead.tap()
         let privateMessage = app.staticTexts["Пример личной переписки"]
         XCTAssertTrue(privateMessage.waitForExistence(timeout: 10), app.debugDescription)

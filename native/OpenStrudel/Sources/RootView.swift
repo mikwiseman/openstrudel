@@ -359,7 +359,13 @@ struct OpenStrudelRootView: View {
     @ViewBuilder private func page(_ place: HomePlace) -> some View {
         switch place {
         case .chat: chat
-        case .reader(let route): ReaderScreen(route: route, discuss: discuss)
+        case .reader(let route):
+            // An employee's page is its chat, on whichever Home it lives; any other conversation is read.
+            if case .employee(let id) = route.kind, let source = library.clients.first(where: { $0.id == route.connectionID && !$0.isSignedOut }) {
+                employeeChat(id).environmentObject(source)
+            } else {
+                ReaderScreen(route: route, discuss: discuss)
+            }
         case .insights:
             InsightsPage(model: activity, scope: activityScope, refresh: { await refreshActivity(includeLimits: false); await needs.refresh(library.teamHomes) },
                          openChat: { open(.chat) }, act: act)
@@ -445,6 +451,15 @@ struct OpenStrudelRootView: View {
         // A story stays open in its desk for when the reader comes back.
         newsroom.hold()
         open(.chat, from: AnyHashable("ask"), writing: true)
+    }
+
+    /// One employee's chat. Its page opens without the keyboard: it was opened to read first.
+    private func employeeChat(_ profileID: String) -> some View {
+        #if os(macOS)
+        ConversationView(subject: profileID, covered: showHistory, openHistory: { showHistory = true })
+        #else
+        ConversationView(showSettings: $showSettings, subject: profileID, covered: showHistory || showSettings, openHistory: { showHistory = true })
+        #endif
     }
 
     private var chat: some View {

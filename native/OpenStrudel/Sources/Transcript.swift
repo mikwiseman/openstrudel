@@ -69,8 +69,6 @@ struct MessageBubble: View {
     @EnvironmentObject private var client: HomeClient
     /// In a reader the neighbours are the reader's, and nothing here answers: the composer is the chat's.
     @Environment(\.readerMessages) private var readerMessages
-    /// In an employee's feed a request is one quiet line over the result it asked for.
-    @Environment(\.readerFeed) private var feed
     @State private var previewURL: URL?
     let message: HomeMessage
     /// Other people write here too (a Telegram group or history from several people),
@@ -122,8 +120,6 @@ struct MessageBubble: View {
             } else if message.kind == "notice" {
                 Label(withTime(L10n.text(message.text)), systemImage: "checkmark").modifier(MetaLine())
                     .frame(maxWidth: .infinity, alignment: .leading)
-            } else if feed && isInbound {
-                request
             } else if fromSomeoneElse {
                 someoneElse
             } else if isInbound || ownerReply {
@@ -180,22 +176,6 @@ struct MessageBubble: View {
         .frame(maxWidth: bubbleWidth, alignment: .trailing)
         .frame(maxWidth: .infinity, alignment: .trailing)
         .paragraphDirection(replySide)
-    }
-
-    /// What the employee was asked, by the owner or in a Telegram chat: who and what, quietly, never a bubble.
-    private var request: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if !message.text.isEmpty {
-                let author = message.origin?.channel == "telegram" ? "" : (shared ? message.author : nil) ?? L("Вы")
-                Text(author.isEmpty ? message.text : author + ": " + message.text)
-                    .font(AppTypography.interface).foregroundStyle(AppTheme.secondaryText)
-                    .lineLimit(4).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-            }
-            attachments
-            if message.status == "queued" { Text(L("В очереди")).modifier(MetaLine()) }
-            if let error = message.error, message.delivery == nil { warning(error) }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var someoneElse: some View {

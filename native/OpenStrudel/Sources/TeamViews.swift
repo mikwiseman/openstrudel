@@ -122,17 +122,9 @@ struct TeamRow: View {
 
     private var character: some View {
         // It proofs inside a signal ring while its employee works. Grey means out of reach and nothing else: a failed
-        // run keeps the character's colours, and the mark and the words say what happened.
+        // run keeps the character's colours, and the words say what happened. What to do about it is a card on the home.
         ToneAvatar(appearance: content.appearance, size: AvatarSize.team, working: content.state == .working, landings: landings,
                    offline: content.state == .offline)
-            .overlay(alignment: .bottomTrailing) {
-                if content.state == .failing {
-                    Image(systemName: "exclamationmark.circle.fill").font(.system(size: AvatarSize.team * 0.36))
-                        .symbolRenderingMode(.palette).foregroundStyle(.white, AppTheme.warning)
-                        .background(Circle().fill(AppTheme.canvas).padding(-1.5))
-                        .offset(x: 2, y: 2).transition(.scale.combined(with: .opacity)).accessibilityHidden(true)
-                }
-            }
     }
 
     private var name: some View {
@@ -211,17 +203,19 @@ enum RowMetrics {
     #endif
 }
 
-/// The first row: the main assistant with its last answer in the chat.
+/// The first row: the main assistant with its last answer in the chat, also while an employee's page holds the
+/// Home's selection.
 struct TeamLeadRow: View {
     @EnvironmentObject private var client: HomeClient
     var selected = false
 
     var body: some View {
-        let answer = client.messages.last { $0.direction == "outbound" && $0.kind != "notice" && $0.story == nil && !MessagePages.isOwnerReply($0) }
-        let offline = client.isOffline(nil)
-        TeamRow(content: TeamRowContent(name: client.activeAgentName, appearance: nil,
+        let main = client.selectedProfileID == nil, offline = client.isOffline(nil)
+        // Before the Home's first answer the chat's own messages, as this device kept them, speak for it.
+        let answer = client.mainLatest ?? (main ? client.messages.last { $0.direction == "outbound" && $0.kind != "notice" && $0.story == nil && !MessagePages.isOwnerReply($0) } : nil)
+        TeamRow(content: TeamRowContent(name: "OpenStrudel", appearance: nil,
                                         preview: answer.map { Team.line($0.text) } ?? L("Напишите, что нужно"), date: answer?.sentAt,
-                                        state: offline ? .offline : client.isWorking && client.interactions.isEmpty ? .working : .resting),
+                                        state: offline ? .offline : main && client.isWorking && client.interactions.isEmpty ? .working : .resting),
                 selected: selected)
     }
 }
@@ -246,8 +240,10 @@ struct TeamMemberRow: View {
                         cause: failures.failure(member.profile.id, on: source)?.code, waits: waits)
         } else {
             let profile = member.profile
+            // An answer that only repeats the employee's name says nothing a second time.
+            let said = profile.previewText.caseInsensitiveCompare(profile.name) == .orderedSame ? "" : profile.previewText
             TeamRow(content: TeamRowContent(name: profile.name, appearance: profile.resolvedAppearance,
-                                            preview: profile.previewText.isEmpty ? profile.roleText : profile.previewText, date: Team.date(profile.previewAt),
+                                            preview: said.isEmpty ? profile.roleText : said, date: Team.date(profile.previewAt),
                                             state: Team.state(profile, offline: source.isOffline(profile)), unread: marks.isUnread(profile, on: source),
                                             nextRun: Team.date(profile.nextRunAt), cause: failures.failure(profile.id, on: source)?.code, pinned: pinned, home: home,
                                             waits: waits),

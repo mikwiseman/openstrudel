@@ -69,14 +69,25 @@ import Testing
         #expect(NeedsYou.question(choice, home: "cabin", assistant: "OpenStrudel").id != short.id)
     }
 
-    @Test func aQuestionInAChatLeadsThenDecisionsThenFailuresEachOldestFirst() throws {
+    @Test func aQuestionInAChatLeadsThenASignInThenDecisionsThenFailuresEachNewestFirst() throws {
         let now = Self.now, hour = 3600.0
         let asked = NeedsYou.question(try interaction(#"{"id":"i1","conversationId":"c","messageId":"m","title":"Вопрос","detail":null,"url":null,"questions":[{"id":"q","question":"Да?","options":["Да","Нет"]}]}"#), home: "home", assistant: "OpenStrudel")
+        var signIn = card("sign-in", .failed, at: now - 70 * hour)
+        signIn.cause = "sign_in"
         let cards = [card("failed-new", .failed, at: now - hour), card("send-new", .send, at: now - hour), card("failed-old", .failed, at: now - 30 * hour),
-                     card("due", .due, at: now - 3 * hour), asked, card("connect-old", .connect, at: now - 50 * hour)]
-        #expect(NeedsYou.ordered(cards).map(\.id) == [asked.id, "connect-old", "due", "send-new", "failed-old", "failed-new"])
+                     card("due", .due, at: now - 3 * hour), asked, card("connect-old", .connect, at: now - 50 * hour), signIn]
+        // What is fresh in the person's mind comes first; a sign-in that stops several employees comes before all decisions.
+        #expect(NeedsYou.ordered(cards).map(\.id) == [asked.id, "sign-in", "send-new", "due", "connect-old", "failed-new", "failed-old"])
         // Equal cards keep the order their Homes gave them.
         #expect(NeedsYou.ordered([card("b", .answer), card("a", .answer)]).map(\.id) == ["b", "a"])
+    }
+
+    @Test func aCardsLinksReadAsTheirWords() {
+        let text = NeedsYou.linked("Ivan asks about the call. [Chat with Ivan](https://t.me/example)")
+        #expect(String(text.characters) == "Ivan asks about the call. Chat with Ivan")
+        #expect(text.runs.contains { $0.link == URL(string: "https://t.me/example") })
+        // Nothing else of Markdown is read: a star stays a star.
+        #expect(String(NeedsYou.linked("2 * 3 = 6").characters) == "2 * 3 = 6")
     }
 
     @Test func aDayIsSaidAsAPersonWould() throws {

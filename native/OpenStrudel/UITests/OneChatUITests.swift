@@ -95,24 +95,20 @@ final class OneChatUITests: XCTestCase {
         openHistory(app)
         let employee = app.buttons["employee-" + editorID]
         XCTAssertTrue(employee.waitForExistence(timeout: 10)); employee.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["reader"].waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(app.buttons["readerTitle"].waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertEqual(app.buttons["readerTitle"].value as? String, "Редактор")
-        // The employee's history keeps the conversation; its stories are read in the feed.
+        // An employee's page is its own chat: its history, and a composer of its own that never shows the main draft.
+        let editor = app.buttons["openEmployeeDetails"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 10), app.debugDescription)
+        _ = await XCTWaiter().fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "Редактор"), object: editor)], timeout: 10)
+        XCTAssertEqual(editor.value as? String, "Редактор")
+        // Its stories are read in its paper, not in its chat.
         XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Mistral")).firstMatch.exists)
         let history = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Черновик готов")).firstMatch
         XCTAssertTrue(history.waitForExistence(timeout: 15), app.debugDescription)
-        XCTAssertFalse(app.textFields["Сообщение"].exists)
-        XCTAssertFalse(app.buttons["Отправить"].exists)
-        capture("reader-employee", app)
-        history.press(forDuration: 1.2)
-        // The message's own menu, not the toolbar's button for the latest message.
-        let discuss = app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "Обсудить в чате", "discussLatest")).firstMatch
-        XCTAssertTrue(discuss.waitForExistence(timeout: 5), app.debugDescription); discuss.tap()
-        XCTAssertTrue(app.textFields["Сообщение"].waitForExistence(timeout: 10))
-        XCTAssertEqual(app.textFields["Сообщение"].value as? String, "Черновик, который должен выжить")
-        XCTAssertTrue(app.buttons["removeDraftContext"].waitForExistence(timeout: 5))
-        app.buttons["removeDraftContext"].tap()
+        XCTAssertTrue(app.textFields["Сообщение"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(app.textFields["Сообщение"].value as? String, emptyComposerValue, "The employee's words are its own")
+        capture("employee-chat", app)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertEqual(app.textFields["Сообщение"].waitForExistence(timeout: 10) ? app.textFields["Сообщение"].value as? String : nil, "Черновик, который должен выжить")
 
         openHistory(app)
         let search = app.searchFields.firstMatch
@@ -160,7 +156,10 @@ final class OneChatUITests: XCTestCase {
         XCTAssertFalse(app.buttons["openClients"].exists, "Clients left the app")
         XCTAssertFalse(app.textFields["Сообщение"].exists)
         back(app); back(app)
-        XCTAssertTrue(homeComposer.waitForExistence(timeout: 10), app.debugDescription); homeComposer.tap()
+        XCTAssertTrue(homeComposer.waitForExistence(timeout: 10), app.debugDescription)
+        // The way back settles before the capsule is pressed.
+        _ = await XCTWaiter().fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: homeComposer)], timeout: 10)
+        homeComposer.tap()
         XCTAssertTrue(composer.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(composer.value as? String, "Черновик, который должен выжить")
         try await assertNoSend(since: state)
@@ -177,7 +176,7 @@ final class OneChatUITests: XCTestCase {
         // Owner setup uses the employee's actual device and existing project APIs. It never starts a turn.
         openHistory(app)
         XCTAssertTrue(employee.waitForExistence(timeout: 10), app.debugDescription); employee.tap()
-        XCTAssertTrue(app.buttons["readerTitle"].waitForExistence(timeout: 10), app.debugDescription); app.buttons["readerTitle"].tap()
+        XCTAssertTrue(app.buttons["openEmployeeDetails"].waitForExistence(timeout: 10), app.debugDescription); app.buttons["openEmployeeDetails"].tap()
         let projectEntry = app.buttons["employeeProject"]
         for _ in 0..<5 { if projectEntry.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(projectEntry.waitForExistence(timeout: 10), app.debugDescription); projectEntry.tap()
@@ -221,7 +220,7 @@ final class OneChatUITests: XCTestCase {
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 10), app.debugDescription)
         for _ in 0..<4 { if employee.exists && employee.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(employee.waitForExistence(timeout: 10), app.debugDescription); employee.tap()
-        XCTAssertTrue(app.buttons["readerTitle"].waitForExistence(timeout: 10)); app.buttons["readerTitle"].tap()
+        XCTAssertTrue(app.buttons["openEmployeeDetails"].waitForExistence(timeout: 10)); app.buttons["openEmployeeDetails"].tap()
         for _ in 0..<5 { if projectEntry.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(projectEntry.exists, app.debugDescription); projectEntry.tap()
         let projectChoice = app.descendants(matching: .any)["employeeProjectChoice"]
@@ -293,14 +292,18 @@ final class OneChatUITests: XCTestCase {
         button.tap()
     }
 
-    /// Progress is a step from Statistics, which opens from the foot of the home.
+    /// Progress is a step from Statistics, which opens from the foot of the team, the phone's second page.
     @MainActor private func openProgress(_ app: XCUIApplication) {
         let statistics = app.buttons["homeStatistics"], progress = app.buttons["openProgress"], home = app.descendants(matching: .any)["homeRoot"]
+        let team = app.buttons["homePage-team"]
+        if team.waitForExistence(timeout: 5), !team.isSelected { team.tap() }
         XCTAssertTrue(statistics.waitForExistence(timeout: 20), app.debugDescription)
         for _ in 0..<8 where !statistics.isHittable { home.swipeUp() }
         statistics.tap()
         XCTAssertTrue(app.descendants(matching: .any)["statisticsRoot"].waitForExistence(timeout: 10), app.debugDescription)
         for _ in 0..<8 where !progress.exists || !progress.isHittable { app.swipeUp() }
+        // At the largest text sizes the button is tall: all of it comes into sight before it is pressed.
+        for _ in 0..<3 where progress.exists && progress.frame.maxY > app.frame.maxY - 40 { app.swipeUp(velocity: .slow) }
         XCTAssertTrue(progress.waitForExistence(timeout: 15), app.debugDescription); progress.tap()
     }
 

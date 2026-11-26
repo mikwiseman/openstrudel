@@ -148,6 +148,28 @@ import Testing
         #expect(client.pendingMessages.isEmpty)
     }
 
+    @Test func anEmployeesPageWritesToItAndTheTeamKeepsTheMainAnswer() async throws {
+        let fixture = OneChatFixture(), harness = try Harness(fixture)
+        defer { harness.close() }
+        fixture.mainAnswer = "План на день готов."
+        let client = harness.client(id: "current")
+        await client.load()
+        #expect(client.mainLatest?.text == "План на день готов.")
+        // The employee's page takes the Home's selection: its conversation, its sends.
+        await client.selectProfile("emp-1")
+        #expect(client.conversationID == "c-emp")
+        #expect(client.messages.map(\.text) == ["Черновик готов."])
+        await client.sendMessage("Сделай короче")
+        let send = fixture.requests.first { $0.path.hasPrefix("/v1/messages") }
+        #expect(send?.body?["profile"] as? String == "emp-1")
+        #expect(send?.body?["conversationId"] == nil)
+        // Meanwhile the team's first row still speaks for the main assistant.
+        #expect(client.mainLatest?.text == "План на день готов.")
+        // Leaving the page gives the main assistant back.
+        await client.selectProfile(nil)
+        #expect(client.conversationID == "chat" && client.messages.map(\.text) == ["План на день готов."])
+    }
+
     @Test func unresolvedSendsStayVisibleOnAHomeWithoutTheEmployeeFeed() async throws {
         let fixture = OneChatFixture(), harness = try Harness(fixture)
         fixture.timeline = false
@@ -200,6 +222,8 @@ import Testing
     var requests: [Request] = []
     var timeline = true
     var receipts: [String: String] = [:]
+    /// The main assistant's one answer, when the test gives it one.
+    var mainAnswer: String?
     private var sent = 0
 
     func respond(_ request: URLRequest) -> (Int, Data) {
@@ -216,7 +240,10 @@ import Testing
         case "/v1/account":
             return (200, Data(#"{"account":{"connected":true,"email":"owner@example.invalid","planType":"plus","managed":true},"canManage":true,"loginPending":false}"#.utf8))
         case "/v1/conversation":
-            return (200, Data(#"{"conversation":{"id":"chat","channel":"api","createdAt":"2026-11-01T12:00:00.000Z","updatedAt":"2026-11-01T12:00:00.000Z"},"messages":[],"interactions":[],"timeline":true,"pagination":{"olderCursor":null,"newerCursor":null,"hasMore":false}}"#.utf8))
+            let said = mainAnswer.map { #"[{"id":"m-main","conversationId":"chat","channel":"api","direction":"outbound","replyToId":null,"text":"\#($0)","externalId":null,"createdAt":"2026-11-01T12:01:00.000Z","status":"completed","error":null,"kind":"text"}]"# } ?? "[]"
+            return (200, Data(#"{"conversation":{"id":"chat","channel":"api","createdAt":"2026-11-01T12:00:00.000Z","updatedAt":"2026-11-01T12:00:00.000Z"},"messages":\#(said),"interactions":[],"timeline":true,"pagination":{"olderCursor":null,"newerCursor":null,"hasMore":false}}"#.utf8))
+        case "/v1/agents/emp-1/conversation":
+            return (200, Data(#"{"conversation":{"id":"c-emp","channel":"api","createdAt":"2026-11-01T12:00:00.000Z","updatedAt":"2026-11-01T12:00:00.000Z"},"messages":[{"id":"m-emp","conversationId":"c-emp","channel":"api","direction":"outbound","replyToId":null,"text":"Черновик готов.","externalId":null,"createdAt":"2026-11-01T12:02:00.000Z","status":"completed","error":null,"kind":"text"}],"interactions":[],"timeline":true,"pagination":{"olderCursor":null,"newerCursor":null,"hasMore":false}}"#.utf8))
         case "/v1/messages":
             sent += 1
             return (202, Data("{\"conversationId\":\"c-emp\",\"messageId\":\"m-\(sent)\",\"text\":\"\",\"profileId\":\"emp-1\"}".utf8))

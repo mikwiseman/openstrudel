@@ -253,6 +253,8 @@ final class HomeClient: ObservableObject, Identifiable {
     @Published private(set) var conversationID: String?
     @Published private(set) var conversationModel: ModelSelection?
     @Published private(set) var selectedProfileID: String?
+    /// The main assistant's latest answer, kept while an employee's page holds the selection, for the team's first row.
+    @Published private(set) var mainLatest: HomeMessage?
 
     private let defaults: UserDefaults
     private let pendingDirectory: URL
@@ -1186,6 +1188,10 @@ final class HomeClient: ObservableObject, Identifiable {
             let remaining = pendingMessages.filter { !delivered.contains($0.id.uuidString) }
             if remaining.count != pendingMessages.count { pendingMessages = remaining; try savePending() }
             if !hasOpenedConversation && (!messages.isEmpty || !profiles.isEmpty) { hasOpenedConversation = true }
+            if profileID == nil, selectedChatID == nil {
+                let latest = messages.last { $0.direction == "outbound" && $0.kind != "notice" && $0.story == nil && !MessagePages.isOwnerReply($0) }
+                if mainLatest != latest { mainLatest = latest }
+            }
             if interactions != envelope.interactions ?? [] { interactions = envelope.interactions ?? [] }
             if syncError != nil { syncError = nil }
         } catch {

@@ -316,6 +316,12 @@ import Testing
         marks.see(first, on: client)
         #expect(!marks.isUnread(next, on: client))
         #expect(!TeamReadMarks(defaults: defaults).isUnread(next, on: client))
+        // An employee's chat names the answer it showed, before the team list hears of it: that answer is read too.
+        marks.see(spoke, on: client, through: "2026-11-10T10:30:00.000Z")
+        let replied = try profile("p2", "Baker", #","preview":"Answered","previewAt":"2026-11-10T10:30:00.000Z","working":false"#)
+        #expect(!marks.isUnread(replied, on: client))
+        let later = try profile("p2", "Baker", #","preview":"Later","previewAt":"2026-11-10T11:00:00.000Z","working":false"#)
+        #expect(marks.isUnread(later, on: client))
     }
 
     // MARK: How this device arranges the list
@@ -341,6 +347,31 @@ import Testing
         #expect(TeamArrangement(defaults: defaults).home == "cabin")
         arrangement.show(home: nil)
         #expect(TeamArrangement(defaults: defaults).home == nil)
+    }
+
+    @Test func aPhoneListsEveryHomeWhateverWasChosenBesideAnOpenPlace() throws {
+        // Two Homes, each with the one employee it listed last time.
+        var suites: [String] = []
+        defer { suites.forEach { UserDefaults.standard.removePersistentDomain(forName: $0) } }
+        func home(_ id: String, port: Int, _ employee: EmployeeProfile) throws -> (client: HomeClient, defaults: UserDefaults) {
+            let suite = "OpenStrudel.team." + UUID().uuidString
+            suites.append(suite)
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defaults.set("http://127.0.0.1:\(port)", forKey: "openstrudel.homeURL")
+            defaults.set(id, forKey: "openstrudel.catalogueIdentity")
+            defaults.set(try JSONEncoder().encode([employee]), forKey: "openstrudel.employeeCatalog")
+            return (HomeClient(defaults: defaults, connectionID: id, credentialReader: { _, _ in nil }, credentialWriter: { _, _ in }), defaults)
+        }
+        let office = try home("office", port: 57713, profile("p1", "Scout")), cabin = try home("cabin", port: 57714, profile("p2", "Baker"))
+        let library = DeviceLibrary(defaults: office.defaults, clients: [office.client, cabin.client])
+        let arrangement = TeamArrangement(defaults: office.defaults)
+        let names = { (list: TeamList) in list.shown.map(\.member.profile.name).sorted() }
+        #expect(names(library.teamList(arrangement) { _, _ in false }) == ["Baker", "Scout"])
+        // Beside an open place a chosen Home narrows the list to its own employees.
+        arrangement.show(home: "cabin")
+        #expect(names(library.teamList(arrangement) { _, _ in false }) == ["Baker"])
+        // A phone has no filter, so a choice made beside an open place hides nobody there.
+        #expect(names(library.teamList(arrangement, everyHome: true) { _, _ in false }) == ["Baker", "Scout"])
     }
 
     @Test func aRowSaysWhatIsNowTrueAndOtherwiseACleanExcerpt() throws {

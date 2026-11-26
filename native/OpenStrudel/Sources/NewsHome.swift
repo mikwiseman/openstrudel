@@ -102,3 +102,97 @@ private struct NewsPaperTile: View {
         .accessibilityValue(title)
     }
 }
+
+/// A desk's paper on the phone's first page: whose it is and how much of it is new, the lead with its picture and its
+/// headline under it, then the next headlines to scan. A story opens over the desk's own page; the first line opens
+/// the whole paper. Only the first paper of the page leads with a picture, so two desks never read as two front pages.
+struct TodayPaper: View {
+    let paper: NewsPaperShelf.Paper
+    @ObservedObject var feed: NewsFeed
+    /// The first paper of the page: its lead is set large, with its picture.
+    let leads: Bool
+    let zoom: Namespace.ID
+    let openDesk: () -> Void
+    let openStory: (String) -> Void
+    @State private var picture: CGImage?
+    /// Headlines under the lead.
+    private static let rows = 3
+
+    var body: some View {
+        let words = feed.words, front = feed.latest.front(read: feed.read), unseen = front.unseen(feed.read)
+        let stories = front.stories, lead = leads ? stories.first : nil
+        // A desk whose runs fail shows the paper it last made, and shows that it is not today's.
+        let stale = front.standsIn && NewsStatusLine(status: feed.status, front: front).isFailing
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: openDesk) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(paper.name).font(AppTypography.label).foregroundStyle(AppTheme.secondaryText).lineLimit(1)
+                    Spacer(minLength: 8)
+                    Group {
+                        if front.standsIn { Text(words("Выпуск за \(words.day(front.date))")) }
+                        else if unseen > 0 { Text(words.fresh(unseen)).foregroundStyle(AppTheme.signalText) }
+                        else if !stories.isEmpty { Text(words.stories(stories.count)) }
+                    }
+                    .font(.footnote).monospacedDigit().foregroundStyle(AppTheme.faint).lineLimit(1)
+                    Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(AppTheme.faint)
+                }
+                .frame(minHeight: max(32, controlTarget * 0.8)).contentShape(Rectangle())
+            }
+            .buttonStyle(NewsRowStyle())
+            .zoomSource(AnyHashable("tile:desk:" + paper.route.id), in: zoom)
+            // Read as the desk's tile is beside an open place: whose paper, how much is new, and its lead.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(unseen > 0 ? paper.name + " · " + words.fresh(unseen) : paper.name)
+            .accessibilityValue(stories.first?.story.title ?? (feed.loaded ? L("Сегодняшние новости появятся здесь") : ""))
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("tile-desk:" + paper.route.id)
+            Group {
+                if let lead {
+                    Button { openStory(lead.id) } label: { leadStory(lead, words: words) }
+                        .buttonStyle(NewsRowStyle())
+                        .accessibilityElement(children: .combine)
+                        .accessibilityHint(words("Открыть историю"))
+                        .accessibilityIdentifier("todayLead")
+                }
+                ForEach(stories.dropFirst(lead == nil ? 0 : 1).prefix(Self.rows)) { item in
+                    NewsCompactRow(item: item, line: newsLine(item.story, locale: words.language.locale), developed: item.developed(since: feed.read)) { openStory(item.id) }
+                        .accessibilityIdentifier("todayStory-" + item.id)
+                }
+                if stories.isEmpty, feed.loaded {
+                    // Until the first story, the desk says what will be here.
+                    Text(L("Сегодняшние новости появятся здесь")).font(AppTypography.reading).foregroundStyle(AppTheme.secondaryText)
+                        .padding(.top, 4)
+                }
+            }
+            .opacity(stale ? 0.5 : 1)
+        }
+        .environment(\.newsWords, words)
+        .task(id: lead?.story.image) {
+            guard let address = lead?.story.image else { picture = nil; return }
+            picture = await StoryPictures.load(address, home: paper.host)
+        }
+    }
+
+    private func leadStory(_ item: NewsDesk.Item, words: NewsWords) -> some View {
+        let story = item.story, shown = StoryPictures.covers(picture ?? StoryPictures.cached(story.image))
+        return VStack(alignment: .leading, spacing: 0) {
+            if let shown {
+                // The picture keeps one shape whatever its own is, so the page does not change its rhythm by the day.
+                Color.clear.aspectRatio(2, contentMode: .fit)
+                    .overlay { Image(decorative: shown, scale: 1).resizable().scaledToFill() }
+                    .clipShape(.rect(cornerRadius: 28, style: .continuous))
+                    .tileShadow()
+                    .padding(.top, 6).padding(.bottom, 14)
+                    .transition(.opacity)
+            }
+            QuietLine(text: newsLine(story, locale: words.language.locale), developed: item.developed(since: feed.read))
+            Text(story.title).font(NewsType.headline(26, .title2)).tracking(-0.3)
+                .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, 10)
+        .contentShape(.rect)
+        .animation(.smooth(duration: 0.3), value: shown != nil)
+    }
+}
