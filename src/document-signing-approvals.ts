@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, extname, join } from "node:path";
-import { requestsDocumentSigning, runDocumentSigning } from "./document-signing.js";
+import { requestsDocumentSigning, runDocumentSigning, unquotedSigningWords } from "./document-signing.js";
 import { telegramAuthorization } from "./authorization.js";
 import { MAX_FILE_BYTES, type ConversationFiles } from "./files.js";
 import type { Store } from "./store.js";
@@ -35,7 +35,7 @@ const unavailable = (id:string): Result => ({id,state:"unavailable"});
 
 export function requestedSigningMarks(words?:string,delegated=false): Marks|null {
   if (!words) return null;
-  const unquoted=words.toLowerCase().replace(/^[ \t]*>.*$/gm,"").replace(/"[^"]*"|«[^»]*»|“[^”]*”|„[^“]*“|`[^`]*`/gu," ").trim();
+  const unquoted=unquotedSigningWords(words);
   const text=delegated ? unquoted.replace(/^(?:мик|mik)[,\s]+/u,"") : unquoted;
   const forSigner=delegated && /^(?:передай|отправь)(?:те)?\s+(?:(?:это[т]?|договор|документ|файл)\s+)*мику\s+на\s+подпись(?:[.!?\s]|$)/u.test(text);
   if (!forSigner&&!requestsDocumentSigning(text)) return null;

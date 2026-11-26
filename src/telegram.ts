@@ -3,7 +3,7 @@ import { isChatSettingsCommand, pressChatReplySettings, privateRepliesPaused, sh
 import { buildsFor } from "./aigid-testflight.js";
 import { planAddress, pressPlan, sendPlanVersion } from "./project-plan-telegram.js";
 import { recordDiagnostic } from "./diagnostics.js";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { sha256, sleep } from "./util.js";
 import type { Attachment, Interaction, MessageInput, MessageResult, TelegramButton, TelegramChat, TelegramLinkButton } from "./types.js";
 import { execFile } from "node:child_process";
@@ -177,7 +177,7 @@ export class TelegramAdapter {
       CREATE TABLE IF NOT EXISTS telegram_links(hash TEXT PRIMARY KEY,payload TEXT NOT NULL,expires_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS telegram_interactions(bot_id TEXT NOT NULL,chat_id TEXT NOT NULL,message_id INTEGER NOT NULL,interaction_id TEXT NOT NULL,PRIMARY KEY(bot_id,chat_id,message_id));`);
     const outbox=this.store.db.prepare("PRAGMA table_info(telegram_outbox)").all().map(row=>row.name);
-    for (const column of ["media_group_id","kind"]) if (!outbox.includes(column)) this.store.db.exec(`ALTER TABLE telegram_outbox ADD COLUMN ${column} TEXT`);
+    for (const column of ["media_group_id","kind","file_sha256"]) if (!outbox.includes(column)) this.store.db.exec(`ALTER TABLE telegram_outbox ADD COLUMN ${column} TEXT`);
     this.store.db.prepare("UPDATE telegram_outbox SET status='unknown',error='Перезапуск во время отправки; проверьте Telegram перед повтором' WHERE status='sending'").run();
     this.offset=Number(this.store.getSetting("telegram.offset") ?? 0);
     // Legacy private pairings remain owned by that Telegram user.
@@ -574,6 +574,18 @@ export class TelegramAdapter {
     assertCurrent?.();
     const prefix = `${chatId}:${deliveryKey}:`;
     const begun = new Set(this.store.db.prepare("SELECT key FROM telegram_outbox WHERE key>=? AND key<?").all(prefix, prefix + "\uffff").map(row => String(row.key)));
+    if (Number(chatId)>0 && !replyToMessageId && deliveryKey.startsWith("reply:") && files.length===1 && files[0]!.mimeType==="application/pdf") {
+      const file=files[0]!, fileKey=prefix+"file:"+file.id;
+      const saved=begun.has(fileKey) && this.store.db.prepare("SELECT message_id FROM telegram_outbox WHERE key=? AND kind='document-reference' AND status='delivered'").get(fileKey);
+      const original=saved ? Number(saved.message_id) : !begun.size ? await this.overlappingPdf(chatId,deliveryKey.slice(6),file) : undefined;
+      if (original) {
+        assertCurrent?.();
+        this.store.db.prepare("INSERT OR IGNORE INTO telegram_outbox(key,chat_id,payload,status,message_id,kind) VALUES(?,?,?,'delivered',?,'document-reference')")
+          .run(fileKey,String(chatId),JSON.stringify({chat_id:chatId,fileId:file.id,name:file.name}),String(original));
+        await this.sendMessage(chatId,text,deliveryKey,original,{assertCurrent,buttons:button && [[button]]});
+        return;
+      }
+    }
     // A delivery begun as text and documents finishes that way; a receipt is never sent again in another form.
     const photos: Attachment[] = [];
     for (const file of files) if (!begun.has(prefix + "file:" + file.id) && await this.isPhoto(file)) photos.push(file);
@@ -591,6 +603,29 @@ export class TelegramAdapter {
       }
     }
     await this.sendFiles(chatId, files.filter(file => !photos.includes(file)), deliveryKey, { assertCurrent });
+  }
+
+  /** The clarification was received before the earlier answer existed. A new request after that answer is a fresh delivery. */
+  private async overlappingPdf(chatId:string|number,answerId:string,file:Attachment):Promise<number|undefined> {
+    const candidates=this.store.db.prepare(`SELECT receipt.message_id,receipt.file_sha256
+      FROM messages answer JOIN messages prompt ON prompt.id=answer.reply_to_id
+      JOIN messages previous ON previous.conversation_id=answer.conversation_id AND previous.rowid BETWEEN prompt.rowid+1 AND answer.rowid-1
+      JOIN messages earlier ON earlier.id=previous.reply_to_id AND earlier.rowid<prompt.rowid
+      JOIN telegram_outbox receipt ON receipt.key=?||':reply:'||previous.id||':file:'||json_extract(previous.attachments_json,'$[0].id')
+      WHERE answer.id=? AND answer.conversation_id=? AND prompt.conversation_id=answer.conversation_id AND earlier.conversation_id=answer.conversation_id
+        AND prompt.external_id LIKE ? AND earlier.external_id LIKE ?
+        AND prompt.channel='telegram' AND earlier.channel='telegram' AND prompt.direction='inbound' AND earlier.direction='inbound'
+        AND json_array_length(previous.attachments_json)=1 AND json_extract(previous.attachments_json,'$[0].name')=?
+        AND receipt.chat_id=? AND receipt.status='delivered' AND receipt.file_sha256 IS NOT NULL
+      ORDER BY previous.rowid DESC`).all(String(chatId),answerId,file.conversationId,chatId+":%",chatId+":%",file.name,String(chatId));
+    if (!candidates.length) return;
+    const stored=this.messages.files.get(file.id);
+    if (!stored || stored.conversationId!==file.conversationId) return;
+    const bytes=await readFile(stored.path).catch(()=>null);
+    if (!bytes) return;
+    const digest=createHash("sha256").update(bytes).digest("hex");
+    const match=candidates.find(row=>row.file_sha256===digest);
+    if (match && Number.isSafeInteger(Number(match.message_id)) && Number(match.message_id)>0) return Number(match.message_id);
   }
 
   /** Telegram's photo limits: JPEG, PNG or still WebP up to 10 MB, width plus height at most 10000, sides within 1:20. */
@@ -740,7 +775,9 @@ export class TelegramAdapter {
         // Observed, not documented: a 5.4 MB GIF became an animation, an 11.6 MB one stayed a plain file. 8 MB is a cut between
         // those two sends, not a known Telegram limit. A larger GIF goes as our own MP4 when this Home has ffmpeg.
         const video=animation && stored.size > 8*1024*1024 ? await this.convertGif(stored.path) : null;
-        form.set(animation?"animation":audio?"audio":"document",new Blob([video ?? await readFile(stored.path)],{type:video?"video/mp4":file.mimeType}),video?file.name.replace(/\.gif$/i,"")+".mp4":file.name);
+        const bytes=video ?? await readFile(stored.path);
+        const digest=Number(chatId)>0 && file.mimeType==="application/pdf" ? createHash("sha256").update(bytes).digest("hex") : null;
+        form.set(animation?"animation":audio?"audio":"document",new Blob([bytes],{type:video?"video/mp4":file.mimeType}),video?file.name.replace(/\.gif$/i,"")+".mp4":file.name);
         options.assertCurrent?.();
         this.store.db.prepare("UPDATE telegram_outbox SET status='sending' WHERE key=?").run(key);
         attempted=true;
@@ -748,7 +785,7 @@ export class TelegramAdapter {
         // The Bot API server writes an animation as both animation and document, and a file it kept plain as document only
         // (tdlib/telegram-bot-api, Client::JsonMessage::store), so animation is checked first.
         const kind=["animation","video","audio","voice","photo","sticker","document"].find(field=>sent[field]) ?? null;
-        this.store.db.prepare("UPDATE telegram_outbox SET status='delivered',message_id=?,kind=? WHERE key=?").run(String(sent.message_id),kind,key);
+        this.store.db.prepare("UPDATE telegram_outbox SET status='delivered',message_id=?,kind=?,file_sha256=? WHERE key=?").run(String(sent.message_id),kind,digest,key);
       } catch (error) {
         this.store.db.prepare("UPDATE telegram_outbox SET status=?,error=? WHERE key=?").run(...(!attempted ? ["not_sent","Файл недоступен. Он не отправлен."] : refused(error) ? ["not_sent", REFUSED] : ["unknown", "Доставка файла не подтверждена. Проверьте Telegram перед повтором."]), key);
         throw error;

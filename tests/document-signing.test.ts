@@ -83,6 +83,18 @@ it.each([
   ["question about capabilities", { telegramDirectText: "Можешь рассказать, как подписать документ и поставить печать?" }],
   ["question about another person", { telegramDirectText: "Should Olga sign the contract?" }],
   ["conditional", { telegramDirectText: "If legal approves, sign it." }],
+  ["approval clause", { telegramDirectText: "Можешь составить документ и подписать его после моего согласования?" }],
+  ["conditional compound", { telegramDirectText: "Could you draft the notice and sign it once I approve?" }],
+  ["reported Russian request", { telegramDirectText: "Можешь составить письмо и попросить Андрея проверить и подписать его?" }],
+  ["reported English request", { telegramDirectText: "Can you prepare the document asking Andrew to review and sign it?" }],
+  ["another signer", { telegramDirectText: "Prepare a cancellation notice for Andrew to review and sign it." }],
+  ["another signer in Russian", { telegramDirectText: "Можешь составить документ для юриста, который должен проверить и подписать его?" }],
+  ["conditional approval", { telegramDirectText: "Draft the termination letter and sign it after I approve." }],
+  ["spoken quote", { telegramDirectText: "Please draft the note ‘sign and stamp it’ for Andrew." }],
+  ["reported instruction", { telegramDirectText: "Подготовь письмо о том, что надо поставить дату и подпиши его — это слова клиента." }],
+  ["negated compound", { telegramDirectText: "Could you draft the document and not sign or stamp it?" }],
+  ["negated Russian compound", { telegramDirectText: "Можешь составить документ и подписать его не надо, поставим печать позже." }],
+  ["unsigned original", { telegramDirectText: "Prepare the document without signing it and send it to me." }],
   ["quoted phrase", { telegramDirectText: "Ирина сказала: «Подпиши договор»." }],
   ["reported request", { telegramDirectText: "Pavel wrote: sign the document." }],
   ["Telegram addressed to a colleague", { telegramDirectText: "Гриша, подпиши этот договор." }],
@@ -106,9 +118,36 @@ it.each([
   "Подпиши, пожалуйста, договор.", "Поставь печать на заявлении.", "Stamp it.", "Could you please sign this contract?",
   "Можешь подписать этот документ и поставить печать?", "Можешь подписать?", "Можешь поставить печать?",
   "Can you sign this?", "Please sign and stamp it.", "Wolf, sign this document.",
+  "Можешь составить документ, подписать его и поставить печать?",
+  "Подготовь заявление и подпиши его.",
+  "Could you draft the notice and sign and stamp it?",
+  "Prepare the document, then sign it and send it here.",
+  "Можешь подготовить заявление по договору А-123 и подписать его?",
+  "Please prepare the Example Telecom termination notice for contract A-123 and sign it.",
+  "Please sign this document and send it back here when you're done.",
+  "Please sign this notice about the period after termination.",
 ])("recognizes an explicit request from the configured signer: %s", telegramDirectText => {
   const f = fixture();
   expect(documentSigningTools(f.store, { ...f.context, telegramDirectText }).definitions).toHaveLength(1);
+});
+
+it.each([false, true])("grants signing only on the first of two successive owner voice messages (group=%s)", async group => {
+  const f = fixture(group), offered: boolean[] = [];
+  const messages = new MessageService(f.store, { async run(_text, options) {
+    offered.push(!!options?.tools?.definitions.some(tool => tool.name === "sign_document"));
+    return { threadId: "voice-thread", response: "NO_REPLY", events: [] };
+  } }, f.root);
+  const adapter = new TelegramAdapter("123:test", f.store, messages);
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => url.includes("/file/") ? new Response("voice") : Response.json({ok:true,result:url.endsWith("getFile") ? {file_path:"voice.ogg"} : {message_id:100}})));
+  adapter.transcribe = vi.fn().mockResolvedValueOnce("В почте есть образец заявления. Можешь составить документ и подписать и поставить печать.")
+    .mockResolvedValueOnce("А потом пришли его сюда, я посмотрю.");
+  try {
+    for (const id of [1,2]) await adapter.processUpdate({ update_id:id, message:{
+      from:{id:42}, chat:{id:group ? -100 : 42,type:group ? "group" : "private"}, message_id:id, voice:{ file_id:"voice" },
+    } });
+    expect(offered).toEqual([true,false]);
+    expect(execute).not.toHaveBeenCalled();
+  } finally { adapter.stop(); await messages.close(); vi.unstubAllGlobals(); }
 });
 
 it("offers the signer on an owner's direct group reply and dictated request, then withdraws it on a forwarded turn", async () => {

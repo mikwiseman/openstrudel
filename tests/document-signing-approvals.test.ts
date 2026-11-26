@@ -72,6 +72,15 @@ it("persists decline across restart; another paired owner, disabled origin or re
   expect((await decideSigningRequest(f.store,f.files,d,f.transport)).state).toBe("unavailable");
 });
 
+it("a delegate's compound spoken request for both marks waits for the owner's private decision", async () => {
+  const f=fixture();
+  const telegramDirectText="Можешь составить документ и подписать и поставить печать.";
+  const x=await requestSigningApproval(f.store,f.files,{...f.input,stamp:true,telegramDirectText},f.transport);
+  expect(x.state).toBe("pending");
+  expect(f.transport.sendSigningReview.mock.calls[0]![0]).toMatchObject({ownerId:"42",signature:true,stamp:true});
+  expect(render).not.toHaveBeenCalled();
+});
+
 it.each(["unknown","foreign","ambiguous","brand-only","no-zone"])("requires manual review rather than applying a seal for %s",async kind=>{
   const f=fixture(),x=await requestSigningApproval(f.store,f.files,{...f.input,stamp:true,telegramDirectText:"Please sign and stamp this."},f.transport);
   f.entity(kind==="foreign"?"Other Entity":kind==="ambiguous"?"Test Entity Other Entity":kind==="brand-only"?"Shared Brand":"Unknown");if(kind==="no-zone")f.direct(false);
@@ -90,6 +99,7 @@ it("retries delivery of the exact frozen signed bytes after a provider failure w
 it.each([
   ["Подпиши договор.",true,false],["Поставь печать на договоре.",false,true],["Please sign and stamp this.",true,true],
   ["Sign the document about a stamp.",true,false],["Sign this without a stamp.",true,false],["Подпиши этот договор без печати.",true,false],
+  ["Sign this document with the title ‘Sign and stamp it’.",true,false],
   ["Please explain who signed this.",false,false],["If approved, sign this.",false,false],
 ])("takes only the requested marks from the sender's own instruction %s",(text,sig,seal)=>{
   expect(requestedSigningMarks(String(text))).toEqual(sig||seal?{signature:sig,stamp:seal}:null);
