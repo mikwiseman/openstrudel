@@ -29,10 +29,14 @@ const request = z.strictObject({
     placements: z.array(placement).min(1).max(500).optional(), noStamp: z.boolean().optional(),
 });
 
+export function unquotedSigningWords(words: string): string {
+    return words.toLowerCase().replace(/^[ \t]*>.*$/gm, "").replace(/"[^"]*"|«[^»]*»|“[^”]*”|„[^“]*“|‘[^’]*’|(?<![\p{L}\p{N}])'[^'\n]+'(?![\p{L}\p{N}])|`[^`]*`/gu, " ").trim();
+}
+
 /** An explicit order in the sender's own words. Quoted examples and questions about signing stay conversations. */
 export function requestsDocumentSigning(words?: string): boolean {
     if (!words) return false;
-    const text = words.toLowerCase().replace(/^[ \t]*>.*$/gm, "").replace(/"[^"]*"|«[^»]*»|“[^”]*”|„[^“]*“|‘[^’]*’|(?<![\p{L}\p{N}])'[^'\n]+'(?![\p{L}\p{N}])|`[^`]*`/gu, " ").trim();
+    const text = unquotedSigningWords(words);
     const conditional = /\b(?:if|unless|once|until)\b/u.test(text)
         || /\b(?:when|after)\s+(?:[\p{L}’']+\s+){0,5}(?:approv\w*|confirm\w*|authori[sz]\w*|consent\w*|agree\w*|signs?\s+off)\b/u.test(text)
         || /(?:^|[^\p{L}])(?:если|когда|после\s+(?:(?:моего|твоего|вашего)\s+)?(?:согласования|подтверждения|одобрения))(?!\p{L})/u.test(text);
