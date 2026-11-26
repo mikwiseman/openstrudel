@@ -122,17 +122,9 @@ struct TeamRow: View {
 
     private var character: some View {
         // It proofs inside a signal ring while its employee works. Grey means out of reach and nothing else: a failed
-        // run keeps the character's colours, and the mark and the words say what happened.
+        // run keeps the character's colours, and the words say what happened. What to do about it is a card on the home.
         ToneAvatar(appearance: content.appearance, size: AvatarSize.team, working: content.state == .working, landings: landings,
                    offline: content.state == .offline)
-            .overlay(alignment: .bottomTrailing) {
-                if content.state == .failing {
-                    Image(systemName: "exclamationmark.circle.fill").font(.system(size: AvatarSize.team * 0.36))
-                        .symbolRenderingMode(.palette).foregroundStyle(.white, AppTheme.warning)
-                        .background(Circle().fill(AppTheme.canvas).padding(-1.5))
-                        .offset(x: 2, y: 2).transition(.scale.combined(with: .opacity)).accessibilityHidden(true)
-                }
-            }
     }
 
     private var name: some View {
@@ -246,8 +238,10 @@ struct TeamMemberRow: View {
                         cause: failures.failure(member.profile.id, on: source)?.code, waits: waits)
         } else {
             let profile = member.profile
+            // An answer that only repeats the employee's name says nothing a second time.
+            let said = profile.previewText.caseInsensitiveCompare(profile.name) == .orderedSame ? "" : profile.previewText
             TeamRow(content: TeamRowContent(name: profile.name, appearance: profile.resolvedAppearance,
-                                            preview: profile.previewText.isEmpty ? profile.roleText : profile.previewText, date: Team.date(profile.previewAt),
+                                            preview: said.isEmpty ? profile.roleText : said, date: Team.date(profile.previewAt),
                                             state: Team.state(profile, offline: source.isOffline(profile)), unread: marks.isUnread(profile, on: source),
                                             nextRun: Team.date(profile.nextRunAt), cause: failures.failure(profile.id, on: source)?.code, pinned: pinned, home: home,
                                             waits: waits),

@@ -222,9 +222,9 @@ extension DeviceLibrary {
 
     /// The team as one list across the Homes in sight: the pinned employees in their own steady order, then everyone
     /// with something waiting, at work or with an answer to show, then whoever has said nothing for two weeks. With
-    /// one Home chosen only its employees are listed.
-    func teamList(_ arrangement: TeamArrangement, waiting: Set<String> = [], quiet: (TeamMember, HomeClient) -> Bool) -> TeamList {
-        let chosen = shownHome(arrangement)
+    /// one Home chosen only its employees are listed, unless the list is every Home's whatever was chosen.
+    func teamList(_ arrangement: TeamArrangement, waiting: Set<String> = [], everyHome: Bool = false, quiet: (TeamMember, HomeClient) -> Bool) -> TeamList {
+        let chosen = everyHome ? nil : shownHome(arrangement)
         let rows = team.filter { chosen == nil || $0.source === chosen }
         let pinned = rows.filter { arrangement.isPinned($0.member.profile, on: $0.source) }
         let rest = rows.filter { !arrangement.isPinned($0.member.profile, on: $0.source) }

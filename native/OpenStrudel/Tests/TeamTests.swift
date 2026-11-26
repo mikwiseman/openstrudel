@@ -343,6 +343,31 @@ import Testing
         #expect(TeamArrangement(defaults: defaults).home == nil)
     }
 
+    @Test func aPhoneListsEveryHomeWhateverWasChosenBesideAnOpenPlace() throws {
+        // Two Homes, each with the one employee it listed last time.
+        var suites: [String] = []
+        defer { suites.forEach { UserDefaults.standard.removePersistentDomain(forName: $0) } }
+        func home(_ id: String, port: Int, _ employee: EmployeeProfile) throws -> (client: HomeClient, defaults: UserDefaults) {
+            let suite = "OpenStrudel.team." + UUID().uuidString
+            suites.append(suite)
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defaults.set("http://127.0.0.1:\(port)", forKey: "openstrudel.homeURL")
+            defaults.set(id, forKey: "openstrudel.catalogueIdentity")
+            defaults.set(try JSONEncoder().encode([employee]), forKey: "openstrudel.employeeCatalog")
+            return (HomeClient(defaults: defaults, connectionID: id, credentialReader: { _, _ in nil }, credentialWriter: { _, _ in }), defaults)
+        }
+        let office = try home("office", port: 57713, profile("p1", "Scout")), cabin = try home("cabin", port: 57714, profile("p2", "Baker"))
+        let library = DeviceLibrary(defaults: office.defaults, clients: [office.client, cabin.client])
+        let arrangement = TeamArrangement(defaults: office.defaults)
+        let names = { (list: TeamList) in list.shown.map(\.member.profile.name).sorted() }
+        #expect(names(library.teamList(arrangement) { _, _ in false }) == ["Baker", "Scout"])
+        // Beside an open place a chosen Home narrows the list to its own employees.
+        arrangement.show(home: "cabin")
+        #expect(names(library.teamList(arrangement) { _, _ in false }) == ["Baker"])
+        // A phone has no filter, so a choice made beside an open place hides nobody there.
+        #expect(names(library.teamList(arrangement, everyHome: true) { _, _ in false }) == ["Baker", "Scout"])
+    }
+
     @Test func aRowSaysWhatIsNowTrueAndOtherwiseACleanExcerpt() throws {
         // The employee's own line leads; a Home that sends none, or an empty one, leaves the answer's first words.
         let told = try profile("1", "Продажи", #","preview":"**Отчёт за среду**\n1. Клён","outcome":"Клён оплатил. День 14.""#)

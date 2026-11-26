@@ -293,9 +293,11 @@ final class OneChatUITests: XCTestCase {
         button.tap()
     }
 
-    /// Progress is a step from Statistics, which opens from the foot of the home.
+    /// Progress is a step from Statistics, which opens from the foot of the team, the phone's second page.
     @MainActor private func openProgress(_ app: XCUIApplication) {
         let statistics = app.buttons["homeStatistics"], progress = app.buttons["openProgress"], home = app.descendants(matching: .any)["homeRoot"]
+        let team = app.buttons["homePage-team"]
+        if team.waitForExistence(timeout: 5), !team.isSelected { team.tap() }
         XCTAssertTrue(statistics.waitForExistence(timeout: 20), app.debugDescription)
         for _ in 0..<8 where !statistics.isHittable { home.swipeUp() }
         statistics.tap()
