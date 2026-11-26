@@ -34,6 +34,18 @@ function setup() {
   return { store, run, messages, scheduler, adapter, profile, chat, tools, update };
 }
 
+it("treats an unmentioned request from a supported group sender as addressed to the bot", async () => {
+  const { store, run, adapter, update } = setup();
+  store.setSetting("telegram.groupReplyPeople", JSON.stringify(["42"]));
+  const text = "Please explain the last screenshot.";
+  await adapter.processUpdate(update(1, 42, { text }));
+  await adapter.processUpdate(update(2, 88, { text }));
+  const profiles = run.mock.calls.map(([, options]) => options.profile);
+  expect(profiles).toHaveLength(2);
+  expect(profiles[0]).toContain("Answer this sender’s questions and requests without a mention");
+  expect(profiles[1]).not.toContain("without a mention");
+});
+
 it("lets a verified Home manager administer from Telegram without becoming the owner", async () => {
   const { store, run, scheduler, adapter, profile, tools, update } = setup();
   const other = store.createProfile({ name: "Researcher", instructions: "Cite primary sources" });

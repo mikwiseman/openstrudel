@@ -121,3 +121,57 @@ it('pauses and resumes a group without losing its existing character, history or
   adapter.setGroupEnabled('-100200', true);
   expect(store.getTelegramChat('-100200')).toMatchObject({enabled:true, profileId:profile.id, conversationId:original.conversationId,access:original.access,replies:original.replies});
 });
+
+it("connects a new group on a supported person's invitation or first genuine message, without adding a stranger",async()=>{
+  const {store,adapter,handle}=setup();
+  store.setSetting("telegram.groupReplyPeople",'["42","21"]');
+  const message=(id:number,chatId:number,sender:number,extra:Record<string,unknown>={})=>({update_id:id,message:{message_id:id,chat:{id:chatId,type:"group"},from:{id:sender},text:"Please build the current website.",...extra}} as TelegramUpdate);
+  await adapter.processUpdate(membership(1,21));
+  expect(store.getTelegramChat("-100")).toMatchObject({access:"approved",conversationId:expect.any(String)});
+  await adapter.processUpdate(message(2,-100,42)); await adapter.processUpdate(message(3,-100,21)); await adapter.processUpdate(message(4,-100,77));
+  expect(handle).toHaveBeenCalledTimes(2);
+  const foreignInvite=membership(5,77);
+  foreignInvite.my_chat_member!.chat.id=-101;
+  await adapter.processUpdate(foreignInvite);
+  expect(store.getTelegramChat("-101")).toBeNull();
+  await adapter.processUpdate(message(105,-101,77)); await adapter.processUpdate(message(6,-101,21,{sender_chat:{id:-101}}));
+  await adapter.processUpdate(message(7,-101,21,{from:{id:21,is_bot:true}}));await adapter.processUpdate(message(8,-101,21,{is_topic_message:true}));
+  expect(store.getTelegramChat("-101")).toBeNull();
+  await adapter.processUpdate(message(9,-101,21));
+  expect(handle).toHaveBeenCalledTimes(3); expect(store.getTelegramChat("-101")?.conversationId).toEqual(expect.any(String));
+  expect(adapter.authorizedSender("-101",77)).toBe(false);
+  await adapter.processUpdate(membership(10,21,"left"));
+  await adapter.processUpdate(message(11,-100,21));
+  expect(store.getTelegramChat("-100")).toBeNull();
+  adapter.setGroupEnabled("-101",false);
+  await adapter.processUpdate(message(12,-101,21));
+  expect(handle).toHaveBeenCalledTimes(3);
+  store.setSetting("telegram.groupReplyPeople",'["42"]');
+  expect(adapter.authorizedSender("-101",21)).toBe(false);
+});
+
+it("keeps a chat's explicit reply choice for supported senders through migration, rejoin and an owner settings change",async()=>{
+  const {store,adapter}=setup();store.setSetting("telegram.groupReplyPeople",'["42","21"]');
+  await adapter.processUpdate(membership(1));adapter.setGroupReplies("-100","mentions");
+  expect(adapter.groupReplyMode("-100",21)).toBe("mentions");
+  adapter.setChatGroupReplyMode("-100",21,"all");
+  expect(adapter.groupReplyMode("-100",42)).toBe("all");
+  expect(adapter.groupReplyMode("-100",77)).toBe("mentions");
+  expect(()=>adapter.setChatGroupReplyMode("-100",77,"all")).toThrow();
+  await adapter.processUpdate(membership(2,42,"left"));await adapter.processUpdate(membership(3,42));
+  expect(adapter.groupReplyMode("-100",21)).toBe("all");
+  await adapter.processUpdate({update_id:4,message:{message_id:4,chat:{id:-100},migrate_to_chat_id:-10022}} as TelegramUpdate);
+  expect(adapter.groupReplyMode("-10022",21)).toBe("all");
+  adapter.setGroupReplies("-10022","mentions");expect(adapter.groupReplyMode("-10022",21)).toBe("mentions");
+});
+
+it("ignores an old first message replayed after a different person re-added the bot",async()=>{
+  const {store,adapter,handle}=setup();store.setSetting("telegram.groupReplyPeople",'["21"]');
+  await adapter.processUpdate(membership(30,77,"left"));
+  await adapter.processUpdate(membership(31,77));
+  const send=(id:number,date:number)=>adapter.processUpdate({update_id:id,message:{message_id:id,chat:{id:-100,type:"group"},from:{id:21},date,text:"Prepare a QA build."}});
+  await send(29,1029); await send(28,1031);
+  expect(store.getTelegramChat("-100")).toBeNull();expect(handle).not.toHaveBeenCalled();
+  await send(32,1031);
+  expect(handle).toHaveBeenCalledOnce();
+});
