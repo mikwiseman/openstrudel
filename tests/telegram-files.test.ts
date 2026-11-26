@@ -207,3 +207,36 @@ it("finishes a delivery begun as text and documents without repeating either",as
   expect(sent.map(s=>s.method)).toEqual(["sendMessage","sendDocument","sendMediaGroup"]);
   expect(JSON.parse(String(sent[2]!.body.get("media")))).toEqual([{type:"photo",media:"attach://photo0"},{type:"photo",media:"attach://photo1"}]);
 });
+
+it("replies to the confirmed PDF when overlapping private requests produce the same file",async()=>{
+  let loseReceipt=false;
+  const {runtime,sent}=photoHome([],"",method=>loseReceipt && method==="sendDocument");
+  runtime.store.linkTelegramChat({chatId:"42",title:"Owner",allowedSenders:["42"]});
+  const chat=runtime.store.getOrCreateConversation({channel:"telegram",externalId:"42"});
+  const scope=runtime.messages.contextFor(chat.id);
+  const ask=(id:number)=>runtime.store.addMessage({conversationId:chat.id,channel:"telegram",direction:"inbound",externalId:"42:"+id,text:"Send the notice"});
+  async function answer(input:string,bytes:string,text:string) {
+    const file=runtime.messages.files.put(chat.id,scope,{name:"notice.pdf",mimeType:"application/pdf",contentBase64:Buffer.from(bytes).toString("base64")});
+    const result=runtime.store.addMessage({conversationId:chat.id,channel:"telegram",direction:"outbound",replyToId:input,text,attachments:[file]});
+    const deliver=()=>runtime.telegram.sendAnswer("42",text,[file],"reply:"+result.id);
+    await deliver();
+    return {deliver,result};
+  }
+  const initial=ask(1),clarification=ask(2),correction=ask(3);
+  await answer(initial.id,"PDF A","Original notice");
+  const duplicate=await answer(clarification.id,"PDF A","Please review the date on the notice.");
+  await duplicate.deliver();
+  expect(sent.map(s=>s.method)).toEqual(["sendMessage","sendDocument","sendMessage"]);
+  expect(sent[2]!.body).toMatchObject({text:"Please review the date on the notice.",reply_parameters:{message_id:200}});
+  expect(runtime.store.employeeMessagePage(null,new URLSearchParams({limit:"50"})).messages.find(m=>m.id===duplicate.result.id)?.delivery?.state).toBe("delivered");
+  await answer(correction.id,"PDF B","Updated notice");
+  await answer(ask(4).id,"PDF B","Here is the requested resend.");
+  expect(sent.filter(s=>s.method==="sendDocument")).toHaveLength(3);
+  const unconfirmed=ask(5),followUp=ask(6);
+  loseReceipt=true;
+  await expect(answer(unconfirmed.id,"PDF C","New notice")).rejects.toThrow();
+  loseReceipt=false;
+  await answer(followUp.id,"PDF C","Please review the new notice.");
+  expect(sent.slice(-2).map(s=>s.method)).toEqual(["sendMessage","sendDocument"]);
+  expect(sent.at(-2)!.body.reply_parameters).toBeUndefined();
+});

@@ -32,26 +32,42 @@ const request = z.strictObject({
 /** An explicit order in the sender's own words. Quoted examples and questions about signing stay conversations. */
 export function requestsDocumentSigning(words?: string): boolean {
     if (!words) return false;
-    const text = words.toLowerCase().replace(/^[ \t]*>.*$/gm, "").replace(/"[^"]*"|«[^»]*»|“[^”]*”|„[^“]*“|`[^`]*`/gu, " ").trim();
-    const conditional = /(?:^|\s)(?:if|unless|если|когда)(?:\s|$)/u;
-    const negation = /\b(?:don't|don’t|do not|never|shouldn't|shouldn’t)\s+(?:sign|stamp)|(?:^|\s)не\s+(?:(?:надо|нужно|стоит|следует)\s+)?(?:подпис|подпиш|став|постав|простав)/u;
-    if (conditional.test(text) || negation.test(text)) return false;
+    const text = words.toLowerCase().replace(/^[ \t]*>.*$/gm, "").replace(/"[^"]*"|«[^»]*»|“[^”]*”|„[^“]*“|‘[^’]*’|(?<![\p{L}\p{N}])'[^'\n]+'(?![\p{L}\p{N}])|`[^`]*`/gu, " ").trim();
+    const conditional = /\b(?:if|unless|once|until)\b/u.test(text)
+        || /\b(?:when|after)\s+(?:[\p{L}’']+\s+){0,5}(?:approv\w*|confirm\w*|authori[sz]\w*|consent\w*|agree\w*|signs?\s+off)\b/u.test(text)
+        || /(?:^|[^\p{L}])(?:если|когда|после\s+(?:(?:моего|твоего|вашего)\s+)?(?:согласования|подтверждения|одобрения))(?!\p{L})/u.test(text);
+    const negation = /\b(?:don['’]t|not|never|shouldn['’]t|without)\s+(?:(?:need|want)\s+to\s+)?(?:sign|stamp)/u.test(text)
+        || /(?:^|\s)не\s+(?:(?:надо|нужно|стоит|следует)\s+)?(?:подпис|подпиш|став|постав|простав)|(?:подписать|ставить\s+печать)\s+(?:его\s+|её\s+|это\s+)?не\s+(?:надо|нужно)/u.test(text);
+    if (conditional || negation) return false;
 
-    const action = (command: string) =>
+    const action = (command: string, politeRequest: boolean) =>
         /^подпиши(?:те)?(?:\s|[,!.?]|$)/u.test(command)
         || /^(?:поставь(?:те)?|проставь(?:те)?|добавь(?:те)?|наложи(?:те)?)\s+(?:(?:мою|нашу|свою)\s+)?(?:подпись|печать)(?!\p{L})/u.test(command)
+        || (politeRequest && /^(?:подписать(?:\s|[,?.!]|$)|(?:поставить|проставить|добавить|наложить)\s+(?:подпись|печать)(?!\p{L}))/u.test(command))
         || /^(?:sign|stamp)\s+(?:this|that|it|both|these|the|my|our|attached|here|and\s+(?:sign|stamp))\b/u.test(command)
         || /^(?:add|apply|affix|put)\s+(?:(?:my|our|the|a|company)\s+)+(?:signature|stamp|seal)\b/u.test(command);
+    // A preparation step may name any document or contract. An embedded request
+    // or another subject ("for Andrew to review and sign") breaks the chain.
+    const preparation = (part: string) => {
+        const english = /^(?:prepare|draft|write|create|fill|update|date|add)\s+/u.test(part);
+        const russian = /^(?:составь(?:те)?|составить|подготовь(?:те)?|подготовить|заполни(?:те)?|заполнить|поставь(?:те)?|поставить|проставь(?:те)?|проставить|укажи(?:те)?|указать|датируй(?:те)?|датировать)\s+/u.test(part);
+        if (!(english || russian) || /[:;!?]/u.test(part)) return false;
+        if (english) return !/\b(?:to|who|whom|whose|where|whether|how|should|must|could|would|let|have|has|asks?|asking|asked|tells?|telling|told|says?|saying|said|instruct\w*|requesting|quot\w*|words)\b/u.test(part);
+        return !/(?:^|\s)(?:что(?:бы)?|как|кто|кому|котор\p{L}*|пусть|надо|нужно|долж\p{L}*|просит|попрос\p{L}*|скаж\p{L}*|сказ\p{L}*|поруч\p{L}*|словами)(?!\p{L})/u.test(part);
+    };
+    const nextStep = /,\s*(?:(?:и\s+затем|and\s+then|и|затем|потом|and|then)\s+)?|\s+(?:и\s+затем|and\s+then|и|затем|потом|and|then)\s+/u;
     return text.split(/(?<=[.!?;])\s+|\n+/u).some(sentence => {
         const opening = sentence.trim().replace(/^(?:(?:wolf|волк|хорошо|окей|пожалуйста|okay|ok|please|now|теперь|а теперь)[,\s]+)+/u, "");
         const asking = /^(?:(?:can|could|would) you\s+(?:please\s+)?|(?:можешь|можете)[,\s]+(?:пожалуйста[,\s]+)?)/u;
-        if (opening.includes("?") && !asking.test(opening)) return false;
-        const command = opening.replace(asking, "");
-        if (asking.test(opening) && /^(?:подписать(?:\s|[?.!]|$)|(?:поставить|добавить|наложить)\s+(?:подпись|печать)(?!\p{L}))/u.test(command)) return true;
-        if (action(command)) return true;
-        // “Fill in today's date and sign it” is one instruction, including when dictated.
-        return /^(?:заполни|поставь|проставь|укажи|подготовь|датируй|fill|date|prepare|update|add)(?:\s|,)/u.test(command)
-            && command.split(/[,;]\s*|\s+(?:и|затем|потом|and|then)\s+/u).slice(1).some(part => action(part.trim()));
+        const politeRequest = asking.test(opening);
+        if (opening.includes("?") && !politeRequest) return false;
+        let command = opening.replace(asking, "");
+        while (!action(command, politeRequest)) {
+            const step = nextStep.exec(command);
+            if (!step || !preparation(command.slice(0, step.index).trim())) return false;
+            command = command.slice(step.index + step[0].length).trim();
+        }
+        return true;
     });
 }
 /** Assets and executable stay outside every agent workspace. Only this trusted

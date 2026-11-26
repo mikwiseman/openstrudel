@@ -3,7 +3,10 @@
 The private signing installation names one Telegram signer in `telegramUserId`.
 The signer's own explicit text, document caption or original voice message can
 authorize signing in a DM or a connected group. Reply to a document or attach it
-with the request. Groups that require mentions can address the bot by @username.
+with the request. In the signer's DM, one request can cover preparing a notice
+from an email, signing it and adding the company stamp. For example,
+«Можешь составить документ и подписать и поставить печать?»
+Groups that require mentions can address the bot by @username.
 In forum topics and groups with restricted tools, signed copies go privately
 to the signer.
 
