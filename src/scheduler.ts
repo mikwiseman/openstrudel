@@ -38,6 +38,8 @@ const SIGNED_OUT_KEY = "account:sign_in", SIGNED_OUT_CARD = "schedule.signed_out
 /** The clock only wakes the existing chat. Codex still owns the work. */
 export class Scheduler {
   private timer?: ReturnType<typeof setTimeout>;
+  /** When cards that can no longer be decided were last let go, so Telegram is tidy without the app open. */
+  private swept = 0;
   private started = false;
   private readonly active = new Map<string, Promise<void>>();
   get hasActiveRuns() { return this.active.size > 0; }
@@ -154,6 +156,8 @@ export class Scheduler {
   stop(): void { this.started = false; clearTimeout(this.timer); this.timer = undefined; }
   async idle(): Promise<void> { await Promise.allSettled(this.active.values()); }
   async tick(now = new Date()): Promise<void> {
+    // On the clock of the cards themselves, not the schedule's: a tick for an edition still to come lets nothing go early.
+    if (Date.now() - this.swept >= 3_600_000) { this.swept = Date.now(); void this.messages.cards?.sweep().catch(() => 0); }
     const due = this.store.db.prepare("SELECT * FROM schedules WHERE enabled=1 AND next_run_at<=?").all(now.toISOString()) as Row[];
     for (const row of due) {
       if (agentTransfer(this.store, this.store.getConversation(row.conversation_id)?.profileId ?? "main")) continue;

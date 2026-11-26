@@ -11,6 +11,7 @@ import { agentTransfer } from "./agent-move.js";
 import { isProtectedTelegramAudience } from "./authorization.js";
 import { ownerTimezone } from "./timezone.js";
 import { quietReply } from "./operations.js";
+import { failureCode } from "./tool-problems.js";
 
 /**
  * A card is one thing that waits for a person: words that will leave, a question, a promise on its date, a missing access,
@@ -57,6 +58,8 @@ const WORDS = {
   decided: ["Already decided: {0}", "Уже решено: {0}"], waitsFor: ["This card waits for {0}.", "Эта карточка ждёт: {0}."], someone: ["someone with access to this Home", "человека с доступом к этому Home"],
   closed: ["This card is closed.", "Эта карточка закрыта."], recorded: ["Recorded", "Записано"], app: ["OpenStrudel app", "приложение OpenStrudel"],
   came: ["It came", "Пришло"],
+  lapsed: ["No answer in three days", "Три дня без ответа"], newer: ["A newer card asks about this", "Об этом есть карточка новее"],
+  moved: ["The conversation has moved on", "Переписка ушла дальше"], covered: ["The model sign-in card says why", "Причина — вход в аккаунт модели"],
   always: ["{0}, always", "{0}, всегда"], ruleSaved: ["Saved as a rule", "Сохранено как правило"],
   ruleAdmin: ["A rule for the whole Home is given by its administrators. Choose the answer for this one.", "Правило для всего Home задают его администраторы. Выберите ответ на этот раз."],
   long: ["The full text is in OpenStrudel. Open it there to read and decide.", "Полный текст в OpenStrudel. Откройте его там, чтобы прочитать и решить."],
@@ -67,6 +70,8 @@ const word = (key: keyof typeof WORDS, ru: boolean, value = "") => WORDS[key][ru
 const speaksRussian = (row: Pick<Row, "title" | "reason" | "content" | "interaction_id">) =>
   russian(row.interaction_id ? `${row.content.text ?? ""}${row.content.subject ?? ""}` : `${row.title}${row.reason ?? ""}`);
 const TELEGRAM_LIMIT = 3900, OPEN_LIMIT = 12, GRANT_MINUTES = 30;
+/** A card waits this long for its person; a promise waits until a day past its date. Then the moment has passed. */
+const WAIT_DAYS = 3, DUE_GRACE_DAYS = 1, DAY = 86_400_000;
 const stable = (value: unknown): string => JSON.stringify(value, (_, v) => v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a < b ? -1 : 1)) : v);
 const strings = (value: unknown): string[] => typeof value === "string" ? [value] : value && typeof value === "object" ? Object.values(value).flatMap(strings) : [];
 
@@ -367,6 +372,54 @@ export class Cards {
     await this.show(row);
     return this.row(row.id)!.telegram_message_id != null;
   }
+  /**
+   * What waits is only what can still be decided. A card leaves, here and in Telegram, when its correspondence moved on, when
+   * a newer card asks about the same thread, when it is a schedule's failure that the sign-in card already explains, or when
+   * it waited three days (a promise: until a day past its date). A failure the Home keeps for a schedule or an account stays
+   * while it is true. Its message says why it left; its raiser is not told. Returns how many left.
+   */
+  async sweep(now = new Date()): Promise<number> {
+    const open = this.rows("state='open'");
+    const signedOut = open.some(row => row.kind === "failed" && row.content.code === "sign_in" && String(row.content.key ?? "").startsWith("account:"));
+    const newest = new Map<string, string>();
+    for (const row of open) { const thread = this.thread(row); if (thread && (newest.get(thread) ?? "") < row.created_at) newest.set(thread, row.created_at); }
+    let left = 0;
+    for (const row of open) {
+      const why = this.passed(row, now, signedOut, newest);
+      if (why && await this.lapse(row, why)) left++;
+    }
+    return left;
+  }
+  /** What a card is about across cards: its correspondence thread, or the subject its question names. */
+  private thread(row: Row): string | null {
+    const origin = row.content.correspondence;
+    return origin ? `${origin.source}:${origin.thread}` : row.content.about ? `about:${row.content.about.toLocaleLowerCase()}` : null;
+  }
+  private passed(row: Row, now: Date, signedOut: boolean, newest: Map<string, string>): "lapsed" | "newer" | "moved" | "covered" | null {
+    // A service's own request still waiting for its person is decided by that person.
+    if (row.interaction_id && this.messages.interactions.get(row.interaction_id)) return null;
+    if (row.kind === "failed" && row.content.key) return signedOut && !row.content.key.startsWith("account:") && this.signInFailure(row.content.key) ? "covered" : null;
+    if (row.content.correspondence && !this.currentDecision(row)) return "moved";
+    const thread = this.thread(row);
+    if (thread && newest.get(thread)! > row.created_at) return "newer";
+    const due = row.content.due ? Date.parse(row.content.due + "T23:59:59Z") + DUE_GRACE_DAYS * DAY : NaN;
+    const until = Math.max(Date.parse(row.created_at) + WAIT_DAYS * DAY, Number.isNaN(due) ? 0 : due);
+    return now.getTime() > until ? "lapsed" : null;
+  }
+  /** The schedule's latest failure asked for a model sign-in. */
+  private signInFailure(schedule: string): boolean {
+    try {
+      const run = this.store.db.prepare("SELECT error FROM schedule_runs WHERE schedule_id=? AND status IN ('failed','uncertain') ORDER BY scheduled_for DESC LIMIT 1").get(schedule) as { error?: string | null } | undefined;
+      return Boolean(run) && failureCode(String(run!.error ?? "")) === "sign_in";
+    } catch { return false; } // A Home that has never kept schedules has no runs to read.
+  }
+  private async lapse(row: Row, why: "lapsed" | "newer" | "moved" | "covered"): Promise<boolean> {
+    const at = new Date().toISOString(), answer: CardAnswer = { choice: null, label: word(why, speaksRussian(row)), text: null, by: this.raiserName(row) ?? "OpenStrudel", via: "raiser", at, outcome: null };
+    if (!Number(this.store.db.prepare("UPDATE cards SET state='answered',answer_json=?,answered_at=?,told=1 WHERE id=? AND state='open'").run(JSON.stringify(answer), at, row.id).changes)) return false;
+    await this.redraw(this.row(row.id)!).catch(() => undefined);
+    return true;
+  }
+
   /** The schedule delivered again: its failure card needs nobody now and closes itself. */
   async recovered(key: string): Promise<void> {
     for (const row of this.rows("kind='failed' AND state='open'").filter(card => card.content.key === key)) {
