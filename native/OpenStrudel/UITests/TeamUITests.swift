@@ -99,17 +99,28 @@ final class TeamUITests: XCTestCase {
         today.tap()
         try await expectSelected(today)
 
-        // 2b. What waits leads today's page, from every Home. The second Home keeps two cards: words that will leave, which
-        // are read on their page before anything is sent, and a promise with its day. The first Home has an employee
-        // whose run failed, which is a card too. Each leaves when it is decided, and one calm sentence stays.
+        // 2b. What waits leads today's page, from every Home, the newest first. The second Home keeps two cards: a
+        // promise with its day, then words that will leave, which are read on their page before anything is sent. The
+        // first Home has an employee whose run failed, which comes last. Each leaves when it is decided, and one calm
+        // sentence stays.
         let count = app.buttons["needsCount"], readFirst = app.buttons["needRead"]
         XCTAssertTrue(count.waitForExistence(timeout: 20), app.debugDescription)
         try await expectLabel(count, says: "3")
-        XCTAssertTrue(readFirst.waitForExistence(timeout: 10), "Words that leave are not sent from the home")
-        XCTAssertFalse(app.buttons["needAction-send"].exists)
         let first = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "need-")).firstMatch
         XCTAssertTrue(first.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Садовник", "Дачный Mac")).firstMatch.exists, first.debugDescription)
+        // The promise leads, with its day; «Готово» closes it from the home.
+        let done = app.buttons["needAction-done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Укрыть розы", "завтра")).firstMatch.exists, app.debugDescription)
         capture("home-needs", app)
+        done.tap()
+        // Then the words that would leave: on the home their first lines and to whom, as Telegram shows them, but no Send.
+        XCTAssertTrue(readFirst.waitForExistence(timeout: 15), "Words that leave are not sent from the home")
+        XCTAssertFalse(app.buttons["needAction-send"].exists)
+        let glimpse = app.descendants(matching: .any)["needGlimpse"]
+        XCTAssertTrue(glimpse.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(glimpse.label.contains("Сосед") && glimpse.label.contains("Шланги уберём в субботу"), glimpse.label)
+        capture("home-needs-send", app)
         readFirst.tap()
         XCTAssertTrue(app.descendants(matching: .any)["insightsRoot"].waitForExistence(timeout: 10), app.debugDescription)
         let draft = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Шланги уберём в субботу")).firstMatch
@@ -121,11 +132,6 @@ final class TeamUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "needDecided-")).firstMatch.waitForExistence(timeout: 15), app.debugDescription)
         capture("needs-decided", app)
         back(app)
-        // The promise leads now, with its day; «Готово» closes it from the home.
-        let done = app.buttons["needAction-done"]
-        XCTAssertTrue(done.waitForExistence(timeout: 15), app.debugDescription)
-        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Укрыть розы", "завтра")).firstMatch.exists, app.debugDescription)
-        done.tap()
         // Then the employee whose run failed: its page is one press away, and «Завтра» sets it aside on this device.
         let later = app.buttons["needAction-later"]
         let card = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "need-failing:")).firstMatch

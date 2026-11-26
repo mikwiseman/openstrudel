@@ -37,8 +37,12 @@ struct NeedCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             if let read { Button(action: read) { said }.buttonStyle(.plain) } else { said }
-            if !lead {
-                if let draft = card.draft { leaving(draft) } else if !card.details.isEmpty { facts }
+            // What Telegram shows under the question is shown here too: the words that would leave, or the facts. On the
+            // home they are a glimpse that opens the card; on its page they are whole.
+            if let draft = card.draft {
+                if lead, let read { Button(action: read) { glimpse(draft) }.buttonStyle(.plain) } else if !lead { leaving(draft) }
+            } else if !card.details.isEmpty {
+                if lead { grid(Array(card.details.prefix(2)), lines: 2) } else { facts }
             }
             if let people = card.waitsFor {
                 // Someone else's to answer: said, with no button that would not work.
@@ -71,8 +75,9 @@ struct NeedCardView: View {
             Text(card.title).font(AppTypography.serif(20, .title2)).displayTracking(-0.3).foregroundStyle(.primary)
                 .lineLimit(lead ? 3 : nil).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
             if let text = card.text {
-                Text(text).font(.subheadline).foregroundStyle(AppTheme.secondaryText).lineSpacing(2)
-                    .lineLimit(lead ? 3 : nil).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                // The Home writes where a card comes from as a link: «Chat with Ivan» reads as its words, never its address.
+                Text(NeedsYou.linked(text)).font(.subheadline).foregroundStyle(AppTheme.secondaryText).tint(.primary).lineSpacing(2)
+                    .lineLimit(lead ? 4 : nil).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
             }
             if let next = card.nextTry {
                 Text(L("Следующая попытка \(TeamWords().moment(next))")).font(.subheadline).foregroundStyle(AppTheme.secondaryText)
@@ -111,15 +116,31 @@ struct NeedCardView: View {
         .accessibilityIdentifier("needDraft")
     }
 
+    /// The words that would leave, as a glimpse on the home: to whom, and their first lines.
+    private func glimpse(_ draft: NeedCard.Draft) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            let to = [draft.to, draft.via].compactMap { $0 }.joined(separator: " · ")
+            if !to.isEmpty { Text(L("Кому") + ": " + to).font(.subheadline).foregroundStyle(AppTheme.secondaryText).lineLimit(1) }
+            Text(draft.text).font(AppTypography.reading).lineSpacing(AppTypography.readingLineSpacing).foregroundStyle(.primary)
+                .lineLimit(4).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: Radius.cardTile - 12, style: .continuous))
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("needGlimpse")
+    }
+
     /// The other facts a card carries, each in full.
     private var facts: some View { grid(card.details) }
 
-    private func grid(_ rows: [NeedCard.Detail]) -> some View {
+    private func grid(_ rows: [NeedCard.Detail], lines: Int? = nil) -> some View {
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 4) {
             ForEach(rows) { row in
                 GridRow {
                     Text(row.label).foregroundStyle(AppTheme.secondaryText).gridColumnAlignment(.leading)
-                    Text(row.value).textSelection(.enabled).gridColumnAlignment(.leading)
+                    Text(NeedsYou.linked(row.value)).textSelection(.enabled).lineLimit(lines).gridColumnAlignment(.leading)
                 }
             }
         }
