@@ -1,3 +1,5 @@
+import { groupReplyPerson, mayActivateGroup, supportedGroupReplyMode, type GroupReplyMode } from "./group-replies.js";
+import { isChatSettingsCommand, pressChatReplySettings, privateRepliesPaused, showChatReplySettings } from "./telegram-chat-settings.js";
 import { buildsFor } from "./aigid-testflight.js";
 import { planAddress, pressPlan, sendPlanVersion } from "./project-plan-telegram.js";
 import { recordDiagnostic } from "./diagnostics.js";
@@ -25,14 +27,14 @@ import { decideSigningRequest, requestOwnerSigning, requestSigningApproval, requ
 
 export interface TelegramUpdate {
   update_id: number;
-  my_chat_member?: { chat: { id: number | string; title?: string; type?: string }; from: { id: number }; date: number; old_chat_member: { status: string }; new_chat_member: { status: string; is_member?: boolean } };
+  my_chat_member?: { chat: { id: number | string; title?: string; type?: string }; from: { id: number; is_bot?: boolean }; date: number; old_chat_member: { status: string }; new_chat_member: { status: string; is_member?: boolean } };
   callback_query?: { id: string; from?: { id:number; first_name?:string; last_name?:string; is_bot?:boolean }; data?: string; message?: { message_id: number; chat: { id: number | string; type?:string } } };
   poll_answer?: { poll_id: string; user?: { id: number; first_name?: string; last_name?: string; is_bot?: boolean }; voter_chat?: { id: number }; option_ids: number[] };
   message_reaction?: { chat: { id: number | string }; message_id: number; user?: { id: number; first_name?: string; is_bot?: boolean }; new_reaction: Array<{ type: string; emoji?: string }> };
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
 }
-type TelegramMessage = { from?: { id:number; first_name?:string; last_name?:string; is_bot?:boolean }; sender_chat?: { id:number }; is_topic_message?:boolean; message_thread_id?:number; date?:number; migrate_to_chat_id?:number|string; migrate_from_chat_id?:number|string; voice?:TelegramFile; audio?:TelegramFile; video_note?:TelegramFile; video?:TelegramFile & {file_name?:string;mime_type?:string}; document?:TelegramFile & {file_name?:string;mime_type?:string}; photo?:TelegramFile[]; caption?:string;
+type TelegramMessage = { from?: { id:number; first_name?:string; last_name?:string; is_bot?:boolean; language_code?:string }; sender_chat?: { id:number }; is_topic_message?:boolean; message_thread_id?:number; date?:number; migrate_to_chat_id?:number|string; migrate_from_chat_id?:number|string; voice?:TelegramFile; audio?:TelegramFile; video_note?:TelegramFile; video?:TelegramFile & {file_name?:string;mime_type?:string}; document?:TelegramFile & {file_name?:string;mime_type?:string}; photo?:TelegramFile[]; caption?:string;
   media_group_id?:string;
   reply_to_message?: { message_id: number; media_group_id?:string; from?: { id: number; is_bot?: boolean; username?: string; first_name?: string; last_name?: string }; text?: string; caption?: string; photo?: TelegramFile[]; document?: { file_id?: string; file_name?: string; file_size?:number; mime_type?:string } };
   quote?: { text?: string }; entities?: TelegramEntity[]; caption_entities?: TelegramEntity[];
@@ -46,9 +48,12 @@ function telegramUploadId(chatId: string, messageId: number, fileId: string): st
   return [hex.slice(0,8),hex.slice(8,12),hex.slice(12,16),hex.slice(16,20),hex.slice(20)].join("-");
 }
 
+function relayedTelegramMessage(message: TelegramMessage): boolean {
+  return Boolean(message.via_bot || message.forward_origin || message.is_automatic_forward || message.forward_date
+    || message.forward_from || message.forward_from_chat || message.forward_sender_name);
+}
 function originalTelegramMessage(message: TelegramMessage): boolean {
-  return !!message.from && !message.from.is_bot && !message.sender_chat && !message.via_bot && !message.forward_origin
-    && !message.is_automatic_forward && !message.forward_date && !message.forward_from && !message.forward_from_chat && !message.forward_sender_name;
+  return !!message.from && !message.from.is_bot && !message.sender_chat && !relayedTelegramMessage(message);
 }
 /** Reply targets, quotes, forwarded media and uploaded recordings describe the work; only the original sender can request it. */
 function directTelegramWords(message: TelegramMessage, transcript?: string, username?: string | null): string | undefined {
@@ -338,8 +343,23 @@ export class TelegramAdapter {
     if (replies !== "all" && replies !== "mentions") throw new Error("Выберите, когда отвечает бот: всегда или только на обращение.");
     const request = this.controlRequest(chatId,origin);
     if (this.activeChats.has(chatId) && !request) throw new Error("Дождитесь текущего ответа и повторите.");
-    this.store.db.prepare("UPDATE telegram_chats SET replies=? WHERE chat_id=?").run(replies === "mentions" ? "mentions" : "instructions",chatId);
+    this.store.db.prepare("UPDATE telegram_chats SET replies=?,supported_replies=NULL WHERE chat_id=?").run(replies === "mentions" ? "mentions" : "instructions",chatId);
     if (request) this.controlReplies.set(request,replies === "mentions" ? "Бот отвечает здесь только на упоминание или ответ на своё сообщение." : "Бот снова читает все сообщения этой группы.");
+  }
+
+  canManageChatReplies(chatId:string,senderId:number):boolean {
+    if (!groupReplyPerson(this.store,String(senderId)) || !this.authorizedSender(chatId,senderId)) return false;
+    if (Number(chatId)>0) return String(senderId)===chatId && this.store.getTelegramChat(chatId)?.enabled!==false;
+    return supportedGroupReplyMode(this.store,chatId,String(senderId))!==undefined;
+  }
+  groupReplyMode(chatId:string,senderId:number):GroupReplyMode {
+    return supportedGroupReplyMode(this.store,chatId,String(senderId)) ??
+      (isProtectedTelegramAudience(this.store,chatId) || this.store.getTelegramChat(chatId)?.replies==="mentions" ? "mentions" : "all");
+  }
+  setChatGroupReplyMode(chatId:string,senderId:number,mode:GroupReplyMode) {
+    if (Number(chatId)>=0 || (mode!=="all" && mode!=="mentions") || !this.canManageChatReplies(chatId,senderId))
+      throw new Error("Для этого чата настройка недоступна.");
+    this.store.db.prepare("UPDATE telegram_chats SET supported_replies=? WHERE chat_id=?").run(mode,chatId);
   }
 
   /** Whether the bot posts the text of a voice or video message into the group. It hears the recording either way,
@@ -865,15 +885,15 @@ export class TelegramAdapter {
         // Telegram can replay a saved older update after a restart.
         // IDs may also reset after a quiet week; compare Telegram's date first.
         if (member.date > previous.date || (member.date === previous.date && update.update_id > previous.id)) {
-          this.store.setSetting(key, JSON.stringify({date:member.date,id:update.update_id}));
           const active = ["member", "administrator", "creator"].includes(member.new_chat_member.status)
             || (member.new_chat_member.status === "restricted" && member.new_chat_member.is_member === true);
+          this.store.setSetting(key, JSON.stringify({date:member.date,id:update.update_id,active}));
           if (!active) {
             const chat = this.store.getTelegramChat(chatId);
             if (chat) this.store.setSetting("telegram.removed." + chatId, JSON.stringify(chat));
             this.store.db.prepare("DELETE FROM telegram_chats WHERE chat_id=?").run(chatId);
           }
-          else await this.discoverGroup(chatId, member.chat.title ?? "Группа", member.from.id, update.update_id);
+          else if (!member.from.is_bot) await this.discoverGroup(chatId, member.chat.title ?? "Группа", member.from.id, update.update_id);
         }
       }
       this.store.markTelegramUpdate(update.update_id); return;
@@ -939,10 +959,19 @@ export class TelegramAdapter {
     if (groupStart && Number(chatId) < 0 && groupStart[1]!.toLowerCase() === (this.bot?.username ?? this.store.getSetting("telegram.bot_username"))?.toLowerCase()) {
       const previous = this.membershipEvent(chatId);
       const date = message.date ?? previous.date;
-      if ((date > previous.date || (date === previous.date && update.update_id >= previous.id)) && message.from) {
+      if ((date > previous.date || (date === previous.date && update.update_id >= previous.id)) && message.from && !message.from.is_bot && !message.sender_chat && !message.via_bot && !message.is_topic_message && message.chat.type!=="channel") {
         await this.discoverGroup(chatId, message.chat.title ?? "Группа", message.from.id, update.update_id);
       }
       this.store.markTelegramUpdate(update.update_id); return;
+    }
+    // A human message can be the first update after someone else added the bot. Never revive a removed or paused binding this way.
+    if ((message.chat.type==="group" || message.chat.type==="supergroup") && message.from && !message.from.is_bot && !message.sender_chat &&
+        !message.via_bot && !message.is_topic_message && !/^\/(?:start|link)(?:@|\s|$)/i.test(text) &&
+        !this.store.getTelegramChat(chatId) && mayActivateGroup(this.store,chatId,String(message.from.id)) &&
+        !this.store.getSetting("telegram.paused."+chatId) && !this.store.getSetting("telegram.removed."+chatId)) {
+      const membership=this.membershipEvent(chatId), date=message.date??membership.date;
+      if (membership.active!==false && (date>membership.date || date===membership.date && update.update_id>=membership.id))
+        await this.discoverGroup(chatId,message.chat.title??"Группа",message.from.id,update.update_id);
     }
     const start = text.match(/^\/(?:start|link)(?:@([\w]+))?\s+([^\s]+)$/i);
     if (start) {
@@ -952,6 +981,19 @@ export class TelegramAdapter {
       }
       this.store.markTelegramUpdate(update.update_id); return;
     }
+    if (isChatSettingsCommand(message.text)) {
+      const lang=message.from?.language_code?.toLowerCase().startsWith("ru") ? "ru" : "en";
+      if (originalTelegramMessage(message) && message.from && this.canManageChatReplies(chatId,message.from.id)) {
+        await showChatReplySettings(this.store,this,chatId,message.from.id,update.update_id,lang,message.message_id,message.message_thread_id);
+      } else if (Number(chatId)<0 && String(message.sender_chat?.id)===chatId && !relayedTelegramMessage(message)) {
+        const binding=this.store.getTelegramChat(chatId);
+        if (binding?.conversationId && binding.enabled!==false && telegramAuthorization(this.store).chats[chatId]?.enabled!==false)
+          await this.sendMessage(chatId,lang==="ru"?"Отправьте /settings от личного профиля Telegram.":"Send /settings from your personal Telegram profile.",
+            "reply-settings-profile:"+update.update_id,message.message_id,{plain:true,threadId:message.message_thread_id});
+      }
+      this.store.markTelegramUpdate(update.update_id); return;
+    }
+    if (Number(chatId)>0 && privateRepliesPaused(this.store,chatId)) { this.store.markTelegramUpdate(update.update_id); return; }
     if (await this.telegramSigningRequest(message,update.update_id,username)) {
       this.store.markTelegramUpdate(update.update_id); return;
     }
@@ -978,8 +1020,7 @@ export class TelegramAdapter {
     const mentioned = Boolean(username && new RegExp(`@${username}(?![\\w])`, "i").test(text));
     const replyToOtherBot = Number(chatId) < 0 && replyAuthor?.is_bot && !replyToBot && !mentioned;
     const protectedAudience = isProtectedTelegramAudience(this.store, chatId);
-    // A protected group never runs a turn for ordinary discussion, whatever its stored reply mode.
-    const mentionsOnly = binding?.replies === "mentions" || protectedAudience;
+    const mentionsOnly = Number(chatId)<0 && this.groupReplyMode(chatId,message.from?.id ?? 0)==="mentions";
     // Participants cannot keep a protected queue busy indefinitely: beyond the backlog, a message stays as context.
     const saturated = protectedAudience && Boolean(binding?.conversationId) && this.messages.restrictedSaturated(binding!.conversationId!);
     const contextOnly = Number(chatId) < 0 && mentionsOnly && !replyToBot && !mentioned || saturated || Boolean(replyToOtherBot);
@@ -1156,6 +1197,13 @@ export class TelegramAdapter {
    * press already taken; what the press started (a send, a draft, the raiser's turn) follows. */
   private async pressed(updateId: number, query: NonNullable<TelegramUpdate["callback_query"]>): Promise<void> {
     const data = query.data ?? "", chatId = String(query.message?.chat.id ?? ""), sender = query.from?.id;
+    if (data.startsWith("replyset:")) {
+      const outcome=pressChatReplySettings(this.store,this,chatId,query.from?.is_bot?undefined:sender,query.message?.message_id,data);
+      await this.call("answerCallbackQuery",{callback_query_id:query.id,text:outcome.toast,show_alert:outcome.alert}).catch(()=>undefined);
+      this.store.markTelegramUpdate(updateId);
+      if ("carry" in outcome) await outcome.carry?.();
+      return;
+    }
     if (data.startsWith("plan:")) {
       const outcome:{toast:string;alert:boolean;carry?:()=>Promise<void>}=sender && !query.from?.is_bot && Number.isSafeInteger(sender) && sender>0 && this.authorizedSender(chatId,sender) && query.message?.message_id
         ? pressPlan(this.store,buildsFor(this.store),this,{chatId,messageId:query.message.message_id,sender:String(sender),data})
@@ -1363,14 +1411,18 @@ export class TelegramAdapter {
   private async discoverGroup(chatId: string, title: string, sender: number, updateId: number): Promise<void> {
     // A group's invitation is not proof of ownership. Only a previously paired
     // private Telegram account may add it to this Home.
-    if (!this.isOwner(sender)) return;
+    const owner=this.isOwner(sender);
+    if (this.store.getSetting("telegram.group_migrated."+chatId) || telegramAuthorization(this.store).chats[chatId]?.enabled===false ||
+        (!owner && !mayActivateGroup(this.store,chatId,String(sender)))) return;
     const existing = this.store.getTelegramChat(chatId);
     if (existing) {
       this.store.linkTelegramChat({ chatId, title, allowedSenders: existing.allowedSenders });
       if (!this.store.getSetting("telegram.paused." + chatId)) this.store.connectTelegramGroup(chatId);
       return;
     }
-    this.store.linkTelegramChat({ chatId, title, allowedSenders: [String(sender)] });
+    // A designated collaborator's admission follows the current grant, including later revocation.
+    const approved=owner ? [String(sender)] : [];
+    this.store.linkTelegramChat({ chatId, title, allowedSenders: approved });
     // Re-adding the same bot restores the group's established character and
     // participation policy, never another group's or an employee's private chat.
     const removed = this.store.getSetting("telegram.removed." + chatId);
@@ -1378,15 +1430,15 @@ export class TelegramAdapter {
     const conversation = previous?.conversationId ? this.store.getConversation(previous.conversationId) : null;
     if (previous && conversation && conversation.channel === "telegram" && conversation.externalId?.split("::")[0] === chatId && (!previous.profileId || this.store.getProfile(previous.profileId))) {
       const scoped = protectScopedTelegramTransport(this.store, chatId);
-      this.store.db.prepare("UPDATE telegram_chats SET conversation_id=?,profile_id=?,allowed_senders_json=?,access=?,replies=? WHERE chat_id=?")
-        .run(conversation.id, previous.profileId, JSON.stringify(scoped ? [] : [...new Set([...previous.allowedSenders,String(sender)])]),scoped ? "approved" : previous.access,scoped ? "mentions" : previous.replies,chatId);
+      this.store.db.prepare("UPDATE telegram_chats SET conversation_id=?,profile_id=?,allowed_senders_json=?,access=?,replies=?,supported_replies=? WHERE chat_id=?")
+        .run(conversation.id, previous.profileId, JSON.stringify(scoped ? [] : [...new Set([...previous.allowedSenders,...approved])]),scoped ? "approved" : previous.access,scoped ? "mentions" : previous.replies,previous.supportedReplies??null,chatId);
     } else this.store.connectTelegramGroup(chatId);
     this.store.deleteSetting("telegram.removed." + chatId);
     // Membership alone starts no model run and sends no unsolicited group post.
     // Only an approved sender can start the first actual request.
   }
 
-  private membershipEvent(chatId: string): {date:number;id:number} {
+  private membershipEvent(chatId: string): {date:number;id:number;active?:boolean} {
     try { return JSON.parse(this.store.getSetting("telegram.membership." + chatId) ?? '{"date":0,"id":0}'); }
     catch { return {date:0,id:0}; }
   }
@@ -1412,7 +1464,7 @@ export class TelegramAdapter {
     if (subject && Number(chatId) > 0) return realSender && String(sender) === chatId && subject.enabled && Boolean(chat && chat.enabled !== false);
     if (subject && Number(chatId) < 0 && !config.chats[chatId]) return false;
     // The Home's own owner and administrators are always heard in its ordinary groups, whoever connected the group.
-    const own = Number(chatId) < 0 && (this.isOwner(actual) || managementPeople(this.store).includes(String(actual)));
+    const own = Number(chatId) < 0 && (this.isOwner(actual) || managementPeople(this.store).includes(String(actual)) || groupReplyPerson(this.store,String(actual)));
     return actual !== undefined && actual > 0 && Boolean(chat && (own || chat.allowedSenders.includes(String(actual)) || Number(chatId) < 0 && chat.access === "members"));
   }
   private replyConversation(chatId:string,messageId:number) {

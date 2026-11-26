@@ -63,7 +63,7 @@ export interface NewsStory {
 
 export interface Attachment { id: string; conversationId: string; name: string; mimeType: string; size: number; }
 
-export interface TelegramChat { chatId: string; title: string; conversationId: string | null; profileId: string | null; allowedSenders: string[]; access: "approved" | "members"; replies: "instructions" | "mentions"; transcripts: "on" | "off"; enabled?: boolean; }
+export interface TelegramChat { chatId: string; title: string; conversationId: string | null; profileId: string | null; allowedSenders: string[]; access: "approved" | "members"; replies: "instructions" | "mentions"; supportedReplies?: "all" | "mentions"; transcripts: "on" | "off"; enabled?: boolean; }
 export interface HistoryEntry { sourceId: string; date: string; author: string; direction: "inbound" | "outbound"; text: string; }
 
 export interface EmployeeProfile {

@@ -247,3 +247,21 @@ it("N1: a failed restricted turn alerts the owner privately; a revoked grant sta
   await adapter.processUpdate(message(4, "@strudel_bot расписание"));
   await vi.waitFor(() => expect(sentTo("11")).toHaveLength(2));
 });
+
+it("answers only identified supported participants by default within their actual protected policy and chat",async()=>{
+  const {store,adapter,scoped,ordinary}=fixture();
+  store.setSetting("telegram.groupReplyPeople",'["11","22"]');
+  await adapter.processUpdate(message(81,"What is scheduled?",{},22));
+  expect(scoped).toHaveBeenCalledTimes(1);expect(ordinary).not.toHaveBeenCalled();
+  await adapter.processUpdate(message(82,"Someone else's message",{},33));
+  await adapter.processUpdate(message(83,"Anonymous screenshot",{sender_chat:{id:-100}},22));
+  await adapter.processUpdate(message(84,"Unconfigured audience",{},22,-300));
+  expect(scoped).toHaveBeenCalledTimes(1);expect(ordinary).not.toHaveBeenCalled();
+  expect(adapter.canManageChatReplies("-300",22)).toBe(false);
+  adapter.setChatGroupReplyMode("-100",22,"mentions");
+  await adapter.processUpdate(message(85,"Not addressed",{},22));
+  expect(scoped).toHaveBeenCalledTimes(1);
+  await adapter.processUpdate(message(86,"@strudel_bot help",{},22));
+  expect(scoped).toHaveBeenCalledTimes(2);
+  expect(() => adapter.setGroupReplies("-100","all")).toThrow();
+});

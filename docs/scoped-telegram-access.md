@@ -20,9 +20,9 @@ an empty `allowedSenders`. No pairing link, message or Bot API polling is needed
 A new group gets a generic `Telegram <chatId>` title (renamed on its next real
 update), `replies: mentions`, and its canonical restricted conversation. The
 bot must already be a member of that Telegram group. Existing titles, employee
-bindings, conversations and history stay in place. A protected group always
-answers only an `@mention` or a reply to the bot: its stored reply mode becomes
-`mentions`, and the adapter applies this even if an older row says otherwise.
+bindings, conversations and history stay in place. Participants normally
+address a protected group bot by mention or by replying to it. Its legacy
+transport keeps the `mentions` setting.
 Repeated PUTs reuse the same registry entry and conversation. Existing paused
 groups stay paused; policy `enabled: false` always prevents responses. Pausing
 a protected group is accepted while it is answering.
@@ -33,6 +33,20 @@ Globally disabled subjects remain denied in a protected group. Link, bind,
 discovery and restored group snapshots cannot recreate legacy grants while a
 policy is configured. Ordinary unconfigured groups and owner DMs keep their
 existing behavior.
+
+On Wolf, Mik and Grisha can ask a question or give an instruction without a
+mention in enabled groups. Home identifies them by Telegram user ID in
+`telegram.groupReplyPeople`. A new ordinary group can be connected when one
+of them adds Wolf or first writes there from a personal account. Group
+connector permissions still come from the group's own policy.
+
+Send `/settings` in the group to choose automatic replies or mentions and
+replies for the two supported users. In a DM the same command pauses or
+resumes replies to that person. It works while DM replies are paused.
+Telegram sends anonymous administrator posts under the group's identity.
+To use personal access, send under your own name. In a group where your
+administrator role is anonymous, its owner can turn off **Remain Anonymous**
+for your account.
 
 Example with synthetic IDs and tool names:
 
