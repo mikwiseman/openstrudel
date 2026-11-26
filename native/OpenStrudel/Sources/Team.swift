@@ -440,9 +440,11 @@ final class TeamReadMarks: ObservableObject {
         return latest > mark
     }
 
-    /// The employee's page is on screen with its latest answer.
-    func see(_ profile: EmployeeProfile, on client: HomeClient) {
-        guard let latest = profile.previewAt, latest > seen[key(profile, on: client)] ?? "" else { return }
+    /// The employee's page is on screen with its latest answer. Its chat also names the newest answer it shows, which
+    /// can arrive before the team list has heard of it.
+    func see(_ profile: EmployeeProfile, on client: HomeClient, through shown: String? = nil) {
+        let latest = max(profile.previewAt ?? "", shown ?? "")
+        guard !latest.isEmpty, latest > seen[key(profile, on: client)] ?? "" else { return }
         var next = seen
         next[key(profile, on: client)] = latest
         save(next)

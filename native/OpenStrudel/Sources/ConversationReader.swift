@@ -12,9 +12,6 @@ final class ConversationReader: ObservableObject {
     @Published private(set) var isLoadingEarlier = false
     @Published private(set) var loaded = false
     @Published private(set) var error: String?
-    /// An employee's schedules with their recent runs: the rhythm its page shows, and since when a run has not worked.
-    @Published private(set) var schedules: [ChatSchedule] = []
-    @Published private(set) var runs: [ScheduleRun] = []
     private var olderCursor: String?
     private var newerCursor: String?
     private var generation = 0
@@ -61,15 +58,16 @@ final class ConversationReader: ObservableObject {
 
     /// Reads the schedules of the employee's own chat and of its Telegram chats, as its details do. A Home that
     /// refuses them leaves the page without a rhythm line.
-    func loadRhythm() async {
-        guard case .employee(let profile) = route.kind, let conversationID else { return }
+    /// The schedules of an employee's own chat and of its Telegram chats, with their recent runs, as its details read
+    /// them. Nil when the Home refuses one of them.
+    static func rhythm(of profile: String, in conversationID: String, on client: HomeClient) async -> (schedules: [ChatSchedule], runs: [ScheduleRun])? {
         let chats = (client.telegram?.chats ?? []).filter { $0.profileId == profile }.compactMap(\.conversationId)
         var found: [ChatSchedule] = [], recent: [ScheduleRun] = [], scopes = Set<String>()
         for scope in [conversationID] + chats where scopes.insert(scope).inserted {
-            guard let result: SchedulesEnvelope = try? await client.read("/v1/conversations/" + scope + "/schedules") else { return }
+            guard let result: SchedulesEnvelope = try? await client.read("/v1/conversations/" + scope + "/schedules") else { return nil }
             found += result.schedules; recent += result.runs
         }
-        schedules = found; runs = recent
+        return (found, recent)
     }
 
     func loadEarlier() async {

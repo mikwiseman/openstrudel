@@ -6,17 +6,21 @@ private struct EmployeeDetailsPresentation: Identifiable {
     var id: String { profile?.id ?? "main" }
 }
 
-/// The one chat: the main assistant of the chosen Home, with the only composer in the app. Its draft, files and attached
-/// context stay with this Home's canonical draft key whatever is read or set up meanwhile.
+/// A chat: the main assistant of the chosen Home, or one employee of any Home, with its composer. The page owns its
+/// Home's selection while it is in front: it chooses its own subject when it appears and gives the main assistant back
+/// when it leaves. Its draft, files and attached context stay under its own key whatever is read or set up meanwhile.
 struct ConversationView: View {
     @EnvironmentObject private var library: DeviceLibrary
     @EnvironmentObject private var client: HomeClient
+    @EnvironmentObject private var marks: TeamReadMarks
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #if os(macOS)
     @Environment(\.openSettings) private var openSettings
     #else
     @Binding var showSettings: Bool
     #endif
+    /// The employee this page writes to; nil is the Home's main assistant.
+    var subject: String? = nil
     /// Counts the times the chat was opened to write; the composer takes the keyboard on each.
     var writes = 0
     /// The chat was opened from the composer capsule: the keyboard comes up with it.
@@ -43,8 +47,24 @@ struct ConversationView: View {
     @State private var followsLatest = true
     @State private var userIsScrolling = false
     @State private var hasNewMessages = false
+    @State private var onScreen = false
     @FocusState private var focused: Bool
-    private var draftKey: String { HomeDrafts.key(home: client.baseURLString, profile: client.selectedProfileID, chat: client.selectedChatID) }
+    #if os(macOS)
+    @Environment(\.appearsActive) private var windowIsActive
+    #else
+    @Environment(\.scenePhase) private var scenePhase
+    private var windowIsActive: Bool { scenePhase == .active }
+    #endif
+    /// Each page keeps its own words: the main chat's, or one employee's.
+    private var draftKey: String { HomeDrafts.key(home: client.baseURLString, profile: subject, chat: nil) }
+    /// The Home's selection is this page's: what the client holds is this page's conversation.
+    private var isShown: Bool { client.selectedProfileID == subject && (subject != nil || client.selectedChatID == nil) }
+    private var subjectProfile: EmployeeProfile? { subject.flatMap { id in client.profiles.first { $0.id == id } } }
+    /// When the employee's newest answer on this page was written.
+    private var newestAnswer: String? { isShown ? client.messages.last { $0.direction == "outbound" }?.createdAt : nil }
+    /// Whose chat this is, also in the moment before the Home's selection has followed the page.
+    private var title: String { subject == nil ? (isShown ? client.activeAgentName : "OpenStrudel") : subjectProfile?.name ?? client.activeAgentName }
+    private var appearance: AgentAppearance? { subject == nil ? (isShown ? client.activeAppearance : nil) : subjectProfile?.resolvedAppearance }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -62,6 +82,9 @@ struct ConversationView: View {
                 .safeAreaBar(edge: .top, spacing: 0) {
                     VStack(spacing: 0) {
                         EmployeeMoveStatusButton()
+                        if let profile = subjectProfile, isShown {
+                            EmployeeHeader(profile: profile, conversationID: client.conversationID) { focused = false; openDetails() }
+                        }
                         if showsConnectionBanner {
                             connectionBanner.padding(.horizontal, Layout.edge).padding(.vertical, 8)
                         }
@@ -76,6 +99,26 @@ struct ConversationView: View {
             #endif
         }
         .task { draft = library.draft(for: draftKey); pickedFiles = library.fileDrafts[draftKey] ?? []; context = library.draftContext(for: draftKey) }
+        // The page in front chooses its own conversation; an employee's page gives the main assistant back when it leaves.
+        .task { await takeSelection() }
+        .onAppear { onScreen = true }
+        .onDisappear {
+            onScreen = false
+            guard let subject else { return }
+            Task { if client.selectedProfileID == subject { await client.selectProfile(nil) } }
+        }
+        // The chat's own Home is kept current by the app; an employee of another Home is followed while its page is open.
+        .task(id: subject) {
+            guard subject != nil, library.primary !== client else { return }
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(client.health == nil ? 5 : 1)) } catch { break }
+                if client.health != nil, isShown { await client.refreshConversation() }
+            }
+        }
+        // What is on screen in the active window has been read, up to the newest answer it shows.
+        .onChange(of: [subjectProfile?.previewAt ?? "", newestAnswer ?? "", String(onScreen && windowIsActive && isShown)], initial: true) { _, _ in
+            if onScreen, windowIsActive, isShown, let profile = subjectProfile { marks.see(profile, on: client, through: newestAnswer) }
+        }
         .task {
             // Once: coming back from a page the chat led to does not raise the keyboard again.
             guard startsWriting, !startedWriting else { return }
@@ -108,15 +151,15 @@ struct ConversationView: View {
             if connected == false { focused = false }
         }
         .onChange(of: pickedFiles) { _, value in
-            guard library.active === client else { return }
+            guard library.active === client || subject != nil else { return }
             library.fileDrafts[draftKey] = value
         }
         .onChange(of: draft) { _, value in
-            guard library.active === client else { return }
+            guard library.active === client || subject != nil else { return }
             library.saveDraft(value, for: draftKey)
         }
         .onChange(of: context) { _, value in
-            guard library.active === client else { return }
+            guard library.active === client || subject != nil else { return }
             library.saveDraftContext(value, for: draftKey)
         }
         // "Обсудить" in a reader or a client attaches to this draft; it shows at once.
@@ -124,7 +167,7 @@ struct ConversationView: View {
             if value != context { context = value }
         }
         .onChange(of: draftKey) { old, new in
-            guard library.active === client else { return }
+            guard library.active === client || subject != nil else { return }
             library.saveDraft(draft, for: old)
             draft = library.draft(for: new)
             library.fileDrafts[old] = pickedFiles
@@ -133,7 +176,7 @@ struct ConversationView: View {
             context = library.draftContext(for: new)
             focused = false
         }
-        .navigationTitle(client.activeAgentName)
+        .navigationTitle(title)
         #if os(macOS)
         .focusedSceneValue(\.showEmployeeDetails, { openDetails() })
         #else
@@ -143,11 +186,11 @@ struct ConversationView: View {
         .toolbar {
             // Whose chat this is, in a capsule; it opens the assistant's details.
             ToolbarItem(placement: .principal) {
-                TitleCapsule(appearance: client.activeAppearance, name: client.activeAgentName, offline: client.isOffline(client.activeProfile)) { focused = false; openDetails() }
+                TitleCapsule(appearance: appearance, name: title, offline: client.isOffline(subjectProfile)) { focused = false; openDetails() }
                     .accessibilityLabel(L("Настройки сотрудника"))
-                    .accessibilityValue(client.activeAgentName)
+                    .accessibilityValue(title)
                     .accessibilityIdentifier("openEmployeeDetails")
-                    .help(L("Открыть сотрудника «\(client.activeAgentName)»"))
+                    .help(L("Открыть сотрудника «\(title)»"))
             }
             ToolbarItem(placement: .primaryAction) { more }
         }
@@ -178,7 +221,16 @@ struct ConversationView: View {
     }
 
     private func openDetails() {
-        details = EmployeeDetailsPresentation(profile: client.activeProfile)
+        details = EmployeeDetailsPresentation(profile: subject == nil ? nil : subjectProfile)
+    }
+
+    /// Makes the Home's selection this page's. A page that is not in front yet shows nothing of another conversation.
+    private func takeSelection() async {
+        if let subject {
+            if client.selectedProfileID != subject { await client.selectProfile(subject) }
+        } else if client.selectedProfileID != nil || client.selectedChatID != nil {
+            await client.selectProfile(nil)
+        }
     }
 
     private func raiseKeyboard() {
@@ -189,7 +241,10 @@ struct ConversationView: View {
 
     private func transcript(_ proxy: ScrollViewProxy) -> some View {
         ScrollView {
-            if client.feedMessages.isEmpty && client.visiblePendingMessages.isEmpty {
+            if !isShown {
+                // The moment before the Home's selection follows the page: an empty canvas, never another conversation.
+                Color.clear.frame(maxWidth: .infinity, minHeight: 430)
+            } else if client.feedMessages.isEmpty && client.visiblePendingMessages.isEmpty {
                 // While a chosen conversation loads, the canvas stays empty rather than flash the empty state.
                 if showsEmptyChat {
                     EmptyChat()
@@ -302,10 +357,13 @@ struct ConversationView: View {
         }
     }
 
-    /// Words, files and contexts saved for this Home's other conversations, including an employee an earlier version
-    /// was writing to: nothing typed is lost when the chat becomes the one place to write.
+    /// Words, files and contexts saved for this Home's conversations that no page writes to any more, such as a
+    /// Telegram chat an earlier version replied in. An employee's words wait on its own page. Only the main chat offers them.
     private var previousDrafts: [(key: String, title: String)] {
-        library.savedDrafts(on: client).map { saved in
+        guard subject == nil else { return [] }
+        return library.savedDrafts(on: client).filter { saved in
+            !(saved.chat == nil && saved.profile.map { id in client.profiles.contains { $0.id == id } } == true)
+        }.map { saved in
             let who = saved.profile.map { id in id.hasPrefix("draft:") ? L("Новый сотрудник") : client.profiles.first { $0.id == id }?.name ?? L("Сотрудник") }
             let chat = saved.chat.map { id in
                 (client.telegram?.chats ?? []).first { $0.conversationId == id }?.title ?? client.importedConversations.first { $0.id == id }?.title ?? (id.hasPrefix("telegram-reply:") ? "Telegram" : L("Переписка"))
@@ -318,14 +376,16 @@ struct ConversationView: View {
     #if os(macOS)
     /// Connection state and the OpenAI notice sit above the transcript in the column.
     @ViewBuilder private var topBar: some View {
-        if showsConnectionBanner || showsRecoveryNotice {
+        let profile = isShown ? subjectProfile : nil
+        if showsConnectionBanner || showsRecoveryNotice || profile != nil {
             VStack(alignment: .leading, spacing: 8) {
+                if let profile { EmployeeHeader(profile: profile, conversationID: client.conversationID) { openDetails() } }
                 if showsConnectionBanner { connectionBanner }
                 if showsRecoveryNotice { OpenAIRecoveryNotice() }
             }
             .frame(maxWidth: Layout.column, alignment: .leading)
             .padding(.horizontal, Layout.edge)
-            .padding(.top, 16)
+            .padding(.top, profile == nil ? 16 : 0)
             .frame(maxWidth: .infinity)
         }
     }
@@ -369,8 +429,8 @@ struct ConversationView: View {
     }
 
     private var composer: some View {
-        Composer(draft: $draft, files: $pickedFiles, context: $context, focused: $focused, contextID: draftKey, canSend: client.isConfigured && !client.connectionNeedsPairing && client.openAIAccount?.connected != false) { mode in
-            guard client.openAIAccount?.connected != false else { return }
+        Composer(draft: $draft, files: $pickedFiles, context: $context, focused: $focused, contextID: draftKey, canSend: isShown && client.isConfigured && !client.connectionNeedsPairing && client.openAIAccount?.connected != false) { mode in
+            guard client.openAIAccount?.connected != false, isShown else { return }
             let value = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !value.isEmpty || !pickedFiles.isEmpty else { return }
             let files = pickedFiles, attached = context

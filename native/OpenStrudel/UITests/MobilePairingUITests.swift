@@ -40,10 +40,9 @@ final class MobilePairingUITests: XCTestCase {
         XCTAssertTrue(telegramLink("Открыть в Telegram", app).exists, app.debugDescription)
         XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Посторонняя беседа")).firstMatch.exists)
         capture("phone-unified-telegram-feed", app)
-        // The reader has no reply of its own: the group stays read-only here, and the app request goes from the one chat.
+        // The group is read here, never answered: the employee's own composer writes to the employee, not to Telegram.
         XCTAssertFalse(app.textFields["telegramReplyText"].exists, app.debugDescription)
         XCTAssertFalse(app.buttons["sendTelegramReply"].exists, app.debugDescription)
-        XCTAssertFalse(app.textFields["messageComposer"].exists, app.debugDescription)
         capture("phone-telegram-reader", app)
         app.navigationBars.buttons.element(boundBy: 0).tap()
         app.openChat()

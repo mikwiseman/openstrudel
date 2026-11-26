@@ -316,6 +316,12 @@ import Testing
         marks.see(first, on: client)
         #expect(!marks.isUnread(next, on: client))
         #expect(!TeamReadMarks(defaults: defaults).isUnread(next, on: client))
+        // An employee's chat names the answer it showed, before the team list hears of it: that answer is read too.
+        marks.see(spoke, on: client, through: "2026-11-10T10:30:00.000Z")
+        let replied = try profile("p2", "Baker", #","preview":"Answered","previewAt":"2026-11-10T10:30:00.000Z","working":false"#)
+        #expect(!marks.isUnread(replied, on: client))
+        let later = try profile("p2", "Baker", #","preview":"Later","previewAt":"2026-11-10T11:00:00.000Z","working":false"#)
+        #expect(marks.isUnread(later, on: client))
     }
 
     // MARK: How this device arranges the list

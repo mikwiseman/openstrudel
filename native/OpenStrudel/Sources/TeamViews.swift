@@ -203,17 +203,19 @@ enum RowMetrics {
     #endif
 }
 
-/// The first row: the main assistant with its last answer in the chat.
+/// The first row: the main assistant with its last answer in the chat, also while an employee's page holds the
+/// Home's selection.
 struct TeamLeadRow: View {
     @EnvironmentObject private var client: HomeClient
     var selected = false
 
     var body: some View {
-        let answer = client.messages.last { $0.direction == "outbound" && $0.kind != "notice" && $0.story == nil && !MessagePages.isOwnerReply($0) }
-        let offline = client.isOffline(nil)
-        TeamRow(content: TeamRowContent(name: client.activeAgentName, appearance: nil,
+        let main = client.selectedProfileID == nil, offline = client.isOffline(nil)
+        // Before the Home's first answer the chat's own messages, as this device kept them, speak for it.
+        let answer = client.mainLatest ?? (main ? client.messages.last { $0.direction == "outbound" && $0.kind != "notice" && $0.story == nil && !MessagePages.isOwnerReply($0) } : nil)
+        TeamRow(content: TeamRowContent(name: "OpenStrudel", appearance: nil,
                                         preview: answer.map { Team.line($0.text) } ?? L("Напишите, что нужно"), date: answer?.sentAt,
-                                        state: offline ? .offline : client.isWorking && client.interactions.isEmpty ? .working : .resting),
+                                        state: offline ? .offline : main && client.isWorking && client.interactions.isEmpty ? .working : .resting),
                 selected: selected)
     }
 }

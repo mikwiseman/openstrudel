@@ -132,8 +132,8 @@ final class TeamUITests: XCTestCase {
         XCTAssertTrue(later.waitForExistence(timeout: 15) && card.exists, app.debugDescription)
         XCTAssertTrue(card.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Репетитор")).firstMatch.exists, card.debugDescription)
         app.buttons["needAction-open"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["reader"].waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertEqual(app.buttons["readerTitle"].value as? String, "Репетитор")
+        XCTAssertTrue(app.buttons["openEmployeeDetails"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(app.buttons["openEmployeeDetails"].value as? String, "Репетитор")
         back(app)
         XCTAssertTrue(later.waitForExistence(timeout: 10), app.debugDescription); later.tap()
         let calm = app.buttons["needsCalm"]
@@ -160,9 +160,11 @@ final class TeamUITests: XCTestCase {
         try await expect(fresh, says: "Есть новое")
         try await expect(fresh, says: "лёгкий бег")
 
-        // 5. An ordinary employee: a calm feed under one quiet line, and one capsule to ask about it.
+        // 5. An ordinary employee's page is its chat: its rhythm in one quiet line, its results, and its own composer.
         open(fresh, in: app)
-        XCTAssertTrue(app.descendants(matching: .any)["reader"].waitForExistence(timeout: 10), app.debugDescription)
+        let title = app.buttons["openEmployeeDetails"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(title.value as? String, "Тренер")
         let rhythm = app.buttons["employeeRhythm"]
         XCTAssertTrue(rhythm.waitForExistence(timeout: 15), app.debugDescription)
         try await expectLabel(rhythm, says: "Каждый день в")
@@ -171,32 +173,35 @@ final class TeamUITests: XCTestCase {
         if environment["OPENSTRUDEL_TEXT_SIZE"] == nil { XCTAssertLessThan(rhythm.frame.height, 60, "The page's head is one line") }
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "памятке о приседаниях")).firstMatch.waitForExistence(timeout: 15), app.debugDescription)
         XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "](<")).firstMatch.exists, "A link written with an angle-bracket address reads as a link")
-        XCTAssertFalse(app.textFields["Сообщение"].exists)
         capture("employee", app)
         // The quiet line opens the details, where a schedule can be paused.
         rhythm.tap()
         XCTAssertTrue(app.buttons["saveEmployeeChanges"].waitForExistence(timeout: 10), app.debugDescription)
         app.buttons["saveEmployeeChanges"].tap()
-        // «Спросить про…» takes its latest words to the one composer, with the keyboard up.
-        let ask = app.buttons["discussLatest"]
-        XCTAssertTrue(ask.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertEqual(ask.label, "Спросить про Тренер")
-        ask.tap()
-        let field = app.textFields["Сообщение"]
-        XCTAssertTrue(field.waitForExistence(timeout: 10), app.debugDescription)
+        // It is written to directly, and it answers in its own chat.
+        let employeeField = app.textFields["Сообщение"]
+        XCTAssertTrue(employeeField.waitForExistence(timeout: 10), app.debugDescription)
+        employeeField.tap()
         // A fresh simulator explains its keyboard once.
         let tip = app.buttons["Continue"]
         if tip.waitForExistence(timeout: 3) { tip.tap() }
-        let chip = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND label == %@", "draftContext", "Из переписки · Тренер")).firstMatch
-        XCTAssertTrue(chip.waitForExistence(timeout: 10), app.debugDescription)
-        capture("chat-context", app)
-        app.buttons["removeDraftContext"].tap()
-        // Back leads to the page the chat was opened from, then home; what was on screen is read.
-        back(app)
-        XCTAssertTrue(rhythm.waitForExistence(timeout: 10), app.debugDescription)
+        employeeField.typeText("Сколько минут завтра?")
+        let sendToEmployee = app.buttons["sendMessage"]
+        XCTAssertTrue(sendToEmployee.waitForExistence(timeout: 5), app.debugDescription); sendToEmployee.tap()
+        XCTAssertTrue(app.staticTexts["Принято: Сколько минут завтра?"].waitForExistence(timeout: 30), app.debugDescription)
+        capture("employee-chat", app)
+        // Home again: its row says the answer and nothing unread; the chat's row still speaks for the main assistant.
         back(app)
         XCTAssertTrue(fresh.waitForExistence(timeout: 10), app.debugDescription)
+        try await expect(fresh, says: "Принято: Сколько минут завтра?", within: 30)
         XCTAssertFalse(value(fresh).contains("Есть новое"), value(fresh))
+        XCTAssertFalse(value(lead).contains("Сколько минут"), value(lead))
+        // The main chat keeps its own conversation and draft.
+        open(lead, in: app)
+        XCTAssertTrue(app.buttons["openEmployeeDetails"].waitForExistence(timeout: 10), app.debugDescription)
+        try await expectValue(app.buttons["openEmployeeDetails"], "OpenStrudel")
+        XCTAssertFalse(app.staticTexts["Принято: Сколько минут завтра?"].exists, app.debugDescription)
+        back(app)
 
         // 6. A run that failed is said on the employee's page, with since when and why.
         open(failing, in: app)
@@ -326,8 +331,9 @@ final class TeamUITests: XCTestCase {
         back(app)
         // The home's capsule opens the same chat with the keyboard up.
         XCTAssertTrue(composer.waitForExistence(timeout: 10), app.debugDescription); composer.tap()
+        let field = app.textFields["Сообщение"]
         XCTAssertTrue(field.waitForExistence(timeout: 10), app.debugDescription)
-        // One request, one answer: typing here is the only way to send.
+        // One request, one answer, from the main assistant.
         field.tap(); field.typeText("Спасибо")
         let send = app.buttons["sendMessage"]
         XCTAssertTrue(send.waitForExistence(timeout: 5), app.debugDescription); send.tap()
@@ -382,12 +388,11 @@ final class TeamUITests: XCTestCase {
         try await Task.sleep(for: .seconds(2))
         capture("ipad-desk", app)
         open(app.buttons["teamMember-" + (try XCTUnwrap(state["fresh"] as? String))], in: app)
-        XCTAssertTrue(app.buttons["discussLatest"].waitForExistence(timeout: 15), app.debugDescription)
+        // An employee's page is its chat, beside the same home, with its own composer.
+        XCTAssertTrue(app.buttons["employeeRhythm"].waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertEqual(app.buttons["openEmployeeDetails"].value as? String, "Тренер")
+        XCTAssertTrue(app.textFields["Сообщение"].exists && app.descendants(matching: .any)["homeRoot"].exists, app.debugDescription)
         capture("ipad-employee", app)
-        // «Спросить про…» leads to the chat beside the same home.
-        app.buttons["discussLatest"].tap()
-        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@", "draftContext")).firstMatch.waitForExistence(timeout: 10), app.debugDescription)
-        app.buttons["removeDraftContext"].tap()
     }
 
     /// The chat grows out of a glass capsule at the bottom of the home, or of an employee's page, and goes back into
@@ -405,31 +410,21 @@ final class TeamUITests: XCTestCase {
         try await pair(app, "/invite")
         let state = try await read("/")
         let composer = app.buttons["homeComposer"], field = app.textFields["Сообщение"]
-        let employee = app.buttons["teamMember-" + (try XCTUnwrap(state["fresh"] as? String))], ask = app.buttons["discussLatest"]
+        let employee = app.buttons["teamMember-" + (try XCTUnwrap(state["fresh"] as? String))]
         XCTAssertTrue(composer.waitForExistence(timeout: 40), app.debugDescription)
         for round in 0..<9 {
-            // Every third round passes through an employee's page and its «Спросить про…».
+            // Every third round is an employee's own chat, opened from its row.
             let viaPage = round % 3 == 2
-            if viaPage {
-                open(employee, in: app)
-                XCTAssertTrue(ask.waitForExistence(timeout: 15), app.debugDescription); ask.tap()
-            } else {
-                composer.tap()
-            }
+            if viaPage { open(employee, in: app) } else { composer.tap() }
             XCTAssertTrue(field.waitForExistence(timeout: 10), "round \(round): " + app.debugDescription)
             if round == 0 { let tip = app.buttons["Continue"]; if tip.waitForExistence(timeout: 3) { tip.tap() } }
             // A letter and its removal: the keyboard is up and no draft is left behind.
             field.tap(); field.typeText("а" + XCUIKeyboardKey.delete.rawValue)
-            if viaPage { app.buttons["removeDraftContext"].tap() }
             app.buttons["chatMore"].tap()
             XCTAssertTrue(app.buttons["chatHistory"].waitForExistence(timeout: 5), app.debugDescription); app.buttons["chatHistory"].tap()
             XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 10), app.debugDescription)
             app.buttons["Готово"].firstMatch.tap()
             back(app)
-            if viaPage {
-                XCTAssertTrue(ask.waitForExistence(timeout: 10), "round \(round): " + app.debugDescription)
-                back(app)
-            }
             XCTAssertTrue(composer.waitForExistence(timeout: 10), "round \(round): " + app.debugDescription)
         }
     }
@@ -597,6 +592,12 @@ final class TeamUITests: XCTestCase {
         let said = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", text), object: row)
         let result = await XCTWaiter().fulfillment(of: [said], timeout: timeout)
         XCTAssertEqual(result, .completed, "\(row.label): \(value(row))", file: file, line: line)
+    }
+
+    @MainActor private func expectValue(_ element: XCUIElement, _ text: String, file: StaticString = #filePath, line: UInt = #line) async throws {
+        let said = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", text), object: element)
+        let result = await XCTWaiter().fulfillment(of: [said], timeout: 15)
+        XCTAssertEqual(result, .completed, (element.value as? String) ?? "", file: file, line: line)
     }
 
     @MainActor private func expectLabel(_ element: XCUIElement, says text: String, file: StaticString = #filePath, line: UInt = #line) async throws {
