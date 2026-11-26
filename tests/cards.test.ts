@@ -685,6 +685,50 @@ describe("the other kinds", () => {
     expect(h.messages.cards.list().open).toEqual([]);
   });
 
+  it("lets go what can no longer be decided: a newer card about the same thing, then three days without an answer", async () => {
+    const tg = telegram(), h = home({ run: raising({ ...question, about: "Corner bakery" }) });
+    await h.adapter.processUpdate(text(42, 42, "what was that?"));
+    // A promise waits until a day past its date, whatever its age.
+    h.script.run = raising({ kind: "due", title: "Call the venue about Friday", due: "2026-12-20" });
+    await h.adapter.processUpdate(text(42, 42, "what is due?"));
+    // A newer question about the same thing takes the older one's place, here and in Telegram.
+    h.script.run = raising({ ...question, title: "Corner bakery again, 8.10", about: "corner bakery" });
+    await h.adapter.processUpdate(text(42, 42, "and this one?"));
+    expect(h.messages.cards.list().open).toHaveLength(3);
+    expect(await h.messages.cards.sweep()).toBe(1);
+    expect(h.messages.cards.list().open.map(card => card.title).sort()).toEqual(["Call the venue about Friday", "Corner bakery again, 8.10"]);
+    expect(tg.of("editMessageText").at(-1)).toMatchObject({ message_id: 501, reply_markup: { inline_keyboard: [] } });
+    expect(tg.of("editMessageText").at(-1).text).toMatch(/A newer card asks about this · OpenStrudel/);
+    // Three days on, the question has passed; the promise still waits for its day, and then it passes too.
+    expect(await h.messages.cards.sweep(new Date(Date.now() + 4 * 86_400_000))).toBe(1);
+    expect(h.messages.cards.list().open.map(card => card.kind)).toEqual(["due"]);
+    expect(tg.of("editMessageText").at(-1).text).toMatch(/No answer in three days/);
+    expect(await h.messages.cards.sweep(new Date("2026-12-22T00:30:00Z"))).toBe(1);
+    expect(h.messages.cards.list().open).toEqual([]);
+    // Its raiser is not told about what lapsed.
+    h.script.run = undefined;
+    await h.adapter.processUpdate(text(42, 42, "anything else?"));
+    expect(h.runs.at(-1)!.input).not.toContain("Corner bakery");
+  });
+
+  it("lets a schedule's failure go while the model sign-in card says why, and keeps that card while it is true", async () => {
+    const tg = telegram(), h = home();
+    const { Scheduler } = await import("../src/scheduler.js");
+    new Scheduler(h.store, h.messages);
+    const chat = h.store.getOrCreateConversation({ channel: "telegram", externalId: "42", title: "Den" });
+    h.store.db.prepare("INSERT INTO schedules(id,conversation_id,name,prompt,cron,timezone,enabled,next_run_at) VALUES('s1',?,'Morning','Brief','0 7 * * *','UTC',1,'2026-12-01T07:00:00.000Z')").run(chat.id);
+    h.store.db.prepare("INSERT INTO schedule_runs(id,schedule_id,conversation_id,scheduled_for,status,created_at,error) VALUES('r1','s1',?,'2026-11-25T07:00:00.000Z','failed','2026-11-25T07:00:00.000Z',?)")
+      .run(chat.id, "Войдите в OpenAI на устройстве сотрудника: OpenStrudel → Настройки → Аккаунты.");
+    await h.messages.cards.failed({ key: "s1", conversationId: chat.id, chatId: "42", title: "Не получилось подготовить «Morning»", reason: "Модель сейчас недоступна.", nextTry: null });
+    // Alone it is true, and it stays however long it waits.
+    expect(await h.messages.cards.sweep(new Date(Date.now() + 10 * 86_400_000))).toBe(0);
+    await h.messages.cards.failed({ key: "account:sign_in", conversationId: chat.id, chatId: "42", title: "Нужен вход в аккаунт модели", reason: "Не работают: Morning.", nextTry: null, code: "sign_in" });
+    expect(await h.messages.cards.sweep()).toBe(1);
+    expect(h.messages.cards.list().open.map(card => card.title)).toEqual(["Нужен вход в аккаунт модели"]);
+    expect(tg.of("editMessageText").at(-1).text).toMatch(/Причина — вход в аккаунт модели/);
+    expect(await h.messages.cards.sweep(new Date(Date.now() + 10 * 86_400_000))).toBe(0);
+  });
+
   it("speaks the card's own language on its fixed buttons", async () => {
     const tg = telegram(), h = home({ run: raising({ kind: "due", title: "Позвонить на площадку", due: "2026-11-12" }) });
     await h.adapter.processUpdate(text(42, 42, "что на сегодня?"));

@@ -401,6 +401,8 @@ export class HttpApi {
       // «Нужен ты»: what waits for a person on this Home, and one answer per card. The same act as a press in Telegram.
       if (path === "/v1/cards" && request.method === "GET") {
         if (!canManageAccount) throw new HomeError("Что ждёт решения, видит владелец устройства.", 403);
+        // What can no longer be decided leaves before the list is read.
+        await this.messages.cards.sweep().catch(() => 0);
         this.send(response, 200, this.messages.cards.list()); return;
       }
       const cardAnswer = path.match(/^\/v1\/cards\/([a-f0-9]{16})\/answer$/);
