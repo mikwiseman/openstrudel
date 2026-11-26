@@ -363,16 +363,57 @@ it("requires a successful lookup in the permitted brain for a draft or owner dec
   const turn={conversationId:f.conversation.id,messageId:message.id,channel:"api" as const,scope:"personal",scheduled:true};
   const {correspondenceContext, correspondenceDecision}=await import("../src/correspondence.js");
   expect(()=>correspondenceCheckpoint(f.store,turn,"draft")).toThrow(/context/i);
-  await expect(correspondenceContext(f.store,turn,"company","Agreement",async()=>({evidence:[],searched:[],unreachable:["company"]}))).rejects.toThrow(/did not answer/);
+  await expect(correspondenceContext(f.store,turn,"Agreement",async()=>({evidence:[],searched:[],unreachable:["company"]}))).rejects.toThrow(/did not answer: company/);
   expect(()=>correspondenceCheckpoint(f.store,turn,"draft")).toThrow(/context/i);
-  const read=vi.fn(async()=>({evidence:[{id:"doc-42",title:"Agreement",text:"Private terms"}],searched:[{memory:"company"}],unreachable:[]}));
-  await correspondenceContext(f.store,turn,"company","Terms for Andrew’s confirmed project",read);
-  expect(read).toHaveBeenCalledWith("company","Terms for Andrew’s confirmed project");
+  const read=vi.fn(async()=>({evidence:[{id:"doc-42",memory:"company",title:"Agreement",text:"Private terms"}],searched:[{memory:"company"}],unreachable:[]}));
+  await correspondenceContext(f.store,turn,"Terms for Andrew’s confirmed project",read);
+  expect(read).toHaveBeenCalledWith(["company","personal"],"Terms for Andrew’s confirmed project");
   expect(correspondenceCheckpoint(f.store,turn,"draft").current).toBe(true);
   expect(correspondenceDecision(f.store,turn)).toMatchObject({source:"telegram",thread:"123",revision:1});
   expect(JSON.stringify(f.store.db.prepare("SELECT * FROM correspondence_contexts").all())).not.toContain("Private terms");
   f.worker.receive(f.source(),{...f.event("later"),threadId:"123"});
   expect(()=>correspondenceDecision(f.store,turn)).toThrow(/newer/i);
+  await f.finishRun();
+});
+
+it("asks every memory the source may use at once, and a silent one stops nothing", async () => {
+  const f=fixture();
+  configureCorrespondence(f.store,true,{...f.input,drafts:{ownerTelegram:null}});
+  f.worker.receive(f.source(),f.event());
+  await vi.advanceTimersByTimeAsync(45_000);
+  const message=f.store.findMessageByExternal("api",f.calls[0]!.externalId!)!;
+  const turn={conversationId:f.conversation.id,messageId:message.id,channel:"api" as const,scope:"personal",scheduled:true};
+  const {correspondenceContext, requireCompanyDraftContext}=await import("../src/correspondence.js");
+  // The work records are silent: the owner's own memories still give the draft its context.
+  const read=vi.fn(async()=>({evidence:[{id:"msg-7",memory:"wai-telegram"},{id:"note-3",memory:"mik-mcp"}],searched:[{memory:"wai-telegram"},{memory:"mik-mcp"}],unreachable:["company"]}));
+  const found=await correspondenceContext(f.store,turn,"What did he recommend to Ivan?",read);
+  expect(read).toHaveBeenCalledWith(["company","personal"],"What did he recommend to Ivan?");
+  expect(found.unreachable).toEqual(["company"]);
+  expect(f.store.db.prepare("SELECT space,sources FROM correspondence_contexts").all()).toEqual([{space:"personal",sources:'["msg-7","note-3"]'}]);
+  expect(correspondenceCheckpoint(f.store,turn,"draft").current).toBe(true);
+  // A payment lookup still waits for the work records themselves.
+  expect(()=>requireCompanyDraftContext(f.store,turn)).toThrow(/work context/);
+  await correspondenceContext(f.store,turn,"The same, later",async()=>({evidence:[{id:"doc-1",memory:"company"}],searched:[{memory:"company"},{memory:"mik-mcp"}],unreachable:[]}));
+  expect(()=>requireCompanyDraftContext(f.store,turn)).not.toThrow();
+  await f.finishRun();
+});
+
+it("ends a reply the owner owes in a draft, and keeps a question for a fork or a detail no source holds", async () => {
+  const f=fixture(); configureCorrespondence(f.store,true,{...f.input,drafts:{ownerTelegram:null}});
+  f.worker.receive(f.source(),f.event()); await vi.advanceTimersByTimeAsync(45_000);
+  const text=f.calls[0]!.text;
+  expect(text).toContain("this run ends with a saved draft, never with a question to him about what to write");
+  for (const source of ["the conversation, correspondence_context, the connected service that owns the fact, the web","your own knowledge of the subject"]) expect(text).toContain(source);
+  expect(text).toContain("write the answer he most likely gave");
+  expect(text).toContain("add one line that names that part");
+  expect(text).toContain("one bracketed gap");
+  expect(text).toContain("correspondence_question comes after the draft is saved, never instead of it");
+  // What made the run ask instead of draft.
+  expect(text).not.toContain("or a fact only they know");
+  expect(text).not.toContain("Missing context stays explicitly pending");
+  expect(text).not.toContain("Choose personal for personal history");
+  // A commitment is still never invented.
+  expect(text).toContain("never write that a payment, a signature, a delivery, a price or a date is done or agreed when no source shows it");
   await f.finishRun();
 });
 

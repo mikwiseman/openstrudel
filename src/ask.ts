@@ -3,6 +3,7 @@ import { rmSync } from "node:fs";
 import type { Accounts } from "./accounts.js";
 import { contextServers } from "./claude.js";
 import { CodexEngineAdapter } from "./codex.js";
+import { draftSpace } from "./correspondence.js";
 import { sharingConfig } from "./extensions.js";
 import { HomeError } from "./home.js";
 import { askModelSelection, lowestReasoning, validateModelSelection, type ModelChoice } from "./model-settings.js";
@@ -62,6 +63,7 @@ export interface AskTrial { model?: string; reasoningEffort?: string; serviceTie
 /** What one answer was made of, for an evaluation: the evidence the model was given, its own tool calls in order, what ran, and how long each part took. */
 export interface AskTrace { evidence: Evidence[]; calls: Array<{ tool: string; args: Record<string, unknown> }>; model: string | null; reasoningEffort: string | null; timings: { recall: number; model: number; total: number } }
 
+const DRAFT_CALL_MS = 20_000;
 const CALL_MS = 6_000, MODEL_MS = 20_000, DISCOVERY_MS = 10 * 60_000, EVIDENCE_CHARS = 9_000, ITEM_CHARS = 2_400, OPEN_CHARS = 12_000;
 const record = (value: unknown): value is Record<string, any> => Boolean(value && typeof value === "object" && !Array.isArray(value));
 const short = (value: unknown, max: number) => typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -188,10 +190,12 @@ function draftService(root: string, name: string, method: string): Memory {
   return {name,url:service.url,headers:{...service.headers},readOnly:[method]};
 }
 
-/** A draft sends a named person's question only to its selected existing connection. */
-export async function recallDraftContext(root: string, space: "personal" | "company", question: string): Promise<Recalled> {
-  const name = space === "company" ? "company" : "mik-mcp";
-  return recallAll(question,[draftService(root,name,"recall")]);
+/** A draft's question goes to every memory of the owner's own chat that its source may use, at once. An event run has
+ * no reader waiting, so a memory gets longer to answer than in a chat. */
+export async function recallDraftContext(store: Store, root: string, spaces: Array<"personal" | "company">, question: string): Promise<Recalled> {
+  const from = (await memories(store, root, "personal", { access: true, owner: true })).filter(memory => spaces.includes(draftSpace(memory.name)));
+  if (!from.length) throw new Error("No memory is connected for this draft.");
+  return recallAll(question, from, { timeoutMs: DRAFT_CALL_MS });
 }
 export async function readDraftPaymentLinks(root: string, args: Record<string,unknown>) {
   const id=typeof args.id==="string" ? args.id.trim() : "";

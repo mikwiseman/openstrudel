@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { stringify } from "smol-toml";
-import { ASK_INSTRUCTIONS, Ask, forgetMemories, looksLikeQuestion, memories, recallAll, type AskEngine } from "../src/ask.js";
+import { ASK_INSTRUCTIONS, Ask, forgetMemories, looksLikeQuestion, memories, recallAll, recallDraftContext, type AskEngine } from "../src/ask.js";
 import { MessageService } from "../src/messages.js";
 import { normalizeModels } from "../src/model-settings.js";
 import { runtimeIssues } from "../src/operations.js";
@@ -309,6 +309,22 @@ describe("recallAll", () => {
     expect(result.unreachable.sort()).toEqual(["broken", "silent"]);
     expect(result.searched).toEqual([{ memory: "company", understood, searched: { layers: ["truth", "raw"] }, note: "Two records match." }, { memory: "diary", searched: { notes: 412 } }]);
     expect(company.recalls()).toEqual(["What did Lumen Studio pay in October?"]);
+  });
+
+  it("gives a draft every memory its source may use: the work records for company, the owner's own for personal", async () => {
+    const found = (name: string) => () => ({ evidence: [{ n: 1, title: name, date: "2026-11-25", text: "From " + name, id: name + "-1" }] });
+    const company = await memory({ recall: found("company") }), own = await memory({ recall: found("own") }), history = await memory({ recall: found("history") });
+    const tool = await memory({ tools: [readOnly("search")] });
+    const root = home({ company, own, history, tool }), store = database();
+    const all = await recallDraftContext(store, root, ["company", "personal"], "What did he recommend to Ivan?");
+    expect(all.evidence.map(e => e.memory)).toEqual(["company", "own", "history"]);
+    expect(all.searched.map(s => s.memory)).toEqual(["company", "own", "history"]);
+    for (const asked of [company, own, history]) expect(asked.recalls()).toEqual(["What did he recommend to Ivan?"]);
+    expect(tool.recalls()).toEqual([]);
+    // A source kept to one space reaches only that space's memories.
+    expect((await recallDraftContext(store, root, ["company"], "Terms")).searched.map(s => s.memory)).toEqual(["company"]);
+    expect((await recallDraftContext(store, root, ["personal"], "Address")).searched.map(s => s.memory)).toEqual(["own", "history"]);
+    await expect(recallDraftContext(store, home({ tool }), ["company", "personal"], "Anything")).rejects.toThrow(/No memory is connected/);
   });
 
   it("caps the evidence at about nine thousand characters and renumbers it", async () => {

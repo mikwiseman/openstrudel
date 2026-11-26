@@ -130,6 +130,9 @@ export class Cards {
       });
       if (choices.every(choice => choice.id === "dismiss") || new Set(choices.map(c => c.label)).size !== choices.length || new Set(choices.map(c => c.id)).size !== choices.length)
         throw new Error("Give distinct actions for a decision only the owner can make.");
+      // The reply already saved as a draft: the card shows it, so the one message holds both the words and the decision.
+      const draft = str(args.text, 3000, "the saved draft");
+      if (draft) content.text = draft;
     } else if (kind === "answer") {
       const labels = (Array.isArray(args.choices) ? args.choices : []).map(label => str(label, 24, "each choice")).filter((label): label is string => Boolean(label));
       if (labels.length < 2 || labels.length > 3 || new Set(labels).size !== labels.length) throw new Error("Give two or three different short choices.");
@@ -301,7 +304,7 @@ export class Cards {
         add(`\n\n${word("to", ru)}: ${[content.to, content.via].filter(Boolean).join(" · ")}`);
         if (content.subject) add(`\n${word("subject", ru)}: ${content.subject}`);
         add("\n\n"); add(content.text ?? "", "blockquote");
-      }
+      } else if (content.correspondence && content.text) { add("\n\n"); add(content.text, "blockquote"); }
       if (content.details?.length) add("\n\n" + content.details.map(detail => `${detail.label}: ${detail.value}`).join("\n"));
       if (content.due) add(`\n${word("due", ru)}: ${new Intl.DateTimeFormat(ru ? "ru-RU" : "en-GB", { day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(content.due + "T00:00:00Z"))}`);
       if (content.nextTry) add(`\n${word("nextTry", ru)}: ${new Intl.DateTimeFormat(ru ? "ru-RU" : "en-GB", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: ownerTimezone(this.store) ?? "UTC" }).format(new Date(content.nextTry))}`);
@@ -465,7 +468,7 @@ export class Cards {
     if (!origin) return answer;
     if (!this.currentDecision(row)) return "This correspondence decision expired when the conversation changed. Take no action from the old answer.";
     const choice = row.answer?.choice;
-    let instruction = "The owner supplied information. Re-read the source and look for an existing match. Show the exact terms for a separate approval before creating anything.";
+    let instruction = "The owner supplied this detail. Re-read the source. If a reply draft in the original conversation waits for it, put it into that draft, preserve human edits and verify the saved draft; when it is a lasting fact about him, such as an address, keep it in his personal records so that it is not asked again. If it is a term of something to be created, look for an existing match and show the exact terms for a separate approval before creating anything.";
     if (choice?.startsWith("draft")) instruction = "Prepare only a reply draft for the selected option in the original conversation. Read the latest exchange and existing draft, preserve human edits, and verify the saved draft. This choice authorizes no payment, renewal, invoice or new link.";
     const legacyPaymentLink = choice === "c0" && /^(create (payment|checkout) link|создать плат[её]жную ссылку)$/iu.test(row.answer?.label ?? "");
     if (choice === "c0" && !legacyPaymentLink) instruction = "This older choice records the owner's preference and authorizes no financial action. Re-read the original conversation before preparing a reply draft. Ask separately before any external action.";

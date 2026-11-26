@@ -87,7 +87,7 @@ function telegramBeside() {
 }
 
 describe("a card in Telegram", () => {
-  async function correspondenceCard(actions: Array<{kind: string; label: string}>, space: "company" | "personal" = "company") {
+  async function correspondenceCard(actions: Array<{kind: string; label: string}>, space: "company" | "personal" = "company", draft: string | null = null) {
     const tg = telegram(), h = home(), inbox = h.store.primaryConversation();
     const dm = h.store.getOrCreateConversation({ channel: "telegram", externalId: "42", title: "Den" });
     h.store.db.prepare("UPDATE telegram_chats SET conversation_id=? WHERE chat_id='42'").run(dm.id);
@@ -103,10 +103,10 @@ describe("a card in Telegram", () => {
     const msg = h.store.addMessage({ channel: "api", conversationId: inbox.id, direction: "inbound", externalId: "correspondence:test", text: "changed conversation" });
     h.store.setMessageStatus(msg.id, "running");
     const turn = { conversationId: inbox.id, messageId: msg.id, channel: "api" as const, scope: "personal", scheduled: true, profile: null, cards: h.messages.cards };
-    await correspondenceContext(h.store, turn, space, "Agreement", async () => ({evidence: [], searched: ["work"], unreachable: []}));
+    await correspondenceContext(h.store, turn, "Agreement", async () => ({evidence: [], searched: [{memory: space === "company" ? "company" : "mik-mcp"}], unreachable: []}));
     const { employeeTools } = await import("../src/personality.js");
     const tools = employeeTools(h.store, {run: async () => ({threadId:"t",response:"",events:[]})}, h.messages.interactions, turn);
-    const question = { question: "Which proposal does Anton need?", reason: "Both proposals are current.", actions };
+    const question = { question: "Which proposal does Anton need?", reason: "Both proposals are current.", draft, actions };
     await tools.call("correspondence_question", question);
     await tools.call("correspondence_question", question);
     expect(tg.of("sendMessage")).toHaveLength(1);
@@ -127,6 +127,14 @@ describe("a card in Telegram", () => {
     expect(h.runs.at(-1)?.input).toContain("The school course");
     expect(h.runs.at(-1)?.input).toContain("separate approval");
     expect(h.runs.at(-1)?.input).toContain('"thread":"incoming"');
+  });
+
+  it("shows the saved draft in the card, with the other reply one press away", async () => {
+    const { tg, buttons } = await correspondenceCard([{kind:"draft",label:"Draft a decline"}, {kind:"dismiss",label:"Keep this draft"}], "company", "Anton, yes, let us do the workshop on Friday.");
+    const card = tg.of("sendMessage")[0];
+    expect(card.text).toContain("Anton, yes, let us do the workshop on Friday.");
+    expect(card.entities).toContainEqual(expect.objectContaining({ type: "blockquote", length: "Anton, yes, let us do the workshop on Friday.".length }));
+    expect(buttons.map(button => button.text)).toEqual(["Draft a decline", "Keep this draft"]);
   });
 
   it.each([0,1])("carries draft choice %i to the owner as a draft-only instruction", async index => {
